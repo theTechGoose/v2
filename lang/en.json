@@ -4398,6 +4398,8 @@
   "demoMode.pointerGhost": "You",
   "demoMode.pointerAbsent": "Your pointer isn't on {name}'s screen — move to show it",
   "demoMode.pointerPending": "{name} is pointing…",
+  "demoMode.pointerOwnAbsent": "You · not shown",
+  "demoMode.pointerOwnPending": "You · pointing…",
   "demoMode.pointerBelow": "{name} is pointing below — scroll ↓",
   "demoMode.pointerAbove": "{name} is pointing above — scroll ↑",
   "demoMode.pointerRight": "{name} is pointing to the right — scroll →",

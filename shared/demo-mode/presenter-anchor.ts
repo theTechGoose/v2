@@ -293,6 +293,20 @@ export function seekPrint(
   return printable(h.print) && deadForMs <= REANCHOR_CAP_MS;
 }
 
+/** REQ-813 (demo dm1 m4) — the look by the print gave up: the anchor is dead on a styled replay,
+ *  its print tells the node by something, and REANCHOR_CAP_MS passed with no match. The stage
+ *  then tells the customer's page to stop saying "pointing…" (`{k:"leave"}`) at that moment */
+export function seekGaveUp(
+  h: Held,
+  shown: { load: string | null; styled?: boolean; alive?: boolean },
+  deadForMs: number,
+): boolean {
+  if (!anchorDead(h, shown) || shown.load === null || !shown.styled) {
+    return false;
+  }
+  return printable(h.print) && deadForMs > REANCHOR_CAP_MS;
+}
+
 /** REQ-645 — his anchor on the node found by its print: that node of the page load shown, at the
  *  same spot of its box he pointed at (`at`: that spot as a fraction of their screen now) */
 export function reanchored(
@@ -319,6 +333,18 @@ export function pointerAbsent(h: Held, alive: boolean): boolean {
   if (!h.a) return true;
   return !!h.a.n && h.a.o !== 1 && !alive;
 }
+
+/** REQ-813 (demo dm1 m4) — how the stage draws his own marker, so it says what the customer has:
+ *  "pending" while their page says "{name} is pointing…" (the stage's pending window), "absent"
+ *  while his arrow is not on their screen (`pointerAbsent`: dimmed, hollow, "not shown"), else
+ *  "live" (full strength) */
+export type OwnLook = "live" | "absent" | "pending";
+export function ownLook(absent: boolean, pending: boolean): OwnLook {
+  if (pending) return "pending";
+  return absent ? "absent" : "live";
+}
+/** REQ-813 — the strength of his own marker while it is not on their screen */
+export const OWN_ABSENT_OPACITY = 0.4;
 
 /** REQ-645 — how far an arrow's point may move from where it was drawn when he pointed (his mouse
  *  still: a card grew, the page moved) before it is faded: on another control by then */

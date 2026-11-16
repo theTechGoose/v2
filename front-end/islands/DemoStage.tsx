@@ -185,6 +185,8 @@ import {
   lookAgain,
   type NodePrint,
   ownAt,
+  ownLook,
+  PENDING_MS,
   placeView,
   pointerAbsent,
   printable,
@@ -193,6 +195,7 @@ import {
   resendable,
   seedUse,
   SEEK_RETRY_MS,
+  seekGaveUp,
   seekPrint,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import { anchorAhead } from "../../shared/demo-mode/customer-pointer.ts";
@@ -485,6 +488,31 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  swapped, a new page) until he moves or REQ-645 finds it again by its print; REQ-645 — and
    *  while he holds nothing (the demo's start, another tab followed) */
   const [absent, setAbsent] = useState(false);
+  /** REQ-813 (demo dm1 m4) — their page says "{name} is pointing…" (resendPointer sent `pending`):
+   *  his own marker shows the same, for PENDING_MS at most (their chip's own limit), until a move
+   *  or a `leave` (the look by the print gave up) ends both */
+  const [pending, setPending] = useState(false);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSentRef = useRef(false);
+  const endPending = () => {
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = null;
+    pendingSentRef.current = false;
+    setPending(false);
+  };
+  const startPending = () => {
+    endPending();
+    pendingSentRef.current = true;
+    setPending(true);
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null;
+      pendingSentRef.current = false;
+      setPending(false);
+    }, PENDING_MS);
+  };
+  useEffect(() => () => {
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+  }, []);
   /** REQ-645 (m36) — the stage follows another of their tabs now: its page, said until he moves */
   const [tabNote, setTabNote] = useState<string | null>(null);
   /** REQ-823 (cycle dm1, M2) — the customer signed out in the tab the stage followed: the pill and
@@ -554,6 +582,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     clearGhostWait();
     setGhost(null);
     setAbsent(false); // REQ-538 — made where he points now: drawn there
+    endPending(); // REQ-813 — a move ends their "pointing…"
     ownSetRef.current?.(ownAt(heldNow())); // REQ-642 — his own marker, where he points
     return a;
   };
@@ -569,6 +598,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     clearGhostWait(); // REQ-789
     setGhost(null);
     setAbsent(true);
+    endPending(); // REQ-813
     ownSetRef.current?.(null);
   };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
@@ -787,6 +817,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         a: { vx: h.a.vx, vy: h.a.vy },
         t: performance.now(),
       });
+      // REQ-813 (demo dm1 m4) — and his own marker says the same, for the same window
+      startPending();
     }
     seekAgain();
   };
@@ -812,7 +844,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // the look runs from when it was found dead on THIS page load (a new page: looked for afresh)
     if (deadAtRef.current?.load !== load) deadAtRef.current = { at: now, load };
     const shown = { load, styled: true, alive };
-    if (!seekPrint(h, shown, now - deadAtRef.current.at)) return;
+    if (!seekPrint(h, shown, now - deadAtRef.current.at)) {
+      // REQ-813 (demo dm1 m4) — the look gave up with no match: their "pointing…" ends now, when
+      // the stage stops looking (not at its own PENDING_MS); his marker shows "not shown"
+      if (
+        pendingSentRef.current &&
+        seekGaveUp(h, shown, now - deadAtRef.current.at)
+      ) {
+        linkRef.current?.send({ k: "leave" });
+        endPending();
+      }
+      return;
+    }
     const n = h.a?.n;
     const id = h.print ? rep.findPrint(h.print) : null;
     if (id === null || !n) {
@@ -2113,13 +2156,19 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   : null}
               />
             )}
-            {/* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You" */}
+            {
+              /* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You";
+                REQ-813 — dimmed "not shown" / "pointing…" as their screen has it */
+            }
             {mirrored && !look.elsewhere && (
               <OwnPointer
                 color={myColor}
                 z={Z + 1}
                 label={t("demoMode.pointerGhost")}
                 tagged={!ghost}
+                look={ownLook(absent, pending)}
+                absentLabel={t("demoMode.pointerOwnAbsent")}
+                pendingLabel={t("demoMode.pointerOwnPending")}
                 bind={bindOwn}
               />
             )}
