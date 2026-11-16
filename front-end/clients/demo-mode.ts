@@ -42,6 +42,9 @@ export const DEMO_OPENING_EVENT = "pm:demo-opening";
 /** the tab's own signal that /admin opened a demo: `detail` is the DemoStarted plus `targetName`
  *  (the overlay takes it straight, no second ask); no detail → the overlay asks the server */
 export const DEMO_STARTED_EVENT = "pm:demo-started";
+/** REQ-864 (cycle dm4, p8) — the overlay's word to this tab that placing the presenter ended
+ *  WITHOUT leaving the page (whoami/impersonate failed): /admin's Demo row stops saying Opening… */
+export const DEMO_PLACE_FAILED_EVENT = "pm:demo-place-failed";
 /** REQ-855 (cycle dm3, m5) — the overlay's word to this tab that its page now shows (`detail`
  *  true) or no longer shows (false) a demo this staff presents: the impersonation bar, hidden
  *  beside the presenter's pill, comes back when the demo is gone */

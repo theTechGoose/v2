@@ -264,7 +264,11 @@ describe("REQ-153 demo mode wiring", () => {
     );
     expect(demoFn).not.toMatch(/impersonate\(/);
     expect(demoFn).not.toMatch(/location\.href/);
-    expect(demoFn).toMatch(/DEMO_STARTED_EVENT/);
+    // REQ-864 (dm4 p8) — the click's sequence lives in lib/demo-mode/open-demo.ts
+    const open = read("front-end/lib/demo-mode/open-demo.ts");
+    expect(open).not.toMatch(/impersonate\(/);
+    expect(open).not.toMatch(/location\./);
+    expect(open).toMatch(/DEMO_STARTED_EVENT/);
   });
 
   test("the Vite dev proxy forwards the demo socket to the backend unchanged (no rewrite)", () => {
@@ -324,12 +328,12 @@ describe("REQ-179 instant feedback on Demo", () => {
     const en3 = JSON.parse(read3("lang/en.json")) as Record<string, string>;
     expect(en3["adminPage.opening"]).toBe("Opening…");
     expect(en3["adminPage.demo"]).toBe("Demo");
-    const demoFn = admin.slice(
-      admin.indexOf("async function demo("),
-      admin.indexOf("async function impersonate("),
-    );
+    // REQ-864 (dm4 p8) — the click's sequence moved into lib/demo-mode/open-demo.ts
+    expect(admin).toMatch(/await openDemo\(id, targetName,/);
+    const openSrc = read3("front-end/lib/demo-mode/open-demo.ts");
+    const demoFn = openSrc.slice(openSrc.indexOf("export async function openDemo("));
     const opening = demoFn.indexOf("DEMO_OPENING_EVENT");
-    const start = demoFn.indexOf("demoModeClient.start(");
+    const start = demoFn.indexOf("deps.start(");
     const started = demoFn.indexOf("DEMO_STARTED_EVENT");
     expect(opening).toBeGreaterThan(-1);
     expect(opening).toBeLessThan(start);

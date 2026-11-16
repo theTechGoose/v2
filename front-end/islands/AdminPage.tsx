@@ -18,11 +18,8 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type AdminUserView } from "../clients/admin.ts";
-import {
-  DEMO_OPENING_EVENT,
-  DEMO_STARTED_EVENT,
-  demoModeClient,
-} from "../clients/demo-mode.ts";
+import { demoModeClient } from "../clients/demo-mode.ts";
+import { openDemo } from "../lib/demo-mode/open-demo.ts";
 import { fmtPhone } from "../lib/format.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
@@ -180,33 +177,19 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   }
   /** REQ-153 — demo mode: open the invitation for this user and stay here. The overlay
    *  (mounted in the shell) picks the demo up at once and waits in its pill; when the
-   *  customer accepts, it impersonates them and opens the page they are on. */
+   *  customer accepts, it impersonates them and opens the page they are on.
+   *  REQ-864 (dm4 p8) — the row says Opening… until the page moves: start answering does not
+   *  clear it, only a failed start or the overlay's DEMO_PLACE_FAILED_EVENT does. */
   async function demo(id: string, targetName: string) {
     if (!id) return;
-    setBusyId(id);
     setError(null);
-    // REQ-179 — instant feedback: the button reads Opening… and the pill shows before any answer
-    globalThis.dispatchEvent(
-      new CustomEvent(DEMO_OPENING_EVENT, {
-        detail: { targetUserId: id, targetName },
-      }),
-    );
-    try {
-      const started = await demoModeClient.start(id);
-      globalThis.dispatchEvent(
-        new CustomEvent(DEMO_STARTED_EVENT, {
-          detail: { ...started, targetName },
-        }),
-      );
+    await openDemo(id, targetName, {
+      start: (userId) => demoModeClient.start(userId),
+      setBusy: setBusyId,
+      fail: (err) => fail(err, "adminPage.err.demo"),
       // REQ-301 (m35) — the row is re-read the moment a demo opens
-      void search(undefined, true);
-    } catch (err) {
-      await fail(err, "adminPage.err.demo");
-      // no detail: the overlay asks the server and clears its Opening… pill
-      globalThis.dispatchEvent(new Event(DEMO_STARTED_EVENT));
-    } finally {
-      setBusyId(null);
-    }
+      refresh: () => void search(undefined, true),
+    });
   }
 
   async function impersonate(id: string) {
