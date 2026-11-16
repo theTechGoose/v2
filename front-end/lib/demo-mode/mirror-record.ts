@@ -44,6 +44,17 @@
  * the stage's replay draws the list from them. A multiple or size > 1 select is a list box on
  * the page itself: it never opens.
  *
+ * REQ-824 (demo-loop cycle dm1, m2) — and hover and focus are browser state too: the stage showed
+ * the composer the customer typed in with its idle fill, never what her mouse was over. The
+ * recorder marks what her own browser says matches (`Element.matches`), on the elements that
+ * cross: `data-mirror-focus` on the one matching `:focus` ("visible" when `:focus-visible` too),
+ * `data-mirror-focus-within` on every one matching `:focus-within`, `data-mirror-hover` on every
+ * one matching `:hover` — read again at every snapshot and frame, a frame asked for on a focus
+ * change, a pointer crossing or a key (the page's own marks never cross; her DOM is never
+ * touched). No hover marks where her pointer cannot hover (`(hover: none)`: a tap's sticky
+ * `:hover` would light up the page's `@media (hover: hover)` rules on the presenter's desktop
+ * only). The stage reads the marks in her own rules (shared/demo-mode/mirror-state.ts).
+ *
  * REQ-641 (demo-loop cycle 5, m11) — a scroll is not only what its events say. A page that runs
  * no rendering steps (hidden, occluded, throttled) fires no scroll event at all, so a burst's
  * resting place could stay on the customer's screen alone until their next scroll. Every element
@@ -62,6 +73,11 @@ import {
   type SNode,
 } from "../../../shared/demo-mode/mirror.ts";
 import { isSafePath } from "../../../shared/demo-mode/protocol.ts";
+import {
+  FOCUS_ATTR,
+  HOVER_ATTR,
+  WITHIN_ATTR,
+} from "../../../shared/demo-mode/mirror-state.ts";
 
 /** REQ-534 (cycle 4, M8) — while a canvas is drawn on, its bitmap goes out at most this often
  *  (the 1 s sweep left a live signature up to a second behind, or unseen until after signing) */
@@ -161,6 +177,9 @@ const NO_VALUE = new Set([
 /** REQ-638 — the attribute that says a native select's list is open (the recorder's, never the page's) */
 export const OPEN_ATTR = "data-mirror-open";
 
+/** REQ-824 — the recorder's marks of the customer's focus and hover (the page's own never cross) */
+const STATE_ATTRS = new Set([FOCUS_ATTR, WITHIN_ATTR, HOVER_ATTR]);
+
 /** REQ-638 — the keys that open a focused native select's list (Chrome, every platform) */
 function opensList(e: KeyboardEvent): boolean {
   if (e.key === " " || e.key === "F4") return true;
@@ -254,6 +273,7 @@ function nameAllowed(tag: string, name: string): boolean {
     return false;
   }
   if (n === OPEN_ATTR) return false; // REQ-638 — only the recorder says a select is open
+  if (STATE_ATTRS.has(n)) return false; // REQ-824 — only the recorder marks focus and hover
   if (EMBED_TAGS.has(tag) && (n === "src" || n === "srcdoc" || n === "data")) {
     // REQ-780 — but an iframe's srcdoc (the send dialog's email preview) crosses, cleaned
     return tag === "iframe" && n === "srcdoc";
@@ -366,6 +386,12 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
    *  one the stage has marked open */
   let openSel: Element | null = null;
   let sentOpen: number | null = null;
+  /** REQ-824 — the focus and hover marks of the customer's screen as last read (element → value,
+   *  by attribute), and the ones the stage has (mirror id → value, by attribute) */
+  let wantMarks = new Map<string, Map<Element, string>>();
+  const sentMarks = new Map<string, Map<number, string>>(
+    [...STATE_ATTRS].map((a) => [a, new Map<number, string>()]),
+  );
 
   let observer: MutationObserver | null = null;
   let pending: MutationRecord[] = [];
@@ -482,6 +508,57 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   const isViewport = (e: Element) =>
     e === doc.scrollingElement || e === doc.documentElement;
 
+  /** REQ-824 — `e` matches the user-action pseudo-class `sel` on the customer's screen (false
+   *  where the browser cannot say) */
+  function is(e: Element, sel: string): boolean {
+    try {
+      return typeof e.matches === "function" && e.matches(sel);
+    } catch {
+      return false;
+    }
+  }
+  /** REQ-824 — every element matching `sel` (`:hover`, `:focus-within`: an element and all its
+   *  ancestors), found from the root down through the children that match, never into what
+   *  does not cross; an element not mirrored yet is gone through too (it may be sent this frame) */
+  function chain(sel: string): Map<Element, string> {
+    const out = new Map<Element, string>();
+    const root = doc.documentElement;
+    if (!root || !is(root, sel)) return out;
+    const stack: Element[] = [root];
+    while (stack.length) {
+      const e = stack.pop()!;
+      out.set(e, "");
+      for (const k of Array.from(e.childNodes)) {
+        if (k.nodeType !== ELEMENT) continue;
+        const c = k as Element;
+        if (is(c, sel) && !skipped(c)) stack.push(c);
+      }
+    }
+    return out;
+  }
+  /** REQ-824 — the customer's pointer can hover (a phone's cannot: a tap leaves a sticky :hover
+   *  that the page's `@media (hover: hover)` rules ignore on her screen, never on the stage's) */
+  function hovers(): boolean {
+    try {
+      return !win?.matchMedia?.("(hover: none)")?.matches;
+    } catch {
+      return true;
+    }
+  }
+  /** REQ-824 — the marks of the customer's screen now */
+  function readMarks() {
+    const focus = new Map<Element, string>();
+    const a = doc.activeElement;
+    if (a && a.nodeType === ELEMENT && is(a, ":focus")) {
+      focus.set(a, is(a, ":focus-visible") ? "visible" : "");
+    }
+    wantMarks = new Map([
+      [FOCUS_ATTR, focus],
+      [WITHIN_ATTR, chain(":focus-within")],
+      [HOVER_ATTR, hovers() ? chain(":hover") : new Map()],
+    ]);
+  }
+
   /** the state of `e` an attribute does not carry, as ops (and remembered as sent) */
   function stateOf(
     e: Element,
@@ -559,6 +636,14 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       (a ??= {})[at.name] = v;
     }
     if (e === openSel) (a ??= {})[OPEN_ATTR] = ""; // REQ-638
+    for (const [attr, want] of wantMarks) {
+      // REQ-824 — sent whole: the stage's copy has exactly these marks
+      const v = want.get(e);
+      if (v !== undefined) {
+        (a ??= {})[attr] = v;
+        sentMarks.get(attr)!.set(i, v);
+      } else sentMarks.get(attr)!.delete(i);
+    }
     if (a) s.a = a;
     const c: SNode[] = [];
     const list: number[] = [];
@@ -590,6 +675,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     nudged = false;
     promised = false;
     sentOpen = null;
+    for (const m of sentMarks.values()) m.clear(); // REQ-824
   }
 
   function forget(id: number) {
@@ -604,6 +690,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     scrollers.delete(id);
     inked.delete(id);
     if (sentOpen === id) sentOpen = null;
+    for (const m of sentMarks.values()) m.delete(id); // REQ-824
   }
 
   const onScroll = (e: Event) => {
@@ -614,6 +701,16 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     nudged = true;
     schedule();
   };
+  /** REQ-824 — the focus moved (or the window's did), the pointer crossed into or out of an
+   *  element, or a key (it can make a focus visible): the marks are read again in a frame */
+  const onState = () => schedule();
+  const STATE_EVENTS = [
+    "focusin",
+    "focusout",
+    "pointerover",
+    "pointerout",
+    "keydown",
+  ] as const;
 
   /** REQ-638 — `t` is a native select that opens a list (not a list box, not disabled) */
   function popupSelect(t: EventTarget | null): Element | null {
@@ -734,6 +831,9 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     for (const t of INK_EVENTS) {
       doc.addEventListener(t, onInk, { capture: true, passive: true });
     }
+    for (const t of STATE_EVENTS) {
+      doc.addEventListener(t, onState, { capture: true, passive: true }); // REQ-824
+    }
     if (!o.manual) {
       sweepTimer = setInterval(() => {
         flush();
@@ -763,6 +863,9 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     for (const t of INK_EVENTS) {
       doc.removeEventListener(t, onInk, { capture: true });
     }
+    for (const t of STATE_EVENTS) {
+      doc.removeEventListener(t, onState, { capture: true }); // REQ-824
+    }
     clearTimeout(flushTimer);
     flushTimer = undefined;
     clearTimeout(inkTimer);
@@ -784,6 +887,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     if (!root) return;
     const out: Op[] = [];
     if (openSel && !openSel.isConnected) openSel = null; // REQ-638
+    readMarks(); // REQ-824
     const s = ser(root, false, out, new Set());
     if (!s || "x" in s) return;
     sentOpen = openSel && mirrored(openSel) ? ids.get(openSel)! : null;
@@ -844,6 +948,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       }
     }
     if (resnap) return snapshot();
+    readMarks(); // REQ-824 — before anything is sent whole: it is sent with its marks
 
     const ops: Op[] = [];
     const state: Op[] = [];
@@ -950,6 +1055,23 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
         ops.push({ o: "a", i: wantOpen!, n: OPEN_ATTR, v: "" });
       }
       sentOpen = wantOpen;
+    }
+    // REQ-824 — the focus and hover marks: taken off, moved or set (a node sent whole has them)
+    for (const [attr, want] of wantMarks) {
+      const sent = sentMarks.get(attr)!;
+      for (const id of [...sent.keys()]) {
+        const n = nodes.get(id);
+        if (n && (fresh.has(n) || want.has(n as Element))) continue;
+        if (n) ops.push({ o: "a", i: id, n: attr, v: null });
+        sent.delete(id);
+      }
+      for (const [e, v] of want) {
+        const id = ids.get(e);
+        if (id === undefined || fresh.has(e) || sent.get(id) === v) continue;
+        if (!mirrored(e) || !inPage(e)) continue;
+        ops.push({ o: "a", i: id, n: attr, v });
+        sent.set(id, v);
+      }
     }
     for (const n of texts) {
       if (fresh.has(n) || n.nodeType !== TEXT || !mirrored(n)) continue;
