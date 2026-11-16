@@ -395,6 +395,10 @@ export function pillSpots(o: {
  *   1. whole, in the first spot (`pillSpots`) with nothing of the page under it (`blocked`);
  *   2. a pill that yields: folded to its mini-pill at an edge (`tabSpots`) with no control under
  *      it (`controls`; defaults to `blocked`);
+ *      REQ-853 (demo-loop cycle dm3, p1 + p8; amends REQ-228/781): the mini-pill avoids text — a
+ *      tab spot with NOTHING of the page under it (`blocked`) before one with only no control —
+ *      and keeps the spot it has (`keep`: the current or carried one) while that is still as
+ *      clear, so a page that changes under it (a skeleton swapped for data) does not make it hop;
  *   3. whole, in the first spot with no control under it (text and cards may be);
  *   4. folded at the left edge (a pill that yields, or a public /q /i /co page), else home.
  *      REQ-818 (cycle dm1, m5): not the left edge blindly — the mini-pill or whole spot with the
@@ -419,6 +423,9 @@ export function placePill(o: {
   blocked: (r: Rect) => number;
   /** REQ-781 — how many controls of the page (links, buttons, fields) are under a box */
   controls?: (r: Rect) => number;
+  /** REQ-853 (cycle dm3, p8) — the mini-pill's spot now (or carried from the last page): kept
+   *  while it is as clear as the best other spot. Ignored unless it is one of `tabSpots` */
+  keep?: Rect;
 }): { box: Rect; tucked: boolean; band: boolean } {
   // REQ-818 — each box is measured once (the last resort asks of every spot again)
   const counted = new Map<string, number>();
@@ -431,11 +438,31 @@ export function placePill(o: {
     }
     return n;
   };
+  // REQ-853 — and what of the page is under it, once (the tab spots are asked it now too)
+  const seen = new Map<string, number>();
+  const blocked = (r: Rect) => {
+    const k = `${r.left},${r.top},${r.width},${r.height}`;
+    let n = seen.get(k);
+    if (n === undefined) {
+      n = o.blocked(r);
+      seen.set(k, n);
+    }
+    return n;
+  };
   const whole = (box: Rect) => ({ box, tucked: false, band: false });
   const fold = (box: Rect) => ({ box, tucked: true, band: false });
   const folds = !o.floats && (o.yields ?? true);
   const tabs = tabSpots(o.home, o.view, o.top);
-  const tab = () => tabs.find((r) => controls(r) === 0);
+  // REQ-853 (demo-loop cycle dm3, p1 + p8) — the mini-pill's spot: the kept one if nothing of the
+  // page is under it, else the first with nothing under it (never over the footer's address line),
+  // else the kept one if no control is under it, else the first with no control (REQ-781)
+  const kept = o.keep &&
+    tabs.find((r) => r.left === o.keep!.left && r.top === o.keep!.top);
+  const tab = () =>
+    (kept && blocked(kept) === 0 ? kept : undefined) ??
+      tabs.find((r) => blocked(r) === 0) ??
+      (kept && controls(kept) === 0 ? kept : undefined) ??
+      tabs.find((r) => controls(r) === 0);
   if (o.dialog) {
     const box = dockPill({ ...o, dialog: o.dialogBox });
     if (box) return whole(box);
@@ -444,7 +471,7 @@ export function placePill(o: {
     return fold(tab() ?? fewest(tabs, controls));
   }
   const spots = pillSpots(o);
-  const free = spots.find((r) => o.blocked(r) === 0);
+  const free = spots.find((r) => blocked(r) === 0);
   if (free) return whole(free);
   if (folds && !o.minimal) {
     const t = tab();
