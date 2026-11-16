@@ -143,3 +143,57 @@ Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows
       await tabB.close();
     }
   }));
+
+Deno.test("REQ-870 (demo-loop dm5, p7): as the only presenter, Return to your account from /admin's gate ends the demo and lands on /admin saying 'You ended the demo' — as End from the pill does", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const customerPhone = `+1512${digits()}`;
+    const customer = await verify(http, customerPhone);
+    await answerQuestions(http, customer.auth, {
+      name: "Maria Lopez",
+      businessName: "Lopez Remodeling",
+    });
+    const admin = await superAdmin(http, expect);
+    await useCookie(page.context(), baseUrl, admin.cookie);
+
+    await page.goto("/admin");
+    await page.locator("[data-cy='adm-q']").fill(customerPhone.slice(2));
+    await page.locator("[data-cy='adm-search']").click();
+    await page.locator("[data-cy='adm-demo']").first().waitFor({
+      timeout: 15_000,
+    });
+    await page.locator("[data-cy='adm-demo']").first().click();
+    await page.waitForURL((u) => u.pathname === "/demo/stage", {
+      timeout: 20_000,
+    });
+
+    const tabB = await page.context().newPage();
+    try {
+      await tabB.goto(`${baseUrl}/admin`);
+      await tabB.locator("[data-cy='admin-gate']").waitFor({ timeout: 15_000 });
+      await tabB.locator("[data-cy='admin-gate-return']").click();
+      await tabB.waitForURL((u) => u.pathname === "/admin", {
+        timeout: 20_000,
+      });
+      const notice = tabB.locator("[data-cy='demo-ended']");
+      await notice.waitFor({ timeout: 20_000 });
+      const text = (await notice.innerText()).trim();
+      expect(
+        text.includes("You ended the demo"),
+        `/admin after the gate's Return says "You ended the demo": ${text}`,
+      );
+      // and the demo really is over: the customer can be shown a new one
+      await tabB.locator("[data-cy='adm-q']").fill(customerPhone.slice(2));
+      await tabB.locator("[data-cy='adm-search']").click();
+      await tabB.locator("[data-cy='adm-demo']").first().waitFor({
+        timeout: 15_000,
+      });
+      expect.eq(
+        await tabB.locator("[data-cy='adm-demo']").first().isDisabled(),
+        false,
+        "Demo can be started again",
+      );
+    } finally {
+      await tabB.close();
+    }
+  }));

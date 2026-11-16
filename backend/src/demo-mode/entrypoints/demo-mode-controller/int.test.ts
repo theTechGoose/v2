@@ -1353,6 +1353,56 @@ Deno.test("REQ-232 POST /demo-mode/sessions/:id/leave — the customer may not (
   });
 });
 
+Deno.test("REQ-870 (demo-loop dm5, p7) POST /demo-mode/sessions/:id/leave says whether the leave ended the demo: { ok: true, ended: false } while a colleague stays on it, { ok: true, ended: true } for the last presenter", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553081");
+    const hans = await signIn(call, "+15125553082");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553082" });
+    const lia = await signIn(call, "+15125553083");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553083" });
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(made.status, 201);
+    const id = made.body.id;
+    assertEquals(
+      (await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, L)).body.id,
+      id,
+      "Lia joins Hans's demo",
+    );
+
+    const lias = await call(
+      "POST",
+      `/api/demo-mode/sessions/${id}/leave`,
+      undefined,
+      L,
+    );
+    assertEquals(lias.status, 200, JSON.stringify(lias.body));
+    assertEquals(
+      lias.body,
+      { ok: true, ended: false },
+      "Hans is still on it: Lia left, she did not end it",
+    );
+
+    const hanss = await call(
+      "POST",
+      `/api/demo-mode/sessions/${id}/leave`,
+      undefined,
+      P,
+    );
+    assertEquals(hanss.status, 200, JSON.stringify(hanss.body));
+    assertEquals(
+      hanss.body,
+      { ok: true, ended: true },
+      "Hans was the last presenter: his leave ended the demo",
+    );
+  });
+});
+
 Deno.test("REQ-232 the same staff account opens a second stage: the first is told it is replaced and its socket closes; the customer hears the first stage go and the second arrive", async () => {
   await withServer(async (call) => {
     const ana = await signIn(call, "+15125553071");
