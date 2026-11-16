@@ -1,0 +1,432 @@
+[MOD] communications
+
+[REQ] text.send(SendTextDto): TextMessageDto
+    db:thread.upsert(PeerDto): ThreadDto
+    ex:twilio.sendMessage(TwilioSendMessageDto): TwilioMessageResultDto
+      unauthorized
+      rejected
+      timeout
+    db:textMessage.save(CreateTextMessageDto): TextMessageDto
+    mq:events.emit(DomainEventDto): void
+    [NEW] textMessage
+    textMessage.toDto(): TextMessageDto
+
+
+[REQ:open] text.receive(TwilioInboundMessageDto): TwimlDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:thread.upsert(PeerDto): ThreadDto
+    db:textMessage.save(CreateTextMessageDto): TextMessageDto
+    mq:events.emit(DomainEventDto): void
+    [NEW] twiml
+    twiml.empty(): TwimlDto
+
+
+[REQ:open] text.status(TwilioMessageStatusDto): OkDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:textMessage.patchStatus(MessageStatusPatchDto): TextMessageDto
+      not-found
+    [NEW] ok
+    ok.toDto(): OkDto
+
+
+[REQ] thread.all({}): ThreadListDto
+    db:thread.list(OwnerDto): ThreadListDto
+
+
+[REQ] thread.get(PeerQueryDto): ThreadDetailDto
+    db:thread.get(PeerDto): ThreadDto
+      not-found
+    db:textMessage.listByPeer(PeerDto): TextMessageListDto
+    db:call.listByPeer(PeerDto): CallListDto
+    db:thread.markRead(PeerDto): ThreadDto
+    [NEW] threadDetail
+    threadDetail.toDto(): ThreadDetailDto
+
+
+[REQ] voice.token(VoiceTokenRequestDto): VoiceTokenDto
+    [NEW] voiceToken
+    voiceToken.mint(VoiceTokenClaimsDto): VoiceTokenDto
+
+
+[REQ:open] voice.outgoing(TwilioVoiceRequestDto): TwimlDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:call.save(CreateCallDto): CallDto
+    [NEW] twiml
+    twiml.dial(DialPlanDto): TwimlDto
+
+
+[REQ:open] voice.incoming(TwilioVoiceRequestDto): TwimlDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:thread.upsert(PeerDto): ThreadDto
+    db:call.save(CreateCallDto): CallDto
+    [NEW] twiml
+    twiml.ringClients(RingPlanDto): TwimlDto
+
+
+[REQ:open] voice.unanswered(TwilioDialStatusDto): TwimlDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:call.patch(CallPatchDto): CallDto
+      not-found
+    [NEW] twiml
+    [PLY] twiml.fallback(FallbackPlanDto): TwimlDto
+        [CSE] agent
+        twiml.connectRelay(RelayConnectDto): TwimlDto
+        [CSE] voicemail
+        twiml.record(RecordPlanDto): TwimlDto
+        [CSE] forward
+        twiml.dial(DialPlanDto): TwimlDto
+        [CSE] hangup
+        twiml.hangup(): TwimlDto
+
+
+[REQ:open] voice.relay(RelayFrameDto): RelayReplyDto
+    [NEW] relay
+    relay.reduce(RelayFrameDto): RelayDecisionDto
+    ex:llm.complete(LlmTurnDto): LlmReplyDto
+      unauthorized
+      timeout
+    db:call.appendTranscript(TranscriptTurnDto): CallDto
+      not-found
+    relay.reply(LlmReplyDto): RelayReplyDto
+
+
+[REQ:open] voice.relayDone(TwilioConnectActionDto): TwimlDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:call.patch(CallPatchDto): CallDto
+      not-found
+    [NEW] twiml
+    twiml.hangup(): TwimlDto
+
+
+[REQ:open] voice.status(TwilioCallStatusDto): OkDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:call.patch(CallPatchDto): CallDto
+      not-found
+    [NEW] ok
+    ok.toDto(): OkDto
+
+
+[REQ:open] voice.recording(TwilioRecordingDto): OkDto
+    [NEW] twilioSignature
+    twilioSignature.verify(TwilioSignedRequestDto): SignatureDecisionDto
+      forbidden
+    db:call.patch(CallPatchDto): CallDto
+      not-found
+    [NEW] ok
+    ok.toDto(): OkDto
+
+
+[REQ] call.all(CallListQueryDto): CallListDto
+    db:call.list(CallListQueryDto): CallListDto
+
+
+[REQ] call.get(GetByIdDto): CallDto
+    db:call.get(GetByIdDto): CallDto
+      not-found
+
+
+[ENT] texts.send(SendTextDto): TextMessageDto
+[ENT] texts.receive(TwilioInboundMessageDto): TwimlDto
+[ENT] texts.status(TwilioMessageStatusDto): OkDto
+[ENT] threads.all @ GET({}): ThreadListDto
+[ENT] threads.get @ GET /get/{peer}(PeerQueryDto): ThreadDetailDto
+[ENT] voice.token(VoiceTokenRequestDto): VoiceTokenDto
+[ENT] voice.outgoing(TwilioVoiceRequestDto): TwimlDto
+    [REQ] voice.outgoing(TwilioVoiceRequestDto): TwimlDto
+[ENT] voice.incoming(TwilioVoiceRequestDto): TwimlDto
+    [REQ] voice.incoming(TwilioVoiceRequestDto): TwimlDto
+[ENT] voice.unanswered(TwilioDialStatusDto): TwimlDto
+[ENT] voice.relayDone(TwilioConnectActionDto): TwimlDto
+[ENT] voice.status(TwilioCallStatusDto): OkDto
+[ENT] voice.recording(TwilioRecordingDto): OkDto
+[ENT] calls.all @ GET(CallListQueryDto): CallListDto
+[ENT] calls.get @ GET /get/{id}(GetByIdDto): CallDto
+[ENT:ws] relay @ /relay
+    frame(RelayFrameDto): RelayReplyDto
+
+[TYP:uuid] id: string
+    a unique record identifier
+[TYP:ext] userId: string
+    the authenticated owner id, minted from the session
+[TYP:example=+15005550006] peer: string
+    the other party's E.164 phone number (one thread per peer)
+[TYP:example=Hello] body: string
+    the text message body
+[TYP:url] mediaUrl: string
+    an MMS media attachment URL
+[TYP:example=SM00000000000000000000000000000000] providerSid: string
+    the Twilio resource sid (SM… message or CA… call)
+[TYP] direction: string
+    message or call direction: inbound, outbound
+[TYP] status: string
+    a text or call status, e.g. queued, delivered, received, completed
+[TYP] errorCode: string
+    the Twilio error code on a failed or undelivered message
+[TYP] threadId: string
+    a reference to the owning thread
+[TYP] lastMessageAt: string
+    an ISO timestamp of the newest message or call in a thread
+[TYP] lastPreview: string
+    a short preview of the newest message in a thread
+[TYP:int] unreadCount: number
+    how many inbound messages in a thread are unread
+[TYP] createdAt: string
+    an ISO creation timestamp
+[TYP] updatedAt: string
+    an ISO last-updated timestamp
+[TYP:url] statusCallbackUrl: string
+    the delivery-status webhook URL handed to Twilio
+[TYP] entityType: string
+    the linked entity kind on a domain event
+[TYP] action: string
+    the domain-event action verb
+[TYP] entityId: string
+    the linked entity id on a domain event
+[TYP] ok: boolean
+    a success flag
+[TYP] xml: string
+    a rendered TwiML document
+[TYP:example=SM00000000000000000000000000000000] messageSid: string
+    the Twilio message sid on a webhook
+[TYP:example=AC00000000000000000000000000000000] accountSid: string
+    the Twilio account sid on a webhook
+[TYP:example=+15005550006] fromNumber: string
+    the webhook From value (E.164 number or client:identity)
+[TYP:example=+18435550100] toNumber: string
+    the webhook To value (E.164 number or client:identity)
+[TYP:int] numMedia: number
+    how many media attachments an inbound MMS carries
+[TYP:example=delivered] messageStatus: string
+    the Twilio MessageStatus on a status callback
+[TYP] webhookErrorCode: string
+    the Twilio ErrorCode on a failed-delivery status callback
+[TYP] signature: string
+    the X-Twilio-Signature request header
+[TYP] requestUrl: string
+    the full public URL Twilio signed
+[TYP:json] params: string
+    the signed form parameters as JSON
+[TYP] valid: boolean
+    whether the Twilio request signature checked out
+[TYP] thread: ThreadDto
+    a nested thread record
+[TYP] textMessage: TextMessageDto
+    a nested text message record
+[TYP] call: CallDto
+    a nested call record
+[TYP:int] ttlSec: number
+    an access-token lifetime in seconds
+[TYP] token: string
+    a signed Twilio Voice access token (JWT)
+[TYP] identity: string
+    a Twilio Client identity (the user id)
+[TYP] incomingAllow: boolean
+    whether the token's client may receive incoming calls
+[TYP:example=CA00000000000000000000000000000000] callSid: string
+    the Twilio call sid on a webhook or relay frame
+[TYP:example=ringing] callStatus: string
+    Twilio CallStatus: ringing, in-progress, completed, busy, failed
+[TYP] startedAt: string
+    an ISO timestamp of when the call connected
+[TYP] endedAt: string
+    an ISO timestamp of when the call ended
+[TYP:int] durationSec: number
+    the call duration in seconds
+[TYP:url] recordingUrl: string
+    the Twilio recording media URL
+[TYP] recordingSid: string
+    the Twilio recording sid (RE…)
+[TYP] handledBy: string
+    who handled a call: client, agent, voicemail, forward, none
+[TYP] turn: TranscriptEntryDto
+    a nested transcript turn
+[TYP] role: string
+    transcript turn author: caller, agent
+[TYP] text: string
+    the transcript or LLM reply text
+[TYP] at: string
+    an ISO timestamp of a transcript turn
+[TYP:json] handoffData: string
+    the agent's handoff payload when a relay session ends
+[TYP] callerId: string
+    the business line number presented as caller id
+[TYP:int] timeoutSec: number
+    how long to ring before giving up
+[TYP:url] actionUrl: string
+    the TwiML action webhook URL to call when a verb ends
+[TYP] dialNumber: string
+    the E.164 number a Dial verb connects to
+[TYP] fallbackMode: string
+    the unanswered-call fallback: agent, voicemail, forward, hangup
+[TYP:url] relayUrl: string
+    the wss:// ConversationRelay websocket URL
+[TYP] forwardNumber: string
+    the configured E.164 number to forward unanswered calls to
+[TYP] greeting: string
+    the agent welcome greeting or voicemail prompt
+[TYP:int] maxLengthSec: number
+    the maximum voicemail recording length in seconds
+[TYP:example=no-answer] dialCallStatus: string
+    Twilio DialCallStatus: completed, busy, no-answer, failed, canceled
+[TYP] dialCallSid: string
+    the child call sid created by a Dial verb
+[TYP:int] dialCallDuration: number
+    the child call duration in seconds
+[TYP:example=completed] sessionStatus: string
+    ConversationRelay SessionStatus: completed, ended, failed
+[TYP:int] sessionDuration: number
+    the ConversationRelay session length in seconds
+[TYP:int] callDuration: number
+    the Twilio CallDuration on a completed-call callback
+[TYP:example=RE00000000000000000000000000000000] webhookRecordingSid: string
+    the Twilio RecordingSid on a recording callback
+[TYP:url,example=https://api.twilio.com/rec/RE0] webhookRecordingUrl: string
+    the Twilio RecordingUrl on a recording callback
+[TYP:int] recordingDuration: number
+    the recording length in seconds
+[TYP:example=completed] recordingStatus: string
+    the Twilio RecordingStatus on a recording callback
+[TYP:example=prompt] frameType: string
+    a relay frame type: setup, prompt, interrupt, dtmf, error
+[TYP] voicePrompt: string
+    the caller's transcribed speech on a prompt frame
+[TYP] last: boolean
+    whether this is the final piece of a prompt or reply
+[TYP] digit: string
+    the DTMF key pressed on a dtmf frame
+[TYP] description: string
+    the error description on an error frame
+[TYP] relayAction: string
+    the reducer decision: reply, end, ignore
+[TYP] replyType: string
+    an outbound relay message type: text, end
+[TYP:json] history: string
+    the prior transcript turns as JSON for the LLM
+[TYP] endCall: boolean
+    whether the LLM asked to end the call
+[TYP:int,from=query] pageSize: number
+    the call-log page size
+[TYP:from=query] before: string
+    an ISO cursor: list calls created before this time
+
+[DTO] SendTextDto: peer, body, mediaUrl(s)?
+    a command to text a peer from the business line
+[DTO] PeerDto: userId, peer
+    an owner-scoped peer phone number key
+[DTO] PeerQueryDto: peer
+    a peer phone number lookup
+[DTO] OwnerDto: userId
+    the owning user id wrapper
+[DTO] GetByIdDto: id
+    an id lookup wrapper
+[DTO] OkDto: ok
+    a success acknowledgement body
+[DTO] ThreadDto: id, userId, peer, lastMessageAt?, lastPreview?, unreadCount, createdAt, updatedAt
+    a persisted conversation thread with one peer
+[DTO] ThreadListDto: thread(s)
+    every thread, newest first
+[DTO] ThreadDetailDto: thread, textMessage(s), call(s)
+    a thread with its texts and calls
+[DTO] TwilioSendMessageDto: peer, body, mediaUrl(s)?, statusCallbackUrl
+    an outbound Twilio Messages API request
+[DTO] TwilioMessageResultDto: providerSid, status
+    the Twilio Messages API response
+[DTO] CreateTextMessageDto: threadId, peer, direction, body, mediaUrl(s)?, providerSid, status
+    input to persist a text message
+[DTO] TextMessageDto: id, threadId, peer, direction, body, mediaUrl(s)?, providerSid, status, errorCode?, createdAt, updatedAt
+    a persisted text message
+[DTO] TextMessageListDto: textMessage(s)
+    the text messages with one peer
+[DTO] MessageStatusPatchDto: providerSid, status, errorCode?
+    a delivery-status patch keyed by provider sid
+[DTO] DomainEventDto: userId, entityType, action, entityId?
+    an outbound domain event on the EventBus
+[DTO] TwilioInboundMessageDto: messageSid, accountSid, fromNumber, toNumber, body, numMedia?, mediaUrl(s)?
+    Twilio's inbound SMS/MMS webhook
+[DTO] TwilioMessageStatusDto: messageSid, accountSid, messageStatus, webhookErrorCode?
+    Twilio's message delivery-status callback
+[DTO] TwilioSignedRequestDto: signature, requestUrl, params
+    the raw signed parts of a Twilio webhook request
+[DTO] SignatureDecisionDto: valid
+    the Twilio signature check outcome
+[DTO] TwimlDto: xml
+    a TwiML response document
+[DTO] VoiceTokenRequestDto: ttlSec?
+    a request for a browser softphone access token
+[DTO] VoiceTokenClaimsDto: identity, ttlSec, incomingAllow
+    the claims of a Twilio Voice access token
+[DTO] VoiceTokenDto: token, identity, ttlSec
+    a minted Twilio Voice access token
+[DTO] TwilioVoiceRequestDto: callSid, accountSid, fromNumber, toNumber, callStatus
+    Twilio's voice webhook for a new call leg
+[DTO] CreateCallDto: peer, direction, providerSid, status, handledBy
+    input to persist a call
+[DTO] CallDto: id, peer, direction, providerSid, status, startedAt?, endedAt?, durationSec?, recordingUrl?, recordingSid?, handledBy, turn(s), handoffData?, createdAt, updatedAt
+    a persisted call with its agent transcript
+[DTO] CallListDto: call(s)
+    a newest-first page of calls
+[DTO] CallListQueryDto: pageSize?, before?
+    paging for the call log
+[DTO] CallPatchDto: providerSid, status?, startedAt?, endedAt?, durationSec?, recordingUrl?, recordingSid?, handledBy?, handoffData?
+    a webhook-driven call patch keyed by provider sid
+[DTO] TranscriptEntryDto: role, text, at
+    one turn of an agent call transcript
+[DTO] DialPlanDto: dialNumber, callerId, timeoutSec?, actionUrl?
+    the plan for a Dial-to-number TwiML response
+[DTO] RingPlanDto: identity(s), timeoutSec, actionUrl
+    the plan for ringing the browser softphone clients
+[DTO] TwilioDialStatusDto: callSid, accountSid, dialCallStatus, dialCallSid?, dialCallDuration?
+    Twilio's Dial action callback
+[DTO] FallbackPlanDto: fallbackMode, relayUrl?, forwardNumber?, greeting?
+    the configured unanswered-call fallback
+[DTO] RelayConnectDto: relayUrl, greeting?, actionUrl
+    the plan for a Connect ConversationRelay TwiML response
+[DTO] RecordPlanDto: greeting?, maxLengthSec, actionUrl
+    the plan for a voicemail Record TwiML response
+[DTO] RelayFrameDto: frameType, callSid?, voicePrompt?, last?, digit?, description?
+    an inbound ConversationRelay websocket frame
+[DTO] RelayDecisionDto: relayAction, voicePrompt?, handoffData?
+    the relay protocol reducer's decision
+[DTO] LlmTurnDto: callSid, voicePrompt, history?
+    one caller turn sent to the LLM
+[DTO] LlmReplyDto: text, endCall?
+    the LLM's reply to a caller turn
+[DTO] TranscriptTurnDto: providerSid, role, text, at
+    a transcript turn appended to a call
+[DTO] RelayReplyDto: replyType, text?, last?, handoffData?
+    an outbound ConversationRelay message (text token or end)
+[DTO] TwilioConnectActionDto: callSid, accountSid, sessionStatus, sessionDuration?, handoffData?
+    Twilio's Connect action callback when a relay session ends
+[DTO] TwilioCallStatusDto: callSid, accountSid, callStatus, callDuration?
+    Twilio's call status callback
+[DTO] TwilioRecordingDto: callSid, accountSid, webhookRecordingSid, webhookRecordingUrl, recordingDuration?, recordingStatus
+    Twilio's recording-ready callback
+
+[NON] textMessage
+    a single text message
+[NON] twilioSignature
+    the Twilio webhook request-signature validator
+[NON] twiml
+    the TwiML response builder
+[NON] threadDetail
+    a thread with its texts and calls
+[NON] voiceToken
+    the Twilio Voice access-token minter
+[NON] relay
+    the ConversationRelay protocol state machine
+[NON] ok
+    a success marker

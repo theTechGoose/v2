@@ -28,6 +28,7 @@
     "@crm/": "./src/crm/",
     "@paperwork/": "./src/paperwork/",
     "@communication/": "./src/communication/",
+    "@communications/": "./src/communications/",
     "@users/": "./src/users/",
     "@profile/": "./src/users/",
     "@agents/": "./src/agents/",

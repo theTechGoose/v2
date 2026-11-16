@@ -12,6 +12,7 @@ import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { FieldModule } from "@field/mod-root.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import { DemoModeModule } from "@demo-mode/mod-root.ts";
+import { CommunicationsModule } from "@communications/mod-root.ts";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { DemoModeModule } from "@demo-mode/mod-root.ts";
     AnalyticsModule,
     FieldModule,
     DemoModeModule, // REQ-153
+    CommunicationsModule, // REQ-899..901 — the business line: texting, softphone, AI receptionist
   ],
 })
 class AppModule {}
