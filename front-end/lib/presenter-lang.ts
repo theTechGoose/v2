@@ -20,6 +20,7 @@ import { ssrBackendGetAuthed } from "./backend-fetch.ts";
 import { langFromCookie } from "./lang.ts";
 // REQ-855 — the pure ranking lives in a client-safe module (the overlay ranks with it too)
 import {
+  demoLangFromCookie,
   type PresenterCarry,
   type PresenterIdentity,
   presenterLang,
@@ -33,11 +34,12 @@ export {
   type PresenterWhoAmI,
 };
 
-/** REQ-829 — the request's `?lang=` and `pm_lang` cookie */
+/** REQ-829 — the request's `?lang=` and `pm_lang` cookie; REQ-863 — and the demo's `pm_demo_lang` */
 export function presenterCarry(req: Request): PresenterCarry {
   return {
     query: new URL(req.url).searchParams.get("lang"),
     cookie: langFromCookie(req.headers.get("cookie")),
+    demo: demoLangFromCookie(req.headers.get("cookie")),
   };
 }
 

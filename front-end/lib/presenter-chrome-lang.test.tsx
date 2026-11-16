@@ -407,3 +407,66 @@ Deno.test({
     }
   },
 });
+
+/** REQ-863 (demo-loop cycle dm4, p5) — Alex's PROFILE is es, but he started the demo from
+ *  /admin?lang=en, so the stage is English and recorded pm_demo_lang=en in this browser. A fresh
+ *  /dashboard tab (no ?lang=) must draw his pill in English, not his profile's Spanish. */
+Deno.test({
+  name:
+    "REQ-863 (dm4 p5): an es-profile presenter whose stage is en (pm_demo_lang=en) opens a fresh /dashboard tab — the pill reads Demo mode · Guiding Maria Lopez, never Modo demo, and its way back carries en",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const esAlex = {
+      ...actingAsMaria,
+      impersonator: { ...alex, language: "es" },
+    };
+    const env = browserish("/dashboard", {
+      whoami: esAlex,
+      active: presenting,
+    });
+    Object.defineProperty(document, "cookie", {
+      value: "pm_session=sess_1; pm_demo_lang=en",
+      configurable: true,
+      writable: true,
+    });
+    const before = langSignal.value;
+    langSignal.value = "es"; // Maria's page
+    sessionStorage.clear();
+    const m = mount(env.root, () => DemoModeOverlay({}));
+    try {
+      await until(
+        "the presenter pill is drawn",
+        () => m.now().includes('data-cy="demo-rejoin"'),
+      );
+      await tick(50);
+      const pill = m.now();
+      for (
+        const s of ["Demo mode", "Guiding Maria Lopez", "Back to the demo"]
+      ) {
+        assert(pill.includes(s), `the pill says "${s}": ${pill}`);
+      }
+      for (const s of SPANISH) {
+        assert(!pill.includes(s), `no "${s}" on the pill: ${pill}`);
+      }
+      globalThis.dispatchEvent(
+        new CustomEvent("pm:demo-started", {
+          detail: {
+            id: "demo_1",
+            targetUserId: "c1",
+            targetName: "Maria Lopez",
+            targetPath: null,
+            createdAt: "",
+          },
+        }),
+      );
+      await until("the hop to the stage", () => env.assigned.length > 0);
+      assertEquals(env.assigned, ["/demo/stage?lang=en"]);
+    } finally {
+      m.unmount();
+      langSignal.value = before;
+      sessionStorage.clear();
+      env.restore();
+    }
+  },
+});

@@ -102,6 +102,7 @@ import { adminClient, type WhoAmI } from "../clients/admin.ts";
 // REQ-855 (cycle dm3, m6) — the presenter's own chrome ranks its language like the stage does
 import {
   pageLangCarry,
+  persistDemoLang,
   presenterChromeLang,
 } from "../lib/presenter-lang-rank.ts";
 import { persistLang } from "../lib/lang.ts";
@@ -2336,7 +2337,10 @@ export default function DemoModeOverlay(
                     href={langToggleHref(globalThis.location.href, l)}
                     hreflang={l}
                     aria-current={l === pLang ? "true" : "false"}
-                    onClick={() => persistLang(l)}
+                    onClick={() => {
+                      persistLang(l);
+                      persistDemoLang(l); // REQ-863: the demo's language, for his other tabs
+                    }}
                     style={`padding:3px 6px;border-radius:6px;color:#fff;text-decoration:none;font-size:11.5px;font-weight:700;${
                       l === pLang
                         ? "background:rgba(255,255,255,.22)"
