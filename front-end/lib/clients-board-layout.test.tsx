@@ -53,8 +53,6 @@ function board(totalPages: number, cards: CustomerCard[] = [card]) {
       cards={cards}
       counts={counts}
       rosterEmpty={false}
-      query=""
-      onQuery={() => {}}
       filter="all"
       onFilter={() => {}}
       page={1}

@@ -93,8 +93,10 @@ Deno.test("REQ-473 DashboardPage lists OPEN receivables (not the legacy 'pending
     !src.includes('dashboardClient.invoices("pending")'),
     "the Outstanding list must not query the legacy 'pending' status",
   );
-  assert(src.includes('dashboardClient.invoices("open")'));
-  assert(src.includes('dashboardClient.invoices("scheduled")'));
+  // REQ-798 (the money bar) fetches EVERY invoice and filters open / scheduled on the page — the
+  // server's ?status= filters were exact matches, so it is the same list (REQ-473 AMENDMENT)
+  assert(src.includes("dashboardClient.invoices()"));
+  assert(src.includes("REQ-473's scheduled installments"));
   assert(src.includes("nextUpcomingBill("));
   assert(src.includes("jobPaidLabel("));
 });
