@@ -177,8 +177,32 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         "/admin",
         "nothing has moved yet — the answer is still held",
       );
+      // REQ-864 (dm4 p8) — start answering is not the end of opening: the overlay still asks
+      // whoami + impersonate before the page moves, and the button keeps saying Opening… all
+      // that time (it read "Demo" ~28 ms after start answered). Hold the impersonation to look.
+      let releaseImp!: () => void;
+      const heldImp = new Promise<void>((r) => (releaseImp = r));
+      const impAsked = new Promise<void>((asked) => {
+        void page.route("**/api/admin/impersonate/**", async (route) => {
+          asked();
+          await heldImp;
+          await route.continue();
+        }, { times: 1 });
+      });
       release();
       await continued;
+      await impAsked;
+      expect.eq(
+        (await page.locator("[data-cy='adm-demo']").first().innerText()).trim(),
+        "Opening…",
+        "REQ-864: start has answered, the page has not moved — the button still says Opening…",
+      );
+      expect.eq(
+        new URL(page.url()).pathname,
+        "/admin",
+        "REQ-864: still on /admin while the impersonation is held",
+      );
+      releaseImp();
       await page.waitForURL((u) => u.pathname === "/demo/stage", {
         timeout: 20_000,
       });

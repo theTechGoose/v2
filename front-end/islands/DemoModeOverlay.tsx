@@ -93,6 +93,7 @@ import { demoChromeT as t } from "../lib/demo-chrome-t.ts";
 import { fenceClicks } from "../lib/backdrop-dismiss.ts";
 import {
   DEMO_OPENING_EVENT,
+  DEMO_PLACE_FAILED_EVENT,
   DEMO_PRESENTING_EVENT,
   DEMO_STARTED_EVENT,
   demoModeClient,
@@ -828,7 +829,11 @@ export default function DemoModeOverlay(
     } finally {
       placingRef.current = false;
       // on its way: the pill keeps saying Opening… until the stage loads
-      if (!moving) setPlacing(false);
+      if (!moving) {
+        setPlacing(false);
+        // REQ-864 (dm4 p8) — not moving after all: /admin's Demo row stops saying Opening…
+        globalThis.dispatchEvent(new Event(DEMO_PLACE_FAILED_EVENT));
+      }
     }
   }
 
