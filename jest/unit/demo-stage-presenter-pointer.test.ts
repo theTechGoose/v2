@@ -528,7 +528,8 @@ describe("REQ-393 the stage: the resting pointer is the spot under the presenter
     expect(stageSrc).toMatch(/const \[off, setOff\] = useState\(false\)/);
     expect(stageSrc).toMatch(/data-cy="demo-pointer-off"/);
     expect(stageSrc).toContain('t("demoMode.pointerOff", { name })');
-    expect(stageSrc).toMatch(/outline:\$\{\s*mirrored && off/);
+    // REQ-895 — gone once the demo has ended
+    expect(stageSrc).toMatch(/outline:\$\{[^}]{0,200}!ended && mirrored && off/);
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
     expect(en["demoMode.pointerOff"]).toBe(

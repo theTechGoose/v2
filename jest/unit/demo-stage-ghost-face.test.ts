@@ -140,7 +140,7 @@ describe("REQ-430 (demo-loop cycle 3, m4) — the stage's pill ghost says what t
     const s = read("front-end/islands/DemoStage.tsx");
     expect(s).toMatch(/ghostWords\(pillFace, t\)/);
     expect(s).toMatch(/data-cy="demo-pill-ghost-guide"/);
-    const on = s.slice(s.indexOf("onStatus: (s) => {"));
+    const on = s.slice(s.indexOf("onStatus: (s, why) => {"));
     const body = on.slice(0, on.indexOf("onPeerOnline:"));
     expect(body).toMatch(/setPillFace\(\(f\) => pillFaceOffline\(f, s\)\)/);
   });

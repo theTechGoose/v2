@@ -30,7 +30,7 @@ const guardOf = (dataCyOrTag: string) => {
 
 describe("REQ-646 (demo-loop cycle 5, m63) — an inactive stage window says only that it is elsewhere", () => {
   test("REQ-646 the replaced branch of onStatus drops the presenter's pointer (ghost + absent)", () => {
-    const on = stage.slice(stage.indexOf("onStatus: (s) => {"));
+    const on = stage.slice(stage.indexOf("onStatus: (s, why) => {"));
     const body = on.slice(0, on.indexOf("onPeerOnline:"));
     const replaced = body.slice(body.indexOf('if (s === "replaced") {'));
     const branch = replaced.slice(0, replaced.indexOf("\n        }"));
@@ -62,7 +62,8 @@ describe("REQ-646 (demo-loop cycle 5, m63) — an inactive stage window says onl
     // pillShown is the customer's pill box, or nothing while another window has the demo —
     // REQ-646 AMENDMENT (REQ-838, cycle dm2, p4): nor while the customer is signed out
     expect(stage).toMatch(
-      /const pillShown = look\.elsewhere \|\| signedOut \? null : pillBox;/,
+      // REQ-896 — and while waiting after anything but a navigation
+      /const pillShown =\s*look\.elsewhere \|\| signedOut \|\|[\s\S]{0,80}\? null\s*: pillBox;/,
     );
   });
 
