@@ -23,9 +23,13 @@
  * the arrow), else placed as DemoPointer places it (`tagPlacement` with `coverage` of the page
  * under it, through the stage's mirror) — never pinned bottom-right at +18,+17. Its words stay
  * "You"/"Tú" (owner design, REQ-642).
+ *
+ * REQ-860 (demo-loop cycle dm4, m5 + p6) — that tag is clamped inside the frame (`bounds`), and
+ * none is drawn while his mouse is beside the frame (the chrome-row hint says so).
  */
 import { useEffect, useState } from "preact/hooks";
 import {
+  outsideBox,
   type Pt,
   type Rect,
   tagPlacement,
@@ -90,7 +94,8 @@ export function OwnMarker(
   // REQ-837 (demo dm2 m3) — the tag where the customer's is, else placed as theirs is placed
   const size = { w: 14 + label.length * 6, h: 18 };
   const spot = (() => {
-    if (tag) return { ...alignTag(tag, size), side: tag.side };
+    // REQ-860 (demo dm4 m5 + p6) — kept inside the frame
+    if (tag) return { ...alignTag(tag, size, at, bounds), side: tag.side };
     const doc = globalThis.document;
     const hit = covers
       ? (r: Rect) => covers(r, at)
@@ -102,6 +107,10 @@ export function OwnMarker(
     const p = tagPlacement(at, box, size, null, hit);
     return { left: p.x - at.x, top: p.y - at.y, side: p.side };
   })();
+  // REQ-860 (demo dm4 p6) — his mouse beside the frame: no tag. The customer's tag sits above her
+  // arrow pinned against her edge; that offset from his unpinned point put "You" inside the frame,
+  // over her footer. The chrome-row hint ("Your pointer is off … screen") already says it.
+  const offFrame = !!bounds && outsideBox(at, bounds);
   const tagStyle =
     `position:absolute;left:${spot.left}px;top:${spot.top}px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;line-height:16px;white-space:nowrap`;
   return (
@@ -164,7 +173,7 @@ export function OwnMarker(
             {pendingLabel}
           </span>
         )
-        : !absent && tagged && (
+        : !absent && tagged && !offFrame && (
           <span
             data-cy="demo-pointer-own-label"
             data-tag-side={spot.side}

@@ -26,6 +26,8 @@
  * screens — not 36 stage px, ≈ 42 of theirs at s 0.86.
  * REQ-843 (demo-loop cycle dm3, p15) — for his own ghost the words are his own (`ownCueKey`:
  * "You · pointing below — the customer must scroll ↓"), never his name after "You ·".
+ * REQ-860 (demo-loop cycle dm4, m5) — the customer's tag offset is kept, but clamped TAG_EDGE
+ * inside the cue's box (else the frame): her words are shorter than the stage's.
  */
 import {
   type Pt,
@@ -128,7 +130,9 @@ export default function PointerGhost(
   const size = { w: 14 + words.length * 6.5, h: 20 };
   const place = tag
     ? (() => {
-      const p = alignTag(tag, size);
+      // REQ-860 (demo dm4 m5) — kept inside the cue's box / the frame: the stage's words are
+      // wider than the customer's, whose tag this is
+      const p = alignTag(tag, size, at, cue ? cueBox ?? bounds : bounds);
       return { x: at.x + p.left, y: at.y + p.top, side: tag.side };
     })()
     : cue

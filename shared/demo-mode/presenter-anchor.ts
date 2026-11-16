@@ -62,6 +62,8 @@ import {
   outsideBox,
   placeIn,
   type Pt,
+  TAG_EDGE,
+  TAG_GAP,
   type TagSide,
 } from "./motion.ts";
 import {
@@ -739,15 +741,53 @@ export function reportedTag(
 
 /** REQ-837 (demo dm2 m3) — where a tag of size `own` goes to sit as `tag` does: the edge that
  *  faces the arrow kept (a tag above keeps its bottom, one to the left its right edge), so a
- *  smaller or larger label never runs into the arrow */
+ *  smaller or larger label never runs into the arrow.
+ *  REQ-860 (demo dm4 m5 + p6) — given the arrow's tip (`at`) and the box the tag must stay in
+ *  (`bounds`: the fitted frame, the cue's box), the placed tag is shifted back TAG_EDGE inside it:
+ *  the customer's tag was sized for HER words (Spanish, 244 px) and the stage's are wider
+ *  (English, 333 px), so her left edge kept ran 30 px past the frame. A tag beside the arrow that
+ *  a shift would push over it goes to the arrow's other side instead. Offsets from `at`. */
 export function alignTag(
   tag: TagPlace,
   own: { w: number; h: number },
+  at?: Pt | null,
+  bounds?: Rect | null,
 ): { left: number; top: number } {
-  const left = tag.side === "left" ? tag.x + tag.w - own.w : tag.x;
-  const top = tag.side === "above" || tag.side === "tail-up"
+  let left = tag.side === "left" ? tag.x + tag.w - own.w : tag.x;
+  let top = tag.side === "above" || tag.side === "tail-up"
     ? tag.y + tag.h - own.h
     : tag.y;
+  if (!at || !bounds) return { left, top };
+  // one axis: the offset `v` of a tag `n` long, from the tip at `p`, kept in [lo, hi]
+  const into = (v: number, n: number, p: number, lo: number, hi: number) => {
+    const over = p + v + n - hi;
+    if (over > 0) v -= over;
+    const under = lo - (p + v);
+    if (under > 0) v += under;
+    return v;
+  };
+  const loX = bounds.left + TAG_EDGE;
+  const hiX = bounds.left + bounds.width - TAG_EDGE;
+  const loY = bounds.top + TAG_EDGE;
+  const hiY = bounds.top + bounds.height - TAG_EDGE;
+  const x = into(left, own.w, at.x, loX, hiX);
+  // beside the arrow (right / left of it) and shifted over it: the other side of the arrow
+  const overArrow = x < ARROW_BOX.w && x + own.w > 0;
+  if (tag.side === "right" && x !== left && overArrow) {
+    left = into(-TAG_GAP - own.w, own.w, at.x, loX, hiX);
+  } else if (tag.side === "left" && x !== left && overArrow) {
+    left = into(ARROW_BOX.w + TAG_GAP, own.w, at.x, loX, hiX);
+  } else left = x;
+  const y = into(top, own.h, at.y, loY, hiY);
+  const overY = y < ARROW_BOX.h && y + own.h > 0 && left < ARROW_BOX.w &&
+    left + own.w > 0;
+  if (tag.side === "above" && y !== top && overY) {
+    top = into(ARROW_BOX.h + TAG_GAP, own.h, at.y, loY, hiY);
+  } else if (
+    (tag.side === "below" || tag.side === "tail") && y !== top && overY
+  ) {
+    top = into(-TAG_GAP - own.h, own.h, at.y, loY, hiY);
+  } else top = y;
   return { left, top };
 }
 
