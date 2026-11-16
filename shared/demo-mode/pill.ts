@@ -85,6 +85,32 @@ export function countsAsPage(u: UnderPoint): boolean {
   return u.painted && u.areaFrac < PAGE_BACKDROP_AREA;
 }
 
+/**
+ * REQ-832 (demo-loop cycle dm2, p1) — what a pill would cover at one point while a dialog is up:
+ * the page BENEATH the dialog's backdrop, not the backdrop. `stack` is the point's elements top to
+ * bottom (`document.elementsFromPoint`, the demo's own chrome left out). The dialog's own layer
+ * (anything above the backdrop) is taken as is (`under: false`); the backdrop and every box that
+ * holds it (its fixed wrapper, body, html) are skipped, and the first element after them is the
+ * page under the dim (`under: true`). The backdrop alone was too big to count as page
+ * (PAGE_BACKDROP_AREA) and is no control, so every spot outside the panel read as clear and the
+ * pill sat over the sidebar's Log out (demo 5, the send dialog). No backdrop: the topmost element.
+ */
+export function pastBackdrop<T>(
+  stack: readonly T[],
+  backdrop: T | null,
+  holds: (outer: T, inner: T) => boolean,
+): { el: T; under: boolean } | undefined {
+  let under = false;
+  for (const el of stack) {
+    if (backdrop !== null && (el === backdrop || holds(el, backdrop))) {
+      under = true;
+      continue;
+    }
+    return { el, under };
+  }
+  return undefined;
+}
+
 /** REQ-295 — do two boxes share any area? */
 export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.left < b.left + b.width && b.left < a.left + a.width &&
