@@ -3,6 +3,7 @@ import DocTitle from "./DocTitle.tsx";
 import { tFor } from "../lib/i18n.ts";
 import type { AdminGate } from "../lib/admin-gate.ts";
 import { returnAskText } from "../../shared/demo-mode/restart.ts";
+import { stageHref } from "../../shared/demo-mode/ended.ts";
 import AdminGateReturn from "../islands/AdminGateReturn.tsx";
 
 /**
@@ -54,7 +55,7 @@ export default function AdminGuideGate({ gate }: { gate: AdminGate }) {
             {demoId
               ? (
                 <a
-                  href="/demo/stage"
+                  href={stageHref(lang)}
                   data-cy="admin-gate-back"
                   style="padding:10px 18px;border-radius:10px;background:#2f6d29;color:#fff;text-decoration:none;font-weight:700"
                 >

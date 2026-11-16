@@ -24,7 +24,7 @@ import {
   demoModeClient,
 } from "../clients/demo-mode.ts";
 import { fmtPhone } from "../lib/format.ts";
-import { t } from "../lib/i18n.ts";
+import { langSignal, t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 import {
   adminEmptyText,
@@ -37,7 +37,7 @@ import {
   refreshWhileVisible,
 } from "../lib/admin-console.ts";
 import { onImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
-import { STAGE_PATH } from "../../shared/demo-mode/protocol.ts";
+import { stageHref } from "../../shared/demo-mode/ended.ts";
 
 const wrap = "max-width:980px;margin:0 auto;padding:8px 4px 48px";
 const card =
@@ -303,7 +303,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               type="button"
               data-cy="adm-lock-back"
               style={btnPrimary}
-              onClick={() => globalThis.location.assign(STAGE_PATH)}
+              // REQ-829: in the language this page is showing
+              onClick={() =>
+                globalThis.location.assign(stageHref(langSignal.value))}
             >
               {t("adminPage.lock.back")}
             </button>

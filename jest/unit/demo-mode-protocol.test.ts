@@ -302,7 +302,8 @@ describe("REQ-153 AMENDMENT — same screen at once", () => {
     const island = read2("front-end/islands/DemoModeOverlay.tsx");
     expect(island).toMatch(/demoModeClient\.active\(\{\s*path:/);
     expect(island).toMatch(/adminClient\.impersonate\(/);
-    expect(island).toMatch(/location\.assign\(STAGE_PATH\)/);
+    // REQ-829 (dm2, m7): in the page's language
+    expect(island).toMatch(/location\.assign\(stageHref\(langSignal\.value\)\)/);
     const stage = read2("front-end/islands/DemoStage.tsx");
     expect(stage).not.toMatch(/targetPath/);
     // the pending invitation keeps polling, so End from the presenter clears it and the presenter follows the customer's page

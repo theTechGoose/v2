@@ -65,7 +65,11 @@ function backend(
   };
 }
 
-async function stage(fetcher: Fetch, cookie = "pm_session=sess_1") {
+async function stage(
+  fetcher: Fetch,
+  cookie = "pm_session=sess_1",
+  url = "http://app/demo/stage",
+) {
   const prev = g.__backendFetch;
   g.__backendFetch = fetcher;
   try {
@@ -76,7 +80,7 @@ async function stage(fetcher: Fetch, cookie = "pm_session=sess_1") {
       // deno-lint-ignore no-explicit-any
       .route("/demo/stage", { component: DemoStageRoute as any });
     const res = await app.handler()(
-      new Request("http://app/demo/stage", { headers: { cookie } }),
+      new Request(url, { headers: { cookie } }),
     );
     return { res, html: await res.text() };
   } finally {
@@ -116,4 +120,16 @@ Deno.test("REQ-812 no session still goes home", async () => {
   const { res } = await stage(backend("es", "en"), "");
   assertEquals(res.status, 302);
   assertEquals(res.headers.get("location"), "/");
+});
+
+/** REQ-829 (demo-loop cycle dm2, m7) — the presenter's live language rides the stage URL */
+Deno.test("REQ-829 presenter es viewing /admin?lang=en: /demo/stage?lang=en is English throughout", async () => {
+  const { html } = await stage(
+    backend("es", "es"),
+    "pm_session=sess_1; pm_lang=en",
+    "http://app/demo/stage?lang=en",
+  );
+  assertEquals(htmlLang(html), "en", "<html lang> is the carried language");
+  assertEquals(title(html), "Demo mode · DocuMonster");
+  assert(html.includes('window.__PM_LANG="en"'));
 });

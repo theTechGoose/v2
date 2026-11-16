@@ -15,7 +15,11 @@ import { getSessionId } from "./auth.ts";
 import { ssrBackendGetAuthed } from "./backend-fetch.ts";
 import type { Lang } from "./i18n.ts";
 import { customerLabel } from "./admin-console.ts";
-import { presenterLang } from "./presenter-lang.ts";
+import {
+  type PresenterCarry,
+  presenterCarry,
+  presenterLang,
+} from "./presenter-lang.ts";
 import type { WhoAmI } from "../clients/admin.ts";
 import type { DemoActive } from "../clients/demo-mode.ts";
 
@@ -33,6 +37,7 @@ export interface AdminGate {
 export function adminGateFor(
   who: WhoAmI | null | undefined,
   active: DemoActive | null | undefined,
+  carry: PresenterCarry = {},
 ): AdminGate | null {
   if (!who?.authenticated || who.impersonating !== true) return null;
   const demo = active?.role === "presenter" && active.session
@@ -42,7 +47,8 @@ export function adminGateFor(
     customer: customerLabel(who.user) || demo?.targetName || "",
     demoId: demo?.id ?? null,
     presenters: demo ? Math.max(demo.presenters?.length ?? 0, 1) : 0,
-    lang: presenterLang(who, undefined),
+    // REQ-829: /admin?lang=en stays English for an es-profile presenter
+    lang: presenterLang(who, undefined, carry),
   };
 }
 
@@ -58,7 +64,11 @@ export async function adminGateForRequest(
       "/demo-mode/active",
       sessionId,
     ).catch(() => null);
-    return adminGateFor(who.data, active?.ok ? active.data : null);
+    return adminGateFor(
+      who.data,
+      active?.ok ? active.data : null,
+      presenterCarry(req),
+    );
   } catch {
     return null;
   }
