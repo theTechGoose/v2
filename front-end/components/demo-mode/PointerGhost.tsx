@@ -20,6 +20,10 @@
  * side and offset their overlay reported, in the stage's px), else placed as above. Out of view
  * (`dir`) it carries the words the customer reads (`cueText`: "Hans is pointing below — scroll ↓",
  * after "You ·"), placed inside the box the element can be seen in (`cueBox`), not only "You".
+ * REQ-847 (demo-loop cycle dm3, p16) — out of view too the cue sits where the customer's cue is
+ * (`tag`, their report); with no report its words are placed in the customer's px (`scale`: the
+ * frame's s), so `tagPlacement`'s px offsets (the tail 36 px under the tip) mean the same on both
+ * screens — not 36 stage px, ≈ 42 of theirs at s 0.86.
  */
 import {
   type Pt,
@@ -45,6 +49,29 @@ import {
 /** the chevron (DemoPointer's off marker), pointing right before it is turned */
 const CHEVRON = "M4.5 2.5 L10 7 L4.5 11.5";
 
+/** REQ-847 — the cue's words placed as the customer's overlay places them, in THEIR px (the
+ *  stage's divided by `s`), then drawn back at the stage's scale */
+function cueIn(
+  at: Pt,
+  area: Rect,
+  size: { w: number; h: number },
+  s: number,
+) {
+  const k = s > 0 ? s : 1;
+  const p = tagPlacement(
+    { x: at.x / k, y: at.y / k },
+    {
+      left: area.left / k,
+      top: area.top / k,
+      width: area.width / k,
+      height: area.height / k,
+    },
+    { w: size.w / k, h: size.h / k },
+    null,
+  );
+  return { x: p.x * k, y: p.y * k, side: p.side };
+}
+
 export default function PointerGhost(
   {
     at,
@@ -59,6 +86,7 @@ export default function PointerGhost(
     tag,
     cueText,
     cueBox,
+    scale,
   }: {
     at: Pt;
     outside: boolean;
@@ -78,6 +106,8 @@ export default function PointerGhost(
     cueText?: string;
     /** REQ-837 — out of view: the box the element can be seen in (the cue's words stay inside) */
     cueBox?: Rect | null;
+    /** REQ-847 — the frame's scale (stage px per customer px): the cue is placed in theirs */
+    scale?: number;
   },
 ) {
   const cue = dir && cueText ? cueText : null;
@@ -95,7 +125,9 @@ export default function PointerGhost(
       const p = alignTag(tag, size);
       return { x: at.x + p.left, y: at.y + p.top, side: tag.side };
     })()
-    : tagPlacement(at, cue ? cueBox ?? bounds : bounds, size, box, hit);
+    : cue
+    ? cueIn(at, cueBox ?? bounds, size, scale ?? 1)
+    : tagPlacement(at, bounds, size, box, hit);
   const mark = dir ? cueMarkOffset(dir) : null;
   return (
     <div
