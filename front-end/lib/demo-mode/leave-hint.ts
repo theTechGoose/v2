@@ -14,8 +14,13 @@
  * form sent, stands in for it. A reload from the keyboard (F5, Ctrl/Cmd+R) counts too: the page
  * sees the key before the browser reloads it. A navigation that failed is forgotten, and so is
  * one NAV_PENDING_MS old (the page never went).
+ *
+ * REQ-823 (demo-loop cycle dm1, M2) — after the app's sign-out event (`pm:logout`, fired before
+ * the session dies) the page goes for "signout": the navigation that follows is the sign-out's
+ * redirect to a page with no session, never the next page of this sign-in.
  */
 import type { LeaveWhy } from "../../../shared/demo-mode/protocol.ts";
+import { SIGNOUT_EVENT } from "./signout-signal.ts";
 
 /** a navigation older than this, whose page never went, is not the one it goes for */
 export const NAV_PENDING_MS = 30_000;
@@ -71,6 +76,9 @@ export function watchLeaveHint(
 ): LeaveHint {
   let pendingAt = 0;
   const mark = () => void (pendingAt = now());
+  /** REQ-823 — when this page heard the app's sign-out (0: never) */
+  let signedOutAt = 0;
+  const onSignout = () => void (signedOutAt = now());
   const url = (href: string | undefined): URL | null => {
     try {
       return href ? new URL(href, host.location.href) : null;
@@ -118,6 +126,7 @@ export function watchLeaveHint(
   const nav = host.navigation;
   const on: [Target, string, Listener, unknown][] = [
     [host, "keydown", onKey, true],
+    [host, SIGNOUT_EVENT, onSignout, undefined],
   ];
   if (nav) {
     on.push([nav, "navigate", onNavigate, undefined]);
@@ -129,9 +138,12 @@ export function watchLeaveHint(
   }
   for (const [t, type, f, opts] of on) t.addEventListener(type, f, opts);
 
+  const recent = (at: number) => at > 0 && now() - at < NAV_PENDING_MS;
   return {
     why: () =>
-      pendingAt > 0 && now() - pendingAt < NAV_PENDING_MS
+      recent(signedOutAt)
+        ? "signout"
+        : recent(pendingAt)
         ? "navigating"
         : "closing",
     stop() {

@@ -91,8 +91,11 @@ export interface DomChunk {
 /** REQ-391 — why a customer's page went, said by the page itself as it goes (`pagehide`): it is
  *  navigating to another page of the app (a link, `location.href`, a reload or a history step —
  *  a new socket follows), or no next page of the app is known to be coming (`closing`: a closed
- *  tab, the address bar pointed elsewhere, the browser's own reload button) */
-export type LeaveWhy = "navigating" | "closing";
+ *  tab, the address bar pointed elsewhere, the browser's own reload button).
+ *  REQ-823 (demo-loop cycle dm1, M2) — or the customer signed out (`signout`: the app's sign-out,
+ *  said at once by the page that heard it, or by the server when the sign-in's session is gone):
+ *  no page of that sign-in comes next, in this tab or any other of the browser */
+export type LeaveWhy = "navigating" | "closing" | "signout";
 
 /** REQ-436 — a browser tab's key on the wire: what front-end/lib/demo-mode/tab-key.ts makes */
 export const TAB_KEY = /^[A-Za-z0-9_-]{1,64}$/;
@@ -108,7 +111,7 @@ const claimExtras = (
 });
 
 const isLeaveWhy = (x: unknown): x is LeaveWhy =>
-  x === "navigating" || x === "closing";
+  x === "navigating" || x === "closing" || x === "signout";
 
 export type PeerMessage =
   | { k: "move"; a: Anchor; t?: number } // t: the sender's clock (REQ-180)
@@ -291,7 +294,10 @@ export const ACTIVE_REASK_MS = 1_000;
 export const PRESENCE_GRACE_MS = 5_000;
 /** REQ-391 — a customer tab's socket went without a word (a crash, a lost network — whose first
  *  reconnect comes after 1 s — or a page from before REQ-391): the stage waits this long for a
- *  next page before it says it is waiting */
+ *  next page before it says it is waiting. REQ-823 (demo-loop cycle dm1, m8) — and the followed
+ *  browser tab whose page went closing or without a word while another of the customer's tabs is
+ *  open is held this long before the stage follows the other tab: an address-bar navigation, a
+ *  `page.goto` or the browser's reload button says "closing" and is that tab's next page */
 export const SILENT_GRACE_MS = 2_000;
 /** a demo nobody ended expires on its own — and says so (REQ-296: `ended … expired` to everyone) */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;

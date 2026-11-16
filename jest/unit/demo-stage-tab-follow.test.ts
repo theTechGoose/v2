@@ -17,10 +17,15 @@
  * whose followed tab navigates keeps following that key ("between") for PRESENCE_GRACE_MS, and
  * its next page takes the stage back the moment it says its key; another tab is followed only
  * when the grace ends, when the tab said it is closing, or when another tab is really claimed.
+ * REQ-823 AMENDMENT (cycle dm1, m8): a keyed tab that said it is closing (or said nothing) while
+ * another tab is open is held too, for SILENT_GRACE_MS.
  */
 import * as fs from "fs";
 import * as path from "path";
-import { PRESENCE_GRACE_MS } from "../../shared/demo-mode/protocol";
+import {
+  PRESENCE_GRACE_MS,
+  SILENT_GRACE_MS,
+} from "../../shared/demo-mode/protocol";
 import {
   connectDemo,
   type LinkStatus,
@@ -218,10 +223,17 @@ describe("REQ-436 the stage follows browser tabs, not sockets (M2b)", () => {
     s.link.close();
   });
 
-  test("the followed tab says it is closing: the stage follows /q at once (no grace)", () => {
+  // REQ-823 AMENDMENT (demo-loop cycle dm1, m8) — "closing" is also an address-bar navigation,
+  // page.goto or the browser's reload button (no Navigation API `navigate`): with another tab open
+  // the stage holds the browser tab for SILENT_GRACE_MS, then falls back (was: at once)
+  test("the followed tab says it is closing: the stage follows /q once SILENT_GRACE_MS is up (the same tab's next page may still come), not at once", () => {
     jest.useFakeTimers();
     const s = appTabInFrontOfQuote();
+    const n = s.followed.length;
     s.gone("a1", "closing");
+    expect(s.followed.length).toBe(n);
+    expect(s.status()).toBe("between");
+    jest.advanceTimersByTime(SILENT_GRACE_MS + 50);
     expect(s.following()).toBe("q1");
     expect(s.status()).toBe("relay");
     s.link.close();

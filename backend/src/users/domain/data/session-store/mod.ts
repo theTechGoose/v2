@@ -133,4 +133,36 @@ export class SessionStore {
     const kv = await getKv();
     await kv.delete(["session", sessionId]);
   }
+
+  /**
+   * REQ-823 (demo-loop cycle dm1, M2): `fn` runs once when the session's record is gone — a
+   * logout, an account closed or wiped, its TTL — at once if it already is. A KV watch, so it is
+   * live across isolates. Resolves (once the watch is live) to `stop`, which ends the watch.
+   */
+  async whenGone(sessionId: string, fn: () => void): Promise<() => void> {
+    const kv = await getKv();
+    const reader = kv.watch([["session", sessionId]]).getReader();
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      reader.cancel().catch(() => {});
+    };
+    (async () => {
+      try {
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (done || stopped) return;
+          if (value[0]?.versionstamp === null) {
+            stop();
+            fn();
+            return;
+          }
+        }
+      } catch {
+        // the watch ended under it (stopped, or the KV closed)
+      }
+    })();
+    return stop;
+  }
 }

@@ -1889,3 +1889,134 @@ Deno.test("REQ-645 (demo-loop cycle 5, M1 + M2) over the composed router's socke
     await tab.close();
   });
 });
+
+Deno.test("REQ-823 (demo-loop cycle dm1, M2) over the composed router's socket: a tab that says it goes because she signed out is announced gone with why signout (and when)", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125558221");
+    const hans = await signIn(call, "+15125558222");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125558222" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+    const tab = open(made.body.id, ana.body.sessionId);
+    const c = cidOf(await tab.next("the tab's welcome"));
+    await tab.next("the tab: the stage is here");
+    await stage.next("the tab arrives");
+    // its overlay heard the app's sign-out (pm:logout): it says so, then closes
+    const before = Date.now();
+    tab.send({ t: "leaving", why: "signout" });
+    await new Promise((r) => setTimeout(r, 30)); // the leaving is in before the close
+    const said = Date.now();
+    await tab.close();
+    const { at, ...gone } = (await stage.next("its departure", 1500)) as
+      & ServerMessage
+      & { at?: number };
+    assertEquals(gone, { t: "peer", online: false, cid: c, why: "signout" });
+    assert(
+      typeof at === "number" && at >= before && at <= said,
+      `the departure says when (${at}, within ${before}..${said})`,
+    );
+    await quiet(stage, "the leaving itself is never relayed");
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-823 (demo-loop cycle dm1, M2) over the composed router's socket: when the customer signs out (POST /api/auth/logout), every demo socket of THAT sign-in closes and the stage hears each go with why signout — her phone (another sign-in) stays — and the dead sign-in can never rejoin", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125558231");
+    // the same customer on her phone: another sign-in of hers
+    const phone = await signIn(call, "+15125558231");
+    assert(
+      typeof phone.body.sessionId === "string" &&
+        phone.body.sessionId !== ana.body.sessionId,
+      "her phone has its own sign-in",
+    );
+    const hans = await signIn(call, "+15125558232");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125558232" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+
+    /** a tab of sign-in `token` joins; the stage hears it arrive */
+    const tab = async (token: string, what: string) => {
+      const t = open(made.body.id, token);
+      const c = cidOf(await t.next(`${what}: welcome`));
+      await t.next(`${what}: the stage is here`);
+      assertEquals(await stage.next(`${what}: arrives`), {
+        t: "peer",
+        online: true,
+        cid: c,
+      });
+      return { ...t, c: c! };
+    };
+
+    // two tabs of her laptop's sign-in, and one of her phone's
+    const tab1 = await tab(ana.body.sessionId, "laptop tab 1");
+    const tab2 = await tab(ana.body.sessionId, "laptop tab 2");
+    const mobile = await tab(phone.body.sessionId, "her phone");
+
+    // she signs out on the laptop — DashSidebar's POST; no page of hers said anything
+    assertEquals(
+      (await call(
+        "POST",
+        "/api/auth/logout",
+        undefined,
+        H(ana.body.sessionId),
+      )).status,
+      200,
+    );
+    const gone = new Map<string, unknown>();
+    for (let i = 0; i < 2; i++) {
+      const m = (await stage.next(
+        `a laptop tab goes (${i + 1} of 2)`,
+        3000,
+      )) as ServerMessage & { at?: number };
+      assert(
+        m.t === "peer" && m.online === false && typeof m.cid === "string",
+        `a departure (${JSON.stringify(m)})`,
+      );
+      const { at, ...rest } = m;
+      assert(
+        typeof at === "number" && at > 0,
+        `the departure says when (${at})`,
+      );
+      gone.set(m.cid!, rest);
+    }
+    assertEquals(gone.get(tab1.c), {
+      t: "peer",
+      online: false,
+      cid: tab1.c,
+      why: "signout",
+    });
+    assertEquals(gone.get(tab2.c), {
+      t: "peer",
+      online: false,
+      cid: tab2.c,
+      why: "signout",
+    });
+    await tab1.closed;
+    await tab2.closed;
+
+    // her phone is another sign-in: still in the demo — the next thing the stage hears of her is
+    // the phone's claim, never its departure
+    mobile.send({ t: "claim", at: 4321 });
+    assertEquals(await stage.next("her phone's claim"), {
+      t: "claim",
+      cid: mobile.c,
+      at: 4321,
+    });
+
+    // the laptop's dead sign-in can never rejoin
+    const late = open(made.body.id, ana.body.sessionId);
+    await late.closed;
+    assert(late.failed(), "a signed-out sign-in's socket never opens");
+    assertEquals(mobile.ws.readyState, WebSocket.OPEN, "her phone stays in");
+    await quiet(stage, "nobody arrived, nobody else went");
+    await mobile.close();
+    await stage.close();
+  });
+});
