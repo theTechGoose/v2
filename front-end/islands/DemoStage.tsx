@@ -145,6 +145,7 @@ import {
   moveThrottle,
   newerMove,
   outsideBox,
+  placeAnchorIn,
   placeIn,
   type Pt,
 } from "../../shared/demo-mode/motion.ts";
@@ -945,9 +946,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
 
   /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
    *  element it names is out of the frame (scrolled away, or a frame not yet scrolled); REQ-393 —
-   *  and when a colleague's mouse is beside their frame */
+   *  and when a colleague's mouse is beside their frame; REQ-850 (dm3 p10) — and a fraction-only
+   *  anchor at the far edge of her window: inside the frame by the arrow's box, never past it */
   const placeOnStage = (a: Anchor) =>
-    placeIn(toStage(a), fitBox(), ARROW_BOX, a.o === 1);
+    placeAnchorIn(a, toStage(a), fitBox(), ARROW_BOX);
   const showCustomer = () => {
     const a = customerRef.current;
     if (!a) return;

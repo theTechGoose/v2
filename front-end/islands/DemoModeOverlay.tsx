@@ -110,6 +110,7 @@ import { sameDemo } from "../../shared/demo-mode/stage-frame.ts";
 import {
   anchorAt,
   createTouchFade,
+  inViewport,
   TOUCH_REST_MS,
 } from "../lib/demo-mode/pointer-anchor.ts";
 import {
@@ -701,7 +702,17 @@ export default function DemoModeOverlay(
   const resendPointer = () => {
     const p = lastMoveRef.current;
     if (!p) return;
+    if (!inViewport(p, viewportBox())) return dropRest();
     linkRef.current?.send({ k: "move", a: anchorOf(p), t: performance.now() });
+  };
+
+  /** REQ-850 (demo-loop cycle dm3, p10) — this side's resting pointer is no longer on this screen
+   *  (she narrowed the window past her still cursor; no pointerleave came): it leaves the stage —
+   *  never re-sent as a fraction clamped to the window's edge */
+  const dropRest = () => {
+    lastMoveRef.current = null;
+    sentRef.current = null;
+    linkRef.current?.send({ k: "leave" });
   };
 
   /** this side's moves, rated leading + trailing so the rest position always goes out */
@@ -709,7 +720,9 @@ export default function DemoModeOverlay(
     moveThrottle<Pt>({
       gap: () =>
         linkRef.current?.isDirect() ? MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS,
-      send: ({ x, y }) =>
+      send: ({ x, y }) => {
+        // REQ-850 (dm3 p10) — a trailing send after the window shrank under it: a leave
+        if (!inViewport({ x, y }, viewportBox())) return dropRest();
         linkRef.current?.send(
           {
             k: "move",
@@ -717,7 +730,8 @@ export default function DemoModeOverlay(
             t: performance.now(),
           },
           true,
-        ),
+        );
+      },
     }), []);
 
   /** AMENDMENT — same screen at once: the presenter's browser becomes the customer (impersonation,
@@ -1203,6 +1217,12 @@ export default function DemoModeOverlay(
       }
       const rest = lastMoveRef.current;
       if (!rest || !linkRef.current) return;
+      // REQ-850 (dm3 p10) — the window narrowed past her still cursor: it is off her screen
+      if (!inViewport(rest, viewportBox())) {
+        throttle.cancel();
+        dropRest();
+        return;
+      }
       const was = sentRef.current;
       if (!sameAnchor(was, anchorOf(rest))) throttle.push(rest);
     };

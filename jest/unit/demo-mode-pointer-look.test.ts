@@ -66,11 +66,13 @@ describe("REQ-374 (demo m9/p8, cycle 2) the pointer's tag stays readable and off
     expect((motion as Record<string, unknown>).ARROW_IDLE_MS).toBeUndefined();
   });
 
-  test("DemoPointer re-shows the tag on ANY re-placement (the pointer object, or outside), not only on a new x/y", () => {
+  // REQ-850 AMENDMENT (demo-loop cycle dm3, p10): keyed on the spot (idleKey), so a re-send of the
+  // same spot (a new object) leaves a resting tag at rest; a move or an edge toggle still wakes it
+  test("DemoPointer re-shows the tag on any re-placement to a new spot or an edge toggle (REQ-850: idleKey, not the object)", () => {
     const src = read("front-end/components/demo-mode/DemoPointer.tsx");
     expect(src).toMatch(/pointerLook\(/);
     expect(src).not.toMatch(/\[pointer\?\.x, pointer\?\.y\]/);
-    expect(src).toMatch(/\}, \[pointer, outside\]\)/);
+    expect(src).toMatch(/\}, \[idleKey\(pointer, outside\)\]\)/);
     // no faint arrow: neither the idle .45 nor the outside .55
     expect(src).not.toMatch(/0\.45|0\.55/);
   });

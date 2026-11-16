@@ -297,3 +297,24 @@ export function placeIn(
     outside: true,
   };
 }
+
+/** REQ-850 (demo-loop cycle dm3, p10) — where the stage draws a customer's anchor `a`, resolved
+ *  to `p` inside `box`. A fraction-only anchor at her window's far edge (vx or vy = 1: a point
+ *  clamped there, her cursor past the edge of a window she narrowed) lies ON the box's edge, which
+ *  placeIn counts as inside — the arrow then hung past the frame. Such an anchor is drawn as an
+ *  off one (REQ-393): pulled in by the arrow's box, marked outside. */
+export function placeAnchorIn(
+  a: { vx: number; vy: number; n?: unknown; o?: 1 },
+  p: Pt,
+  box: { left: number; top: number; width: number; height: number },
+  arrow: { w: number; h: number } = ARROW_BOX,
+): { at: Pt; outside: boolean } {
+  const farEdge = !a.n && (a.vx >= 1 || a.vy >= 1);
+  return placeIn(p, box, arrow, a.o === 1 || farEdge);
+}
+
+/** REQ-850 (demo-loop cycle dm3, p10) — what wakes the pointer's tag (REQ-374): a new spot or an
+ *  edge toggle; a re-send of the same spot (a new object) does not */
+export function idleKey(p: Pt | null, outside?: boolean): string {
+  return p ? `${p.x}:${p.y}:${outside ? 1 : 0}` : "";
+}

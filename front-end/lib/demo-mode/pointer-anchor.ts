@@ -48,6 +48,14 @@ export function pageTopAt<E extends HitNode>(stack: readonly E[]): E | null {
   return stack.find((el) => !inOverlay(el)) ?? null;
 }
 
+/** REQ-850 (demo-loop cycle dm3, p10) — a point is on this screen: inside the viewport (its
+ *  right and bottom edges are past the last pixel). A cursor left past the edge of a window she
+ *  narrowed is not on her screen — it is a leave, never a fraction clamped to the edge */
+export function inViewport(p: { x: number; y: number }, view: Rect): boolean {
+  return p.x >= view.left && p.x < view.left + view.width &&
+    p.y >= view.top && p.y < view.top + view.height;
+}
+
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 /** a point of the customer's screen for the presenters: the fraction of the viewport and, when
