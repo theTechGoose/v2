@@ -262,17 +262,24 @@ const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 /** REQ-638 — the recorder's mark of a select whose list is open, and the stage's drawn list */
 export const OPEN_ATTR = "data-mirror-open";
 export const LISTBOX_ATTR = "data-mirror-listbox";
-/** REQ-827 — the stage's chip under an input whose date picker or file chooser is open */
+/** REQ-827 — the stage's chip on an input whose date picker or file chooser is open (REQ-862: on
+ *  or beside it, never over the text under it) */
 export const PICKER_ATTR = "data-mirror-picker";
 const PICKER_TEXT: Record<PickerKind, string> = {
   date: "Choosing a date…",
   file: "Customer is choosing a file…",
 };
 const CHIP_CSS = "position:fixed;z-index:2147483647;pointer-events:none;" +
-  "box-sizing:border-box;margin:4px 0 0;padding:4px 10px;display:block;" +
+  "box-sizing:border-box;margin:0;padding:4px 10px;display:block;" +
   "visibility:visible;opacity:1;transform:none;background:#1f1f1f;color:#fff;" +
   "border-radius:999px;box-shadow:0 4px 12px rgba(0,0,0,.25);" +
-  "font:600 13px/1.4 system-ui,-apple-system,sans-serif;white-space:nowrap;";
+  "font-style:normal;font-weight:600;font-size:13px;line-height:1.4;" +
+  "white-space:nowrap;";
+/** REQ-862 — the chip's family when the frame's body gives none: the app's (Inter, then Nunito) */
+const CHIP_FONT =
+  '"Inter","Nunito",system-ui,-apple-system,"Segoe UI",sans-serif';
+/** REQ-862 — the gap between a control and a chip beside it */
+const CHIP_GAP = 8;
 
 const LIST_CSS = "position:fixed;z-index:2147483647;pointer-events:none;" +
   "box-sizing:border-box;margin:0;padding:4px 0;display:block;visibility:visible;" +
@@ -585,7 +592,8 @@ export function createReplayer(
     for (const { sel, key, kind } of want) {
       const box = kind ? drawChip(kind) : drawList(sel);
       at.appendChild(box);
-      place(box, sel);
+      if (kind) placeChip(box, sel);
+      else place(box, sel);
       drawnLists.push({ box, key });
     }
   }
@@ -603,9 +611,20 @@ export function createReplayer(
     const box = doc.createElement("div");
     box.setAttribute(PICKER_ATTR, kind);
     box.setAttribute("aria-hidden", "true");
-    box.setAttribute("style", CHIP_CSS);
+    box.setAttribute("style", CHIP_CSS + `font-family:${chipFont()};`);
     box.appendChild(doc.createTextNode(pickerText(kind)));
     return box;
+  }
+  /** REQ-862 — the frame body's font family (the app's), never the system-ui stack */
+  function chipFont(): string {
+    try {
+      const f = doc.body && doc.defaultView?.getComputedStyle?.(doc.body)
+        ?.fontFamily;
+      if (f && !/[;{}]/.test(f)) return f;
+    } catch {
+      // no styles here
+    }
+    return CHIP_FONT;
   }
 
   /** REQ-638 — the static list of `sel`'s options: its chosen one highlighted */
@@ -676,6 +695,40 @@ export function createReplayer(
       // no layout here
     }
     box.setAttribute("style", base + `left:${r.left}px;top:${top}px;`);
+  }
+
+  /** REQ-862 — the chip in its control's own row, never over the text under it: on the control
+   *  (centred) when it fits there, else beside it (right edge + 8 px, else left edge − 8 px), else
+   *  centred on it, kept inside the frame. REQ-827 hung it under the control, over the next
+   *  field's label or the date's helper line. */
+  function placeChip(box: Element, sel: Element) {
+    const r = sel.getBoundingClientRect();
+    const base = box.getAttribute("style") ?? "";
+    let w = 0, h = 0;
+    try {
+      const b = box.getBoundingClientRect();
+      w = b.width;
+      h = b.height;
+    } catch {
+      // no layout here
+    }
+    // no layout (a detached or fake document): 13px 600-weight text, 10px padding each side
+    if (!(w > 0)) w = (box.textContent ?? "").length * 7.5 + 20;
+    if (!(h > 0)) h = 26;
+    const vw = doc.defaultView?.innerWidth ?? 0;
+    const vh = doc.defaultView?.innerHeight ?? 0;
+    const fits = (x: number) => !vw || (x >= 0 && x + w <= vw);
+    const right = r.left + r.width + CHIP_GAP;
+    const leftOf = r.left - CHIP_GAP - w;
+    let left: number;
+    if (w <= r.width) left = r.left + (r.width - w) / 2;
+    else if (fits(right)) left = right;
+    else if (fits(leftOf)) left = leftOf;
+    else left = r.left + (r.width - w) / 2;
+    if (vw) left = Math.max(0, Math.min(left, vw - w));
+    let top = r.top + (r.height - h) / 2;
+    if (vh) top = Math.max(0, Math.min(top, vh - h));
+    box.setAttribute("style", base + `left:${left}px;top:${top}px;`);
   }
 
   /** REQ-547 — the still rule into the frame (again: a snapshot replaced the page, an op its head) */
