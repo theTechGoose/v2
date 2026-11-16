@@ -4408,6 +4408,8 @@
   "demoMode.loadingNext": "Loading their next page…",
   "demoMode.loadingNextBehind": "Loading their next page… {n} s behind",
   "demoMode.catchingUp": "Catching up…",
+  "demoMode.pickerDate": "Choosing a date…",
+  "demoMode.pickerFile": "Customer is choosing a file…",
   "demoMode.behind": "Behind {n} s",
   "nav.workOrders": "Work orders",
   "quotes.ledger.title": "Documents",

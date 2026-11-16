@@ -97,6 +97,12 @@
  * mirrored node: no id, no pointer anchor (`pointer-events: none`), redrawn after every frame and
  * every layout pass, gone once the mark is.
  *
+ * REQ-827 (demo-loop cycle dm2, s1) — the same mark on a date/time input (its native picker is
+ * open) or a file input (the OS file chooser is open): the replay draws a chip under it instead —
+ * "Choosing a date…" / "Customer is choosing a file…" (`pickerLabel`, the presenter's language) —
+ * under its nearest ancestor with a box when it has none (a hidden file input in its label
+ * button). The stage's own element as the list is: `data-mirror-picker`, no id, no pointer anchor.
+ *
  * REQ-824 (demo-loop cycle dm1, m2) — nothing in the stage's inert frame is ever focused or
  * hovered, so the recorder marks the customer's focus and hover (data-mirror-focus, -focus-within,
  * -hover) and the replay reads the marks in the customer's own rules: every same-origin sheet of
@@ -178,7 +184,13 @@ export interface ReplayerOptions {
   later?(fn: () => void, ms: number): () => void;
   /** REQ-648 — a snapshot's page is on show in the frame (at once, or when its hold ends) */
   onShown?(): void;
+  /** REQ-827 — the chip's words for an open date picker or file chooser (read at every draw, so
+   *  a language switch shows; English by default) */
+  pickerLabel?(kind: PickerKind): string;
 }
+
+/** REQ-827 — what an open-marked input's chip says the customer has open */
+export type PickerKind = "date" | "file";
 
 export interface Replayer {
   /** a frame applied; false when it does not fit the replay (the stage asks for a snapshot) */
@@ -244,6 +256,17 @@ const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 /** REQ-638 — the recorder's mark of a select whose list is open, and the stage's drawn list */
 export const OPEN_ATTR = "data-mirror-open";
 export const LISTBOX_ATTR = "data-mirror-listbox";
+/** REQ-827 — the stage's chip under an input whose date picker or file chooser is open */
+export const PICKER_ATTR = "data-mirror-picker";
+const PICKER_TEXT: Record<PickerKind, string> = {
+  date: "Choosing a date…",
+  file: "Customer is choosing a file…",
+};
+const CHIP_CSS = "position:fixed;z-index:2147483647;pointer-events:none;" +
+  "box-sizing:border-box;margin:4px 0 0;padding:4px 10px;display:block;" +
+  "visibility:visible;opacity:1;transform:none;background:#1f1f1f;color:#fff;" +
+  "border-radius:999px;box-shadow:0 4px 12px rgba(0,0,0,.25);" +
+  "font:600 13px/1.4 system-ui,-apple-system,sans-serif;white-space:nowrap;";
 
 const LIST_CSS = "position:fixed;z-index:2147483647;pointer-events:none;" +
   "box-sizing:border-box;margin:0;padding:4px 0;display:block;visibility:visible;" +
@@ -484,13 +507,41 @@ export function createReplayer(
   const kidEls = (e: Element) =>
     Array.from(e.childNodes).filter((c) => c.nodeType === 1) as Element[];
 
-  /** REQ-638 — a list under every open select (above it when there is no room below) */
+  /** REQ-827 — an open-marked input's picker: a file chooser, a date picker, or none (a select) */
+  function pickerOf(e: Element): PickerKind | null {
+    if (e.localName.toLowerCase() !== "input") return null;
+    return (e.getAttribute("type") ?? "").toLowerCase() === "file"
+      ? "file"
+      : "date";
+  }
+  /** REQ-827 — the element the chip sits under: the input, or its nearest ancestor with a box */
+  function chipAnchor(e: Element): Element {
+    for (let n: Element | null = e; n; n = n.parentElement) {
+      const r = n.getBoundingClientRect();
+      if (r.width > 0 || r.height > 0) return n;
+    }
+    return e;
+  }
+  /** REQ-638 — a list under every open select (above it when there is no room below); REQ-827 —
+   *  a chip under every input whose picker is open */
   function drawLists() {
     if (pending) return; // a held snapshot: its lists are drawn once it is in
-    const want: { sel: Element; key: string }[] = [];
+    const want: { sel: Element; key: string; kind: PickerKind | null }[] = [];
     for (const sel of opened) {
       if (!sel.hasAttribute(OPEN_ATTR) || !doc.contains(sel)) {
         opened.delete(sel);
+        continue;
+      }
+      const kind = pickerOf(sel);
+      if (kind) {
+        const at = chipAnchor(sel);
+        const r = at.getBoundingClientRect();
+        const text = pickerText(kind);
+        want.push({
+          sel: at,
+          kind,
+          key: [kind, r.left, r.top, r.width, r.height, text].join("\u0001"),
+        });
         continue;
       }
       const r = sel.getBoundingClientRect();
@@ -510,6 +561,7 @@ export function createReplayer(
       const v = String((sel as HTMLSelectElement).value ?? "");
       want.push({
         sel,
+        kind: null,
         key: [r.left, r.top, r.width, r.height, v, ...rows].join("\u0001"),
       });
     }
@@ -524,12 +576,30 @@ export function createReplayer(
     drawnLists = [];
     const at = doc.documentElement;
     if (!at) return;
-    for (const { sel, key } of want) {
-      const box = drawList(sel);
+    for (const { sel, key, kind } of want) {
+      const box = kind ? drawChip(kind) : drawList(sel);
       at.appendChild(box);
       place(box, sel);
       drawnLists.push({ box, key });
     }
+  }
+
+  /** REQ-827 — the chip's words, in the presenter's language when the stage gives them */
+  function pickerText(kind: PickerKind): string {
+    try {
+      return opts.pickerLabel?.(kind) || PICKER_TEXT[kind];
+    } catch {
+      return PICKER_TEXT[kind];
+    }
+  }
+  /** REQ-827 — the chip for an open date picker or file chooser */
+  function drawChip(kind: PickerKind): Element {
+    const box = doc.createElement("div");
+    box.setAttribute(PICKER_ATTR, kind);
+    box.setAttribute("aria-hidden", "true");
+    box.setAttribute("style", CHIP_CSS);
+    box.appendChild(doc.createTextNode(pickerText(kind)));
+    return box;
   }
 
   /** REQ-638 — the static list of `sel`'s options: its chosen one highlighted */

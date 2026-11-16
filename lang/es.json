@@ -4407,6 +4407,8 @@
   "demoMode.loadingNext": "Cargando su siguiente página…",
   "demoMode.loadingNextBehind": "Cargando su siguiente página… {n} s de retraso",
   "demoMode.catchingUp": "Poniéndose al día…",
+  "demoMode.pickerDate": "Eligiendo una fecha…",
+  "demoMode.pickerFile": "El cliente está eligiendo un archivo…",
   "demoMode.behind": "{n} s de retraso",
   "nav.workOrders": "Órdenes de trabajo",
   "quotes.ledger.title": "Documentos",
