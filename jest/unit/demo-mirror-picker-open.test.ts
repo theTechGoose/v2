@@ -454,10 +454,13 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     expect(chip(stage)!.style).toMatch(/left:554px;top:105px;/);
   });
 
-  test("no room on the control or on either side: centred on the control, kept inside the frame", () => {
+  test("no room on the control, on either side, under or over it: centred on the control, kept inside the frame", () => {
     const { doc, by, stage, sync, boxes } = setup();
     // a 200 px button in a 300 px frame: the 238 px chip fits neither on it nor beside it
     by("logo-btn").rect = { left: 10, top: 100, width: 200, height: 36 };
+    // REQ-878 (dm5 p2): fields right over and under it, so no spot is free of the page's text
+    by("when").rect = { left: 10, top: 66, width: 160, height: 30 };
+    by("doc").rect = { left: 10, top: 140, width: 250, height: 30 };
     stage.defaultView.innerWidth = 300;
     boxes(stage);
     doc.fire("mousedown", by("logo-btn"));
@@ -489,5 +492,201 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     expect(chip(b.stage)!.style).toMatch(
       /font-family:\s*"Nunito", sans-serif;/,
     );
+  });
+});
+
+/**
+ * REQ-878 (demo-loop cycle dm5, issue p2) — the file chip sits by the control the customer used,
+ * never over the row's hint or the button's label.
+ *
+ * /settings (front-end/islands/SettingsPage.tsx) opens its file inputs from a SIBLING button:
+ * `<div style="display:flex;gap:12px">` holds `<button>Upload logo</button>`, a
+ * `<input type=file style="display:none">` and a hint `<span>`. REQ-827's chipAnchor walked up to
+ * the first ancestor with a box, which is that full-width row, and REQ-862's placeChip centred
+ * the chip on it, over the hint (demo: button 271–379, hint 391–800, chip 653–855) or over
+ * "Subir certificado" and its hint. REQ-862's tests only had the input INSIDE its label button.
+ */
+describe("REQ-878 (cycle dm5, p2) — the file chip by a sibling upload button covers neither the hint nor the button", () => {
+  const CHIP_W = 203; // the chip Chromium drew in the demo (Inter 13px 600)
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    const orig = FElement.prototype.getBoundingClientRect;
+    spy = jest.spyOn(FElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: FElement) {
+        if (this.hasAttribute("data-mirror-picker")) {
+          return {
+            left: 0,
+            top: 0,
+            width: CHIP_W,
+            height: 26,
+            x: 0,
+            y: 0,
+            right: CHIP_W,
+            bottom: 26,
+          };
+        }
+        return orig.call(this);
+      });
+  });
+  afterEach(() => spy.mockRestore());
+
+  type R = { left: number; top: number; width: number; height: number };
+  /** SettingsPage's logo row and its insurance-certificate row, with the demo's boxes */
+  function settings(rows: Record<string, R>) {
+    const doc = docWith(
+      (d) =>
+        h(
+          d,
+          "html",
+          {},
+          h(d, "head"),
+          h(
+            d,
+            "body",
+            {},
+            h(d, "p", { "data-cy": "left-col" }, "Business name and address"),
+            h(
+              d,
+              "div",
+              {
+                id: "logo",
+                "data-cy": "logo-row",
+                style:
+                  "grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px",
+              },
+              h(
+                d,
+                "button",
+                { type: "button", "data-cy": "logo-btn" },
+                "Subir logo",
+              ),
+              h(d, "input", {
+                type: "file",
+                "data-cy": "settings-logo-file",
+                style: "display:none",
+              }),
+              h(
+                d,
+                "span",
+                { "data-cy": "settings-logo-hint" },
+                "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+              ),
+            ),
+            h(
+              d,
+              "div",
+              {
+                "data-cy": "settings-insurance-upload",
+                style:
+                  "margin-top:14px;display:flex;align-items:center;gap:12px",
+              },
+              h(
+                d,
+                "button",
+                { type: "button", "data-cy": "cert-btn" },
+                "Subir certificado",
+              ),
+              h(d, "input", {
+                type: "file",
+                "data-cy": "cert-file",
+                style: "display:none",
+              }),
+              h(
+                d,
+                "span",
+                { "data-cy": "cert-hint" },
+                "PDF o imagen · prueba de seguro / responsabilidad civil",
+              ),
+            ),
+          ),
+        ),
+      "https://app.test/settings",
+      1280,
+      800,
+    );
+    const cys = Object.keys(rows);
+    const by = (cy: string) =>
+      find(doc, (e) => e.getAttribute("data-cy") === cy)!;
+    for (const cy of cys) by(cy).rect = { ...rows[cy] };
+    const frames: MirrorFrame[] = [];
+    const rec = createRecorder(doc as unknown as Document, {
+      emit: (f) => frames.push(JSON.parse(JSON.stringify(f))),
+      Observer: FakeMutationObserver as unknown as typeof MutationObserver,
+      manual: true,
+    });
+    const stage = new FDocument("about:srcdoc", 1280, 800);
+    stage.appendChild(h(stage, "html", {}, h(stage, "head"), h(stage, "body")));
+    const boxes = () => {
+      for (const cy of cys) {
+        const s = find(stage, (e) => e.getAttribute("data-cy") === cy);
+        if (s) s.rect = { ...rows[cy] };
+      }
+    };
+    const rep = createReplayer(stage as unknown as Document, {
+      schedule: (fn) => fn(),
+      Resize: null,
+    });
+    rec.snapshot();
+    expect(rep.apply(frames[0])).toBe(true);
+    boxes();
+    let at = 1;
+    /** the customer clicks `btn`; the page's onClick calls `input.click()` */
+    const open = (btn: string, input: string) => {
+      doc.fire("mousedown", by(btn));
+      doc.fire("click", by(btn));
+      doc.fire("click", by(input));
+      rec.flush();
+      for (; at < frames.length; at++) {
+        expect(rep.apply(frames[at])).toBe(true);
+        boxes();
+      }
+      expect(rep.apply({ t: "ops", ops: [] } as unknown as MirrorFrame))
+        .toBe(true);
+      const c = chip(stage)!;
+      expect(c?.kind).toBe("file");
+      const left = Number(/left:(-?[\d.]+)px/.exec(c.style)![1]);
+      const top = Number(/top:(-?[\d.]+)px/.exec(c.style)![1]);
+      return { left, top, width: CHIP_W, height: 26 };
+    };
+    return { open };
+  }
+  const hits = (a: R, b: R) =>
+    a.left < b.left + b.width && b.left < a.left + a.width &&
+    a.top < b.top + b.height && b.top < a.top + a.height;
+
+  test("logo: button 271–379 and hint 391–800 in a 271–1236 row — the chip is in the row, clear of the hint and the button (not centred on the row at 652.5)", () => {
+    const rows = {
+      "logo-row": { left: 271, top: 407, width: 965, height: 43 },
+      "logo-btn": { left: 271, top: 407, width: 108, height: 43 },
+      "settings-logo-hint": { left: 391, top: 421, width: 409, height: 15 },
+    };
+    const c = settings(rows).open("logo-btn", "settings-logo-file");
+    expect(c.left).not.toBe(271 + (965 - CHIP_W) / 2); // the bug: centred on the row
+    expect(hits(c, rows["settings-logo-hint"])).toBe(false);
+    expect(hits(c, rows["logo-btn"])).toBe(false);
+    // still in the button's row: vertically centred on it, inside the row's span
+    expect(c.top + 13).toBeCloseTo(407 + 43 / 2, 0);
+    expect(c.left).toBeGreaterThanOrEqual(271);
+    expect(c.left + CHIP_W).toBeLessThanOrEqual(1236);
+  });
+
+  test("certificate: a narrow card row whose hint runs to the frame's edge — the chip covers neither 'Subir certificado' nor the hint nor the text to its left", () => {
+    const rows = {
+      "left-col": { left: 300, top: 410, width: 560, height: 30 },
+      "settings-insurance-upload": {
+        left: 876,
+        top: 407,
+        width: 380,
+        height: 43,
+      },
+      "cert-btn": { left: 876, top: 407, width: 140, height: 43 },
+      "cert-hint": { left: 1028, top: 407, width: 228, height: 43 },
+    };
+    const c = settings(rows).open("cert-btn", "cert-file");
+    expect(hits(c, rows["cert-btn"])).toBe(false);
+    expect(hits(c, rows["cert-hint"])).toBe(false);
+    expect(hits(c, rows["left-col"])).toBe(false);
+    expect(c.left).toBeGreaterThanOrEqual(0);
+    expect(c.left + CHIP_W).toBeLessThanOrEqual(1280);
   });
 });

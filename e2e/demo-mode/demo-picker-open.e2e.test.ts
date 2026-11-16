@@ -201,3 +201,122 @@ Deno.test("REQ-827 (cycle dm2, s1) + REQ-862 (cycle dm4, p7): a date picker or f
       "REQ-827: a chosen file closes the chip on the stage",
     );
   }));
+
+/** REQ-878 — the stage's file chip against SettingsPage's own markup: where it sits relative to
+ *  the button (`btn`), its text (a Range over it) and the row's hint (`hint`, a Range) */
+const settingsChip = ([btn, hint]: [string, string]) => {
+  const d = (document.getElementById("stage") as HTMLIFrameElement)
+    .contentDocument!;
+  const c = d.querySelector('[data-mirror-picker="file"]');
+  if (!c) return null;
+  const r = c.getBoundingClientRect();
+  const textOf = (sel: string) => {
+    const range = d.createRange();
+    range.selectNodeContents(d.querySelector(sel)!);
+    return Array.from(range.getClientRects());
+  };
+  const clearOf = (rs: DOMRect[]) =>
+    rs.every((t) =>
+      !(r.left < t.right && t.left < r.right && r.top < t.bottom &&
+        t.top < r.bottom)
+    );
+  const vw = d.defaultView!.innerWidth;
+  return {
+    visible: r.width > 0 && r.height > 0,
+    inFrame: r.left >= 0 && r.right <= vw,
+    clearOfButton: clearOf([d.querySelector(btn)!.getBoundingClientRect()]),
+    clearOfButtonText: clearOf(textOf(btn)),
+    clearOfHint: clearOf(textOf(hint)),
+  };
+};
+
+Deno.test("REQ-878 (cycle dm5, p2): a file chooser opened from a SIBLING button (SettingsPage's logo and certificate rows: button + display:none input + hint in a full-width flex row) draws the stage chip clear of the hint and of the button's text", (t) =>
+  story(t, async ({ page, expect, folder }) => {
+    const js = await mirrorBundle();
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await page.goto("/clients.css");
+    await page.addScriptTag({ content: js });
+    await page.evaluate(async () => {
+      document.body.style.fontFamily = '"Inter", Arial, sans-serif';
+      document.body.style.margin = "0";
+      // SettingsPage.tsx's rows, verbatim in shape: the input is the button's display:none
+      // sibling and the button's onClick calls input.click()
+      document.body.innerHTML =
+        `<div style="padding:40px 40px 40px 260px;font-size:14px;display:grid;grid-template-columns:1fr 1fr;gap:16px">` +
+        `<div id="logo" style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px">` +
+        `<button id="logo-btn" type="button" style="padding:10px 16px">Subir logo</button>` +
+        `<input id="logo-file" type="file" style="display:none">` +
+        `<span id="logo-hint" style="font-size:12px">PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas</span>` +
+        `</div>` +
+        `<p style="margin:0">Nombre y dirección del negocio</p>` +
+        `<div><div id="cert-row" style="margin-top:14px;display:flex;align-items:center;gap:12px">` +
+        `<button id="cert-btn" type="button" style="padding:10px 16px">Subir certificado</button>` +
+        `<input id="cert-file" type="file" style="display:none">` +
+        `<span id="cert-hint" style="font-size:12px">PDF o imagen · prueba de seguro / responsabilidad civil</span>` +
+        `</div></div></div>` +
+        `<div data-demo-overlay style="position:fixed;right:0;bottom:0">` +
+        `<iframe id="stage" sandbox="allow-same-origin" ` +
+        `style="width:1280px;height:300px;border:0"></iframe></div>`;
+      for (const k of ["logo", "cert"]) {
+        document.getElementById(`${k}-btn`)!.addEventListener(
+          "click",
+          () =>
+            (document.getElementById(`${k}-file`) as HTMLInputElement).click(),
+        );
+      }
+      // deno-lint-ignore no-explicit-any
+      const mm = (globalThis as any).__mm;
+      const f = document.getElementById("stage") as HTMLIFrameElement;
+      const loaded = new Promise((r) => f.addEventListener("load", r));
+      f.srcdoc = mm.rep.MIRROR_SRCDOC;
+      await loaded;
+      const replay = mm.rep.createReplayer(f.contentDocument!);
+      const recorder = mm.rec.createRecorder(document, {
+        emit: (fr: unknown) => replay.apply(JSON.parse(JSON.stringify(fr))),
+      });
+      recorder.snapshot();
+    });
+    expect.eq(
+      await within(
+        page,
+        1_000,
+        () =>
+          !!(document.getElementById("stage") as HTMLIFrameElement)
+            .contentDocument!.querySelector("#cert-hint"),
+        undefined,
+      ),
+      true,
+      "the stage mirrors the page",
+    );
+    const want = JSON.stringify({
+      visible: true,
+      inFrame: true,
+      clearOfButton: true,
+      clearOfButtonText: true,
+      clearOfHint: true,
+    });
+    for (const k of ["logo", "cert"]) {
+      const chooser = page.waitForEvent("filechooser");
+      await page.locator(`#${k}-btn`).click();
+      const fc = await chooser;
+      const got = await within(page, 1_000, settingsChip, [
+        `#${k}-btn`,
+        `#${k}-hint`,
+      ]);
+      await page.screenshot({ path: `${folder}/settings-${k}-chip.png` });
+      expect.eq(
+        JSON.stringify(got),
+        want,
+        `REQ-878: the ${k} chip sits by its button, clear of the button's text and the row's hint`,
+      );
+      const png = await Deno.makeTempFile({ suffix: ".png" });
+      await Deno.writeFile(png, new Uint8Array([137, 80, 78, 71]));
+      await fc.setFiles(png);
+      await Deno.remove(png).catch(() => {});
+      expect.eq(
+        await within(page, 1_000, noChip, undefined),
+        true,
+        "REQ-827: a chosen file closes the chip",
+      );
+    }
+  }));
