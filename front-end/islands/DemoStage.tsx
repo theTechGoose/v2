@@ -2224,7 +2224,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 REQ-642 (cycle 5, m10) — where their screen REPORTED it, tagged "You", the tag
                 outside his element and off its neighbours; REQ-646 (cycle 5, m63) — none of his
                 pointer while another window has the demo; REQ-838 (cycle dm2, p4) — nor while the
-                customer is signed out (their screen is gone) */
+                customer is signed out (their screen is gone); REQ-847 (cycle dm3, p16) — out of
+                view its cue words where the customer's are too (their reported tag, else placed in
+                their px at the frame's scale) */
             }
             {mirrored && !look.elsewhere && !signedOut && ghost && (
               <PointerGhost
@@ -2238,8 +2240,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 rect={sentRef.current && !ghost.outside
                   ? rectOnStage(sentRef.current)
                   : null}
-                tag={ghost.dir ? null : ownTag}
+                tag={ownTag}
                 covers={coversFrame}
+                scale={fit.s}
                 cueText={ghost.dir
                   ? t(cueKey(ghost.dir), {
                     name: presenterNameOf(demo?.pid),
