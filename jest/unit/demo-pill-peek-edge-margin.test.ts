@@ -1,3 +1,4 @@
+// REVISION (demo-loop run 15, by hand, 2026-11-17): REQ-820 AMENDMENT 4 (dm15, p4): `held` asks pointerRests first, so peekHolds sits further down
 /**
  * REQ-849 — demo-loop cycle dm3, issue p14: "Customer's expanded pill sits flush (0 px margin,
  * 0.08 px past the edge) against the right edge at the bottom, while top-right keeps 12 px".
@@ -118,6 +119,6 @@ describe("REQ-849 — the island's wiring", () => {
   });
 
   test("REQ-849 the fold timer is held by a pointer in the pill-plus-tab region (peekHolds), not only on the pill", () => {
-    expect(src()).toMatch(/held: \(\) =>[\s\S]{0,300}peekHolds\(/);
+    expect(src()).toMatch(/held: \(\) =>[\s\S]{0,600}peekHolds\(/);
   });
 });

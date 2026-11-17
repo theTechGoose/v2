@@ -67,8 +67,12 @@ export default function EndDemo(
     askKey,
     askVars,
     outline = false,
+    guard,
   }: {
     onEnd: () => void;
+    /** REQ-890 AMENDMENT 4 (demo-loop run 15, m2) — asked before End asks: true, the host took
+     *  this click as its own (the tab's, where a resting pointer opened the peek) */
+    guard?: (e: MouseEvent) => boolean;
     disabled?: boolean;
     /** REQ-548 — the question takes a whole row of a wrapping host (the phone's compact pill) */
     ownRow?: boolean;
@@ -140,7 +144,10 @@ export default function EndDemo(
         type="button"
         data-cy="demo-end"
         disabled={disabled}
-        onClick={ask.ask}
+        onClick={(e) => {
+          if (guard?.(e)) return;
+          ask.ask();
+        }}
         style={`${BTN};${outline ? OUTLINE : "background:#fff;color:#7a2e2e"}${
           disabled ? ";opacity:.55;cursor:default" : ""
         }`}

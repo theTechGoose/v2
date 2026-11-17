@@ -294,6 +294,60 @@ export const PILL_SCROLL_SETTLE_MS = 250;
  * waits again. A pointer resting on the pill keeps it whole however long it rests; only leaving
  * it (the caller arms a short wait) folds it.
  */
+/** REQ-820 AMENDMENT 3 (demo-loop run 15, m1) — for this long after it came out whole, a pill
+ *  jumps to wherever it is placed (never a glide across the form from its home) */
+export const PILL_YOUNG_MS = 1000;
+/** REQ-820 AMENDMENT 2/3 — does this placement jump to its box (no glide)? Its first (no size
+ *  known yet), one within PILL_YOUNG_MS of the pill's coming out whole (`wholeSince`), or one
+ *  with another size than at the last placement (another form). A customer's first join at
+ *  390 px painted the whole pill at its home over the welcome form's footer and glided it
+ *  156–186 px up to its band — on 5 of 5 testers' machines, where the paint beat the placement */
+export function pillJumps(o: {
+  size: Size | null;
+  last: Size | null;
+  wholeSince: number;
+  now: number;
+}): boolean {
+  if (!o.size) return false;
+  if (!o.last) return true;
+  if (o.now - o.wholeSince < PILL_YOUNG_MS) return true;
+  return o.last.w !== o.size.w || o.last.h !== o.size.h;
+}
+
+/** REQ-890 AMENDMENT 4 (demo-loop run 15, m2) — a click this close to where the pointer opened
+ *  the peek (by resting on the tab) is the tab's click, not End's */
+export const PEEK_HOVER_CLICK_PX = 8;
+/** REQ-890 AMENDMENT 4 — a peek the pointer opened by resting on the right-edge tab sits flush
+ *  with the tab: End under that pointer. The click meant for the tab's "Demo" (its "show the
+ *  controls") then asked to end the demo. A click within PEEK_HOVER_CLICK_PX of the point the
+ *  peek opened at, before the pointer has moved on, is the tab's; `openedAt` null: no hover
+ *  opened this peek (a tap, the keyboard, End's own click after a move) */
+export function hoverClickIsTab(
+  openedAt: { x: number; y: number } | null,
+  click: { x: number; y: number },
+  tol = PEEK_HOVER_CLICK_PX,
+): boolean {
+  if (!openedAt) return false;
+  return Math.hypot(click.x - openedAt.x, click.y - openedAt.y) < tol;
+}
+
+/** REQ-820 AMENDMENT 4 (demo-loop run 15, p4) — a pointer that entered the pill (`over`) holds it
+ *  only while its last known point is still over the pill's box (with `slack`): a pill that
+ *  shrank or moved away from under a resting pointer (Keep going took the asking pill back to its
+ *  peek, a row away) gets no pointerleave, and `over` stayed true for good — the peek never
+ *  folded. A point not known yet (NaN: no pointer has moved) counts as over, as before */
+export function pointerRests(
+  over: boolean,
+  pill: Rect,
+  p: { x: number; y: number },
+  slack = 4,
+): boolean {
+  if (!over) return false;
+  if (Number.isNaN(p.x) || Number.isNaN(p.y)) return true;
+  return p.x >= pill.left - slack && p.x <= pill.left + pill.width + slack &&
+    p.y >= pill.top - slack && p.y <= pill.top + pill.height + slack;
+}
+
 export function peekTimer(o: {
   held: () => boolean;
   fold: () => void;

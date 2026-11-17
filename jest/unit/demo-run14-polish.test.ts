@@ -43,12 +43,14 @@ describe("REQ-820 AMENDMENT 2 (demo-loop run 14, m1): a pill that changed size i
       /const resized = \(\) => \{\s*if \(pillRef\.current\?\.querySelector\('\[data-cy="demo-end-ask"\]'\)\) place\(\);\s*later\(\);/,
     );
   });
+  // REVISION (dm15, m1 — REQ-820 AMENDMENT 3): the size rule moved into `pillJumps`, which the
+  // placement asks with the last size and when the pill came out whole
   test("a size other than at the last placement sets noGlide", () => {
     expect(overlay).toMatch(
       /const sizedRef = useRef<\{ w: number; h: number \} \| null>\(null\);/,
     );
     expect(overlay).toMatch(
-      /if \(\s*sizeNow && sizedRef\.current &&\s*\(sizedRef\.current\.w !== sizeNow\.w \|\|\s*sizedRef\.current\.h !== sizeNow\.h\)\s*\) \{\s*setNoGlide\(true\);\s*\}\s*if \(sizeNow\) sizedRef\.current = sizeNow;/,
+      /if \(\s*pillJumps\(\{\s*size: sizeNow,\s*last: sizedRef\.current,[\s\S]{0,120}\}\)\s*\) \{\s*setNoGlide\(true\);\s*\}\s*if \(sizeNow\) sizedRef\.current = sizeNow;/,
     );
   });
 });
@@ -93,7 +95,10 @@ describe("REQ-890 AMENDMENT 3 (demo-loop run 14, m2): the peek takes a box clear
     expect(overlay).toMatch(
       /const toggleOpen = \(\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(tucked && peek\) \{\s*setPeekOpen\(\(v\) => !v\);\s*return;\s*\}/,
     );
-    expect(overlay).toMatch(/useEffect\(\(\) => \{\s*if \(!peek\) setPeekOpen\(false\);\s*\}, \[peek\]\);/);
+    // REVISION (dm15, m2 — REQ-890 AMENDMENT 4): the peek's end also drops the hover-open note
+    expect(overlay).toMatch(
+      /useEffect\(\(\) => \{\s*if \(!peek\) \{\s*setPeekOpen\(false\);[\s\S]{0,120}\}\s*\}, \[peek\]\);/,
+    );
     // what the pill shows reads shownOpen, never the remembered `open` alone
     expect(overlay).toMatch(/pillWraps\(\{ compact, open: shownOpen, asking \}\)/);
     expect(overlay).toMatch(/aria-expanded=\{shownOpen\}/);

@@ -1,3 +1,4 @@
+// REVISION (demo-loop run 15, by hand, 2026-11-17): REQ-890 AMENDMENT 4 (dm15, m2): EndDemo on the customer pill takes `guard={endGuard}`
 /**
  * REQ-548 (demo-loop cycle 4, issue p4-p3e) — End's question on the phone's compact pill never
  * shortens the guide's name. At 390 px the pill is one nowrap row, so when End turned into
@@ -50,7 +51,7 @@ describe("REQ-548 (cycle 4, p4-p3e) End's question gets its own row on the compa
     expect(o).toMatch(
       // REQ-544 also hands EndDemo the overlay's demo-chrome t; REQ-649 the viewer's question;
       // REQ-637 (cycle 5, m5) AMENDMENT — and whether it opens already asking (the folded mini-pill's ×)
-      /<EndDemo\s+onEnd=\{end\}\s+ownRow=\{compact\}\s+onAsking=\{setAsking\}(?:\s+t=\{t\})?(?:\s+\/\/[^\n]*)?(?:\s+askAtOnce=\{askEnd\})?(?:\s+askKey="demoMode\.endAskViewer"\s+askVars=\{\{\s*name:\s*names\s*\}\})?\s*\/>/,
+      /<EndDemo\s+onEnd=\{end\}(?:\s+guard=\{endGuard\})?\s+ownRow=\{compact\}\s+onAsking=\{setAsking\}(?:\s+t=\{t\})?(?:\s+\/\/[^\n]*)?(?:\s+askAtOnce=\{askEnd\})?(?:\s+askKey="demoMode\.endAskViewer"\s+askVars=\{\{\s*name:\s*names\s*\}\})?\s*\/>/,
     );
   });
 });

@@ -1,3 +1,4 @@
+// REVISION (demo-loop run 15, by hand, 2026-11-17): REQ-833 AMENDMENT (dm15, p1): the compact details line wraps only on its own row (pillWraps), else it is cut
 /**
  * REQ-294 — demo-loop cycle 1, issues m21 + m43: the demo pill keeps the guide's name (the
  * ended notice wraps; the phone's compact pill opens its details full-width and wrapping), the
@@ -59,8 +60,11 @@ describe("REQ-294 the pill keeps the guide's name (demo m21: 'ended th…', 'Ale
 
   test("the compact pill's details open full-width and wrapping, the guiding text whole", () => {
     const details = block(o, 'data-cy="demo-details"', 'data-cy="demo-more"');
-    expect(details).toMatch(/compact \? `flex-basis:100%;\$\{wrap\}` : cut/);
-    expect(details).toMatch(/style=\{compact \? wrap : cut\}>\{guidingText\}/);
+    expect(details).toMatch(/compact\s*\?\s*\(wraps \? `flex-basis:100%;\$\{wrap\}` : cut\)\s*:\s*cut/);
+    // REVISION (dm15, p1 — REQ-833 AMENDMENT): the guiding line wraps only on its own row (wraps)
+    expect(details).toMatch(
+      /style=\{compact && wraps \? wrap : cut\}>\s*\{guidingText\}/,
+    );
     expect(details).not.toMatch(/<span style=\{cut\}>\{guidingText\}/);
     expect(details).toMatch(
       /\{!compact && <strong>\{t\("demoMode\.title"\)\}<\/strong>\}/,

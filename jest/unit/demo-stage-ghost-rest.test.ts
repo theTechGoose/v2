@@ -25,6 +25,7 @@ import {
   ghostWait,
   GHOST_FADE_MS,
   ghostFade,
+  GHOST_SETTLE_MS,
 } from "../../shared/demo-mode/presenter-anchor";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -97,7 +98,8 @@ describe("REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost fades in where 
   const start = { x: 357.1, y: 545.9, since: 1000, key: 0 };
   test("a report that moves the ghost 77 px while the fade runs: a new key, the fade's clock reset, the new spot", () => {
     const f = ghostFade(start, { x: 357.1, y: 469.3 }, 1083);
-    expect(f).toEqual({ x: 357.1, y: 469.3, since: 1083, key: 1 });
+    // REVISION (dm15, m3 — REQ-789 AMENDMENT 2): the restarted fade carries its wait (`delay`)
+    expect(f).toEqual({ x: 357.1, y: 469.3, since: 1083, key: 1, delay: GHOST_SETTLE_MS });
     const g = ghostFade(f, { x: 357.1, y: 462.4 }, 1150);
     expect(g.key).toBe(2);
     expect(g.since).toBe(1150);

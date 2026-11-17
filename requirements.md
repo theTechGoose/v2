@@ -7769,3 +7769,43 @@ Tests:
 **Raphael (2026-11-17):** the revision above told a peek by `[data-tucked]` — which the pill carries only while FOLDED (`folded = tucked && !peek`), so a peek read as a whole pill and the step still expected REQ-440's memory (✗ `aria-expanded false, details visible false`). The pill now says a peek on itself: `data-peek` while `tucked && peek`; the story branches on that attribute. The unit test asserts the attribute's wiring.
 **Tests:** `jest/unit/demo-run14-polish.test.ts` (REQ-890 AMENDMENT 3 block, the `data-peek` line); the story.
 **Evidence (2026-11-17):** unit 11 pass; `shots run demo-pill-home` → 1 pass · 0 fail.
+
+## REQ-820 AMENDMENT 3 — the young pill jumps (demo-loop run 15, m1; by hand)
+
+**Raphael (2026-11-17):** 5 of 5 run-15 testers: a customer's FIRST join at 390 px painted the whole pill at its home (over the welcome form's footer) and glided it 156–186 px up to its band over ~260 ms (the restart jumped, REQ-820 AMENDMENT 2). Not reproduced on the Mac (even at 8× CPU throttling the first placement here folds the pill, which then comes out whole by the dm13 jump path); on the testers' machines the paint beat the placement. Rule, not race: a pill jumps on its first placement (no size known yet) and on every placement within `PILL_YOUNG_MS` (1 s) of its coming out whole (`pillJumps`, `wholeSinceRef`); both forgotten when the pill goes.
+**Tests:** unit `jest/unit/demo-run15-polish.test.ts` (REQ-820 AMENDMENT 3 block: pillJumps cases + wiring); e2e `e2e/demo-mode/demo-pill-young-jump.e2e.test.ts` (m1 story: every visible whole-pill frame of the first join within 4 px of the settled spot — passes before and after here, kept as the guard for the testers' path).
+**Evidence (2026-11-17):** unit RED 17 failed (helpers missing) → GREEN; full unit lane 581 suites green; story 1 pass ×4.
+
+## REQ-890 AMENDMENT 4 — a click where the pointer opened the peek is the tab's, never End's (demo-loop run 15, m2; by hand)
+
+**Raphael (2026-11-17):** a mouse resting on the RIGHT-edge folded tab's "Demo" (390 px, /dashboard, /reports) opened the peek flush with the tab — End exactly where the tab was, under the pointer — and the click aimed at "Demo · Show the demo controls" asked to end the demo (tester 4 ×3; tester 2 once through a Playwright click, which hovers first). Reproduced headlessly (hover → `demo-end` under the mouse → click → the question). No geometry keeps End away from a pointer within 96 px of the right edge, so: the tab's mousemove notes where it opened the peek (`hoverOpenAtRef`); End asks the host first (`EndDemo` `guard`), and a click within `PEEK_HOVER_CLICK_PX` (8) of that point is the tab's — it shows the controls (the details) and never asks; the note goes once the pointer has moved on, or the peek ends. A tap (no hover) and the keyboard are End's own.
+**Tests:** unit (REQ-890 AMENDMENT 4 block: hoverClickIsTab + wiring); e2e `e2e/demo-mode/demo-pill-tab-hover-end.e2e.test.ts`.
+**Evidence (2026-11-17):** probe ✗ `click {"under":"demo-end-cancel", … "End the demo with Alex?"}`; story GREEN 1 pass ×4.
+
+## REQ-789 AMENDMENT 2 — the ghost settles before it fades (demo-loop run 15, m3; by hand)
+
+**Raphael (2026-11-17):** tester 3: with his mouse resting over a /settings field and the customer smooth-scrolling 200 px, the stage's ghost of his arrow BLINKED (opacity 0.24 → 0 → 0.20 → 0 → 0.5) at three spots on the way — REQ-789 AMENDMENT restarted the fade at once at every moved spot. Reproduced headlessly (fade to 0.25 at y 460, drop to 0, fade at 436). A fade now waits `GHOST_SETTLE_MS` (150 ms) unseen first — the first one too (a ghost first drawn mid-scroll began fading on the way) — and a move within the wait (or the fade) starts the wait over (`ghostFade` carries `delay`; `animation-delay … both`).
+**Tests:** unit (REQ-789 AMENDMENT 2 block; `demo-stage-ghost-rest` REVISION: the fade state carries `delay`); e2e `e2e/demo-mode/demo-ghost-settle.e2e.test.ts`; `demo-ghost-rest` still green.
+**Evidence (2026-11-17):** probe ✗ `astray 4 … blinks 1`; story with the restart-only delay flaked (one run ✗ "5 frame(s) on the way" — the first fade); with the first fade delayed too: GREEN ×4; demo-ghost-rest 1 pass.
+
+## REQ-833 AMENDMENT — the compact pill's details line on the controls' row is cut, never wrapped (demo-loop run 15, p1; by hand)
+
+**Raphael (2026-11-17):** testers 1 and 3: the RESTART pill at 390 px was 366×54 ("Alex · nueva demo | Conectando… | Terminar demo") and became 363×43 at "Conectado" — an 11 px height jump plus an 8 px re-place (a 19 px settle in two jumps). Reproduced: the details line sits on the controls' row (REQ-548 wraps the pill only for open details or End asking) and its `wrap` style let it break to two lines while the wide "Conectando…" chip squeezed it. On the controls' row the line (the span and the words inside) is `cut` (ellipsis); it wraps only on its own row (`wraps = pillWraps(…)`). One height, one spot, for as long as the line is up — the first-join pill (REQ-833's guiding line) is one row too.
+**Tests:** unit (REQ-833 AMENDMENT block; REVISIONs: `demo-pill-text` the inner span's style); e2e `demo-pill-young-jump.e2e.test.ts` (p1 story: one height ≤ 46 px, one top, while "nueva demo" is up as the status turns).
+**Evidence (2026-11-17):** story ✗ `one height while the line is up (saw 54, 43)` (and again after the first fix, which cut only the outer span) → GREEN ×4.
+
+## REQ-820 AMENDMENT 4 — a resting pointer holds the pill only while it is still over it (demo-loop run 15, p4; by hand)
+
+**Raphael (2026-11-17):** tester 4: after "Keep going" the peek did not fold for 12 s with the mouse away from it (/reports: the peek a row above the tab's, the mouse at the tab). Two headless probes (/dashboard, /reports) landed the peek back under the mouse — held by design (REQ-820: a pointer resting on it) — so the tester's geometry was not reproduced; the code shows the cause: `overPillRef` is set on pointerenter and cleared only by pointerleave, and a pill that shrinks or moves away from under a still pointer gets none. The fold timer's `held` now asks `pointerRests`: over AND the last known point (noted on pointerenter and every move) inside the pill's box (+4 px); NaN (no pointer yet) counts as over, as before.
+**Tests:** unit (REQ-820 AMENDMENT 4 block: pointerRests + wiring; REVISIONs of `demo-pill-peek-hold`, `demo-pill-peek-edge-margin` regexes). E2E: n/a — the geometry (the peek re-placed away from the resting pointer after Keep going) needs a page whose tab row holds a control after the ask; a probe with an injected blocker moved the peek away from the hover too, so the hover-click path no longer reached End. Covered by the unit cases.
+**Evidence (2026-11-17):** unit RED → GREEN (43 pass across run15/run14/ghost-rest; 581 suites).
+
+## Demo-loop run 15 (r6aef5281, 116b1b87) — closed without change
+
+- **p2** the folded "Demo ×" tab shows no sign the presenter left — the tab's dot is amber while the link is not live (REQ-838 away → `status !== direct/relay`); the tester did not check the dot. By design; the re-check asks for the dot's colour.
+- **p3** a stage status for 100–700 ms of a full load that matched none of En vivo / Un momento… / Conectando… — "Cargando la siguiente página…" (loadingNext, REQ-862); the tester recorded no text. By design.
+- **p5** the stage's copy of her pill looks clickable — it is REQ-865's drawing; by design (owner may want a hint).
+- **p6** REQ-645 (no re-anchor under a still mouse after a page change) — owner call, logged before.
+- **p7** her "ML" cursor tag over field words — the stage draws her cursor where it is; owner call, logged before.
+- Ctrl+click following a background tab — headless Chromium reports every tab visible and focused; harness.
+- REVISIONs this run: `demo-run14-polish` (pillJumps regex; the peek-end effect), `demo-stage-ghost-rest` (delay), `demo-end-ask-compact` (guard prop), `demo-pill-text` (wraps), `demo-pill-peek-hold`, `demo-pill-peek-edge-margin` (held's new first clause).

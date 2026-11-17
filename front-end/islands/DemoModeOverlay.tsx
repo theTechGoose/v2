@@ -245,6 +245,9 @@ import {
   peekBox,
   peekHolds,
   peekTimer,
+  pillJumps,
+  pointerRests,
+  hoverClickIsTab,
   PILL_BAND_GAP,
   PILL_BOX_METRICS,
   PILL_FONT,
@@ -679,6 +682,11 @@ export default function DemoModeOverlay(
    *  last mouse/pen pointer seen (NaN: none yet) */
   const peekTabRef = useRef<Rect | null>(null);
   const pointRef = useRef({ x: NaN, y: NaN });
+  /** REQ-890 AMENDMENT 4 (dm15, m2) — where the pointer was when its resting on the tab opened the
+   *  peek; a click there before it moves is the tab's (`hoverClickIsTab`), never End's */
+  const hoverOpenAtRef = useRef<{ x: number; y: number } | null>(null);
+  /** REQ-820 AMENDMENT 3 (dm15, m1) — when the pill last came out whole (`pillJumps`) */
+  const wholeSinceRef = useRef(0);
   /** REQ-820 — the frame that turns the tab into the whole pill: no transform glide, so it never
    *  slides in from the tab's translate (half off-screen on the right edge) */
   const [noGlide, setNoGlide] = useState(false);
@@ -695,7 +703,13 @@ export default function DemoModeOverlay(
   const foldTimer = useRef<ReturnType<typeof peekTimer> | null>(null);
   foldTimer.current ??= peekTimer({
     held: () =>
-      overPillRef.current ||
+      // REQ-820 AMENDMENT 4 (dm15, p4) — a resting pointer holds it only while still over it
+      (!!pillRef.current &&
+        pointerRests(
+          overPillRef.current,
+          pillRef.current.getBoundingClientRect(),
+          pointRef.current,
+        )) ||
       !!pillRef.current?.querySelector('[data-cy="demo-end-ask"]') ||
       // REQ-849 — or in the pill-plus-tab region (the gap between the peek and the edge)
       (peekRef.current && !!pillRef.current &&
@@ -1832,13 +1846,28 @@ export default function DemoModeOverlay(
     if (store) rememberPillOpen(store, next);
     setOpen(next);
   };
+  /** REQ-890 AMENDMENT 4 (dm15, m2) — End clicked where the pointer, resting on the right-edge
+   *  tab, opened the peek (End sits where the tab was): that click was aimed at the tab's "Demo"
+   *  — it shows the controls (the details) and never asks to end the demo. After the pointer has
+   *  moved on, End is End */
+  const endGuard = (e: MouseEvent) => {
+    if (
+      !hoverClickIsTab(hoverOpenAtRef.current, { x: e.clientX, y: e.clientY })
+    ) return false;
+    hoverOpenAtRef.current = null;
+    toggleOpen();
+    return true;
+  };
   /** REQ-890 AMENDMENT 3 (dm14, m2) — the details a PEEK shows: a peek out of the tab opens with
    *  its details closed whatever the remembered choice (REQ-372's carried `open` made a two-row
    *  73 px peek, which sat on "Step 2 of 10" at 390 px); "more" during the peek opens them for
    *  that peek, and the next peek starts closed again */
   const [peekOpen, setPeekOpen] = useState(false);
   useEffect(() => {
-    if (!peek) setPeekOpen(false);
+    if (!peek) {
+      setPeekOpen(false);
+      hoverOpenAtRef.current = null; // REQ-890 AMENDMENT 4
+    }
   }, [peek]);
   const shownOpen = tucked && peek ? peekOpen : open;
 
@@ -2153,12 +2182,21 @@ export default function DemoModeOverlay(
         }
       }
       if (!measureAgain) setMeasuring(false);
+      // REQ-820 AMENDMENT 3 (dm15, m1) — when the pill came out whole (its first placement, or
+      // the one that undid its fold): for PILL_YOUNG_MS from then it jumps wherever it is placed
+      if (!p.tucked && (tuckedRef.current || sizedRef.current === null)) {
+        wholeSinceRef.current = Date.now();
+      }
       // REQ-820 AMENDMENT 2 (dm14, m1) — another size than at the last placement: another form,
-      // which jumps to its box
+      // which jumps to its box; AMENDMENT 3 — and the young pill (a first join at 390 px painted
+      // the whole pill at its home and glided it 156–186 px up to its band)
       if (
-        sizeNow && sizedRef.current &&
-        (sizedRef.current.w !== sizeNow.w ||
-          sizedRef.current.h !== sizeNow.h)
+        pillJumps({
+          size: sizeNow,
+          last: sizedRef.current,
+          wholeSince: wholeSinceRef.current,
+          now: Date.now(),
+        })
       ) {
         setNoGlide(true);
       }
@@ -2269,6 +2307,9 @@ export default function DemoModeOverlay(
     return () => {
       placeRef.current = () => {};
       sendPillRef.current = () => {};
+      // REQ-820 AMENDMENT 3 — the next pill is young again
+      sizedRef.current = null;
+      wholeSinceRef.current = 0;
       // the pill is gone (or re-mounted): the stage drops its ghost
       if (sentPillRef.current) {
         sentPillRef.current = null;
@@ -2432,6 +2473,13 @@ export default function DemoModeOverlay(
     const move = (e: PointerEvent) => {
       if (e.pointerType === "touch") return;
       pointRef.current = { x: e.clientX, y: e.clientY };
+      // REQ-890 AMENDMENT 4 (dm15, m2) — moved on from where it opened the peek: End is End again
+      if (
+        hoverOpenAtRef.current &&
+        !hoverClickIsTab(hoverOpenAtRef.current, pointRef.current)
+      ) {
+        hoverOpenAtRef.current = null;
+      }
       const el = pillRef.current;
       if (!el) return;
       const pill = el.getBoundingClientRect();
@@ -2777,6 +2825,7 @@ export default function DemoModeOverlay(
     ? startedText(demo.presenters, demo.presenterName, compact)
     : null;
   const line = started ? t(started.key, started.vars) : guidingText;
+  const wraps = pillWraps({ compact, open: shownOpen, asking });
   const statusLabel = pillStatus === "ended"
     ? t("demoMode.ended")
     : live
@@ -2872,7 +2921,10 @@ export default function DemoModeOverlay(
           endPressRef.current = { x: e.clientX, y: e.clientY, at: Date.now() };
         }}
         onPointerEnter={(e) => {
-          if (e.pointerType !== "touch") overPillRef.current = true;
+          if (e.pointerType !== "touch") {
+            overPillRef.current = true;
+            pointRef.current = { x: e.clientX, y: e.clientY }; // REQ-820 AMENDMENT 4
+          }
         }}
         onPointerLeave={() => {
           overPillRef.current = false;
@@ -2912,7 +2964,13 @@ export default function DemoModeOverlay(
               aria-expanded="false"
               // REQ-820 (demo-loop cycle dm1, m6) — real pointer movement, never a bare mouseenter:
               // a tab re-mounted under a resting pointer gets one from the hover update
-              onMouseMove={openPeek}
+              onMouseMove={(e) => {
+                // REQ-890 AMENDMENT 4 (dm15, m2) — a peek the pointer opens by resting here
+                if (!peekRef.current) {
+                  hoverOpenAtRef.current = { x: e.clientX, y: e.clientY };
+                }
+                openPeek();
+              }}
               onFocus={openPeek}
               onClick={openPeek}
               style={`flex:1;min-width:0;display:flex;align-items:center;gap:6px;margin:0;padding:0 4px 0 10px;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;${HIT}`}
@@ -2959,17 +3017,27 @@ export default function DemoModeOverlay(
                   ? "inline-flex"
                   : "none"
               };gap:10px;align-items:center;${
-                compact ? `flex-basis:100%;${wrap}` : cut
+                // REQ-833 AMENDMENT (dm15, p1) — on the controls' row the line is cut, never
+                // wrapped: "Alex · nueva demo" wrapped to two lines (54 px) beside "Conectando…"
+                // and to one (43 px) at "Conectado" — an 11 px jump
+                compact ? (wraps ? `flex-basis:100%;${wrap}` : cut) : cut
               }`}
             >
               {!compact && <strong>{t("demoMode.title")}</strong>}
               {started
                 ? (
-                  <span data-cy="demo-restarted" style={compact ? wrap : cut}>
+                  <span
+                    data-cy="demo-restarted"
+                    style={compact && wraps ? wrap : cut}
+                  >
                     {line}
                   </span>
                 )
-                : <span style={compact ? wrap : cut}>{guidingText}</span>}
+                : (
+                  <span style={compact && wraps ? wrap : cut}>
+                    {guidingText}
+                  </span>
+                )}
               {copy.showChips && (
                 <PresenterChips presenters={presenters} nowrap t={t} />
               )}
@@ -3027,6 +3095,7 @@ export default function DemoModeOverlay(
             {/* REQ-235 — End asks first; REQ-649 — the customer is asked about ending it with the guide */}
             <EndDemo
               onEnd={end}
+              guard={endGuard}
               ownRow={compact}
               onAsking={setAsking}
               t={t}

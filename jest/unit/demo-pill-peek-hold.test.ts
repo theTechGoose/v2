@@ -1,3 +1,4 @@
+// REVISION (demo-loop run 15, by hand, 2026-11-17): REQ-820 AMENDMENT 4 + REQ-890 AMENDMENT 4 (dm15, p4 + m2): `held` asks pointerRests first; the tab's mousemove notes where it opened the peek before openPeek()
 /**
  * REQ-820 — demo-loop cycle dm1, issues m6 + test-setup-m4: the customer's folded demo pill,
  * opened by a pointer resting on its right-edge tab, folded again after PILL_PEEK_MS (6 s) with
@@ -89,7 +90,7 @@ describe("REQ-820 — the island's wiring", () => {
     // touch keeps a sticky :hover after a tap: only a mouse or pen counts as resting on it
     expect(src).toMatch(/onPointerEnter=\{[^}]*pointerType/);
     expect(src).toMatch(/onPointerLeave=/);
-    expect(src).toMatch(/held: \(\) =>[\s\S]{0,200}demo-end-ask/);
+    expect(src).toMatch(/held: \(\) =>[\s\S]{0,400}demo-end-ask/);
   });
 
   test("the tab opens on real pointer movement, a focus or a tap — never a bare mouseenter (a re-mounted tab under a resting pointer gets one)", () => {
@@ -98,7 +99,7 @@ describe("REQ-820 — the island's wiring", () => {
       src.indexOf('data-cy="demo-pill-tab"'),
       src.indexOf('data-cy="demo-pill-tab-end"'),
     );
-    expect(tab).toMatch(/onMouseMove=\{openPeek\}/);
+    expect(tab).toMatch(/onMouseMove=\{\(e\) => \{[\s\S]{0,300}openPeek\(\);\s*\}\}/);
     expect(tab).not.toMatch(/onMouseEnter=/);
     expect(tab).toMatch(/onFocus=\{openPeek\}/);
     expect(tab).toMatch(/onClick=\{openPeek\}/);

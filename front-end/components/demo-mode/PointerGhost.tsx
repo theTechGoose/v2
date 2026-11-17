@@ -47,6 +47,7 @@ import {
   type Dir,
   GHOST_OPACITY,
   ghostFade,
+  GHOST_SETTLE_MS,
   OFF_BADGE_PX,
   OFF_FADE_KEYFRAMES,
   OFF_MARK_FADE_MS,
@@ -191,11 +192,17 @@ export default function PointerGhost(
   }
   // REQ-789 AMENDMENT (dm12, p1) — fades in where it settles: a spot that moves mid-fade restarts
   // the fade there (a new key remounts the element and its animation)
-  const fadeRef = useRef({
+  // REQ-789 AMENDMENT 2 (dm15, m3) — `delay`: a fade waits GHOST_SETTLE_MS unseen first — the
+  // first one too: a ghost first drawn while her page still scrolls began fading at a spot on the
+  // way (0 → 0.2 at y 461, then the restart at 436)
+  const fadeRef = useRef<
+    { x: number; y: number; since: number; key: number; delay?: number }
+  >({
     x: at.x,
     y: at.y,
     since: performance.now(),
     key: 0,
+    delay: GHOST_SETTLE_MS,
   });
   fadeRef.current = ghostFade(fadeRef.current, at, performance.now());
   const cue = dir && cueText ? cueText : null;
@@ -229,7 +236,7 @@ export default function PointerGhost(
       data-outside={outside ? "" : undefined}
       data-cue={dir ? "" : undefined}
       aria-hidden="true"
-      style={`position:fixed;left:0;top:0;width:${ARROW_W}px;height:${ARROW_H}px;overflow:visible;pointer-events:none;z-index:${z};transform:translate(${at.x}px,${at.y}px);opacity:${GHOST_OPACITY};animation:pmDemoGhostIn .25s ease-out`}
+      style={`position:fixed;left:0;top:0;width:${ARROW_W}px;height:${ARROW_H}px;overflow:visible;pointer-events:none;z-index:${z};transform:translate(${at.x}px,${at.y}px);opacity:${GHOST_OPACITY};animation:pmDemoGhostIn .25s ease-out ${fadeRef.current.delay ?? 0}ms both`}
     >
       <style>
         {`@keyframes pmDemoGhostIn{from{opacity:0}to{opacity:${GHOST_OPACITY}}}`}

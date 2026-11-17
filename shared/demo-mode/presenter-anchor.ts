@@ -760,15 +760,29 @@ export const GHOST_FADE_MOVE_PX = 2;
  *  100 ms) restarts the fade at the new spot — a new `key` remounts the fading element — instead
  *  of fading in on the way and jumping. After the fade a move is a move: the same key, no flash */
 export function ghostFade(
-  f: { x: number; y: number; since: number; key: number },
+  f: { x: number; y: number; since: number; key: number; delay?: number },
   at: Pt,
   now: number,
   fade = GHOST_FADE_MS,
-): { x: number; y: number; since: number; key: number } {
+  settle = GHOST_SETTLE_MS,
+): { x: number; y: number; since: number; key: number; delay?: number } {
   if (Math.hypot(at.x - f.x, at.y - f.y) < GHOST_FADE_MOVE_PX) return f;
-  const fading = now - f.since < fade;
-  return { x: at.x, y: at.y, since: fading ? now : f.since, key: fading ? f.key + 1 : f.key };
+  // REQ-789 AMENDMENT 2 (dm15, m3) — the fade (and the wait before it) still running: this move
+  // restarts it, and the restarted fade waits `settle` unseen first — a spot still moving (their
+  // smooth scroll) blinked the ghost at every stop of the way (0.24 → 0 → 0.2 → 0 → 0.5)
+  const fading = now - f.since < fade + (f.delay ?? 0);
+  return {
+    x: at.x,
+    y: at.y,
+    since: fading ? now : f.since,
+    key: fading ? f.key + 1 : f.key,
+    delay: fading ? settle : 0,
+  };
 }
+/** REQ-789 AMENDMENT 2 (demo-loop run 15, m3) — how long a fade restarted by a move stays unseen
+ *  before it begins: a spot that moves again within it starts the wait over, so the ghost fades
+ *  in once, where the spot has settled */
+export const GHOST_SETTLE_MS = 150;
 
 /** where the stage draws the ghost of his arrow, or null: `placed` is where their screen has it
  *  now (on the frame), the page shown is `shownLoad` (REQ-645 — handed back as it came: its way
