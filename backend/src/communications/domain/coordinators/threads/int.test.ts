@@ -2,7 +2,14 @@
 import "#reflect-metadata";
 import { assertEquals, assertRejects } from "#std/assert";
 import { NotFoundError } from "@core/data/repository/mod.ts";
-import { asTwilio, CapturingTwilio, freshLine, LINE, PEER, stores } from "../_test-support/mod.ts";
+import {
+  asTwilio,
+  CapturingTwilio,
+  freshLine,
+  LINE,
+  PEER,
+  stores,
+} from "../_test-support/mod.ts";
 import { SendText } from "../send-text/mod.ts";
 import { ReceiveText } from "../receive-text/mod.ts";
 import { Threads } from "./mod.ts";
@@ -11,11 +18,28 @@ Deno.test("REQ-899 threads int: list is newest-activity first with unread counts
   const { restore, cfg } = await freshLine();
   try {
     const s = await stores();
-    const send = new SendText(asTwilio(new CapturingTwilio()), s.threads, s.texts, cfg);
+    const send = new SendText(
+      asTwilio(new CapturingTwilio()),
+      s.threads,
+      s.texts,
+      cfg,
+    );
     const recv = new ReceiveText(s.threads, s.texts);
     await send.send({ to: "+15125550001", body: "older" });
-    await recv.receive({ MessageSid: "SMa", From: PEER, To: LINE, Body: "newer" });
-    await s.calls.create({ line: LINE, peer: PEER, direction: "inbound", providerSid: "CA1", status: "completed", handledBy: "voicemail" });
+    await recv.receive({
+      MessageSid: "SMa",
+      From: PEER,
+      To: LINE,
+      Body: "newer",
+    });
+    await s.calls.create({
+      line: LINE,
+      peer: PEER,
+      direction: "inbound",
+      providerSid: "CA1",
+      status: "completed",
+      handledBy: "voicemail",
+    });
     const threads = new Threads(s.threads, s.texts, s.calls, cfg);
     const list = await threads.list();
     assertEquals(list.map((t) => t.peer), [PEER, "+15125550001"]);

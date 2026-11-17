@@ -1,7 +1,14 @@
 /** shared by the communications int tests: an in-memory KV, a configured line, a capturing Twilio seat */
 import { resetKv } from "@core/data/kv/mod.ts";
-import { type CommsConfigSource, configFromEnv } from "@communications/domain/data/config/mod.ts";
-import type { SendMessageInput, SendMessageResult, TwilioClient } from "@communications/domain/data/twilio-client/mod.ts";
+import {
+  type CommsConfigSource,
+  configFromEnv,
+} from "@communications/domain/data/config/mod.ts";
+import type {
+  SendMessageInput,
+  SendMessageResult,
+  TwilioClient,
+} from "@communications/domain/data/twilio-client/mod.ts";
 import type { ThreadStore } from "@communications/domain/data/thread-store/mod.ts";
 import type { TextMessageStore } from "@communications/domain/data/text-message-store/mod.ts";
 import type { CallStore } from "@communications/domain/data/call-store/mod.ts";
@@ -24,7 +31,9 @@ export const TEST_ENV: Record<string, string> = {
 };
 
 /** a fresh in-memory KV plus the test line as a FIXED config (the process env is never touched: the int lane runs files in parallel in one process) */
-export async function freshLine(overrides: Record<string, string | undefined> = {}): Promise<{ restore: () => Promise<void>; cfg: CommsConfigSource }> {
+export async function freshLine(
+  overrides: Record<string, string | undefined> = {},
+): Promise<{ restore: () => Promise<void>; cfg: CommsConfigSource }> {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
   const cfg = configFromEnv({ ...TEST_ENV, ...overrides });
@@ -41,21 +50,52 @@ export class CapturingTwilio {
 }
 export const asTwilio = (c: CapturingTwilio) => c as unknown as TwilioClient;
 
-export async function stores(): Promise<{ threads: ThreadStore; texts: TextMessageStore; calls: CallStore; lines: LineStore }> {
-  const [{ ThreadStore }, { TextMessageStore }, { CallStore }, { LineStore }] = await Promise.all([
-    import("@communications/domain/data/thread-store/mod.ts"),
-    import("@communications/domain/data/text-message-store/mod.ts"),
-    import("@communications/domain/data/call-store/mod.ts"),
-    import("@communications/domain/data/line-store/mod.ts"),
-  ]);
-  return { threads: new ThreadStore(), texts: new TextMessageStore(), calls: new CallStore(), lines: new LineStore() };
+export async function stores(): Promise<
+  {
+    threads: ThreadStore;
+    texts: TextMessageStore;
+    calls: CallStore;
+    lines: LineStore;
+  }
+> {
+  const [{ ThreadStore }, { TextMessageStore }, { CallStore }, { LineStore }] =
+    await Promise.all([
+      import("@communications/domain/data/thread-store/mod.ts"),
+      import("@communications/domain/data/text-message-store/mod.ts"),
+      import("@communications/domain/data/call-store/mod.ts"),
+      import("@communications/domain/data/line-store/mod.ts"),
+    ]);
+  return {
+    threads: new ThreadStore(),
+    texts: new TextMessageStore(),
+    calls: new CallStore(),
+    lines: new LineStore(),
+  };
 }
 
 /** a Twilio-shaped webhook Request, signed with the test token */
-export async function signedRequest(path: string, params: Record<string, string>, opts: { sign?: boolean; token?: string } = {}): Promise<Request> {
-  const { twilioSignature } = await import("@communications/domain/business/twilio-signature/mod.ts");
+export async function signedRequest(
+  path: string,
+  params: Record<string, string>,
+  opts: { sign?: boolean; token?: string } = {},
+): Promise<Request> {
+  const { twilioSignature } = await import(
+    "@communications/domain/business/twilio-signature/mod.ts"
+  );
   const body = new URLSearchParams(params).toString();
-  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded" };
-  if (opts.sign !== false) headers["x-twilio-signature"] = await twilioSignature(opts.token ?? TEST_AUTH_TOKEN, `${PUBLIC_URL}${path}`, params);
-  return new Request(`http://localhost:3000${path}`, { method: "POST", headers, body });
+  const headers: Record<string, string> = {
+    "content-type": "application/x-www-form-urlencoded",
+  };
+  if (opts.sign !== false) {
+    headers["x-twilio-signature"] = await twilioSignature(
+      opts.token ?? TEST_AUTH_TOKEN,
+      `${PUBLIC_URL}${path}`,
+      params,
+    );
+  }
+  return new Request(`http://localhost:3000${path}`, {
+    method: "POST",
+    headers,
+    body,
+  });
 }

@@ -10,12 +10,20 @@ import { LineContext } from "@communications/domain/coordinators/line-context/mo
 
 @Controller("communications/texts")
 export class TextsController {
-  constructor(private sendText: SendText, private lineContext: LineContext, private users: UserStore, private sessions: SessionStore) {}
+  constructor(
+    private sendText: SendText,
+    private lineContext: LineContext,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
 
   @Post()
   async send(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const input = parseSendText(body);
-    return await this.sendText.send(input, await this.lineContext.forUser(user.id));
+    return await this.sendText.send(
+      input,
+      await this.lineContext.forUser(user.id),
+    );
   }
 }

@@ -13,7 +13,10 @@ const PREFIX = "comms_text";
 const BY_THREAD = "comms_text_by_thread";
 const BY_SID = "comms_text_by_sid";
 
-export type CreateTextInput = Omit<TextMessage, "id" | "createdAt" | "updatedAt">;
+export type CreateTextInput = Omit<
+  TextMessage,
+  "id" | "createdAt" | "updatedAt"
+>;
 
 @Injectable()
 export class TextMessageStore {
@@ -22,7 +25,12 @@ export class TextMessageStore {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     const msg: TextMessage = { ...input, id, createdAt, updatedAt: createdAt };
-    const tx = kv.atomic().set([PREFIX, id], msg).set([BY_THREAD, input.threadId, createdAt, id], id);
+    const tx = kv.atomic().set([PREFIX, id], msg).set([
+      BY_THREAD,
+      input.threadId,
+      createdAt,
+      id,
+    ], id);
     if (input.providerSid) tx.set([BY_SID, input.providerSid], id);
     await tx.commit();
     return msg;
@@ -49,7 +57,10 @@ export class TextMessageStore {
     return recs.filter((m): m is TextMessage => !!m);
   }
 
-  async patchStatus(id: string, patch: { status: TextStatus; errorCode?: number; providerSid?: string }): Promise<TextMessage> {
+  async patchStatus(
+    id: string,
+    patch: { status: TextStatus; errorCode?: number; providerSid?: string },
+  ): Promise<TextMessage> {
     const kv = await getKv();
     const existing = await this.get(id);
     const updated: TextMessage = {

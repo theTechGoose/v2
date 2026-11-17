@@ -15,7 +15,9 @@ export function escapeXml(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function attrs(a: Record<string, string | number | boolean | undefined>): string {
+function attrs(
+  a: Record<string, string | number | boolean | undefined>,
+): string {
   return Object.entries(a)
     .filter(([, v]) => v !== undefined && v !== "")
     .map(([k, v]) => ` ${k}="${escapeXml(String(v))}"`)
@@ -39,23 +41,65 @@ export function say(text: string, language?: string): string {
 }
 
 /** the softphone dialed a PSTN number: bridge it, showing the line as caller id */
-export function dialNumber(p: { callerId: string; to: string; statusCallback: string; record?: boolean; recordingStatusCallback?: string }): string {
-  const dial = attrs({ callerId: p.callerId, record: p.record ? "record-from-answer-dual" : undefined, recordingStatusCallback: p.record ? p.recordingStatusCallback : undefined });
-  const num = attrs({ statusCallback: p.statusCallback, statusCallbackEvent: "initiated ringing answered completed" });
-  return response(`<Dial${dial}><Number${num}>${escapeXml(p.to)}</Number></Dial>`);
+export function dialNumber(
+  p: {
+    callerId: string;
+    to: string;
+    statusCallback: string;
+    record?: boolean;
+    recordingStatusCallback?: string;
+  },
+): string {
+  const dial = attrs({
+    callerId: p.callerId,
+    record: p.record ? "record-from-answer-dual" : undefined,
+    recordingStatusCallback: p.record ? p.recordingStatusCallback : undefined,
+  });
+  const num = attrs({
+    statusCallback: p.statusCallback,
+    statusCallbackEvent: "initiated ringing answered completed",
+  });
+  return response(
+    `<Dial${dial}><Number${num}>${escapeXml(p.to)}</Number></Dial>`,
+  );
 }
 
 /** the line was called: ring every signed-in softphone, then hand the result to `action` */
-export function ringClients(p: { identities: string[]; timeoutSec: number; action: string; callerId?: string }): string {
-  const clients = p.identities.map((id) => `<Client>${escapeXml(id)}</Client>`).join("");
-  return response(`<Dial${attrs({ timeout: p.timeoutSec, action: p.action, callerId: p.callerId })}>${clients}</Dial>`);
+export function ringClients(
+  p: {
+    identities: string[];
+    timeoutSec: number;
+    action: string;
+    callerId?: string;
+  },
+): string {
+  const clients = p.identities.map((id) => `<Client>${escapeXml(id)}</Client>`)
+    .join("");
+  return response(
+    `<Dial${
+      attrs({ timeout: p.timeoutSec, action: p.action, callerId: p.callerId })
+    }>${clients}</Dial>`,
+  );
 }
 
 /** voicemail */
-export function record(p: { sayFirst: string; maxLengthSec: number; recordingStatusCallback: string; language?: string }): string {
+export function record(
+  p: {
+    sayFirst: string;
+    maxLengthSec: number;
+    recordingStatusCallback: string;
+    language?: string;
+  },
+): string {
   return response(
     say(p.sayFirst, p.language) +
-      `<Record${attrs({ maxLength: p.maxLengthSec, playBeep: "true", recordingStatusCallback: p.recordingStatusCallback })}/>`,
+      `<Record${
+        attrs({
+          maxLength: p.maxLengthSec,
+          playBeep: "true",
+          recordingStatusCallback: p.recordingStatusCallback,
+        })
+      }/>`,
   );
 }
 
@@ -67,16 +111,32 @@ export function connectRelay(p: {
   language?: string;
   parameters?: Record<string, string>;
 }): string {
-  const params = Object.entries(p.parameters ?? {}).map(([name, value]) => `<Parameter${attrs({ name, value })}/>`).join("");
+  const params = Object.entries(p.parameters ?? {}).map(([name, value]) =>
+    `<Parameter${attrs({ name, value })}/>`
+  ).join("");
   return response(
     `<Connect${attrs({ action: p.action })}>` +
-      `<ConversationRelay${attrs({ url: p.url, welcomeGreeting: p.welcomeGreeting, language: p.language ?? "en-US", interruptible: "any", dtmfDetection: "true" })}>` +
+      `<ConversationRelay${
+        attrs({
+          url: p.url,
+          welcomeGreeting: p.welcomeGreeting,
+          language: p.language ?? "en-US",
+          interruptible: "any",
+          dtmfDetection: "true",
+        })
+      }>` +
       params +
       `</ConversationRelay></Connect>`,
   );
 }
 
 /** forward the call to a real phone */
-export function forwardTo(p: { number: string; callerId: string; action?: string }): string {
-  return response(`<Dial${attrs({ callerId: p.callerId, action: p.action })}><Number>${escapeXml(p.number)}</Number></Dial>`);
+export function forwardTo(
+  p: { number: string; callerId: string; action?: string },
+): string {
+  return response(
+    `<Dial${attrs({ callerId: p.callerId, action: p.action })}><Number>${
+      escapeXml(p.number)
+    }</Number></Dial>`,
+  );
 }

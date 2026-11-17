@@ -1,6 +1,9 @@
 import { Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
-import { LLM_CLIENT, type LLMClient } from "@agents/domain/business/llm/base/mod.ts";
+import {
+  LLM_CLIENT,
+  type LLMClient,
+} from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
 import { selectLlmClientName } from "@agents/domain/business/llm/select/mod.ts";
 import { TextsController } from "@communications/entrypoints/texts-controller/mod.ts";
@@ -9,6 +12,8 @@ import { CallsController } from "@communications/entrypoints/calls-controller/mo
 import { VoiceController } from "@communications/entrypoints/voice-controller/mod.ts";
 import { TwilioWebhooksController } from "@communications/entrypoints/twilio-webhooks-controller/mod.ts";
 import { LinesController } from "@communications/entrypoints/lines-controller/mod.ts";
+import { HouseLineController } from "@communications/entrypoints/house-line-controller/mod.ts";
+import { HouseLine } from "@communications/domain/coordinators/house-line/mod.ts";
 import { TwilioClient } from "@communications/domain/data/twilio-client/mod.ts";
 import { CommsConfigSource } from "@communications/domain/data/config/mod.ts";
 import { ThreadStore } from "@communications/domain/data/thread-store/mod.ts";
@@ -39,7 +44,9 @@ async function selectLLMClass(): Promise<new () => LLMClient> {
     DENO_DEPLOYMENT_ID: Deno.env.get("DENO_DEPLOYMENT_ID"),
   });
   if (which === "openai") {
-    const { OpenAILLMClient } = await import("@agents/domain/data/openai/mod.ts");
+    const { OpenAILLMClient } = await import(
+      "@agents/domain/data/openai/mod.ts"
+    );
     return OpenAILLMClient;
   }
   return StubLLMClient;
@@ -68,7 +75,15 @@ const LlmClientClass = await selectLLMClass();
  */
 @Module({
   imports: [UsersModule],
-  controllers: [TextsController, ThreadsController, CallsController, VoiceController, TwilioWebhooksController, LinesController],
+  controllers: [
+    TextsController,
+    ThreadsController,
+    CallsController,
+    VoiceController,
+    TwilioWebhooksController,
+    LinesController,
+    HouseLineController,
+  ],
   injectables: [
     CommsConfigSource,
     TwilioClient,
@@ -78,6 +93,7 @@ const LlmClientClass = await selectLLMClass();
     LineStore,
     LineContext,
     Lines,
+    HouseLine,
     SendText,
     VerifyWebhook,
     ReceiveText,

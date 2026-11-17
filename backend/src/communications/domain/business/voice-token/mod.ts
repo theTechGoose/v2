@@ -30,7 +30,10 @@ export interface VoiceToken {
 }
 
 function b64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(
+    /\//g,
+    "_",
+  ).replace(/=+$/, "");
 }
 function b64urlJson(v: unknown): string {
   return b64url(enc.encode(JSON.stringify(v)));
@@ -44,7 +47,13 @@ function fromB64url(s: string): Uint8Array<ArrayBuffer> {
 }
 
 async function hmacKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
-  return await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, usages);
+  return await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    usages,
+  );
 }
 
 /** Twilio Voice identities: alphanumerics and underscores only */
@@ -54,24 +63,39 @@ export function voiceIdentity(raw: string): string {
   return id;
 }
 
-export async function mintVoiceToken(input: VoiceTokenInput): Promise<VoiceToken> {
+export async function mintVoiceToken(
+  input: VoiceTokenInput,
+): Promise<VoiceToken> {
   const identity = voiceIdentity(input.identity);
   const now = input.now ?? Math.floor(Date.now() / 1000);
-  const ttlSec = Math.min(Math.max(1, Math.floor(input.ttlSec ?? VOICE_TOKEN_DEFAULT_TTL_SEC)), VOICE_TOKEN_MAX_TTL_SEC);
+  const ttlSec = Math.min(
+    Math.max(1, Math.floor(input.ttlSec ?? VOICE_TOKEN_DEFAULT_TTL_SEC)),
+    VOICE_TOKEN_MAX_TTL_SEC,
+  );
   const header = { typ: "JWT", alg: "HS256", cty: "twilio-fpa;v=1" };
   const payload = {
-    jti: input.jti ?? `${input.apiKeySid}-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+    jti: input.jti ??
+      `${input.apiKeySid}-${
+        crypto.randomUUID().replace(/-/g, "").slice(0, 16)
+      }`,
     iss: input.apiKeySid,
     sub: input.accountSid,
     iat: now,
     exp: now + ttlSec,
     grants: {
       identity,
-      voice: { incoming: { allow: true }, outgoing: { application_sid: input.twimlAppSid } },
+      voice: {
+        incoming: { allow: true },
+        outgoing: { application_sid: input.twimlAppSid },
+      },
     },
   };
   const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
-  const sig = await crypto.subtle.sign("HMAC", await hmacKey(input.apiKeySecret, ["sign"]), enc.encode(signingInput));
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    await hmacKey(input.apiKeySecret, ["sign"]),
+    enc.encode(signingInput),
+  );
   return {
     token: `${signingInput}.${b64url(new Uint8Array(sig))}`,
     identity,
@@ -84,15 +108,26 @@ export async function mintVoiceToken(input: VoiceTokenInput): Promise<VoiceToken
 export function decodeJwt(token: string): { header: any; payload: any } {
   const [h, p] = token.split(".");
   const dec = new TextDecoder();
-  return { header: JSON.parse(dec.decode(fromB64url(h))), payload: JSON.parse(dec.decode(fromB64url(p))) };
+  return {
+    header: JSON.parse(dec.decode(fromB64url(h))),
+    payload: JSON.parse(dec.decode(fromB64url(p))),
+  };
 }
 
-export async function verifyJwtHs256(token: string, secret: string): Promise<boolean> {
+export async function verifyJwtHs256(
+  token: string,
+  secret: string,
+): Promise<boolean> {
   const parts = token.split(".");
   if (parts.length !== 3) return false;
   try {
     const key = await hmacKey(secret, ["verify"]);
-    return await crypto.subtle.verify("HMAC", key, fromB64url(parts[2]), enc.encode(`${parts[0]}.${parts[1]}`));
+    return await crypto.subtle.verify(
+      "HMAC",
+      key,
+      fromB64url(parts[2]),
+      enc.encode(`${parts[0]}.${parts[1]}`),
+    );
   } catch {
     return false;
   }

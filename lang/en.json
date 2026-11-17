@@ -5883,5 +5883,16 @@
   "comms.phone.mute": "Mute",
   "comms.phone.unmute": "Unmute",
   "comms.phone.hangup": "Hang up",
-  "comms.err.not_configured": "Your phone line isn't connected to Twilio yet. The account's keys (COMMS_TWILIO_*) have to be set on the server before numbers can be searched or bought."
+  "comms.err.not_configured": "Your phone line isn't connected to Twilio yet. The account's keys (COMMS_TWILIO_*) have to be set on the server before numbers can be searched or bought.",
+  "comms.house.title": "Text under DocuMonster's own registration",
+  "comms.house.sub": "This number sits on its own Twilio subaccount, which has no A2P 10DLC registration. As the platform's own line it can move onto DocuMonster's main account and text through a campaign that is already verified — no new brand, no wait.",
+  "comms.house.none": "No messaging service on the main account has a verified campaign yet.",
+  "comms.house.adopt": "Use this registration",
+  "comms.house.adopting": "Moving the number…",
+  "comms.house.note": "Only platform admins see this: only DocuMonster's own business may text under DocuMonster's brand. The number keeps its calls and texts; the empty subaccount is closed.",
+  "comms.house.registered": "Registered · {usecase}",
+  "comms.house.registeredHint": "This number texts through DocuMonster's verified A2P 10DLC campaign on the main account.",
+  "comms.house.already": "This line already texts under the platform's registration.",
+  "comms.house.notVerified": "That messaging service has no verified campaign.",
+  "comms.house.twilioFailed": "Twilio refused: {msg}"
 }

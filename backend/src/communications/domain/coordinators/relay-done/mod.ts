@@ -8,7 +8,9 @@ export class RelayDone {
   constructor(private calls: CallStore) {}
 
   async handle(params: Record<string, string>): Promise<string> {
-    const call = params.CallSid ? await this.calls.findBySid(params.CallSid) : null;
+    const call = params.CallSid
+      ? await this.calls.findBySid(params.CallSid)
+      : null;
     if (call) {
       await this.calls.patch(call.id, {
         relayStatus: params.SessionStatus,

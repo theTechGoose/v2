@@ -159,4 +159,18 @@ export const commsClient = {
   call: (id: string, opts?: ApiOptions) =>
     api.get<Call>(`/communications/calls/${encodeURIComponent(id)}`, opts),
   voiceToken: () => api.post<VoiceToken>("/communications/voice/token", {}),
+  // REQ-920b — the house path (super admins): verified campaigns' services, and adopt
+  houseServices: () =>
+    api.get<{ services: HouseService[] }>("/communications/house/services"),
+  houseAdopt: (serviceSid: string) =>
+    api.post<{ line: PublicLine }>("/communications/house/adopt", {
+      serviceSid,
+    }),
 };
+
+/** REQ-920b — a main-account messaging service with a VERIFIED A2P campaign */
+export interface HouseService {
+  sid: string;
+  friendlyName: string;
+  usecase: string;
+}

@@ -5883,5 +5883,16 @@
   "comms.phone.mute": "Silenciar",
   "comms.phone.unmute": "Activar sonido",
   "comms.phone.hangup": "Colgar",
-  "comms.err.not_configured": "Tu línea telefónica aún no está conectada a Twilio. Hay que configurar las claves de la cuenta (COMMS_TWILIO_*) en el servidor antes de buscar o comprar números."
+  "comms.err.not_configured": "Tu línea telefónica aún no está conectada a Twilio. Hay que configurar las claves de la cuenta (COMMS_TWILIO_*) en el servidor antes de buscar o comprar números.",
+  "comms.house.title": "Enviar mensajes con el registro propio de DocuMonster",
+  "comms.house.sub": "Este número está en su propia subcuenta de Twilio, sin registro A2P 10DLC. Como línea propia de la plataforma puede pasar a la cuenta principal de DocuMonster y enviar mensajes con una campaña ya verificada: sin marca nueva ni espera.",
+  "comms.house.none": "Ningún servicio de mensajería de la cuenta principal tiene todavía una campaña verificada.",
+  "comms.house.adopt": "Usar este registro",
+  "comms.house.adopting": "Moviendo el número…",
+  "comms.house.note": "Solo lo ven los administradores de la plataforma: solo el negocio de DocuMonster puede enviar mensajes bajo la marca DocuMonster. El número conserva sus llamadas y mensajes; la subcuenta vacía se cierra.",
+  "comms.house.registered": "Registrado · {usecase}",
+  "comms.house.registeredHint": "Este número envía mensajes con la campaña A2P 10DLC verificada de DocuMonster en la cuenta principal.",
+  "comms.house.already": "Esta línea ya envía mensajes con el registro de la plataforma.",
+  "comms.house.notVerified": "Ese servicio de mensajería no tiene una campaña verificada.",
+  "comms.house.twilioFailed": "Twilio lo rechazó: {msg}"
 }

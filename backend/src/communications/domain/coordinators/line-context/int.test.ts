@@ -1,7 +1,12 @@
 /** REQ-904 — one line per request: the user's for the app, the subaccount's for Twilio. */
 import "#reflect-metadata";
 import { assertEquals, assertRejects } from "#std/assert";
-import { freshLine, LINE, stores, TEST_AUTH_TOKEN } from "../_test-support/mod.ts";
+import {
+  freshLine,
+  LINE,
+  stores,
+  TEST_AUTH_TOKEN,
+} from "../_test-support/mod.ts";
 import { ProvisioningTwilio } from "../_test-support/provisioning.ts";
 import { Lines } from "../lines/mod.ts";
 import { LineContext, NoLineError, UnknownLineError } from "./mod.ts";
@@ -46,13 +51,19 @@ Deno.test("REQ-904 line-context int: a webhook resolves by AccountSid — main �
   const { restore, cfg } = await freshLine({ COMMS_ENV_LINE_OWNER: "owner_1" });
   try {
     const s = await stores();
-    await new Lines(new ProvisioningTwilio().asClient(), s.lines, cfg).buy("cust_1", { phoneNumber: "+18435550100" });
+    await new Lines(new ProvisioningTwilio().asClient(), s.lines, cfg).buy(
+      "cust_1",
+      { phoneNumber: "+18435550100" },
+    );
     const ctx = new LineContext(s.lines, cfg);
     assertEquals((await ctx.forWebhook({ AccountSid: "ACtest" })).kind, "env");
     const sub = await ctx.forWebhook({ AccountSid: "ACsub1" });
     assertEquals(sub.kind, "subaccount");
     assertEquals(sub.authToken, "sub1-token");
-    await assertRejects(() => ctx.forWebhook({ AccountSid: "ACnobody" }), UnknownLineError);
+    await assertRejects(
+      () => ctx.forWebhook({ AccountSid: "ACnobody" }),
+      UnknownLineError,
+    );
     await assertRejects(() => ctx.forWebhook({}), UnknownLineError);
     assertEquals(new UnknownLineError().status, 403);
   } finally {
