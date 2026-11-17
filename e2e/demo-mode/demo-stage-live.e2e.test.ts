@@ -250,7 +250,8 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
       });
       // REQ-846 (REQ-391 AMENDMENT, cycle dm3 p11) — the banner sits in REQ-642's chrome row
       // ABOVE the frame: its bottom at or above the frame's top (never over their header), one
-      // badge high, within the frame's width and centred on it
+      // badge high, centred on the frame. REQ-846 AMENDMENT (dm13, p3) — its width is the
+      // window's, not the frame's (a phone-sized frame cut the sentence): inside the window
       const geo = await page.evaluate(() => {
         const b = document.querySelector("[data-cy='demo-waiting']")
           ?.getBoundingClientRect();
@@ -261,7 +262,7 @@ Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21): an in-app page change says 'Lo
             overlap: b.bottom - f.top,
             top: b.top,
             height: b.height,
-            widthOver: b.width - f.width,
+            widthOver: Math.max(-b.left, b.right - innerWidth),
             offCentre: (b.left + b.width / 2) - (f.left + f.width / 2),
           }
           : null;

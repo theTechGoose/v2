@@ -150,10 +150,12 @@ Deno.test("REQ-222 (M11) + REQ-298: a connected demo ends — from the staff sid
       );
       await openDemo();
       const line = await said;
+      // REQ-298 AMENDMENT (dm13, p2) — her 420 px pill is the compact form: "Hans · new demo"
+      // (the desktop pill keeps "Hans started a new demo")
       expect.eq(
         line,
-        "Hans started a new demo",
-        "REQ-298: the customer's pill says a new demo started, not a silent swap",
+        "Hans · new demo",
+        "REQ-298: the customer's compact pill says a new demo started, not a silent swap",
       );
       // REQ-833 — then, on the compact pill, the guiding line: the restart line is gone and the
       // details row reads "Hans is guiding you" (RESTART_SAY_MS 10 s + slack)
