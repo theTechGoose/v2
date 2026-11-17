@@ -172,7 +172,10 @@ describe("REQ-897 (dm6, p5) — scrolling: the kept chip holds its spot until th
   });
 
   test("REQ-897 wiring: the overlay weighs headings, flags the scroll and places once more when it settles", () => {
-    expect(PILL_SCROLL_SETTLE_MS).toBeGreaterThanOrEqual(300);
+    // REQ-897 AMENDMENT 2 (dm8, m3 re-check) — the settle is short: a field that a hash scroll
+    // brought under the chip is uncovered within ~250 ms of the scroll's end, not 500
+    expect(PILL_SCROLL_SETTLE_MS).toBeGreaterThanOrEqual(200);
+    expect(PILL_SCROLL_SETTLE_MS).toBeLessThanOrEqual(250);
     const overlay = read("front-end/islands/DemoModeOverlay.tsx");
     // pageUnder sums weights: a heading piece counts HEADING_WEIGHT
     const under = overlay.slice(

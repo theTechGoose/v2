@@ -257,7 +257,7 @@ export const HEADING_WEIGHT = 3;
 /** REQ-897 (cycle dm6, p5) — a scroll is over this long after its last event: the folded chip
  *  holds its spot while the page scrolls and is judged against what is under it only once the
  *  scroll has settled — not hopping edge to edge as lines (on /settings: a field every row) pass */
-export const PILL_SCROLL_SETTLE_MS = 500;
+export const PILL_SCROLL_SETTLE_MS = 250;
 
 /**
  * REQ-820 (demo-loop cycle dm1, m6 + test-setup-m4) — the peek's fold timer. When it fires the
