@@ -63,13 +63,22 @@ describe("REQ-890 AMENDMENT 5 (demo-loop run 16, m1 + m2): a peek opens under th
     expect(inside(b, point)).toBe(true);
     expect(Math.round(b.top + b.height)).toBe(rightTab.top + rightTab.height);
   });
-  test("among the boxes covering the pointer, the clearest one (controls, then words)", () => {
+  test("among the boxes covering the pointer, one clear of controls, with the fewest words", () => {
     // a control under every box whose left edge is below 100: the covering box further right wins
     const controls = (r: { left: number }) => (r.left < 100 ? 1 : 0);
     const point = { x: 320, y: 380 };
     const b = peekBox({ home, view, tab: rightTab, controls, point });
     expect(inside(b, point)).toBe(true);
     expect(b.left).toBeGreaterThanOrEqual(100);
+  });
+  test("a control under EVERY covering box (REQ-818 holds): the usual search, away from the pointer", () => {
+    // the full lane at the fix: the two-row peek on EN /welcome sat on the brand link and the
+    // language button to cover the pointer — never on a control
+    const controls = (r: { top: number }) => (Math.round(r.top + 43) === rightTab.top + rightTab.height ? 1 : 0);
+    const point = { x: 314, y: 380 };
+    const b = peekBox({ home, view, tab: rightTab, controls, point });
+    expect(inside(b, point)).toBe(false);
+    expect(controls(b)).toBe(0);
   });
   test("the compact form covers the pointer when the whole cannot clear the row (REQ-890's order kept)", () => {
     const words = (r: { width: number }) => (r.width > 200 ? 2 : 0);
@@ -116,10 +125,12 @@ describe("REQ-890 AMENDMENT 5 (run 16, m1): a peek the pointer is on keeps its b
   test("wiring: the peek's placement passes the pointer, keeps the box the pointer is on, and forgets it when the peek folds", () => {
     expect(overlay).toMatch(/const peekBoxRef = useRef<Rect \| null>\(null\);/);
     expect(overlay).toMatch(
-      /peekStays\(\{\s*last: peekBoxRef\.current,\s*size: \{ w: peekHome\.width, h: peekHome\.height \},\s*point: pointRef\.current,\s*view,?\s*\}\)/,
+      /peekStays\(\{\s*last: peekBoxRef\.current,\s*size: \{ w: peekHome\.width, h: peekHome\.height \},\s*point: pointRef\.current,\s*view,?\s*\}\) &&\s*\(!can \|\| countControls\(peekBoxRef\.current, backdrop\) === 0\);/,
     );
-    expect(overlay).toMatch(/peekBox\(\{[\s\S]{0,900}?point: pointRef\.current,/);
-    expect(overlay).toMatch(/peekBoxRef\.current = p\.tucked \? box : null;/);
+    // the pointer rules the OPENING placement only; a later form takes AMENDMENT 3's clear box
+    expect(overlay).toMatch(/const opening = peekRef\.current && peekBoxRef\.current === null;/);
+    expect(overlay).toMatch(/peekBox\(\{[\s\S]{0,1200}?point: opening \? pointRef\.current : undefined,/);
+    expect(overlay).toMatch(/peekBoxRef\.current = p\.tucked && peekRef\.current \? box : null;/);
     expect(overlay).toMatch(/if \(!peek\) \{[\s\S]{0,200}?peekBoxRef\.current = null;/);
     // the tab's hover update is where the pointer is first seen
     expect(overlay).toMatch(/onMouseMove=\{\(e\) => \{[\s\S]{0,400}?pointRef\.current = \{ x: e\.clientX, y: e\.clientY \};/);
@@ -192,8 +203,11 @@ describe("REQ-864 AMENDMENT (run 16, p2): /admin's busy row knows which action i
 });
 
 describe("REQ-868 AMENDMENT (run 16, p3): an ended stage drops the pill ghost too", () => {
-  test("wiring: the ghost is not shown while the stage says the demo ended", () => {
-    expect(stage).toMatch(/const pillShown = ended \|\| look\.elsewhere \|\| signedOut \|\|/);
+  test("wiring: the folded tab's ghost is not shown while the stage says the demo ended; her whole notice (REQ-895) still is", () => {
+    expect(stage).toMatch(/const pillBoxNow = look\.elsewhere \|\| signedOut \|\|/);
+    expect(stage).toMatch(/const tabNow = pillBoxNow !== null &&\s*ghostDrawsTab\(pillFace, pillBoxNow, awaiting\);/);
+    expect(stage).toMatch(/const pillShown = ended && tabNow \? null : pillBoxNow;/);
+    expect(stage).toMatch(/const pillTab = pillShown !== null && tabNow;/);
   });
 });
 

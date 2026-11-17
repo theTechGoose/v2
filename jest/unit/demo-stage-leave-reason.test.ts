@@ -12,7 +12,7 @@
  * the neutral "One moment…" (`pageGone`). And while waiting after anything but a navigation the
  * stage draws no ghost of her pill.
  */
-// REVISION (demo-loop run 16, by hand): an ended stage drops the pill ghost too (REQ-868 AMENDMENT).
+// REVISION (demo-loop run 16, by hand): the box is pillBoxNow; an ended stage drops the folded tab's ghost (REQ-868 AMENDMENT).
 import * as fs from "fs";
 import * as path from "path";
 import { SILENT_GRACE_MS } from "../../shared/demo-mode/protocol";
@@ -220,7 +220,7 @@ describe("REQ-896 (dm6, p1 + p7) the stage knows why the customer's page went", 
     );
     // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…")
     expect(stage).toMatch(
-      /const pillShown = ended \|\| look\.elsewhere \|\| signedOut \|\|\s*\(look\.waiting && leaveWhy !== "navigating"\) \|\| live\.key === "pageGone"\s*\?\s*null\s*:\s*pillBox;/,
+      /const pillBoxNow = look\.elsewhere \|\| signedOut \|\|\s*\(look\.waiting && leaveWhy !== "navigating"\) \|\| live\.key === "pageGone"\s*\?\s*null\s*:\s*pillBox;/,
     );
   });
 });

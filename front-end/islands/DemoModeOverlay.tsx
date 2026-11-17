@@ -2293,14 +2293,17 @@ export default function DemoModeOverlay(
       const peekHome = peekCompactSize
         ? pillHome({ view, size: peekCompactSize }).box
         : home.box;
-      // REQ-890 AMENDMENT 5 (dm16, m1) — a peek the pointer is on keeps its box
+      // REQ-890 AMENDMENT 5 (dm16, m1) — a peek the pointer is on keeps its box — unless a control
+      // has come under it (REQ-228: the dashboard's money bar drawn after the peek opened)
+      const opening = peekRef.current && peekBoxRef.current === null;
       const stays = p.tucked && peekRef.current && peekBoxRef.current &&
         peekStays({
           last: peekBoxRef.current,
           size: { w: peekHome.width, h: peekHome.height },
           point: pointRef.current,
           view,
-        });
+        }) &&
+        (!can || countControls(peekBoxRef.current, backdrop) === 0);
       const box: PeekBox = stays
         ? peekBoxRef.current!
         : p.tucked
@@ -2319,11 +2322,13 @@ export default function DemoModeOverlay(
           compact: peekCompactSize
             ? undefined
             : compactSizeRef.current ?? undefined,
-          // REQ-890 AMENDMENT 5 (dm16, m2) — under the pointer that opened it, words or not
-          point: pointRef.current,
+          // REQ-890 AMENDMENT 5 (dm16, m2) — a peek OPENS under the pointer that opens it, words
+          // or not; a later form (the rows opened by "more", the compact switch) takes AMENDMENT
+          // 3's clear box as before (the two-row peek on /welcome would sit on the header)
+          point: opening ? pointRef.current : undefined,
         })
         : p.box;
-      peekBoxRef.current = p.tucked ? box : null;
+      peekBoxRef.current = p.tucked && peekRef.current ? box : null;
       // REQ-890 — the tab's row holds a control under every x for the whole pill: the compact
       // form is shown (and measured again, a frame later) rather than the pill moving away from
       // the tab or landing on a control. Its size unknown yet: shown as soon as the whole pill

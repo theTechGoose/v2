@@ -6,7 +6,8 @@
  *       question blocks the thread, and the stage says them in its chrome row
  *       ([data-cy=demo-native-dialog]) until the dialog is answered.
  *  p3 — REQ-868 AMENDMENT: under "The demo ended" the stage kept drawing the customer's folded
- *       pill for the ~1.2 s before the hop to /admin. An ended stage drops the pill ghost too.
+ *       pill ("Demo ×") for the ~1.2 s before the hop to /admin. An ended stage drops the folded
+ *       tab's ghost too; her whole ended notice is still drawn (REQ-895).
  *  p2 — REQ-864 AMENDMENT: /admin's grant button read "…" while Demo said "Opening…" (one busy
  *       id for three actions). Only Demo shows the pending state.
  */
@@ -86,13 +87,14 @@ Deno.test("REQ-864 AMENDMENT (p2) + REQ-827 AMENDMENT (m3) + REQ-868 AMENDMENT (
     expect.eq(boot.status, 200, "Alex is a super admin");
     const browser = page.context().browser();
     if (!browser) throw new Error("no browser behind the story page");
+    // her screen at 390×844: the pill folds to its tab there (p3 is about the tab's ghost)
     const userCtx = await browser.newContext({
-      viewport: { width: 1024, height: 768 },
+      viewport: { width: 390, height: 844 },
     });
     try {
       const tab = await userCtx.newPage();
       await useCookie(userCtx, baseUrl, user.cookie);
-      await tab.goto(`${baseUrl}/quotes?lang=en`);
+      await tab.goto(`${baseUrl}/dashboard?lang=en`);
       await useCookie(page.context(), baseUrl, admin.cookie);
       await page.goto(`${baseUrl}/admin?lang=en`);
       await page.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
@@ -167,8 +169,12 @@ Deno.test("REQ-864 AMENDMENT (p2) + REQ-827 AMENDMENT (m3) + REQ-868 AMENDMENT (
         (globalThis as unknown as { __answer: boolean }).__answer
       );
       expect.eq(answer, false, "her page got the dialog's answer (dismissed: false)");
-      // p3 — Alex ends it from the stage: under "The demo ended" no ghost of her pill
-      await page.locator("[data-cy='demo-pill-ghost']").first().waitFor({
+      // p3 — her pill folded to its tab, the stage drawing the tab's ghost; Alex ends it from the
+      // stage: under "The demo ended" no ghost of her TAB
+      await tab.locator("[data-cy='demo-pill'][data-tucked]").waitFor({
+        timeout: 30_000,
+      });
+      await page.locator("[data-cy='demo-pill-ghost-tab-label']").first().waitFor({
         timeout: 10_000,
       });
       await page.locator("[data-cy='demo-end']").click();
@@ -178,7 +184,7 @@ Deno.test("REQ-864 AMENDMENT (p2) + REQ-827 AMENDMENT (m3) + REQ-868 AMENDMENT (
       while (Date.now() - t1 < 1_400) {
         const s = await page.evaluate(() => ({
           ended: /The demo ended/.test(document.body.innerText),
-          ghost: document.querySelectorAll("[data-cy='demo-pill-ghost']").length,
+          ghost: document.querySelectorAll("[data-cy='demo-pill-ghost-tab-label']").length,
         })).catch(() => null);
         if (!s) break; // hopped to /admin
         endedSamples.push({ at: Date.now() - t1, ...s });
@@ -193,7 +199,7 @@ Deno.test("REQ-864 AMENDMENT (p2) + REQ-827 AMENDMENT (m3) + REQ-868 AMENDMENT (
       const withGhost = ended.filter((s) => s.ghost > 0);
       expect(
         withGhost.length === 0,
-        `p3: no pill ghost under "The demo ended": ${JSON.stringify(withGhost.slice(0, 4))}`,
+        `p3: no ghost of her folded tab under "The demo ended": ${JSON.stringify(withGhost.slice(0, 4))}`,
       );
     } finally {
       await userCtx.close();

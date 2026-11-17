@@ -578,11 +578,12 @@ export function peekBox(o: {
   /** REQ-873 — the impersonation banner's height: no row or spot above it */
   top?: number;
   /** REQ-890 AMENDMENT 5 (dm16, m1 + m2) — the pointer (the one that opened the peek by resting
-   *  on the tab, or that is on the pill): among the tab's row's boxes, one that covers it comes
-   *  before every other — the whole form clear of controls and words, the compact form clear,
-   *  then the fewest — words under it or not. The peek opened a row above the mouse (the row's
-   *  words), and the click meant for "Demo" landed on the page. No box of the row covers it
-   *  (the tab's outer part, in the margin's gap) or no pointer seen (NaN): the search below */
+   *  on the tab, or that is on the pill): among the tab's row's boxes CLEAR OF CONTROLS, one that
+   *  covers it comes before every other — the whole form clear of words too, the compact form
+   *  clear, then the fewest words. The peek opened a row above the mouse (the row's words), and
+   *  the click meant for "Demo" landed on the page. No control-free box of the row covers it (the
+   *  tab's outer part, in the margin's gap; a control under every covering box — REQ-818 holds)
+   *  or no pointer seen (NaN): the search below */
   point?: { x: number; y: number };
 }): PeekBox {
   const controls = o.controls ?? (() => 0);
@@ -591,9 +592,11 @@ export function peekBox(o: {
     ? o.point
     : null;
   if (point) {
-    const score = (r: Rect) => controls(r) * 1000 + (o.texts?.(r) ?? 0);
+    const score = (r: Rect) => o.texts?.(r) ?? 0;
     const covering = (home: Rect) =>
-      rowSpots(home, o.tab, o.view).filter((r) => inRect(r, point));
+      rowSpots(home, o.tab, o.view).filter((r) =>
+        inRect(r, point) && controls(r) === 0
+      );
     const whole = covering(o.home);
     const compact = o.compact
       ? covering({ ...o.home, width: o.compact.w, height: o.compact.h })

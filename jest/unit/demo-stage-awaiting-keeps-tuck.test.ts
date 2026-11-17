@@ -93,7 +93,9 @@ describe("REQ-854 (demo-loop cycle dm3, p6) — the stage's guess at a new page 
 
   test("DemoStage picks the ghost's shape with ghostDrawsTab(pillFace, pillShown, awaiting)", () => {
     const s = read("front-end/islands/DemoStage.tsx");
-    expect(s).toMatch(/ghostDrawsTab\(pillFace, pillShown, awaiting\)/);
+    // REVISION (demo-loop run 16, by hand): the box judged is pillBoxNow — pillShown drops the tab's
+    // ghost once the demo ended (REQ-868 AMENDMENT)
+    expect(s).toMatch(/ghostDrawsTab\(pillFace, pillBoxNow, awaiting\)/);
     expect(s).not.toMatch(/pillShown && pillFace\.tucked !== true/);
     expect(s).not.toMatch(/pillShown && pillFace\.tucked === true/);
   });

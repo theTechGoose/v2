@@ -1970,15 +1970,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // ghost would only say "Connecting…" for a page that is gone; after a navigation, as before
   // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…", pageGone):
   // the ghost would say "{name} is guiding you · End" of a page that is gone
-  // REQ-868 AMENDMENT (dm16, p3) — nor under "The demo ended": the ghost of a pill that is gone
-  const pillShown = ended || look.elsewhere || signedOut ||
+  const pillBoxNow = look.elsewhere || signedOut ||
       (look.waiting && leaveWhy !== "navigating") || live.key === "pageGone"
     ? null
     : pillBox;
   // REQ-854 (demo-loop cycle dm3, p6) — the ghost is the folded tab when their pill is, and while
   // awaiting a new page in the tab's box: never the whole pill's words in a tab-sized box
-  const pillTab = pillShown !== null &&
-    ghostDrawsTab(pillFace, pillShown, awaiting);
+  const tabNow = pillBoxNow !== null &&
+    ghostDrawsTab(pillFace, pillBoxNow, awaiting);
+  // REQ-868 AMENDMENT (dm16, p3) — under "The demo ended" the folded TAB's ghost ("Demo ×" of a
+  // pill that is gone) is dropped with the badges; her whole notice stays drawn (REQ-895)
+  const pillShown = ended && tabNow ? null : pillBoxNow;
+  const pillTab = pillShown !== null && tabNow;
   const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
     : live.key === "elsewhere"
