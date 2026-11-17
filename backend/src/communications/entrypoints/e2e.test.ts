@@ -18,6 +18,7 @@ import { resetKv } from "@core/data/kv/mod.ts";
 import { CommunicationsModule } from "@communications/mod-root.ts";
 import { twilioSignature } from "@communications/domain/business/twilio-signature/mod.ts";
 import { decodeJwt } from "@communications/domain/business/voice-token/mod.ts";
+import { A2pStandIn, VALID_A2P_FORM } from "@communications/domain/coordinators/_test-support/a2p-stand-in.ts";
 
 @Module({ imports: [UsersModule, CommunicationsModule] })
 class TestApp {}
@@ -36,19 +37,19 @@ async function drain(res: Response) {
   await res.body?.cancel();
 }
 
-async function login(phone = "+15125551234"): Promise<{ sessionId: string; userId: string }> {
-  await drain(await fetch(`${PUBLIC_URL}/auth/send-otp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phoneNumber: phone }) }));
+async function login(phone = "+15125551234", base = PUBLIC_URL): Promise<{ sessionId: string; userId: string }> {
+  await drain(await fetch(`${base}/auth/send-otp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phoneNumber: phone }) }));
   const stored = await new OtpStore().get(phone);
-  const v = await fetch(`${PUBLIC_URL}/auth/verify-otp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phoneNumber: phone, code: stored!.code }) }).then((r) => r.json());
-  const me = await fetch(`${PUBLIC_URL}/me`, { headers: { "x-session-id": v.sessionId } }).then((r) => r.json());
+  const v = await fetch(`${base}/auth/verify-otp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phoneNumber: phone, code: stored!.code }) }).then((r) => r.json());
+  const me = await fetch(`${base}/me`, { headers: { "x-session-id": v.sessionId } }).then((r) => r.json());
   return { sessionId: v.sessionId, userId: me.id ?? me.user?.id };
 }
 
-async function twilioPost(path: string, params: Record<string, string>, sign: boolean | string = true): Promise<Response> {
+async function twilioPost(path: string, params: Record<string, string>, sign: boolean | string = true, base = PUBLIC_URL): Promise<Response> {
   const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded" };
   if (!("AccountSid" in params)) params = { AccountSid: "ACe2e", ...params };
-  if (sign) headers["x-twilio-signature"] = await twilioSignature(sign === true ? TOKEN : sign, `${PUBLIC_URL}${path}`, params);
-  return await fetch(`${PUBLIC_URL}${path}`, { method: "POST", headers, body: new URLSearchParams(params).toString() });
+  if (sign) headers["x-twilio-signature"] = await twilioSignature(sign === true ? TOKEN : sign, `${base}${path}`, params);
+  return await fetch(`${base}${path}`, { method: "POST", headers, body: new URLSearchParams(params).toString() });
 }
 
 /** Twilio, as far as this test is concerned: Messages plus the subaccount provisioning REST */
@@ -215,7 +216,13 @@ Deno.test("communications e2e: env line (text out/in, inbox, token, inbound call
     assertEquals(again.status, 409);
     await drain(again);
 
-    // 12. their text leaves from THEIR number on THEIR subaccount; their inbox is theirs alone
+    // 12. REQ-920a: not registered for texting yet → 403 a2p_unregistered (a2p e2e below walks the registration);
+    //     with the gate off (dev) their text leaves from THEIR number on THEIR subaccount; their inbox is theirs alone
+    const gated = await fetch(`${PUBLIC_URL}/communications/texts`, { method: "POST", headers: cauth, body: JSON.stringify({ to: PEER, body: "too early" }) });
+    assertEquals(gated.status, 403);
+    assertEquals((await gated.json()).code, "a2p_unregistered");
+    Deno.env.set("COMMS_A2P_GATE", "off");
+    env.COMMS_A2P_GATE = "off";
     const csent = await fetch(`${PUBLIC_URL}/communications/texts`, { method: "POST", headers: cauth, body: JSON.stringify({ to: PEER, body: "From the shop" }) }).then((r) => r.json());
     assertEquals(csent.ok, true);
     assertEquals(csent.message.line, SUB_NUMBER);
@@ -259,6 +266,105 @@ Deno.test("communications e2e: env line (text out/in, inbox, token, inbound call
     assertEquals(afterRelease.status, 409);
     await drain(afterRelease);
     assertEquals((await fetch(`${PUBLIC_URL}/communications/line`, { headers: cauth }).then((r) => r.json())).line.status, "released");
+  } finally {
+    await server.stop();
+    await twilio.shutdown();
+    for (const k of Object.keys(env)) Deno.env.delete(k);
+    await resetKv();
+  }
+});
+
+const A2P_PORT = 9920;
+const A2P_TWILIO_PORT = 9921;
+
+Deno.test("REQ-920a/c e2e: a customer line registers for texting (ISV walk on its subaccount), the a2p-status webhook refreshes it, texting opens once the campaign is VERIFIED", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const base = `http://localhost:${A2P_PORT}`;
+  const twilioBase = `http://localhost:${A2P_TWILIO_PORT}`;
+  const env: Record<string, string> = {
+    COMMS_TWILIO_ACCOUNT_SID: "ACe2e",
+    COMMS_TWILIO_AUTH_TOKEN: TOKEN,
+    COMMS_TWILIO_FROM: LINE,
+    COMMS_PUBLIC_URL: base,
+    COMMS_TWILIO_BASE_URL: twilioBase,
+    COMMS_TRUSTHUB_BASE_URL: twilioBase,
+    COMMS_MESSAGING_BASE_URL: twilioBase,
+  };
+  for (const [k, v] of Object.entries(env)) Deno.env.set(k, v);
+  Deno.env.delete("COMMS_A2P_GATE");
+  Deno.env.delete("COMMS_ENV_LINE_OWNER");
+  const stand = new A2pStandIn();
+  const twilio = Deno.serve({ port: A2P_TWILIO_PORT, onListen() {} }, async (req) => {
+    const u = new URL(req.url);
+    const form = new URLSearchParams(await req.text());
+    const account = atob((req.headers.get("authorization") ?? "Basic Og==").slice(6)).split(":")[0];
+    const { status, body } = stand.handle(req.method, u.pathname + u.search, form, account) ?? twilioStandIn(req.method, u.pathname, form);
+    return body === null ? new Response(null, { status }) : new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  });
+  const server = await bootstrapServer(TestApp, { port: A2P_PORT, swagger: false });
+  await server.listen();
+  try {
+    const cust = await login("+15125550920", base);
+    const H = { "x-session-id": cust.sessionId, "content-type": "application/json" };
+    const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = H) => {
+      const r = await fetch(`${base}${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      const text = await r.text();
+      return { status: r.status, body: text ? JSON.parse(text) : null };
+    };
+
+    // no line yet → 409 no_line; then buy one
+    assertEquals((await call("POST", "/communications/a2p", VALID_A2P_FORM)).status, 409);
+    assertEquals((await call("POST", "/communications/numbers", { phoneNumber: SUB_NUMBER })).status, 200);
+
+    // 1. not registered: texting is refused in one line, the registration reads null
+    const refused = await call("POST", "/communications/texts", { to: PEER, body: "hello" });
+    assertEquals(refused.status, 403);
+    assertEquals(refused.body.code, "a2p_unregistered");
+    assertEquals((await call("GET", "/communications/a2p")).body, { registration: null });
+    assertEquals((await call("GET", "/communications/a2p", undefined, {})).status, 401);
+
+    // 2. a broken form names its fields (400 a2p_invalid), touching nothing at Twilio
+    const bad = await call("POST", "/communications/a2p", { ...VALID_A2P_FORM, ein: "12", samples: [] });
+    assertEquals(bad.status, 400);
+    assertEquals(bad.body.code, "a2p_invalid");
+    assertEquals(bad.body.fields.map((f: { field: string }) => f.field).sort(), ["ein", "samples"]);
+    assertEquals(stand.calls.length, 0);
+
+    // 3. submit: the ISV walk on the line's subaccount, up to the brand (in review) and the messaging service
+    const started = await call("POST", "/communications/a2p", VALID_A2P_FORM);
+    assertEquals(started.status, 200);
+    const reg = started.body;
+    assertEquals(reg.state, "brand_pending");
+    assertEquals(reg.subaccountSid, SUB_SID);
+    assertEquals(reg.errors, []);
+    assertEquals(stand.calls.find((c) => c.path === "/v1/CustomerProfiles" && c.method === "POST")!.form.get("StatusCallback"), `${base}/communications/twilio/a2p-status`);
+    assertEquals(stand.calls.filter((c) => c.method === "POST").every((c) => c.account === SUB_SID), true);
+    assertEquals(stand.calls.find((c) => c.path === `/v1/Services/${reg.serviceSid}/PhoneNumbers`)!.form.get("PhoneNumberSid"), "PNsubE2E");
+    assertEquals((await call("GET", "/communications/a2p")).body.registration.brandSid, reg.brandSid);
+
+    // 4. Twilio's TrustHub status callback (signed with the SUBACCOUNT's token) refreshes the line's registration
+    stand.profileStatus = "twilio-approved";
+    const before = stand.calls.length;
+    const hook = await twilioPost("/communications/twilio/a2p-status", { AccountSid: SUB_SID, BundleSid: reg.profileSid, Status: "twilio-approved" }, SUB_TOKEN, base);
+    assertEquals(hook.status, 204);
+    await drain(hook);
+    assertEquals(stand.calls.slice(before).some((c) => c.method === "GET" && c.path === `/v1/CustomerProfiles/${reg.profileSid}`), true);
+    assertEquals((await call("GET", "/communications/a2p")).body.registration.profileStatus, "twilio-approved");
+    const forged = await twilioPost("/communications/twilio/a2p-status", { AccountSid: SUB_SID, BundleSid: reg.profileSid, Status: "twilio-approved" }, TOKEN, base);
+    assertEquals(forged.status, 403);
+    await drain(forged);
+
+    // 5. the brand is approved and the campaign verified: "Check status" → registered, and texting opens
+    stand.brandStatus = "APPROVED";
+    stand.campaignStatus = "VERIFIED";
+    const done = await call("POST", "/communications/a2p/refresh", {});
+    assertEquals(done.status, 200);
+    assertEquals(done.body.state, "registered");
+    assertEquals(done.body.campaignStatus, "VERIFIED");
+    const sent = await call("POST", "/communications/texts", { to: PEER, body: "registered now" });
+    assertEquals(sent.status, 200);
+    assertEquals(sent.body.ok, true);
   } finally {
     await server.stop();
     await twilio.shutdown();

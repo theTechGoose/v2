@@ -45,3 +45,40 @@ Deno.test("REQ-918a dev mode only when neither SID exists", () => {
   assertEquals(read({ TWILIO_AUTH_TOKEN: "t" }).devMode, true);
   assertEquals(read({ TWILIO_ACCOUNT_SID: "ACplain" }).devMode, false);
 });
+
+Deno.test("REQ-920 the A2P settings: real Twilio hosts, the platform email, the gate on — each overridable", () => {
+  const d = read({ COMMS_TWILIO_ACCOUNT_SID: "AC1" });
+  assertEquals([
+    d.trusthubBaseUrl,
+    d.messagingBaseUrl,
+    d.a2pEmail,
+    d.a2pPrimaryProfileSid,
+    d.a2pGate,
+  ], [
+    "https://trusthub.twilio.com",
+    "https://messaging.twilio.com",
+    "hello@documonster.com",
+    "",
+    true,
+  ]);
+  const o = read({
+    COMMS_TRUSTHUB_BASE_URL: "http://127.0.0.1:9148/",
+    COMMS_MESSAGING_BASE_URL: "http://127.0.0.1:9148",
+    COMMS_A2P_EMAIL: "ops@example.com",
+    COMMS_A2P_PRIMARY_PROFILE_SID: "BUprimary",
+    COMMS_A2P_GATE: "off",
+  });
+  assertEquals([
+    o.trusthubBaseUrl,
+    o.messagingBaseUrl,
+    o.a2pEmail,
+    o.a2pPrimaryProfileSid,
+    o.a2pGate,
+  ], [
+    "http://127.0.0.1:9148",
+    "http://127.0.0.1:9148",
+    "ops@example.com",
+    "BUprimary",
+    false,
+  ]);
+});

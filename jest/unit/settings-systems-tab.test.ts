@@ -1,7 +1,8 @@
 /**
  * REQ-912 — the Systems tab under Account (/settings?tab=systems): the one place listing what
  * DocuMonster runs on for the account; HR's Systems page folded into it (/hr/systems 302s there,
- * the HR folder has five entries); both dictionaries.
+ * the HR folder has five entries); both dictionaries. REQ-920d: the Phone & text card shows the
+ * line's texting registration (Not registered / In review / Registered / Failed).
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -94,6 +95,30 @@ describe("REQ-912 the Systems tab under Account", () => {
       ]
     ) {
       expect(en[k]).toBeTruthy();
+    }
+  });
+
+  test("REQ-920d the Phone & text card shows the line's texting registration off line.a2p", () => {
+    const tab = read("front-end/components/SystemsTab.tsx");
+    expect(tab).toContain("line.a2p");
+    expect(tab).toContain("`comms.a2p.sys.${");
+    expect(tab).toContain("data-a2p=");
+    const client = read("front-end/clients/systems.ts");
+    expect(client).toContain(
+      'a2p: "none" | "pending" | "registered" | "failed"',
+    );
+    const en = dict("lang/en.json"), es = dict("lang/es.json");
+    expect([
+      en["comms.a2p.sys.none"],
+      en["comms.a2p.sys.pending"],
+      en["comms.a2p.sys.registered"],
+    ]).toEqual([
+      "Not registered",
+      "In review",
+      "Registered",
+    ]);
+    for (const s of ["none", "pending", "registered", "failed"]) {
+      expect(es[`comms.a2p.sys.${s}`]).toBeTruthy();
     }
   });
 });

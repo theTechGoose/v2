@@ -31,6 +31,10 @@ import { CallRecording } from "@communications/domain/coordinators/call-recordin
 import { Calls } from "@communications/domain/coordinators/calls/mod.ts";
 import { Lines } from "@communications/domain/coordinators/lines/mod.ts";
 import { LineContext } from "@communications/domain/coordinators/line-context/mod.ts";
+import { A2pController } from "@communications/entrypoints/a2p-controller/mod.ts";
+import { TrustHubClient } from "@communications/domain/data/trusthub-client/mod.ts";
+import { A2pStore } from "@communications/domain/data/a2p-store/mod.ts";
+import { A2pRegistrations } from "@communications/domain/coordinators/a2p-registration/mod.ts";
 
 /** the same switch as AgentsModule: OpenAI when AGENTS_LLM_CLIENT=openai, the stub otherwise (never the stub in prod) */
 async function selectLLMClass(): Promise<new () => LLMClient> {
@@ -65,10 +69,11 @@ const LlmClientClass = await selectLLMClass();
  *   POST /communications/numbers                    buy one → the user's line
  *   GET  /communications/line                       the user's line (redacted)
  *   POST /communications/line/release               give it back
+ *   GET|POST /communications/a2p[/refresh]          texting registration (A2P 10DLC, REQ-920)
  */
 @Module({
   imports: [UsersModule],
-  controllers: [TextsController, ThreadsController, CallsController, VoiceController, TwilioWebhooksController, LinesController],
+  controllers: [TextsController, ThreadsController, CallsController, VoiceController, TwilioWebhooksController, LinesController, A2pController],
   injectables: [
     CommsConfigSource,
     TwilioClient,
@@ -76,6 +81,8 @@ const LlmClientClass = await selectLLMClass();
     TextMessageStore,
     CallStore,
     LineStore,
+    A2pStore,
+    TrustHubClient,
     LineContext,
     Lines,
     SendText,
@@ -92,6 +99,7 @@ const LlmClientClass = await selectLLMClass();
     CallStatus,
     CallRecording,
     Calls,
+    A2pRegistrations,
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

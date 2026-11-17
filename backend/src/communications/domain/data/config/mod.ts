@@ -28,6 +28,16 @@ export interface CommsConfig {
   baseUrl: string;
   /** the user id that owns the env line (COMMS_ENV_LINE_OWNER); empty → nobody does (REQ-904) */
   envLineOwner: string;
+  /** REQ-920 — TrustHub origin (COMMS_TRUSTHUB_BASE_URL; paths carry /v1) */
+  trusthubBaseUrl: string;
+  /** REQ-920 — Messaging origin (COMMS_MESSAGING_BASE_URL; paths carry /v1) */
+  messagingBaseUrl: string;
+  /** REQ-920 — the platform's address on every customer profile and trust product (COMMS_A2P_EMAIL) */
+  a2pEmail: string;
+  /** REQ-920 — the platform's ISV primary customer profile (COMMS_A2P_PRIMARY_PROFILE_SID); empty → looked up */
+  a2pPrimaryProfileSid: string;
+  /** REQ-920 — a subaccount line texts only with a VERIFIED campaign; COMMS_A2P_GATE=off lifts it (dev) */
+  a2pGate: boolean;
 }
 
 export const DEFAULT_AGENT_PROMPT =
@@ -79,6 +89,14 @@ export function readCommsConfig(
       "",
     ),
     envLineOwner: env("COMMS_ENV_LINE_OWNER")?.trim() ?? "",
+    trusthubBaseUrl:
+      (env("COMMS_TRUSTHUB_BASE_URL")?.trim() || "https://trusthub.twilio.com")
+        .replace(/\/+$/, ""),
+    messagingBaseUrl: (env("COMMS_MESSAGING_BASE_URL")?.trim() ||
+      "https://messaging.twilio.com").replace(/\/+$/, ""),
+    a2pEmail: env("COMMS_A2P_EMAIL")?.trim() || "hello@documonster.com",
+    a2pPrimaryProfileSid: env("COMMS_A2P_PRIMARY_PROFILE_SID")?.trim() ?? "",
+    a2pGate: (env("COMMS_A2P_GATE")?.trim().toLowerCase() ?? "") !== "off",
   };
 }
 
@@ -108,6 +126,7 @@ export const ROUTES = {
   voiceStatus: "/communications/twilio/voice/status",
   voiceRecording: "/communications/twilio/voice/recording",
   relay: "/communications/voice/relay",
+  a2pStatus: "/communications/twilio/a2p-status",
 } as const;
 
 /**

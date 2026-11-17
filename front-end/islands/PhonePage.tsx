@@ -20,6 +20,8 @@ import {
   type ThreadDetail,
 } from "../clients/communications.ts";
 import FieldHead from "../components/FieldHead.tsx";
+import A2pPanel from "../components/comms/A2pPanel.tsx";
+import { isA2pRefusal } from "../lib/a2p.ts";
 import { Toast, useToast } from "../components/hr/bits.tsx";
 import { ApiError } from "../lib/api.ts";
 import {
@@ -58,6 +60,7 @@ type Tab = "inbox" | "calls";
 
 /** an API error → one line for the person */
 function friendly(e: unknown): string {
+  if (isA2pRefusal(e)) return t("comms.a2p.err.unregistered"); // REQ-920a
   if (e instanceof ApiError) {
     const code = e.body && typeof e.body === "object"
       ? String((e.body as { code?: unknown }).code ?? "")
@@ -204,6 +207,7 @@ export default function PhonePage() {
               </button>
             )}
           </section>
+          {line && <A2pPanel line={line} />}
           <div class="comms-grid">
             <div class="comms-main">
               <div class="comms-tabs" role="tablist">

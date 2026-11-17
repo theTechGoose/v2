@@ -4,6 +4,7 @@
  * Billing has them), e-signature (DocuMonster's own, always on) — and the HR provisioning
  * registry (REQ-888, REQ-913) that used to be /hr/systems: Connect / Disconnect / webhook /
  * Remove, the catalog, a custom system. Data: GET /me/systems; writes go through hrClient.
+ * REQ-920d: a customer line's card also says where its texting registration stands.
  * Strings: settings.systems.* and the hr.systems.* it inherited.
  */
 import { useEffect, useState } from "preact/hooks";
@@ -99,6 +100,9 @@ export default function SystemsTab() {
               : line?.status === "released"
               ? t("settings.systems.lineReleased")
               : t("settings.systems.notConnected")}
+            a2p={line?.status === "active" && line.kind === "subaccount"
+              ? line.a2p
+              : undefined}
             action={{
               href: "/communications",
               label: line?.status === "active"
@@ -257,7 +261,7 @@ export default function SystemsTab() {
   );
 }
 
-function SummaryCard({ cy, name, kind, desc, on, onLabel, action }: {
+function SummaryCard({ cy, name, kind, desc, on, onLabel, action, a2p }: {
   cy: string;
   name: string;
   kind: string;
@@ -265,6 +269,8 @@ function SummaryCard({ cy, name, kind, desc, on, onLabel, action }: {
   on: boolean;
   onLabel: string;
   action?: { href: string; label: string };
+  /** REQ-920d — the line's texting registration */
+  a2p?: "none" | "pending" | "registered" | "failed";
 }) {
   return (
     <div class="hr-sys" data-cy={cy} data-on={on ? "1" : "0"}>
@@ -278,6 +284,11 @@ function SummaryCard({ cy, name, kind, desc, on, onLabel, action }: {
         </div>
       </div>
       <div class="hr-sys__desc">{desc}</div>
+      {a2p && (
+        <div class="hr-sys__desc" data-cy="sys-line-a2p" data-a2p={a2p}>
+          {t("comms.a2p.sys.label")}: {t(`comms.a2p.sys.${a2p}`)}
+        </div>
+      )}
       <div class="hr-sys__foot">
         <span class={`chip ${on ? "chip--green" : "chip--muted"}`}>
           {onLabel}
