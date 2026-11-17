@@ -106,11 +106,8 @@ describe("REQ-851 (demo-loop cycle dm3, p3): the stage's ghost of End's question
       "REQ-835 / REQ-830 (reconciled on demo-fixes) — sendPill lives",
       "ro?.disconnect();",
     );
-    const resized = between(fx, "const resized = () => {", "\n    };");
-    expect(resized).toMatch(
-      /querySelector\('\[data-cy="demo-end-ask"\]'\)\) place\(\);/,
-    );
-    expect(resized).toMatch(/later\(\);/);
+    // REQ-820 AMENDMENT 2 (dm14, m1) — every size change places at once now (End asking included)
+    expect(fx).toMatch(/const resized = \(\) => place\(\);/);
     expect(fx).toMatch(/new ResizeObserver\(resized\)/);
   });
 });

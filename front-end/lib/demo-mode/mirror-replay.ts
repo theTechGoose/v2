@@ -1799,11 +1799,18 @@ export function createReplayer(
         // REQ-845 (demo dm3 m1) — the control around the point (a link, a button…), not the
         // innermost element under it: a nav link's label span leaves the page when the sidebar
         // collapses, the link (and its print) stays
+        // REQ-845 AMENDMENT (dm14, m3) — only a control whose box holds the point: the address
+        // field's suggestion list is a child of its <label> but drawn below it, and the swap put
+        // the customer's arrow 51 px up, clamped onto the field
         const c = (n as Element).closest?.(CONTROL_SELECTOR) ?? null;
         const cid = c ? idOf.get(c) : undefined;
         if (c && c !== n && cid !== undefined && byId.get(cid) === c) {
           const cr = c.getBoundingClientRect();
-          if (cr.width > 0 && cr.height > 0) {
+          if (
+            cr.width > 0 && cr.height > 0 &&
+            x >= cr.left && x <= cr.left + cr.width &&
+            y >= cr.top && y <= cr.top + cr.height
+          ) {
             id = cid;
             r = cr;
           }

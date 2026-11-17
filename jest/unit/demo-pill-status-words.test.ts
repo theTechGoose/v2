@@ -451,7 +451,8 @@ describe("REQ-838 m5 + p4 — the stage's copy of the customer's pill says its s
   test("the overlay carries the words in its own language, sends them, and the stage keeps them", () => {
     const o = read("front-end/islands/DemoModeOverlay.tsx");
     const at = o.indexOf(
-      "faceRef.current = {\n    compact,\n    open: compact && open,",
+      // REQ-890 AMENDMENT 3 (dm14, m2) — the face carries shownOpen (a peek's own details)
+      "faceRef.current = {\n    compact,\n    open: compact && shownOpen,",
     );
     expect(at).toBeGreaterThan(-1);
     const face = o.slice(at, o.indexOf("};", at));

@@ -514,6 +514,19 @@ function textOrControlAt(
     ownText(el);
 }
 
+/** REQ-890 AMENDMENT 3 (dm14, m2) — how many distinct pieces of text, controls or media lie under
+ *  a box (a painted container alone is none): what a peek keeps clear of, before the old rule */
+function countText(r: Rect, backdrop: Element | null = null): number {
+  const found = new Set<Element>();
+  for (
+    const { x, y } of samplePoints(r, Math.max(5, Math.ceil(r.width / 40)), 3)
+  ) {
+    const el = pageAt(x, y, backdrop);
+    if (el && textOrControlAt(x, y, backdrop)) found.add(el);
+  }
+  return found.size;
+}
+
 /** REQ-781 (demo-loop cycle dv1, d7) — how many controls of the page (links, buttons, fields:
  *  CONTROL_SELECTOR) are under a box: a floating pill may cover text, never one of these.
  *  REQ-832 (cycle dm2, p1) — with a dialog up, the controls beneath its backdrop count too (the
@@ -673,6 +686,10 @@ export default function DemoModeOverlay(
    *  yet (the first join): hidden for the frame that measures it, so it is never painted at a
    *  tab-sized spot (the top-right corner, over the language buttons) before its own placement */
   const [measuring, setMeasuring] = useState(false);
+  /** REQ-820 AMENDMENT 2 (dm14, m1) — the pill's size at its last placement: another size is
+   *  another form (a restart's line, the asking row), which jumps to its box — never a glide in
+   *  from where the old form sat (the ended notice's dock, 136 px past a 390 px window) */
+  const sizedRef = useRef<{ w: number; h: number } | null>(null);
   /** REQ-545 — the peek's fold timer. REQ-820 — it waits again while the pill is held: a pointer
    *  resting on it, or End's question up (that stays until it is answered) */
   const foldTimer = useRef<ReturnType<typeof peekTimer> | null>(null);
@@ -1805,11 +1822,25 @@ export default function DemoModeOverlay(
   // REQ-440 — the tab keeps the choice the moment it is made: an effect runs only after the next
   // frame, and a reload right after the tap (REQ-379's story) outran it and lost the choice
   const toggleOpen = () => {
+    // REQ-890 AMENDMENT 3 (dm14, m2) — "more" during a peek opens the details for that peek only
+    if (tucked && peek) {
+      setPeekOpen((v) => !v);
+      return;
+    }
     const next = !open;
     const store = pillStore();
     if (store) rememberPillOpen(store, next);
     setOpen(next);
   };
+  /** REQ-890 AMENDMENT 3 (dm14, m2) — the details a PEEK shows: a peek out of the tab opens with
+   *  its details closed whatever the remembered choice (REQ-372's carried `open` made a two-row
+   *  73 px peek, which sat on "Step 2 of 10" at 390 px); "more" during the peek opens them for
+   *  that peek, and the next peek starts closed again */
+  const [peekOpen, setPeekOpen] = useState(false);
+  useEffect(() => {
+    if (!peek) setPeekOpen(false);
+  }, [peek]);
+  const shownOpen = tucked && peek ? peekOpen : open;
 
   // 5. REQ-228 — the pill never covers the page; REQ-235 — the ended notice is a pill too.
   // REQ-379 — ONE home, bottom-left: no per-path memory, no compact <-> full flip; the stage is
@@ -2018,9 +2049,11 @@ export default function DemoModeOverlay(
       // whole pill — the whole size known is used; none known, the whole is measured next frame
       const tabOnScreen = el.hasAttribute("data-tucked");
       const measureAgain = !folded && tabOnScreen && !fullRef.current;
+      let sizeNow: { w: number; h: number } | null = null;
       if (!folded && !tabOnScreen) {
         const r = el.getBoundingClientRect();
         const size = { w: Math.ceil(r.width), h: el.offsetHeight };
+        sizeNow = size;
         // REQ-890 — the compact form shown only for a peek: its size kept apart, the whole's stays
         if (peekCompactNow) compactSizeRef.current = size;
         else fullRef.current = size;
@@ -2120,6 +2153,16 @@ export default function DemoModeOverlay(
         }
       }
       if (!measureAgain) setMeasuring(false);
+      // REQ-820 AMENDMENT 2 (dm14, m1) — another size than at the last placement: another form,
+      // which jumps to its box
+      if (
+        sizeNow && sizedRef.current &&
+        (sizedRef.current.w !== sizeNow.w ||
+          sizedRef.current.h !== sizeNow.h)
+      ) {
+        setNoGlide(true);
+      }
+      if (sizeNow) sizedRef.current = sizeNow;
       setTucked(p.tucked);
       if (!p.tucked) setPeek(false);
       const shownTab = p.tucked && !peekRef.current;
@@ -2158,6 +2201,10 @@ export default function DemoModeOverlay(
           controls: can && peekRef.current
             ? (r) => countControls(r, backdrop)
             : () => 0,
+          // REQ-890 AMENDMENT 3 (dm14, m2) — and the words under it: a box clear of both first
+          texts: can && peekRef.current
+            ? (r) => countText(r, backdrop)
+            : undefined,
           compact: peekCompactSize
             ? undefined
             : compactSizeRef.current ?? undefined,
@@ -2274,10 +2321,10 @@ export default function DemoModeOverlay(
     // REQ-851 (demo-loop cycle dm3, p3) — End asking: the pill's wrap reflow (a taller pill, a
     // new row) is clamped and sent at once — a size change fires no transitionend, and the
     // stage's ghost must not keep the pre-wrap box for the debounce
-    const resized = () => {
-      if (pillRef.current?.querySelector('[data-cy="demo-end-ask"]')) place();
-      later();
-    };
+    // REQ-820 AMENDMENT 2 (dm14, m1) — the pill changed size (a restart's line, a join's whole
+    // out of nothing, End's row): placed NOW, in the frame that laid it out (a ResizeObserver
+    // runs before paint) — never a paint at the old form's dock and a glide 150 ms later
+    const resized = () => place();
     const ro = typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(resized);
@@ -2740,7 +2787,13 @@ export default function DemoModeOverlay(
       : t("demoMode.guideAway", { name: names }))
     : t("demoMode.connecting");
   // REQ-373 (demo m2, p13-h) — the guide's first name on the compact pill; the name said once
-  const copy = pillCopy({ presenters, status: statusLabel, compact, open, t });
+  const copy = pillCopy({
+    presenters,
+    status: statusLabel,
+    compact,
+    open: shownOpen,
+    t,
+  });
   /** REQ-373 — "● Alex" beside the status while the details are hidden; REQ-838 — not while
    *  the status names him ("Alex stepped away"); REQ-833 — nor through a join's grace, when the
    *  details row names the guide */
@@ -2749,7 +2802,7 @@ export default function DemoModeOverlay(
   // in this pill's own words (the customer's language) and the guide's short name when shown
   faceRef.current = {
     compact,
-    open: compact && open,
+    open: compact && shownOpen,
     status: pillStatus,
     text: line,
     label: statusLabel,
@@ -2763,7 +2816,7 @@ export default function DemoModeOverlay(
     connectingLabel: t("demoMode.connecting"),
     endedLabel: t("demoMode.ended"),
     // REQ-835 (demo-loop cycle dm2, m2) — it wraps into rows, so the stage's ghost does too
-    wraps: pillWraps({ compact, open, asking }),
+    wraps: pillWraps({ compact, open: shownOpen, asking }),
     // REQ-822 (demo-loop cycle dm1, m1) — End is asking: the question and both answers in this
     // pill's own words, so the stage's ghost draws them and the presenter knows
     ...(asking
@@ -2840,7 +2893,9 @@ export default function DemoModeOverlay(
             : pillStyle) +
             // REQ-548 (cycle 4, p4-p3e) — opened details, or End asking, take a row of their own on
             // the phone: never a squeeze of the guide's name
-            (pillWraps({ compact, open, asking }) ? ";flex-wrap:wrap" : "")}
+            (pillWraps({ compact, open: shownOpen, asking })
+              ? ";flex-wrap:wrap"
+              : "")}
       >
         {folded && (
           // REQ-545 — the tucked pill: hover or tap shows it whole. REQ-637 (cycle 5, m5) — it says
@@ -2894,7 +2949,7 @@ export default function DemoModeOverlay(
               style={`display:${
                 pillDetailsShown({
                     compact,
-                    open,
+                    open: shownOpen,
                     started: started !== null,
                     joined,
                   })
@@ -2940,7 +2995,7 @@ export default function DemoModeOverlay(
                 <button
                   type="button"
                   data-cy="demo-more"
-                  aria-expanded={open}
+                  aria-expanded={shownOpen}
                   aria-label={copy.moreLabel}
                   onClick={toggleOpen}
                   style={`display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;${HIT}`}

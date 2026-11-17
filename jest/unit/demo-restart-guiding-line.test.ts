@@ -168,7 +168,7 @@ describe("REQ-833 a restart says 'started a new demo', then '{name} is guiding y
 
   test("the overlay wires it: details by pillDetailsShown with joined, the restart's end into the join grace, the name said once", () => {
     expect(overlay).toMatch(
-      /pillDetailsShown\(\{\s*compact,\s*open,\s*started: started !== null,\s*joined,?\s*\}\)/,
+      /pillDetailsShown\(\{\s*compact,\s*open: shownOpen,\s*started: started !== null,\s*joined,?\s*\}\)/,
     );
     expect(overlay).toMatch(
       /joinRef\.current\?\.restartEnded\(\s*demoRef\.current\?\.id \?\? "",\s*read === true,?\s*\)/,

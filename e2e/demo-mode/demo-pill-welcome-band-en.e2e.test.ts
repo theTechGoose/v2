@@ -330,3 +330,105 @@ Deno.test("REQ-298 AMENDMENT (demo-loop run 13, p2): the restart's pill on EN /w
       await w.userCtx.close();
     }
   }));
+
+Deno.test("REQ-820 AMENDMENT 2 (demo-loop run 14, m1): the RESTART pill on EN /welcome step 2 at 390×844 is painted at its band from its first frame — never at the ended notice's dock past the window, never a glide across the form", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    const w = await welcomeDemo(page, http, baseUrl);
+    try {
+      await w.open();
+      await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
+      await w.tab.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
+      await w.tab.waitForTimeout(6_000);
+      await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-confirm']").click();
+      await w.tab.locator("[data-cy='demo-pill']").waitFor({ state: "hidden", timeout: 15_000 });
+      await page.waitForURL(/\/admin/, { timeout: 20_000 });
+      const samples = await w.watch(6_000, 40, w.open);
+      await w.tab.screenshot({ path: `${folder}/welcome-en-restart-jump-390.png` });
+      const restarted = samples.filter((s) => s.restarted && !s.tucked);
+      expect(
+        restarted.length >= 10,
+        `the restart pill is sampled (${JSON.stringify(samples.slice(0, 5).map((s) => [s.at, s.box, s.restarted]))})`,
+      );
+      const off = restarted.filter((s) => s.box[0] < 0 || s.box[0] + s.box[2] > 390);
+      expect(
+        off.length === 0,
+        `m1: never past the window's edge — ${JSON.stringify(off.slice(0, 4).map((s) => [s.at, s.box, s.tf.slice(0, 32)]))}`,
+      );
+      const last = restarted[restarted.length - 1];
+      const away = restarted.filter((s) =>
+        Math.abs(s.box[1] - last.box[1]) > 4 || Math.abs(s.box[0] - last.box[0]) > 4
+      );
+      expect(
+        away.length === 0,
+        `m1: every restart-pill frame is at its settled spot (${JSON.stringify(last.box)}) — no glide: ${
+          JSON.stringify(away.slice(0, 6).map((s) => [s.at, s.box, s.tf.slice(0, 32)]))
+        }`,
+      );
+      const onPage = restarted.filter((s) => s.under.some((u) => ON_PAGE.test(u)));
+      expect(
+        onPage.length === 0,
+        `m1: never over a control or the page's words — ${JSON.stringify(onPage.slice(0, 4).map((s) => [s.at, s.box, s.under]))}`,
+      );
+    } finally {
+      await w.userCtx.close();
+    }
+  }));
+
+Deno.test("REQ-890 AMENDMENT 3 (demo-loop run 14, m2): the folded pill on EN /welcome step 2 at 390×844 — the peek out of its tab is ONE row, never on 'Step 2 of 10', the question or a button; 'more' during the peek opens the rows (never over a control); the NEXT peek starts closed again", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    const w = await welcomeDemo(page, http, baseUrl);
+    try {
+      await w.open();
+      await w.tab.locator("[data-cy='demo-pill'][data-tucked]").waitFor({ timeout: 30_000 });
+      const step = await w.tab.evaluate(() => {
+        const r = document.querySelector(".welcome__step-count")?.getBoundingClientRect();
+        return r ? [r.left, r.top, r.width, r.height].map(Math.round) : null;
+      });
+      const peekOnce = async (what: string) => {
+        const seen = await w.watch(1_500, 100, async () => {
+          await w.tab.locator("[data-cy='demo-pill-tab']").click({ force: true, timeout: 5_000 });
+        });
+        const open = seen.filter((s) => !s.tucked && s.at >= 300);
+        expect(open.length >= 5, `${what}: the peek is open (${JSON.stringify(seen.slice(0, 5))})`);
+        const tall = open.filter((s) => s.box[3] > 48);
+        expect(
+          tall.length === 0,
+          `${what}: the peek opens with its details closed — one row (${JSON.stringify(tall.slice(0, 3).map((s) => s.box))})`,
+        );
+        const onPage = open.filter((s) => s.under.some((u) => ON_PAGE.test(u)));
+        expect(
+          onPage.length === 0,
+          `${what}: the peek never sits on the step count, the question or a button (step ${JSON.stringify(step)}) — ${
+            JSON.stringify(onPage.slice(0, 4).map((s) => [s.at, s.box, s.under]))
+          }`,
+        );
+      };
+      await peekOnce("m2, first peek");
+      // 'more' during the peek: the rows open for this peek — over words at worst, never a control
+      const more = w.tab.locator("[data-cy='demo-more']");
+      const rows = await w.watch(1_500, 100, async () => {
+        await more.click({ force: true, timeout: 5_000 });
+      });
+      await w.tab.screenshot({ path: `${folder}/welcome-en-peek-rows-390.png` });
+      const twoRows = rows.filter((s) => !s.tucked && s.at >= 300);
+      expect(
+        twoRows.some((s) => s.box[3] > 60),
+        `'more' opens the rows for this peek (${JSON.stringify(twoRows.slice(-2).map((s) => s.box))})`,
+      );
+      const onControl = twoRows.filter((s) =>
+        s.under.some((u) => /^(button|a|input|select|textarea)\./.test(u))
+      );
+      expect(
+        onControl.length === 0,
+        `the two-row peek never sits on a control — ${JSON.stringify(onControl.slice(0, 3).map((s) => [s.at, s.box, s.under]))}`,
+      );
+      // she leaves it: the pill folds again; the next peek starts with its details closed
+      await w.tab.mouse.move(200, 500);
+      await w.tab.mouse.move(210, 520);
+      await w.tab.locator("[data-cy='demo-pill'][data-tucked]").waitFor({ timeout: 30_000 });
+      await peekOnce("the next peek");
+    } finally {
+      await w.userCtx.close();
+    }
+  }));

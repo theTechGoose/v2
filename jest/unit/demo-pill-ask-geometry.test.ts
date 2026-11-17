@@ -266,7 +266,7 @@ describe("REQ-835 (demo-loop cycle dm2, m2 + M2) — the open End question: one 
 
     test("the face says whether the pill wraps, and the stage's ghost lays out by it", () => {
       const face = between(o, "faceRef.current = {\n    compact,", "\n  };");
-      expect(face).toMatch(/wraps: pillWraps\(\{ compact, open, asking \}\)/);
+      expect(face).toMatch(/wraps: pillWraps\(\{ compact, open: shownOpen, asking \}\)/);
       const ghost = between(
         s,
         'data-cy="demo-pill-ghost"',

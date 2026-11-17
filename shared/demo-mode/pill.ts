@@ -428,71 +428,91 @@ export function peekBox(o: {
   edge?: Rect;
   /** REQ-818 — controls under a box; none counted when absent (flush with the tab's edge) */
   controls?: (r: Rect) => number;
+  /** REQ-890 AMENDMENT 3 (dm14, m2) — words (text, media) under a box: with it, a box clear of
+   *  controls AND words is taken first — the tab's row, the other rows, the pill's spots — and
+   *  only when there is none does the old rule (controls alone) answer. The peek with its details
+   *  open (two rows) sat on "Step 2 of 10" on the tab's row, the rows below clear */
+  texts?: (r: Rect) => number;
   /** REQ-873 — the impersonation banner's height: no row or spot above it */
   top?: number;
 }): PeekBox {
   const controls = o.controls ?? (() => 0);
-  /** the search for one form of the pill (`home` is its box): the tab's row along x, flush with
-   *  the tab first; then (`more`) the other rows, nearest first, and the pill's spots */
-  function search(home: Rect) {
-    // REQ-849 — inside the margins (a pill wider than that: at the left margin); at the left
-    // edge's margin, or the right one's; a tab along the bottom: centred over it (`peekFlushBox`)
-    const min = PILL_MARGIN;
-    const max = Math.max(min, o.view.w - PILL_MARGIN - home.width);
-    const first = peekFlushBox(o.tab, o.view, {
-      w: home.width,
-      h: home.height,
-    });
-    const top = first.top;
-    const flush = first.left;
-    const at = (x: number): Rect => ({
-      ...home,
-      top,
-      left: Math.max(min, Math.min(Math.round(x), max)),
-    });
-    const xs = [flush];
-    for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
-    xs.push(max);
-    xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
-    const best = fewest(xs.map(at), controls);
-    const row = controls(best) === 0 ? best : null;
-    // REQ-873 — the row is crowded: other rows (between the banner and home's row), nearest
-    // first, each along x as above; then the pill's spots
-    const more = (): Rect | null => {
-      const ceil = (o.top ?? 0) + PILL_MARGIN;
-      const floor = Math.max(top, home.top);
-      const step = home.height + PILL_BAND_GAP;
-      const rows: number[] = [];
-      for (let k = 1; top - k * step >= ceil || top + k * step <= floor; k++) {
-        if (top - k * step >= ceil) rows.push(top - k * step);
-        if (top + k * step <= floor) rows.push(top + k * step);
-      }
-      for (const t of rows) {
-        for (const x of xs) {
-          const r = { ...at(x), top: t };
-          if (controls(r) === 0) return r;
-        }
-      }
-      for (const r of pillSpots({ home, view: o.view, top: o.top })) {
-        if (controls(r) === 0) return r;
-      }
-      return null;
-    };
-    return { best, row, more };
+  if (o.texts) {
+    const texts = o.texts;
+    const clear = run((r) => controls(r) * 1000 + texts(r), false);
+    if (clear) return clear;
   }
-  const whole = search(o.home);
-  if (whole.row) return whole.row;
-  // REQ-890 — the whole pill has no clear box on the tab's row: the compact form there, before
-  // the whole pill moves away from the tab
-  const compact = o.compact
-    ? search({ ...o.home, width: o.compact.w, height: o.compact.h })
-    : null;
-  if (compact?.row) return { ...compact.row, compact: true };
-  const away = whole.more();
-  if (away) return away;
-  const awayCompact = compact?.more();
-  if (awayCompact) return { ...awayCompact, compact: true };
-  return { ...whole.best, crowded: true };
+  return run(controls, true)!;
+  /** one pass of the search with `count` as what blocks a box: a clear box (count 0) on the tab's
+   *  row, the compact form's there, another row or spot; `fallback` — else the row's fewest */
+  function run(
+    count: (r: Rect) => number,
+    fallback: boolean,
+  ): PeekBox | null {
+    /** the search for one form of the pill (`home` is its box): the tab's row along x, flush with
+     *  the tab first; then (`more`) the other rows, nearest first, and the pill's spots */
+    function search(home: Rect) {
+      // REQ-849 — inside the margins (a pill wider than that: at the left margin); at the left
+      // edge's margin, or the right one's; a tab along the bottom: centred over it (`peekFlushBox`)
+      const min = PILL_MARGIN;
+      const max = Math.max(min, o.view.w - PILL_MARGIN - home.width);
+      const first = peekFlushBox(o.tab, o.view, {
+        w: home.width,
+        h: home.height,
+      });
+      const top = first.top;
+      const flush = first.left;
+      const at = (x: number): Rect => ({
+        ...home,
+        top,
+        left: Math.max(min, Math.min(Math.round(x), max)),
+      });
+      const xs = [flush];
+      for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
+      xs.push(max);
+      xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
+      const best = fewest(xs.map(at), count);
+      const row = count(best) === 0 ? best : null;
+      // REQ-873 — the row is crowded: other rows (between the banner and home's row), nearest
+      // first, each along x as above; then the pill's spots
+      const more = (): Rect | null => {
+        const ceil = (o.top ?? 0) + PILL_MARGIN;
+        const floor = Math.max(top, home.top);
+        const step = home.height + PILL_BAND_GAP;
+        const rows: number[] = [];
+        for (
+          let k = 1; top - k * step >= ceil || top + k * step <= floor; k++
+        ) {
+          if (top - k * step >= ceil) rows.push(top - k * step);
+          if (top + k * step <= floor) rows.push(top + k * step);
+        }
+        for (const t of rows) {
+          for (const x of xs) {
+            const r = { ...at(x), top: t };
+            if (count(r) === 0) return r;
+          }
+        }
+        for (const r of pillSpots({ home, view: o.view, top: o.top })) {
+          if (count(r) === 0) return r;
+        }
+        return null;
+      };
+      return { best, row, more };
+    }
+    const whole = search(o.home);
+    if (whole.row) return whole.row;
+    // REQ-890 — the whole pill has no clear box on the tab's row: the compact form there, before
+    // the whole pill moves away from the tab
+    const compact = o.compact
+      ? search({ ...o.home, width: o.compact.w, height: o.compact.h })
+      : null;
+    if (compact?.row) return { ...compact.row, compact: true };
+    const away = whole.more();
+    if (away) return away;
+    const awayCompact = compact?.more();
+    if (awayCompact) return { ...awayCompact, compact: true };
+    return fallback ? { ...whole.best, crowded: true } : null;
+  }
 }
 
 /**

@@ -46,7 +46,7 @@ describe("REQ-548 (cycle 4, p4-p3e) End's question gets its own row on the compa
 
   test("REQ-548 the customer's pill wraps by pillWraps and gives End's question its own row when compact", () => {
     const o = read("front-end/islands/DemoModeOverlay.tsx");
-    expect(o).toMatch(/pillWraps\(\{\s*compact,\s*open,\s*asking\s*\}\)/);
+    expect(o).toMatch(/pillWraps\(\{\s*compact,\s*open: shownOpen,\s*asking\s*\}\)/);
     expect(o).toMatch(
       // REQ-544 also hands EndDemo the overlay's demo-chrome t; REQ-649 the viewer's question;
       // REQ-637 (cycle 5, m5) AMENDMENT — and whether it opens already asking (the folded mini-pill's ×)

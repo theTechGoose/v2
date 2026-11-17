@@ -70,7 +70,7 @@ describe("REQ-294 the pill keeps the guide's name (demo m21: 'ended th…', 'Ale
     const at = o.indexOf('data-cy="demo-details"');
     const live = o.slice(o.lastIndexOf('data-cy="demo-pill"', at), at);
     expect(live).toMatch(
-      /pillWraps\(\{ compact, open, asking \}\) \? ";flex-wrap:wrap" : ""/,
+      /pillWraps\(\{ compact, open: shownOpen, asking \}\)\s*\?\s*";flex-wrap:wrap"\s*:\s*""/,
     );
   });
 });

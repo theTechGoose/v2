@@ -191,7 +191,7 @@ describe("REQ-298 the islands are wired", () => {
     // the phone's compact pill hides its details until tapped: a restart is shown anyway
     //    REQ-833 AMENDMENT — through pillDetailsShown, which also shows a join's guiding line
     expect(overlay).toMatch(
-      /pillDetailsShown\(\{\s*compact,\s*open,\s*started: started !== null/,
+      /pillDetailsShown\(\{\s*compact,\s*open: shownOpen,\s*started: started !== null/,
     );
     expect(overlay).not.toMatch(
       /useEffect\(\(\) => \{\s*if \(demo\) setNotice\(null\);\s*\}, \[demo\?\.id\]\);/,
