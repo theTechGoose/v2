@@ -7970,3 +7970,6 @@ Demos 1, 2, 4, 5: a brand-new tab's first page load said "Poniéndose al día…
 - **p3** Back to /verify while logged in: the stage keeps /welcome with "Cargando su siguiente página… 2 s de retraso" — /verify has no session overlay, so nothing of hers reports; the "logged out" state needs the sign-out signal (REQ-823). A pre-login page reached by Back while logged in is a page of hers the stage cannot see; a dedicated word is an owner call.
 - **p4** the overlay ("Esperando la app de…") and the status chip ("Cargando su siguiente página…") disagreeing for 1.1 s while her app comes back — both true; NITPICK.
 - All four run-18 fixes FIXED by every tester who ran them; nobody saw the dead folded pill (item 16).
+
+### Lane at 2405dc7c (run-19 hand fixes): 131 pass · 5 fail → five load flakes, 17/17 green alone
+- REQ-548 (end-ask-compact: a 20 s locator wait), REQ-648 cycle-5 M3 (page-latency: the stage's page 61 ms after her hydration with the server slow — the known load flake), REQ-821 AMENDMENT and REQ-846 AMENDMENT (`page.goto /login: net::ERR_ABORTED` — the dev server dropping a navigation under 4 parallel jobs), REQ-850 (cursor-offview: the stage still on /admin when sampled) failed in the lane and pass together alone against the same server (fresh KV `kv-5601-fresh14`): 17/17 in the five files. No app change.
