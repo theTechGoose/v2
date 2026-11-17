@@ -65,7 +65,10 @@ export function applyAnswer(
       {
         stepId: input.stepId,
         optionId: input.optionId,
-        customValue: option.isCustom ? input.customValue : undefined,
+        // REQ-678: the deposit option's picked amount rides along too.
+        customValue: option.isCustom || option.amountPicker
+          ? input.customValue
+          : undefined,
         answeredAt: new Date().toISOString(),
       },
     ],

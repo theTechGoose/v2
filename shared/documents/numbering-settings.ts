@@ -90,7 +90,8 @@ export function issuedNumberOf(
   return formatDocNumber(kind, seq - 1);
 }
 
-/** "Locked — INV-5000 was already issued"; "" when the kind is open. */
+/** "Locked — INV-5000 is already in use" (REQ-411: a scheduled, never-sent
+ *  invoice holds a number too); "" when the kind is open. */
 export function lockNote(
   view: NumberingView,
   kind: DocKind,

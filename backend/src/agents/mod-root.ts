@@ -12,11 +12,14 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { StartConversation } from "@agents/domain/coordinators/start-conversation/mod.ts";
 import { HandleChatMessage } from "@agents/domain/coordinators/handle-chat-message/mod.ts";
+import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts"; // REQ-238
+import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts"; // REQ-315
 import { TransitionToTerms } from "@agents/domain/coordinators/transition-to-terms/mod.ts";
 import { HandleWizardAnswer } from "@agents/domain/coordinators/handle-wizard-answer/mod.ts";
 import { RewindWizard } from "@agents/domain/coordinators/rewind-wizard/mod.ts";
 import { LoadConversation } from "@agents/domain/coordinators/load-conversation/mod.ts";
 import { LockQuote } from "@agents/domain/coordinators/lock-quote/mod.ts";
+import { ReopenQuote } from "@agents/domain/coordinators/reopen-quote/mod.ts";
 import { AcceptQuote } from "@agents/domain/coordinators/accept-quote/mod.ts";
 import { SendQuote } from "@agents/domain/coordinators/send-quote/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
@@ -28,6 +31,11 @@ import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-opt
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts"; // REQ-264
+import { TranslateInvoice } from "@agents/domain/coordinators/translate-invoice/mod.ts"; // REQ-497
+import { ListConversations } from "@agents/domain/coordinators/list-conversations/mod.ts"; // REQ-369
+import { UpdateChatChangeOrder } from "@agents/domain/coordinators/update-chat-change-order/mod.ts"; // REQ-462
+import { ChatBilling } from "@agents/domain/coordinators/chat-billing/mod.ts"; // REQ-583
 import { LLM_CLIENT } from "@agents/domain/business/llm/base/mod.ts";
 import type { LLMClient } from "@agents/domain/business/llm/base/mod.ts";
 import { StubLLMClient } from "@agents/domain/business/llm/implementations/stub/mod.ts";
@@ -100,12 +108,15 @@ const LlmClientClass = await selectLLMClass();
     AgentConversationStore,
     AgentMessageStore,
     StartConversation,
+    ApplyChatChangeOrder,
+    ReviseQuote, // REQ-315
     HandleChatMessage,
     TransitionToTerms,
     HandleWizardAnswer,
     RewindWizard,
     LoadConversation,
     LockQuote,
+    ReopenQuote, // REQ-334
     AcceptQuote,
     SendQuote,
     SendInvoice,
@@ -117,6 +128,11 @@ const LlmClientClass = await selectLLMClass();
     SuggestPrices,
     ProfessionalizeBullet,
     TranslateBullets,
+    TranslateQuote, // REQ-264
+    TranslateInvoice, // REQ-497 — registers itself on paperwork's InvoiceTranslatorPort
+    ListConversations, // REQ-369
+    UpdateChatChangeOrder, // REQ-462
+    ChatBilling, // REQ-583: the chat sends invoices and records payments
     { token: LLM_CLIENT, useClass: LlmClientClass },
   ],
 })

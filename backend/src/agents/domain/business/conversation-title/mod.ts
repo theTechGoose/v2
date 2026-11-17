@@ -17,6 +17,18 @@ export function deriveTitleFromFirstUserMessage(text: string, lang: Lang = "en")
   return cleaned.length > TITLE_MAX ? cleaned.slice(0, TITLE_MAX - 1) + "…" : cleaned;
 }
 
+/**
+ * REQ-447 (demo-loop cycle 3, m14): once a quote names the job, its jobName
+ * IS the thread's title — the header, the list and the documents say one
+ * name instead of the first message's wording. Undefined when there is no
+ * usable name (the caller keeps the title it has).
+ */
+export function titleFromJobName(jobName: string | null | undefined): string | undefined {
+  const cleaned = singleLine(jobName ?? "").trim();
+  if (cleaned.length === 0) return undefined;
+  return cleaned.length > TITLE_MAX ? cleaned.slice(0, TITLE_MAX - 1) + "…" : cleaned;
+}
+
 export function derivePreview(text: string): string {
   const cleaned = singleLine(text).trim();
   if (cleaned.length === 0) return "";

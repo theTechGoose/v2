@@ -17,9 +17,9 @@ composes.
   `DecidedRow` — an island.
 - **Server action + flash:** none. No forms, no PRG here. (The embedded
   `DeleteQuoteButton` does the client-fetch + reload — flagged in its own spec;
-  `DecidedRow` just places it.) The `QuotesHero` `.qph__cta` "New quote" button
-  is a `type="button"` with **no `onClick`** — a **dead stub** (no handler
-  anywhere; rebuild should wire it to the new-quote flow or remove it).
+  `DecidedRow` just places it.) The `QuotesHero` `.qph__cta` "New quote" CTA is
+  a plain `<a href="/assistant">` to the assistant's new-conversation route
+  (REQ-307) — a link, so it works without hydration.
 - **Island client-state + refresh:** N/A (static). They re-render only when the
   parent island re-renders (language flip / reload).
 - **`location.reload()` FLAG:** not here — but `DecidedRow` embeds
@@ -75,7 +75,7 @@ QuotesHero ({openCount, openTotal, staleCount, clientCount, lang})
       {allWarm → <h1><em>{fmtMoney(openTotal)}</em> {warmTitle}</h1> + warmSub}
       {else    → <h1><em>{fmtMoney(openTotal)}</em> {staleTitle(quotes,verb)}</h1> + staleSub(<strong>{staleCount}</strong>)}
     </div>
-    <button class="qph__cta" type=button>{<I plus/>} {cta}</button>   ← DEAD STUB (no onClick)
+    <a class="qph__cta" data-cy="quote-new" href="/assistant">{<I plus/>} {cta}</a>   ← REQ-307: links to the assistant
   </div>
 
 QuotesKpis ({outValue,outCount,draftCount,decidedCount,wonCount,lostCount,winRate,lang})
@@ -141,8 +141,8 @@ quote-card spec §3.)
 ## 5. Events
 
 - No own events (static). Transitively:
-  - `ev.expect(e => e.source === "button.qph__cta" && e.type === "click")` → **no
-    handler** (dead stub) — assert it does nothing.
+  - `ev.expect(e => e.source === "a.qph__cta" && e.type === "click")` → native
+    navigation to `/assistant` (REQ-307) — no JS handler.
   - `ev.expect(e => e.source === "button.qdone__del" && e.type === "click")` →
     bubbles into `DeleteQuoteButton` (icon). Owned by that island.
 
@@ -177,9 +177,8 @@ Shoot the sections at 1280 / 1100 / 768 / 560.
 
 ## 8. A11y
 
-- **QuotesHero CTA** is a real `<button type=button>` but **does nothing** — a
-  focusable control with no action confuses keyboard/AT users. Rebuild: wire it
-  or remove it.
+- **QuotesHero CTA** is a real `<a href="/assistant">` (REQ-307) — a focusable
+  control with a real destination, so keyboard/AT users land in the assistant.
 - KPI / decided / sidebar values are plain text — fine, but the win-rate `—`
   fallback conveys "not enough data" only visually; consider an `aria-label`
   spelling it out.

@@ -10,9 +10,15 @@ import type {
   ClientSegmentKey,
   ClientStatus,
   CustomerCard,
+  CustomerJobsSub,
 } from "../clients/clients.ts";
 import { type Lang, tFor } from "./i18n.ts";
-import { hasAddress } from "../../shared/quote-flow/format-helpers.ts";
+import {
+  hasAddress,
+  relativeTime,
+} from "../../shared/quote-flow/format-helpers.ts";
+import { type CtaKind, ctaKindFor } from "./client-actions.ts";
+import { balanceSubLabel } from "../../shared/quote-flow/balance-sub.ts";
 
 export interface MoodPalette {
   from: string;
@@ -28,6 +34,7 @@ const STATUS_LABEL_KEYS: Record<ClientStatus, string> = {
   owes: "clientsDisplay.status.owes",
   regular: "clientsDisplay.status.regular",
   cold: "clientsDisplay.status.cold",
+  new: "clientsDisplay.status.new",
 };
 
 const SEGMENT_LABEL_KEYS: Record<ClientSegmentKey, string> = {
@@ -77,6 +84,16 @@ export function moodFor(c: CustomerCard, lang: Lang = "en"): MoodPalette {
       shadow: "rgba(232,112,79,0.35)",
       statusFg: "#A8431F",
       label: tFor(lang, "clientsDisplay.status.lead"),
+    };
+  }
+  if (c.status === "new") {
+    // REQ-271: a customer with nothing on the books yet — never the regular fallback.
+    return {
+      from: "#7FB3D5",
+      to: "#3E7CA6",
+      shadow: "rgba(62,124,166,0.32)",
+      statusFg: "#2E6185",
+      label: tFor(lang, "clientsDisplay.status.new"),
     };
   }
   if (c.status === "cold") {
@@ -129,7 +146,9 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
       num: String(days).padStart(2, "0"),
       unit: tFor(
         lang,
-        days === 1 ? "clientsDisplay.since.day.one" : "clientsDisplay.since.day.other",
+        days === 1
+          ? "clientsDisplay.since.day.one"
+          : "clientsDisplay.since.day.other",
       ),
     };
   }
@@ -139,7 +158,9 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
     num: String(weeks),
     unit: tFor(
       lang,
-      weeks === 1 ? "clientsDisplay.since.week.one" : "clientsDisplay.since.week.other",
+      weeks === 1
+        ? "clientsDisplay.since.week.one"
+        : "clientsDisplay.since.week.other",
     ),
   };
 }
@@ -177,10 +198,35 @@ export function balanceDisplay(
       }),
     };
   }
+  // REQ-696 (demo-loop cycle 5, M5): nothing owed yet, but a scheduled
+  // installment is still to bill — "$350 to bill", never "Settled".
+  if (c.balanceSubParts?.kind === "toBill") {
+    return {
+      cls: "ccard2__bal-val--zero",
+      text: tFor(lang, "clientsDisplay.balance.toBill", {
+        amount: dollars(c.balanceSubParts.amountCents ?? 0),
+      }),
+    };
+  }
+  // REQ-323 (demo-loop cycle 1, m20): "Settled" is a claim that something was
+  // billed and paid; a lead with an open quote and no invoice has nothing to
+  // settle, so it reads "Nothing billed yet" until an invoice has been issued.
   return {
     cls: "ccard2__bal-val--zero",
-    text: tFor(lang, "clientsDisplay.balance.settled"),
+    text: tFor(
+      lang,
+      hasBilled(c)
+        ? "clientsDisplay.balance.settled"
+        : "clientsDisplay.balance.nothingBilled",
+    ),
   };
+}
+
+/** REQ-323 — an issued, non-void invoice exists (sent, viewed, claimed, paid …). */
+export function hasBilled(c: Pick<CustomerCard, "documents">): boolean {
+  return (c.documents ?? []).some((d) =>
+    d.kind === "invoice" && d.state !== "draft" && d.state !== "void"
+  );
 }
 
 export function segmentLabel(
@@ -203,26 +249,81 @@ export function addressFor(c: CustomerCard, lang: Lang = "en"): string {
   return tFor(lang, "clientsDisplay.address.none");
 }
 
+/**
+ * REQ-367 (demo-loop cycle 1, m10) — how long ago the customer's last activity
+ * was, in `lang`: "hace un momento" / "just now", "hace 5 min" / "5m ago"…
+ * Worded HERE, from the card's timestamp, in the language live on screen. The
+ * backend used to send it worded in the request's language (`lastWhenRel`), so
+ * after an EN/ES switch the card read "New customer — added hace un momento."
+ */
+export function lastWhenFor(
+  c: CustomerCard,
+  lang: Lang = "en",
+  nowMs: number = Date.now(),
+): string {
+  return c.lastWhen ? relativeTime(c.lastWhen, nowMs, lang) : "";
+}
+
+const JOBS_SUB_KEYS: Record<CustomerJobsSub, string> = {
+  overdue: "clientsDisplay.jobsSub.overdue",
+  active: "clientsDisplay.jobsSub.active",
+  scheduled: "clientsDisplay.jobsSub.scheduled",
+  none: "clientsDisplay.jobsSub.none",
+};
+
+/** REQ-367 — the card's jobs line ("activo" / "active"), worded from its kind in `lang`. */
+export function jobsSubLabel(kind: CustomerJobsSub, lang: Lang = "en"): string {
+  return tFor(lang, JOBS_SUB_KEYS[kind] ?? JOBS_SUB_KEYS.none);
+}
+
+/**
+ * REQ-350 + REQ-367 — the card's balance sub-line ("INV-001 · vencida",
+ * "esperando el pago"), worded from its parts in `lang`; a card without parts
+ * keeps the backend's English line.
+ */
+export function balanceSubFor(c: CustomerCard, lang: Lang = "en"): string {
+  return c.balanceSubParts
+    ? balanceSubLabel(c.balanceSubParts, lang, tFor)
+    : c.balanceSub;
+}
+
 /** One-line "what's going on" copy for the card body. */
-export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
+export function storyLineFor(
+  c: CustomerCard,
+  lang: Lang = "en",
+  nowMs: number = Date.now(),
+): string {
+  const when = lastWhenFor(c, lang, nowMs);
   if (c.notes && c.notes.trim()) return c.notes.trim();
   if (c.balanceCents > 0) {
     return tFor(lang, "clientsDisplay.story.balance", {
       amount: dollars(c.balanceCents),
-      sub: c.balanceSub,
+      sub: balanceSubFor(c, lang),
     });
   }
   if (c.status === "active") {
+    // REQ-741 — the backend sets jobsSub "active" exactly when activeJobs > 0,
+    // so "1 active job · active." repeats itself; only a sub that adds news
+    // (overdue, scheduled) is appended.
+    if (c.jobsSub === "active") {
+      return tFor(
+        lang,
+        c.activeJobs === 1
+          ? "clientsDisplay.story.activePlain.one"
+          : "clientsDisplay.story.activePlain.other",
+        { n: c.activeJobs },
+      );
+    }
     return tFor(
       lang,
       c.activeJobs === 1
         ? "clientsDisplay.story.active.one"
         : "clientsDisplay.story.active.other",
-      { n: c.activeJobs, sub: c.jobsSub },
+      { n: c.activeJobs, sub: jobsSubLabel(c.jobsSub, lang) },
     );
   }
   if (c.status === "lead") {
-    return tFor(lang, "clientsDisplay.story.lead", { when: c.lastWhenRel });
+    return tFor(lang, "clientsDisplay.story.lead", { when });
   }
   if (c.status === "cold") {
     return tFor(
@@ -234,18 +335,25 @@ export function storyLineFor(c: CustomerCard, lang: Lang = "en"): string {
     );
   }
   if (c.status === "regular") {
-    return tFor(lang, "clientsDisplay.story.regular", { when: c.lastWhenRel });
+    return tFor(lang, "clientsDisplay.story.regular", { when });
   }
-  return tFor(lang, "clientsDisplay.story.default", { when: c.lastWhenRel });
+  if (c.status === "new") {
+    return tFor(lang, "clientsDisplay.story.new", { when });
+  }
+  return tFor(lang, "clientsDisplay.story.default", { when });
 }
 
+/** REQ-277: the label of the nudge whose action `nudgeActionFor` decides — one precedence for both */
 export function ctaFor(c: CustomerCard, lang: Lang = "en"): string {
-  if (c.balanceCents > 0) return tFor(lang, "clientsDisplay.cta.reminder");
-  if (c.status === "active") return tFor(lang, "clientsDisplay.cta.progress");
-  if (c.status === "lead") return tFor(lang, "clientsDisplay.cta.followUp");
-  if (c.status === "cold") return tFor(lang, "clientsDisplay.cta.hello");
-  return tFor(lang, "clientsDisplay.cta.openCard");
+  return tFor(lang, CTA_LABEL_KEYS[ctaKindFor(c)]);
 }
+const CTA_LABEL_KEYS: Record<CtaKind, string> = {
+  reminder: "clientsDisplay.cta.reminder",
+  progress: "clientsDisplay.cta.progress",
+  followUp: "clientsDisplay.cta.followUp",
+  hello: "clientsDisplay.cta.hello",
+  openCard: "clientsDisplay.cta.openCard",
+};
 
 /** Editorial number → words for small counts; falls back to digits. */
 const NUM_WORD_KEYS = [
@@ -275,4 +383,37 @@ const NUM_WORD_KEYS = [
 export function numberWord(n: number, lang: Lang = "en"): string {
   if (n >= 0 && n < NUM_WORD_KEYS.length) return tFor(lang, NUM_WORD_KEYS[n]);
   return String(n);
+}
+
+/**
+ * REQ-390 (demo-loop cycle 2, M18) — two customers with the same name ("Bob"
+ * and "Bob") looked identical on /customers: the phone and the C-number lived
+ * only on the card's back panel. For every visible card whose accent- and
+ * case-folded name another visible card shares, the short tag that tells them
+ * apart: the customer's number ("C-002"), else the phone's last four
+ * ("···0177"), else the email. Unique names get nothing (the face stays as is).
+ */
+export function cardDisambiguators(
+  cards: ReadonlyArray<
+    Pick<CustomerCard, "id" | "name" | "number" | "phoneNumber" | "email">
+  >,
+): Map<string, string> {
+  const fold = (s: string | null | undefined) =>
+    (s ?? "").normalize("NFD").replace(/\p{M}/gu, "").replace(/\s+/g, " ")
+      .trim().toLowerCase();
+  const seen = new Map<string, number>();
+  for (const c of cards) {
+    const k = fold(c.name);
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  const out = new Map<string, string>();
+  for (const c of cards) {
+    if ((seen.get(fold(c.name)) ?? 0) < 2) continue;
+    const digits = (c.phoneNumber ?? "").replace(/\D/g, "");
+    const tag = c.number?.trim() ||
+      (digits.length >= 4 ? `···${digits.slice(-4)}` : "") ||
+      (c.email ?? "").trim();
+    if (tag) out.set(c.id, tag);
+  }
+  return out;
 }

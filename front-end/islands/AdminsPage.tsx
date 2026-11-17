@@ -1,6 +1,6 @@
 /**
  * REQ-146 — /admins. The numbers the owner lets into the account: an invite
- * form (phone, optional name) and the list with Remove. An admin acting for
+ * form (phone and, REQ-632, the editor's name — required) and the list with Remove. An admin acting for
  * the account sees the list only — inviting and removing are the owner's.
  */
 import { useEffect, useState } from "preact/hooks";
@@ -12,8 +12,14 @@ import {
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell } from "../lib/field.ts";
-import { langSignal, t } from "../lib/i18n.ts";
+import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import { langSignal, t, tn } from "../lib/i18n.ts";
+import {
+  copyShareText,
+  type InviteShare,
+  inviteShare,
+} from "../lib/invite-share.ts";
+import { inviteName } from "../../shared/person-name/mod.ts"; // REQ-632 — the rule the API applies
 
 interface InviteForm {
   /** digits only, at most 10 */
@@ -58,7 +64,14 @@ export default function AdminsPage() {
   const [form, setForm] = useState<InviteForm>(BLANK);
   const [inviting, setInviting] = useState(false);
   const [inviteErr, setInviteErr] = useState<string | null>(null);
-  const [sent, setSent] = useState<string | null>(null);
+  /** REQ-632: the name field was left (blurred) — from then on an empty one says so */
+  const [nameTouched, setNameTouched] = useState(false);
+  // REQ-523 (demo m16): the invited number, and whether the text went out
+  // REQ-601 (cycle 4, M12): when it did not, the sign-in link + the invite text to share
+  const [sent, setSent] = useState<
+    { phone: string; texted: boolean; share: InviteShare | null } | null
+  >(null);
+  const [copied, setCopied] = useState<boolean | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(
@@ -87,7 +100,9 @@ export default function AdminsPage() {
   }, []);
 
   const phoneOk = form.phone.length === 10;
-  const canInvite = phoneOk && !inviting;
+  const nameOk = inviteName(form.name) !== null;
+  const canInvite = phoneOk && nameOk && !inviting;
+  const showNameErr = nameTouched && !nameOk;
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -95,13 +110,20 @@ export default function AdminsPage() {
     setInviting(true);
     setInviteErr(null);
     setSent(null);
+    setCopied(null);
     try {
-      const made = await adminsClient.invite({
-        phoneNumber: form.phone,
-        name: form.name.trim() || undefined,
-      });
+      const { texted, signInUrl, shareText, ...made } = await adminsClient
+        .invite({
+          phoneNumber: form.phone,
+          name: inviteName(form.name)!,
+        });
       setForm(BLANK);
-      setSent(fmtCell(made.phoneNumber));
+      setNameTouched(false);
+      setSent({
+        phone: fmtCell(made.phoneNumber),
+        texted: texted === true,
+        share: inviteShare({ texted, signInUrl, shareText }),
+      });
       setAdmins((list) => [...(list ?? []), made]);
     } catch (err) {
       setInviteErr(errMsg(err));
@@ -129,7 +151,7 @@ export default function AdminsPage() {
   return (
     <>
       <FieldHead
-        eyebrow={t("admins.eyebrow", { n: list.length })}
+        eyebrow={tn("admins.eyebrow", list.length)}
         title={t("admins.title")}
         sub={t("admins.sub")}
       />
@@ -152,7 +174,7 @@ export default function AdminsPage() {
                   required
                   inputMode="numeric"
                   autocomplete="off"
-                  placeholder="8435550201"
+                  placeholder={PHONE_PLACEHOLDER}
                   maxlength={10}
                   pattern="\d{10}"
                   value={form.phone}
@@ -166,19 +188,61 @@ export default function AdminsPage() {
                 />
               </label>
               <label class="field">
-                {t("admins.nameOptional")}
+                <span>
+                  {t("admins.nameLabel")}{" "}
+                  <span
+                    class="hint"
+                    data-cy="adm-name-required"
+                    style="text-transform:none;letter-spacing:0"
+                  >
+                    · {t("admins.nameRequired")}
+                  </span>
+                </span>
                 <input
                   name="name"
                   data-cy="adm-name"
+                  required
                   autocomplete="off"
                   maxlength={120}
+                  placeholder={t("admins.namePlaceholder")}
+                  aria-invalid={showNameErr ? "true" : undefined}
+                  aria-describedby={showNameErr
+                    ? "adm-name-error"
+                    : "adm-name-hint"}
                   value={form.name}
                   onInput={(e) =>
                     setForm({
                       ...form,
                       name: (e.currentTarget as HTMLInputElement).value,
                     })}
+                  onBlur={() => setNameTouched(true)}
                 />
+                {
+                  /* REQ-632: the name is what the editor is greeted by (REQ-624) — required here and by
+                    the API; a legacy invite without one still gets the first-sign-in prompt */
+                }
+                {showNameErr
+                  ? (
+                    <span
+                      class="alert"
+                      id="adm-name-error"
+                      data-cy="adm-name-error"
+                      role="alert"
+                      style="display:block;margin:6px 0 0"
+                    >
+                      {t("admins.err.name_required")}
+                    </span>
+                  )
+                  : (
+                    <span
+                      class="hint"
+                      id="adm-name-hint"
+                      data-cy="adm-name-hint"
+                      style="display:block;margin:6px 0 0"
+                    >
+                      {t("admins.nameHint")}
+                    </span>
+                  )}
               </label>
             </div>
             <div
@@ -197,9 +261,71 @@ export default function AdminsPage() {
             </div>
             {inviteErr && <p class="alert" data-cy="adm-error">{inviteErr}</p>}
             {sent && (
-              <p class="hint" data-cy="adm-sent" style="margin:8px 0 0">
-                {t("admins.sent", { phone: sent })}
+              <p
+                class={sent.texted ? "hint" : "alert"}
+                data-cy="adm-sent"
+                data-texted={sent.texted ? "true" : "false"}
+                style="margin:8px 0 0"
+              >
+                {t(sent.texted ? "admins.sent" : "admins.notTexted", {
+                  phone: sent.phone,
+                })}
               </p>
+            )}
+            {sent && !sent.texted && sent.share && (
+              <div class="panel" data-cy="adm-share" style="margin:8px 0 0">
+                <p style="margin:0 0 8px">
+                  {t("admins.shareLink")}:{" "}
+                  <a
+                    class="link"
+                    href={sent.share.url}
+                    target="_blank"
+                    rel="noopener"
+                    data-cy="adm-share-url"
+                    style="word-break:break-all"
+                  >
+                    {sent.share.url}
+                  </a>
+                </p>
+                <textarea
+                  readOnly
+                  rows={3}
+                  class="share-text"
+                  data-cy="adm-share-text"
+                  style="width:100%;resize:vertical"
+                  value={sent.share.text}
+                  onFocus={(e) =>
+                    (e.currentTarget as HTMLTextAreaElement).select()}
+                />
+                <div
+                  class="row"
+                  style="margin-top:6px;align-items:center;gap:8px"
+                >
+                  <button
+                    type="button"
+                    class="btn btn--ghost"
+                    data-cy="adm-share-copy"
+                    data-copied={copied === true ? "true" : undefined}
+                    onClick={async () => {
+                      const share = sent.share;
+                      if (share) {
+                        setCopied(await copyShareText(share.text));
+                      }
+                    }}
+                  >
+                    {t("admins.copyShare")}
+                  </button>
+                  {copied !== null && (
+                    <span class="hint" role="status" data-cy="adm-share-copied">
+                      {t(
+                        copied
+                          ? "admins.shareCopied"
+                          : "admins.shareCopyFailed",
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
             )}
           </form>
         )

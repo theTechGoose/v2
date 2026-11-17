@@ -18,6 +18,8 @@
     "jsr:@fresh/core@^2.3.3": "2.3.3",
     "jsr:@fresh/plugin-vite@^1.1.2": "1.1.2",
     "jsr:@hono/hono@4.6.3": "4.6.3",
+    "jsr:@libs/qrcode@*": "3.1.0",
+    "jsr:@libs/qrcode@^3.1.0": "3.1.0",
     "jsr:@mrg-keystone/danet@^1.0.2": "1.0.2",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/assert@^1.0.15": "1.0.19",
@@ -196,6 +198,9 @@
     },
     "@hono/hono@4.6.3": {
       "integrity": "a1f5a18cd12a0db54755b0461dd5a4e2d93a6f85403073eb710103eacc42daf3"
+    },
+    "@libs/qrcode@3.1.0": {
+      "integrity": "1d65698d3cbaf1d5e2e0b025f7d8572e8b2c485dcfa81d485e0bf0ce607e9c2b"
     },
     "@mrg-keystone/danet@1.0.2": {
       "integrity": "9ea2d52e1339a67317bb7ad7aad6c5bd12c03c2b07e8f47a6c881a29e68faba9",
@@ -1699,6 +1704,7 @@
       "backend": {
         "dependencies": [
           "jsr:@danet/core@2",
+          "jsr:@libs/qrcode@^3.1.0",
           "jsr:@mrg-keystone/danet@^1.0.2",
           "jsr:@std/assert@1",
           "jsr:@std/encoding@1",

@@ -30,3 +30,18 @@ Deno.test("deriveLanguageOnVerify: existing user with no language stays unset ev
   // Settings page never set it; we don't auto-populate from a one-shot SMS toggle.
   assertEquals(deriveLanguageOnVerify(stub(undefined), "es"), undefined);
 });
+
+// REQ-590 (demo-loop cycle 4, M33): the language picked on /verify's EN | ES toggle rides verify-otp
+// and wins over the one send-otp stored for a NEW account; an existing account keeps its own.
+Deno.test("REQ-590 deriveLanguageOnVerify: a new user takes the language picked on /verify over the OTP record's", () => {
+  assertEquals(deriveLanguageOnVerify(null, "en", "es"), "es");
+  assertEquals(deriveLanguageOnVerify(null, "es", "en"), "en");
+});
+
+Deno.test("REQ-590 deriveLanguageOnVerify: with nothing picked on /verify a new user still takes the OTP record's", () => {
+  assertEquals(deriveLanguageOnVerify(null, "en", undefined), "en");
+});
+
+Deno.test("REQ-590 deriveLanguageOnVerify: an existing user keeps their language whatever /verify picked", () => {
+  assertEquals(deriveLanguageOnVerify(stub("en"), "en", "es"), "en");
+});

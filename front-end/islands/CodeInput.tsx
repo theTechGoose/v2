@@ -2,8 +2,14 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, STRINGS } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
 import { verifyClient } from "../clients/verify.ts";
-import { takeDevCode } from "../lib/dev-code.ts";
+import { clearDevCode, peekDevCode, stashDevCode } from "../lib/dev-code.ts";
 import DevCodeCard from "../components/DevCodeCard.tsx";
+import { DEFAULT_VERIFY_EDIT_HREF } from "../lib/verify-edit-href.ts";
+// REQ-821 AMENDMENT (demo-loop run 11, p2) — a sign-in is a new session: the demo pill's carry
+// (REQ-830) from before a sign-out is forgotten, so the next page joins as a first join
+import { forgetDemo } from "../lib/demo-mode/pill-carry.ts";
+import { sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
+import { CHECK_SVG_MARKUP } from "../components/ui/Icon.tsx";
 
 interface Props {
   /** The phone the code was texted to — the /verify flow. */
@@ -56,7 +62,8 @@ export default function CodeInput(
     const stored = globalThis.localStorage?.getItem("pm:lang") as Lang | null;
     langSignal.value = initialLang ?? stored ?? "es";
     refs.current[0]?.focus();
-    if (phoneNumber) setDevCode(takeDevCode(phoneNumber));
+    // REQ-590 (p4-p6d): peek — the EN | ES toggle reloads /verify and must find it again
+    if (phoneNumber) setDevCode(peekDevCode(phoneNumber));
     const unsub = langSignal.subscribe(() => force((n) => n + 1));
     return () => unsub();
   }, []);
@@ -129,12 +136,14 @@ export default function CodeInput(
         : await verifyClient.verifyOtp({
           phoneNumber: phoneNumber ?? "",
           code: finalCode,
+          language: langSignal.value, // REQ-590 (M33) — the EN | ES picked on /verify
         });
       if (result.ok && "recoverable" in result) {
         setRecovery({ token: result.recoveryToken });
         return;
       }
       if (result.ok) {
+        clearDevCode(); // REQ-590 — the code is spent: no popup on a later /verify
         // Persist the verified phone for next-visit one-tap login.
         if (phoneNumber) {
           try {
@@ -150,12 +159,13 @@ export default function CodeInput(
           codeStep.classList.remove("pm-steps__item--active");
           codeStep.classList.add("pm-steps__item--done");
           const codeDot = codeStep.querySelector(".pm-steps__dot");
-          if (codeDot) codeDot.textContent = "✓";
+          if (codeDot) codeDot.innerHTML = CHECK_SVG_MARKUP;
           if (bar2) bar2.classList.add("pm-steps__bar--done");
           inStep.classList.add("pm-steps__item--active");
           const inDot = inStep.querySelector(".pm-steps__dot");
-          if (inDot) inDot.textContent = "✓";
+          if (inDot) inDot.innerHTML = CHECK_SVG_MARKUP;
         }
+        forgetDemo(sessionStore());
         setTimeout(() => {
           globalThis.location.href = result.redirectTo;
         }, 400);
@@ -188,6 +198,7 @@ export default function CodeInput(
       const res = mode === "recover"
         ? await verifyClient.recover(recovery.token)
         : await verifyClient.startFresh(recovery.token);
+      forgetDemo(sessionStore());
       globalThis.location.href = res.redirectTo;
     } catch {
       setRecovery(null);
@@ -209,6 +220,7 @@ export default function CodeInput(
           language: lang,
         });
         setDevCode(sent.devCode ?? null); // REQ-082 — the new code on the fakes
+        stashDevCode(phoneNumber ?? "", sent.devCode); // REQ-590 — and it survives the toggle
       }
     } catch { /* keep cooldown */ }
   }
@@ -226,7 +238,10 @@ export default function CodeInput(
               setDigits(c.split(""));
               void submit(c);
             }}
-            onClose={() => setDevCode(null)}
+            onClose={() => {
+              clearDevCode(); // REQ-590 — dismissed: a reload does not bring it back
+              setDevCode(null);
+            }}
           />
         )
         : null}
@@ -293,7 +308,9 @@ export default function CodeInput(
         {submitting ? t("verify.busy") : s["verify.cta"]}
       </button>
       <div class="meta">
-        <a href={editHref ?? "/"}>{editLabel ?? s["verify.editPhone"]}</a>
+        <a href={editHref ?? DEFAULT_VERIFY_EDIT_HREF}>
+          {editLabel ?? s["verify.editPhone"]}
+        </a>
         <button type="button" onClick={resend} disabled={cooldown > 0}>
           {cooldown > 0
             ? s["verify.resendIn"].replace("{n}", String(cooldown))

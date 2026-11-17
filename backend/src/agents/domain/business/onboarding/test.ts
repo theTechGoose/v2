@@ -15,7 +15,7 @@ const CHIPS = [
   // lang/es.json asstChat.prompt.*
   "Conozco el trabajo, ayúdame a ponerle precio.",
   "Trabajo terminado, necesito facturar.",
-  "Sé mi precio, redáctalo.",
+  "Ya tengo el precio, redáctalo.",
   "Solo dame una cotización rápida.",
 ];
 

@@ -58,6 +58,15 @@ function tenDigits(raw: string): string {
     : digits;
 }
 
+/** REQ-593 (cycle 4, m12): true when `raw` is nothing but a US phone
+ *  number — phone punctuation only, ten digits after an optional leading 1
+ *  ("5125550109", "+1 (512) 555-0109"). An email, a @handle or a foreign
+ *  number is false, so callers format only what is surely a US phone. */
+export function isUsPhone(raw: string | null | undefined): boolean {
+  const s = (raw ?? "").trim();
+  return /^[+\d\s().-]+$/.test(s) && tenDigits(s).length === 10;
+}
+
 /**
  * One phone display everywhere: "5125556999" → "+1 (512) 555-6999".
  * Idempotent on already-formatted +1 numbers; non-10-digit inputs pass
@@ -232,6 +241,40 @@ export function formatShortDate(iso: string, lang: Lang): string {
   const day = d.getUTCDate();
   const month = SHORT_MONTHS[lang === "es" ? "es" : "en"][d.getUTCMonth()];
   return lang === "es" ? `${day} ${month}` : `${month} ${day}`;
+}
+
+/**
+ * REQ-495 (demo-loop cycle 3, m17): a date-valued agreement term — the
+ * wizard's "Pick a date" start — as ISO "YYYY-MM-DD". New picks are stored
+ * ISO; quotes saved before REQ-495 carry the picker's old MM/DD/YYYY, which
+ * still parses. Null for anything that is not a real calendar day.
+ */
+export function termDateIso(value: string | undefined): string | null {
+  const v = (value ?? "").trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
+  const [y, m, d] = iso
+    ? [+iso[1], +iso[2], +iso[3]]
+    : us
+    ? [+us[3], +us[1], +us[2]]
+    : [0, 0, 0];
+  if (!y || m < 1 || m > 12 || d < 1) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * REQ-495: a stored date term in the reader's language — es "1 dic 2026"
+ * (day-first), en "Dec 1, 2026". Any other value passes through untouched.
+ */
+export function formatTermDate(value: string, lang: Lang): string {
+  const iso = termDateIso(value);
+  if (!iso) return value;
+  const [y, m, d] = iso.split("-").map(Number);
+  const l: Lang = lang === "es" ? "es" : "en";
+  const month = SHORT_MONTHS[l][m - 1];
+  return l === "es" ? `${d} ${month} ${y}` : `${month} ${d}, ${y}`;
 }
 
 /**

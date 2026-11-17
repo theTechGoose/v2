@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { normalizePhone } from "@users/domain/business/normalize-phone/mod.ts";
 import { generateOtpCode } from "@users/domain/business/generate-otp-code/mod.ts";
@@ -56,7 +57,12 @@ export interface SendOtpResult {
  */
 @Injectable()
 export class SendOtp {
-  constructor(private otps: OtpStore, private sms: SmsService) {}
+  constructor(
+    private otps: OtpStore,
+    private sms: SmsService,
+    /** REQ-631: the phone's own person — whose saved language the code speaks when the page names none */
+    private users: UserStore = new UserStore(),
+  ) {}
 
   async run(input: SendOtpInput): Promise<SendOtpResult> {
     const normalizedPhone = normalizePhone(input.phoneNumber);
@@ -76,7 +82,10 @@ export class SendOtp {
     const code = generateOtpCode();
     await this.otps.put({ phoneNumber: normalizedPhone, code, language: input.language, origin: input.origin });
 
-    const body = renderSmsBody(code, input.language ?? "es");
+    // REQ-631: the code is addressed to the PERSON behind this phone (an editor's own record, never
+    // the account she acts in): the page's language when it names one, else her saved one, else "es"
+    const saved = input.language ? undefined : (await this.users.findByPhone(normalizedPhone).catch(() => null))?.language;
+    const body = renderSmsBody(code, input.language ?? saved ?? "es");
     if (Deno.env.get("DEV_LOG_OTP") === "1") {
       console.log(`[otp:debug] code=${code} phone=${normalizedPhone}`);
     }

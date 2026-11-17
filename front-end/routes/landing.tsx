@@ -7,7 +7,6 @@ import {
   langFromCookie,
   pickLangFromAcceptLanguage,
 } from "../lib/lang.ts";
-import { LANDING_OFFER } from "../../shared/quote-flow/landing-offers.ts";
 import { PUBLIC_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import {
   absoluteUrl,
@@ -78,8 +77,8 @@ function DownArrow() {
 
 /**
  * /landing — a standalone, shareable marketing page (distinct from the main
- * "/" landing). Simple top-to-bottom pitch with a working "Start My Free
- * Trial" phone form that reuses the OTP sign-up flow.
+ * "/" landing). Simple top-to-bottom pitch with a working "Start Free"
+ * phone form that reuses the OTP sign-up flow.
  */
 export default define.page(function PromoLanding(ctx) {
   const url = new URL(ctx.req.url);
@@ -87,10 +86,8 @@ export default define.page(function PromoLanding(ctx) {
   const lang: Lang = (q === "en" || q === "es") ? q : (langFromCookie(
     ctx.req.headers.get("cookie"),
   ) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language")));
-  // {d} — the free-trial length, from the ONE landing offer both pages sell
-  // (P-08). Never re-typed in lang/*.json.
-  const t = (k: string) =>
-    tFor(lang, `promoLanding.${k}`, { d: LANDING_OFFER.trialDays });
+  // No trial length: billing has no trial, so no copy promises one (REQ-505).
+  const t = (k: string) => tFor(lang, `promoLanding.${k}`);
   const h1b = t("h1b");
 
   return (
@@ -191,7 +188,7 @@ export default define.page(function PromoLanding(ctx) {
             </div>
           </section>
 
-          {/* ---------- free trial ---------- */}
+          {/* ---------- start free (sign-up card; no trial — REQ-505) ---------- */}
           <section class="pm-trial" id="trial">
             <div class="pm-trial__card">
               <span class="pm-trial__badge">{t("trialBadge")}</span>

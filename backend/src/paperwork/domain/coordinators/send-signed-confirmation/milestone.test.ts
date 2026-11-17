@@ -1,9 +1,12 @@
 import { assert, assertEquals } from "#std/assert";
 import {
+  completionTerms,
   computeMilestoneAmounts,
   computeScheduledDates,
   SendSignedConfirmation,
 } from "./mod.ts";
+import { t } from "@core/i18n/mod.ts";
+import { payNowTarget } from "#documents/linked-view.ts";
 import type { QuoteTerm } from "@paperwork/dto/quote.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -20,6 +23,7 @@ import { LogPaperworkMessage } from "@communication/domain/coordinators/log-pape
 import { ConversationStore as CommConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore as CommMessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { termLabel } from "#quote-flow/terms-i18n.ts";
 
 function pterms(value: string): QuoteTerm[] {
   return [{ stepId: "payment_terms", label: "Payment", value }];
@@ -153,6 +157,8 @@ async function withKv<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const plusDaysIso = (n: number) =>
+  new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
 Deno.test("send-signed-confirmation run: 50/50 terms → first invoice sent now, second scheduled; acceptedNotifiedAt stamped", async () => {
   await withKv(async () => {
@@ -219,7 +225,7 @@ Deno.test("send-signed-confirmation run: idempotent — a replay after acceptedN
   });
 });
 
-Deno.test("send-signed-confirmation run: NO payment terms → accept still bills — one full-amount invoice due today", async () => {
+Deno.test("REQ-240 (M29) send-signed-confirmation run: NO payment terms → accept still bills — one full-amount invoice on the standard net-7, never due the same day", async () => {
   await withKv(async () => {
     const s = freshRun();
     const quote = await s.quotes.create("u-1", {
@@ -240,8 +246,76 @@ Deno.test("send-signed-confirmation run: NO payment terms → accept still bills
     assertEquals(rows[0].status, "sent");
     assertEquals(rows[0].installmentIndex, 1);
     assertEquals(rows[0].installmentTotal, 1);
-    assertEquals(rows[0].dueDate, todayIso(), "no-terms invoice is due today");
+    assertEquals(
+      rows[0].dueDate,
+      plusDaysIso(7),
+      "a quote nobody agreed payment terms on is not due the day it is signed",
+    );
     assertEquals(result.invoiceId, rows[0].id);
+  });
+});
+
+Deno.test("REQ-240 (M29) send-signed-confirmation run: NO payment terms + a completion date after net-7 → the invoice is due on completion", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const completion = plusDaysIso(30);
+    const quote = await s.quotes.create("u-1", {
+      summary: "Patio",
+      lineItems: [],
+      estimatedTotal: 750_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      estimatedCompletionDate: completion,
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].dueDate, completion);
+  });
+});
+
+Deno.test("REQ-240 (M29) send-signed-confirmation run: a signed quote with NO customer on file bills the signer by name — the invoice never reads 'Bill to —'", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const quote = await s.quotes.create("u-1", {
+      summary: "Patio",
+      lineItems: [],
+      estimatedTotal: 750_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      acceptedName: "Maria Lopez",
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].customerId, undefined);
+    assertEquals(rows[0].billTo?.name, "Maria Lopez");
+  });
+});
+
+Deno.test("REQ-240 (M29) send-signed-confirmation run: a quote WITH a customer bills that customer (no billTo override)", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const cust = await s.customers.create("u-1", { name: "Maria Lopez" });
+    const quote = await s.quotes.create("u-1", {
+      customerId: cust.id,
+      summary: "Patio",
+      lineItems: [],
+      estimatedTotal: 750_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      acceptedName: "M. Lopez",
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows[0].customerId, cust.id);
+    assertEquals(rows[0].billTo, undefined);
   });
 });
 
@@ -425,4 +499,228 @@ Deno.test("REQ-204 send-signed-confirmation run: the email subject, body and PDF
       "the renamed live record does not rewrite the agreement",
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// REQ-316 (demo-loop cycle 1, M12) — "Payment upon completion" / "Net N"
+// terms bill AFTER the job: signing schedules the single milestone for the
+// completion date, it is never `sent` at signing, and the signed /q shows no
+// "Pay now".
+// ---------------------------------------------------------------------------
+
+// REQ-411 (cycle 2, m35) AMENDMENT: "upon completion" carries the account's
+// days to pay — unset, the 30 Settings shows (was a hard-coded 15).
+Deno.test("REQ-316 (M12) completionTerms: 'Payment upon completion' is a completion term with the account's net days (default 30, REQ-411); 'Net N' carries N; due-now / splits / custom are not", () => {
+  assertEquals(completionTerms("Payment upon completion"), { netDays: 30 });
+  assertEquals(completionTerms("payment on completion", 15), { netDays: 15 });
+  assertEquals(completionTerms("Net 30"), { netDays: 30 });
+  assertEquals(completionTerms("net-7"), { netDays: 7 });
+  assertEquals(completionTerms("Due now"), undefined);
+  assertEquals(completionTerms("50 / 50"), undefined);
+  assertEquals(completionTerms("Deposit + balance"), undefined);
+  assertEquals(completionTerms("haggle in person"), undefined);
+  assertEquals(completionTerms(undefined), undefined);
+});
+
+Deno.test("REQ-316 (M12) the net_15 option's sub-line no longer contradicts its label with 'Same-day payment' (en + es)", () => {
+  for (
+    const key of [
+      "termsWizard.paymentTerms.net15.sub",
+      "asstChat.terms.payment.onCompletionSub",
+      "assistantDemo.wiz.optCompletionSub",
+    ]
+  ) {
+    assert(
+      !/same-day/i.test(t("en", key)),
+      `${key} (en) still says same-day: ${t("en", key)}`,
+    );
+    assert(
+      !/mismo día/i.test(t("es", key)),
+      `${key} (es) still says mismo día: ${t("es", key)}`,
+    );
+    // REQ-411: the wizard keys name the account's days ({n}); the
+    // marketing demo keeps its fixed example.
+    const days = key === "assistantDemo.wiz.optCompletionSub" ? /15/ : /\{n\}/;
+    assert(
+      days.test(t("en", key)) && days.test(t("es", key)),
+      `${key} names the days to pay`,
+    );
+  }
+  // The label is the stored EN base every reader localizes — unchanged.
+  assertEquals(
+    t("en", "termsWizard.paymentTerms.net15.label"),
+    "Payment upon completion",
+  );
+});
+
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion' + a completion date → ONE scheduled invoice for that date, due +30 (the account default, REQ-411), nothing sent, no Pay now", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const completion = plusDaysIso(30);
+    const quote = await s.quotes.create("u-1", {
+      summary: "Bathroom tile",
+      lineItems: [],
+      estimatedTotal: 280_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      startDate: plusDaysIso(3),
+      estimatedCompletionDate: completion,
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Payment upon completion",
+      }],
+    });
+
+    const result = await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].amount, 280_00);
+    assertEquals(rows[0].status, "scheduled");
+    assertEquals(rows[0].issuedDate, undefined, "not issued at signing");
+    assertEquals(rows[0].scheduledFor, completion);
+    assertEquals(
+      rows[0].dueDate,
+      plusDaysIso(60),
+      "due the account's default 30 days after completion (REQ-411)",
+    );
+    assertEquals(rows[0].installmentIndex, 1);
+    assertEquals(rows[0].installmentTotal, 1);
+    assertEquals(result.invoiceId, undefined, "no invoice to pay yet");
+    assertEquals(result.ok, true, "the milestone was still billed");
+    const reloaded = await s.quotes.getOwned(quote.id, "u-1");
+    assert(reloaded.acceptedNotifiedAt, "acceptedNotifiedAt stamped");
+
+    // The signed /q page's "Pay now" (REQ-251) finds nothing to pay.
+    assertEquals(
+      payNowTarget({
+        status: "accepted",
+        invoices: rows.map((i) => ({
+          id: i.id,
+          number: i.number ?? "",
+          status: i.status,
+          amountCents: i.amount,
+          paidCents: 0,
+        })),
+      }),
+      undefined,
+    );
+  });
+});
+
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Payment upon completion' with NO completion date → scheduled 14 days after the later of start and today", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const quote = await s.quotes.create("u-1", {
+      summary: "Fence",
+      lineItems: [],
+      estimatedTotal: 450_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Payment upon completion",
+      }],
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].status, "scheduled");
+    assertEquals(rows[0].scheduledFor, plusDaysIso(14));
+    assertEquals(rows[0].dueDate, plusDaysIso(44)); // REQ-411: +30 default
+  });
+});
+
+Deno.test("REQ-316 (M12) send-signed-confirmation run: 'Net 30' → scheduled for completion, due completion+30", async () => {
+  await withKv(async () => {
+    const s = freshRun();
+    const completion = plusDaysIso(10);
+    const quote = await s.quotes.create("u-1", {
+      summary: "Roof",
+      lineItems: [],
+      estimatedTotal: 900_00,
+      status: "accepted",
+      acceptedAt: new Date().toISOString(),
+      estimatedCompletionDate: completion,
+      terms: [{
+        stepId: "payment_terms",
+        label: "Payment terms",
+        value: "Net 30",
+      }],
+    });
+
+    await s.flow.run(quote.id);
+
+    const rows = await s.invoices.listByUser("u-1");
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0].status, "scheduled");
+    assertEquals(rows[0].scheduledFor, completion);
+    assertEquals(rows[0].dueDate, plusDaysIso(40));
+  });
+});
+
+// REQ-678 (demo-loop cycle 5, c3-m60): the deposit the contractor picked in
+// the wizard is the deposit the invoices bill — a percentage or a $ amount.
+Deno.test("REQ-678 c3-m60 computeMilestoneAmounts: 'Deposit 30% + balance' → 30/70, 'Deposit $500 + balance' → $500 then the rest", () => {
+  assertEquals(
+    computeMilestoneAmounts(1000_00, pterms("Deposit 30% + balance")),
+    [300_00, 700_00],
+  );
+  assertEquals(
+    computeMilestoneAmounts(4500_00, pterms("Deposit $500 + balance")),
+    [500_00, 4000_00],
+  );
+});
+
+// REQ-665 (demo-loop cycle 5, m47): the custom payment picker now stores a
+// worded split ("Due Now" / "Pago inmediato" for 100/0, "50% upfront, 50% on
+// completion", "30% / 40% / 30%") instead of a bare "100 / 0". The bill read
+// off the signed agreement must match the words on it.
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-665 send-signed-confirmation run: the picker's 100/0 (${lang}) bills ONE invoice due the day of signing`, async () => {
+    await withKv(async () => {
+      const s = freshRun();
+      const quote = await s.quotes.create("u-1", {
+        summary: "Repair",
+        lineItems: [],
+        estimatedTotal: 300_00,
+        status: "accepted",
+        acceptedAt: new Date().toISOString(),
+        terms: [{
+          stepId: "payment_terms",
+          label: "Payment terms",
+          value: termLabel({ kind: "payment", value: { splits: [100, 0] } }, lang),
+        }],
+      });
+
+      await s.flow.run(quote.id);
+
+      const rows = await s.invoices.listByUser("u-1");
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].amount, 300_00);
+      assertEquals(rows[0].dueDate, todayIso());
+    });
+  });
+}
+
+Deno.test("REQ-665 computeMilestoneAmounts: the picker's worded splits bill the stated shares", () => {
+  const label = (splits: number[], lang: "en" | "es") =>
+    termLabel({ kind: "payment", value: { splits } }, lang);
+  assertEquals(computeMilestoneAmounts(100_00, pterms(label([30, 70], "en"))), [30_00, 70_00]);
+  assertEquals(computeMilestoneAmounts(100_00, pterms(label([30, 70], "es"))), [30_00, 70_00]);
+  assertEquals(
+    computeMilestoneAmounts(1_000_00, pterms(label([30, 40, 30], "en"))),
+    [300_00, 400_00, 300_00],
+  );
+});
+
+Deno.test("REQ-665 completionTerms: the picker's 0/100 bills after completion in both languages", () => {
+  for (const lang of ["en", "es"] as const) {
+    const v = termLabel({ kind: "payment", value: { splits: [0, 100] } }, lang);
+    assertEquals(completionTerms(v, 15), { netDays: 15 });
+  }
 });

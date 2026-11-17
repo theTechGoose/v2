@@ -1,0 +1,37 @@
+/* ============================================================
+   public-lang.css — REQ-272: the EN | ES toggle above a server-rendered
+   public document (/i/:id), styled like the contract's REQ-048 toggle
+   (.ctr__lang in public-contract.css). A linked file, never a <Head>
+   <style>: an inline style tag can land inside an island boundary and be
+   dropped on hydration (P-62).
+   ============================================================ */
+.pub-lang {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.pub-lang a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  min-width: 44px;
+  padding: 2px 12px;
+  border: 1px solid rgba(20, 72, 82, 0.25);
+  border-radius: 999px;
+  background: #fff;
+  color: #144852;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.pub-lang a.on {
+  background: #144852;
+  color: #fff;
+}
+@media print {
+  .pub-lang {
+    display: none !important;
+  }
+}

@@ -5,6 +5,10 @@ import { bootstrapServer } from "#mrg-keystone/danet";
 import { AgentsModule } from "@agents/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 
 @Module({ imports: [AgentsModule] })
 class TestApp {}
@@ -143,5 +147,154 @@ Deno.test("agents wizard e2e: custom option requires customValue", async () => {
     const ok = res.ok;
     await drain(res);
     assertEquals(ok, false);
+  });
+});
+
+// REQ-263 (demo ai-assistant-m2): the customer step's job address reaches the
+// quote through the HTTP answer (the DTO must carry it, the controller pass it).
+Deno.test("REQ-263 agents wizard e2e: the customer step's serviceAddress lands on the conversation's quote", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: "{}",
+    }).then((r) => r.json());
+    const userId: string = conv.userId;
+    const quote = await new QuoteStore().create(userId, {
+      summary: "Deep clean",
+      lineItems: [],
+      estimatedTotal: 35_000,
+    });
+    await new AgentConversationStore().update(conv.id, { quoteId: quote.id });
+    await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`, {
+      method: "POST", headers: { "x-session-id": sid },
+    }).then(drain);
+    const res = await fetch(`http://localhost:${port}/agents/wizard/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({
+        conversationId: conv.id,
+        stepId: "customer",
+        optionId: "create_new",
+        serviceAddress: "412 Oak St Austin",
+        customer: { create: { name: "Maria Lopez", phoneNumber: "5125550199" } },
+      }),
+    });
+    assertEquals(res.status, 200);
+    await drain(res);
+    const stored = await new QuoteStore().getOwned(quote.id, userId);
+    assertEquals(stored.serviceAddress, "412 Oak St Austin");
+  });
+});
+
+// REQ-531 (demo-loop cycle 3, p8-pair6-a): over HTTP, a Spanish contractor
+// answering "Usar el cliente del chat" gets the customer's name on the
+// transcript line, not the option label.
+Deno.test("REQ-531 p8-pair6-a agents wizard e2e: use_active posts 'Cliente: <name>' for a Spanish contractor", async () => {
+  await withServer(async (port) => {
+    const phone = "+15125550177";
+    const sid = await login(port, phone);
+    const users = new UserStore();
+    const me = (await users.findByPhone(phone))!;
+    await users.update(me.id, { language: "es" });
+    const maria = await new CustomerStore().create(me.id, { name: "Maria Lopez" });
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ customerId: maria.id }),
+    }).then((r) => r.json());
+    await fetch(`http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`, {
+      method: "POST", headers: { "x-session-id": sid },
+    }).then(drain);
+    const result = await fetch(`http://localhost:${port}/agents/wizard/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ conversationId: conv.id, stepId: "customer", optionId: "use_active" }),
+    }).then((r) => r.json());
+    assertEquals(result.newMessages[0].content, "Cliente: Maria Lopez");
+  });
+});
+
+// REQ-589 (demo-loop cycle 4, M15): over HTTP, the wizard lines a Spanish
+// contractor was shown come back with their i18n keys, so the island
+// re-renders them — and the thread-list preview — in English after a switch.
+Deno.test("REQ-589 M15 agents wizard e2e: a reloaded Spanish wizard thread re-renders in English from its keys", async () => {
+  const { localizeChatMessage, localizedPreview } = await import(
+    "#quote-flow/chat-i18n.ts"
+  );
+  const { t } = await import("@core/i18n/mod.ts");
+  const tr = (
+    l: "en" | "es",
+    k: string,
+    v?: Record<string, string | number>,
+  ) => t(l, k, v);
+  await withServer(async (port) => {
+    const phone = "+15125550178";
+    const sid = await login(port, phone);
+    const users = new UserStore();
+    const me = (await users.findByPhone(phone))!;
+    await users.update(me.id, { language: "es" });
+    const carmen = await new CustomerStore().create(me.id, {
+      name: "Carmen Ruiz",
+    });
+    const h = { "content-type": "application/json", "x-session-id": sid };
+    const conv = await fetch(`http://localhost:${port}/agents/conversations`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ customerId: carmen.id }),
+    }).then((r) => r.json());
+    await fetch(
+      `http://localhost:${port}/agents/conversations/${conv.id}/transition-to-terms`,
+      {
+        method: "POST",
+        headers: { "x-session-id": sid },
+      },
+    ).then(drain);
+    for (
+      const [stepId, optionId] of [["customer", "use_active"], [
+        "start_date",
+        "next_week",
+      ]]
+    ) {
+      await fetch(`http://localhost:${port}/agents/wizard/answer`, {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify({ conversationId: conv.id, stepId, optionId }),
+      }).then(drain);
+    }
+    const detail = await fetch(
+      `http://localhost:${port}/agents/conversations/${conv.id}`,
+      {
+        headers: { "x-session-id": sid },
+      },
+    ).then((r) => r.json());
+    const shown = (detail.messages as {
+      kind?: string;
+      content: string;
+      payload?: unknown;
+    }[])
+      .map((m) => localizeChatMessage(m, "en", tr));
+    const texts = shown.map((m) => m.content);
+    assertEquals(texts.includes("A little more info"), true, texts.join(" | "));
+    assertEquals(texts.includes("Start: Next week"), true, texts.join(" | "));
+    assertEquals(
+      texts.includes(t("en", "termsWizard.wraps.question")),
+      true,
+      texts.join(" | "),
+    );
+    assertEquals(
+      texts.some((x) => /Inicio|información|¿/.test(x)),
+      false,
+      texts.join(" | "),
+    );
+
+    const list = await fetch(`http://localhost:${port}/agents/conversations`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    const row = (list as { id: string; preview?: string }[]).find((c) =>
+      c.id === conv.id
+    )!;
+    assertEquals(localizedPreview(row, "en", tr), "Start: Next week");
   });
 });

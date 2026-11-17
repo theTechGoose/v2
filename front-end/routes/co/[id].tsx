@@ -1,11 +1,24 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
-import { ssrBackendGet } from "../../lib/backend-fetch.ts";
+import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
+import { getSessionId } from "../../lib/auth.ts";
+import BizBrand from "../../components/BizBrand.tsx";
+import { publicDocTitle } from "../../../shared/documents/public-brand.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
-import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
+import {
+  langToggleHref,
+  resolvePublicLang,
+} from "../../../shared/quote-flow/public-lang.ts";
 import PublicChangeOrderActions from "../../islands/PublicChangeOrderActions.tsx";
+import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
 import { docHeadline } from "../../../shared/documents/linked-view.ts";
+import {
+  changeOrderChangeLine,
+  type ChangeOrderChanges,
+  changeOrderIntro,
+} from "../../../shared/quote-flow/change-order-view.ts";
 
 interface ChangeOrderPublic {
   id: string;
@@ -17,10 +30,20 @@ interface ChangeOrderPublic {
   approvedName?: string;
   description: string;
   deltaAmountCents: number;
+  /** REQ-685 (demo m42): Version 2+ — what moved against the version before */
+  changesFromPrevious?: ChangeOrderChanges;
   status: "pending" | "approved" | "declined";
+  /** this INVOICE's total before / after the order */
   currentAmount?: number;
   newAmount?: number;
+  /** REQ-398 (demo m25): the JOB's agreed total before / after the order */
+  jobCurrentAmount?: number;
+  jobNewAmount?: number;
+  /** REQ-398 (demo M15): the viewer is the business itself — a preview */
+  internal?: boolean;
   businessName?: string;
+  /** REQ-628: the business has a logo on file (served via /api/public-logo/invoice/:invoiceId) */
+  hasLogo?: boolean;
   commsLanguage?: "en" | "es";
   decidedAt?: string;
 }
@@ -46,29 +69,72 @@ function money(cents: number): string {
 
 export default define.page(async function PublicChangeOrder(ctx) {
   const id = ctx.params.id;
-  const r = await ssrBackendGet<ChangeOrderPublic>(
+  // REQ-398 (demo M15): the read carries the viewer's session, so the
+  // backend can tell the business's own preview from the customer.
+  const r = await ssrBackendGetAuthed<ChangeOrderPublic>(
     `/change-orders/${id}/public`,
+    getSessionId(ctx.req),
   );
   const co = r.ok ? r.data : undefined;
-  // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
-  // the document's generation language, exactly like /q and /c (P-12). Falls
-  // back to the contractor's outgoing-comms language from the backend payload.
+  // Chrome language — REQ-398 (demo p13-j): the link's ?lang= (the EN | ES
+  // toggle below, and the language the order was sent in) first, then the
+  // visitor's own saved choice (pm_lang cookie), over the document's
+  // generation language (P-12) — exactly like /i (REQ-272).
+  const url = new URL(ctx.req.url);
   const lang: Lang = resolvePublicLang({
+    query: url.searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
     docLang: co?.commsLanguage,
     header: ctx.req.headers.get("accept-language"),
   });
+  // <html lang> says what this page actually paints (REQ-122 contract).
+  ctx.state.lang = lang;
+  const hasJob = co?.jobCurrentAmount != null && co?.jobNewAmount != null;
+  // REQ-685 (demo m42): "What changed in Version 2: Amount +$1,600.00 → …"
+  const changedLine = co?.changesFromPrevious
+    ? changeOrderChangeLine(co.changesFromPrevious, lang)
+    : "";
+  // REQ-689 (demo p5): pending asks; approved/declined say what happened.
+  const intro = co ? changeOrderIntro(co, lang, money) : undefined;
 
   return (
     <>
       <Head>
-        <title>{tFor(lang, "changeOrderPublic.docTitle")}</title>
-        <link rel="stylesheet" href={asset("/landing.css")} />
+        {/* REQ-628: the tab names the business, never DocuMonster */}
+        {
+          /* REQ-826 AMENDMENT 5 (demo-loop run 11) — a dead link's tab says so, never "Orden
+            de cambio": the demo stage names the page by its title */
+        }
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            publicDocTitle(
+              !co
+                ? tFor(l, "changeOrderPublic.error.title")
+                : tFor(l, "changeOrderPublic.docTitle"),
+              co?.businessName,
+            )}
+        />
+        <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
+        <link
+          key="css-public-lang"
+          rel="stylesheet"
+          href={asset("/public-lang.css")}
+        />
       </Head>
       <div
+        data-error-page={co ? undefined : ""}
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:592px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
+          {/* REQ-398 (demo p13-j): the same EN | ES switch as /i and /q */}
+          <PublicLangToggle
+            lang={lang}
+            hrefs={{
+              en: langToggleHref(url.href, "en"),
+              es: langToggleHref(url.href, "es"),
+            }}
+          />
           {!co
             ? (
               <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
@@ -88,12 +154,14 @@ export default define.page(async function PublicChangeOrder(ctx) {
                   style={`height:8px;background:linear-gradient(90deg,${PINK} 0%,${PINK_DARK} 100%)`}
                 />
                 <div style="padding:32px 32px 36px">
-                  <div
-                    style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
-                  >
-                    {co.businessName ??
+                  {/* REQ-628: their logo, or their name as a wordmark */}
+                  <BizBrand
+                    logoSrc={co.hasLogo && co.invoice
+                      ? `/api/public-logo/invoice/${co.invoice.id}`
+                      : undefined}
+                    name={co.businessName ??
                       tFor(lang, "changeOrderPublic.contractorFallback")}
-                  </div>
+                  />
                   <h1
                     style={`margin:12px 0 0;font-weight:900;font-size:28px;letter-spacing:-0.02em;color:${TEAL};line-height:1.1`}
                   >
@@ -120,6 +188,19 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       lang,
                     )}
                   </div>
+                  {changedLine
+                    ? (
+                      <div
+                        data-cy="co-changes"
+                        style={`margin-top:4px;font-size:12px;font-weight:700;color:${TEAL}`}
+                      >
+                        {tFor(lang, "public.doc.whatChanged", {
+                          n: String(co.version ?? 1),
+                          changes: changedLine,
+                        })}
+                      </div>
+                    )
+                    : null}
                   {(co.invoice || co.quote)
                     ? (
                       <div
@@ -155,8 +236,15 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       </div>
                     )
                     : null}
-                  <p style={`margin:10px 0 0;color:${MUTED};font-size:14px`}>
-                    {tFor(lang, "changeOrderPublic.intro")}
+                  {
+                    /* REQ-689 (demo p5): the intro follows the status — a
+                      decided order never asks to be approved. */
+                  }
+                  <p
+                    data-cy="co-intro"
+                    style={`margin:10px 0 0;color:${MUTED};font-size:14px`}
+                  >
+                    {intro && tFor(lang, intro.key, intro.vars)}
                   </p>
 
                   <section
@@ -172,6 +260,59 @@ export default define.page(async function PublicChangeOrder(ctx) {
                     >
                       {co.description}
                     </p>
+                    {
+                      /* REQ-398 (demo m25): the JOB total is the headline —
+                        a change order adjusts one invoice, but the customer
+                        reads the big number as the job's. */
+                    }
+                    {hasJob
+                      ? (
+                        <div
+                          data-cy="co-job-total"
+                          style={`margin-top:16px;padding-top:14px;border-top:1px solid ${LINE}`}
+                        >
+                          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-weight:800;font-size:16px;color:#1c2c30">
+                            <span>
+                              {tFor(lang, "changeOrderPublic.jobTotal")}
+                            </span>
+                            <span>
+                              <span style={`color:${MUTED};font-weight:700`}>
+                                {money(co.jobCurrentAmount!)}
+                              </span>
+                              {" → "}
+                              <span
+                                style={`color:${
+                                  co.status === "declined" ? MUTED : GREEN
+                                }`}
+                              >
+                                {money(co.jobNewAmount!)}
+                              </span>
+                            </span>
+                          </div>
+                          {co.invoice && co.currentAmount != null &&
+                              co.newAmount != null
+                            ? (
+                              <div
+                                data-cy="co-invoice-delta"
+                                style={`margin-top:4px;color:${MUTED};font-size:13px`}
+                              >
+                                {tFor(
+                                  lang,
+                                  co.deltaAmountCents >= 0
+                                    ? "changeOrderPublic.addedToInvoice"
+                                    : "changeOrderPublic.creditedOnInvoice",
+                                  {
+                                    number: co.invoice.number,
+                                    from: money(co.currentAmount),
+                                    to: money(co.newAmount),
+                                  },
+                                )}
+                              </div>
+                            )
+                            : null}
+                        </div>
+                      )
+                      : null}
                     <div
                       style={`margin-top:16px;padding-top:14px;border-top:1px solid ${LINE};display:flex;flex-direction:column;gap:6px;font-size:14px`}
                     >
@@ -184,9 +325,17 @@ export default define.page(async function PublicChangeOrder(ctx) {
                                   includes the delta, so the snapshot reads
                                   as the *previous* total. */
                               }
+                              {
+                                /* REQ-398: with the job headline above, the
+                                  invoice rows say "This invoice". */
+                              }
                               {tFor(
                                 lang,
-                                co.status === "approved"
+                                hasJob
+                                  ? (co.status === "approved"
+                                    ? "changeOrderPublic.thisInvoiceBefore"
+                                    : "changeOrderPublic.thisInvoiceNow")
+                                  : co.status === "approved"
                                   ? "changeOrderPublic.previousTotal"
                                   : "changeOrderPublic.currentTotal",
                               )}
@@ -212,7 +361,11 @@ export default define.page(async function PublicChangeOrder(ctx) {
                       </div>
                       {co.newAmount != null
                         ? (
-                          <div style="display:flex;justify-content:space-between;font-weight:800;color:#1c2c30;font-size:16px;margin-top:4px">
+                          <div
+                            style={hasJob
+                              ? `display:flex;justify-content:space-between;font-weight:700;color:${INK}`
+                              : "display:flex;justify-content:space-between;font-weight:800;color:#1c2c30;font-size:16px;margin-top:4px"}
+                          >
                             <span>
                               {
                                 /* A declined order's "new total" never took
@@ -220,7 +373,11 @@ export default define.page(async function PublicChangeOrder(ctx) {
                               }
                               {tFor(
                                 lang,
-                                co.status === "declined"
+                                hasJob
+                                  ? (co.status === "declined"
+                                    ? "changeOrderPublic.thisInvoiceProposed"
+                                    : "changeOrderPublic.thisInvoiceAfter")
+                                  : co.status === "declined"
                                   ? "changeOrderPublic.proposedTotal"
                                   : "changeOrderPublic.newTotal",
                               )}
@@ -243,12 +400,21 @@ export default define.page(async function PublicChangeOrder(ctx) {
                     initialStatus={co.status}
                     approvedName={co.approvedName}
                     lang={lang}
+                    internal={co.internal === true}
+                    search={url.search}
+                    version={co.version}
+                    invoiceId={co.invoice?.id}
+                    quoteId={co.quote?.id}
                   />
                 </div>
               </article>
             )}
         </div>
-        <SiteFooter lang={lang} />
+        {
+          /* REQ-573 AMENDMENT (reconciled with develop on demo-fixes): REQ-628 —
+            no DocuMonster credit on a customer document, footer included */
+        }
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );

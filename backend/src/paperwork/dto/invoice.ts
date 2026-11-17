@@ -5,9 +5,11 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Max,
   ValidateNested,
   validateSync,
 } from "#class-validator";
+import { MAX_CENTS } from "#quote-flow/assistant-draft.ts";
 import { plainToInstance, Type } from "#class-transformer";
 import type { InvoiceUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import type {
@@ -64,7 +66,7 @@ export class PaymentIntentDto {
 /** One row in the past-due reminder cadence history. Recorded after each
  *  step fires so the cron knows not to re-send. */
 export class ReminderHistoryEntryDto {
-  /** Cadence step in days past due: 3, 7, 14, or 30. */
+  /** Cadence step in days from the due date: -3, 0, 3, 7, 14, or 30 (REQ-704). */
   @IsNumber()
   day!: number;
   @IsString()
@@ -96,6 +98,13 @@ export class CreateInvoiceDto {
     date?: string;
     service?: string;
     address?: string;
+    /** REQ-810: a batch line names the field task it bills (or is the visit's overhead) — removing the line frees that task */
+    taskId?: string;
+    overhead?: boolean;
+    /** REQ-710 (cycle 5, M4): a STANDALONE invoice's line per language,
+     *  written by TranslateInvoice — the `lang` slot is the typed text (the
+     *  cache key, shared/documents/invoice-lang.ts). */
+    descriptionByLang?: Record<string, string>;
   }>;
 
   /** ≤3-word job title for STANDALONE invoices (roadmap p.10) — quote-
@@ -114,8 +123,9 @@ export class CreateInvoiceDto {
 
   @IsOptional() @IsString()
   customerId?: string;
-  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
-  @IsOptional() @IsNumber()
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. REQ-550: at most the $1bn
+   *  cap (assistant-draft's MAX_CENTS). */
+  @IsOptional() @IsNumber() @Max(MAX_CENTS)
   amount?: number;
   /** Cumulative discount applied, INTEGER CENTS — shown as a line on the
    *  public invoice (roadmap p.12). `amount` is the net total due. */
@@ -182,6 +192,15 @@ export class CreateInvoiceDto {
   /** When the invoice was first put in front of the customer. */
   @IsOptional() @IsString()
   sentAt?: string;
+  /** REQ-627: the voided invoice this draft corrects ("Void & duplicate"). Server-set. */
+  @IsOptional() @IsString()
+  replaces?: string;
+}
+
+/** REQ-627: who voided an invoice. */
+export interface VoidedBy {
+  userId?: string;
+  name?: string;
 }
 
 export class UpdateInvoiceDto {
@@ -197,6 +216,11 @@ export class UpdateInvoiceDto {
     date?: string;
     service?: string;
     address?: string;
+    /** REQ-810: a batch line names the field task it bills (or is the visit's overhead) — removing the line frees that task */
+    taskId?: string;
+    overhead?: boolean;
+    /** REQ-710: see CreateInvoiceDto — set by TranslateInvoice. */
+    descriptionByLang?: Record<string, string>;
   }>;
   @IsOptional() @IsString()
   jobName?: string;
@@ -204,8 +228,9 @@ export class UpdateInvoiceDto {
   description?: string;
   @IsOptional() @IsString()
   customerId?: string;
-  /** Invoice amount in INTEGER CENTS. Audit1 #3. */
-  @IsOptional() @IsNumber()
+  /** Invoice amount in INTEGER CENTS. Audit1 #3. REQ-550: at most the $1bn
+   *  cap (assistant-draft's MAX_CENTS). */
+  @IsOptional() @IsNumber() @Max(MAX_CENTS)
   amount?: number;
   @IsOptional() @IsNumber()
   discountCents?: number;
@@ -266,6 +291,41 @@ export class UpdateInvoiceDto {
   /** REQ-202: sum of confirmed payments, maintained by the balance coordinator. */
   @IsOptional() @IsNumber()
   paidCents?: number | null;
+  /** REQ-497 (demo-loop cycle 3, m23): a STANDALONE invoice's text per
+   *  language, written by TranslateInvoice — `lang` is the language the
+   *  contractor typed in, and its slot is the typed text verbatim (the cache
+   *  key: shared/documents/invoice-lang.ts projects a map only while it
+   *  matches). Quote-linked invoices read the quote's maps instead. */
+  @IsOptional() @IsString()
+  lang?: string;
+  @IsOptional() @IsObject()
+  jobNameByLang?: Record<string, string>;
+  @IsOptional() @IsObject()
+  descriptionByLang?: Record<string, string>;
+  /** REQ-488: set by reject-claim, cleared (null) by the next claim; never from a request. */
+  @IsOptional() @IsString()
+  claimRejectedAt?: string | null;
+  @IsOptional() @IsString()
+  claimRejectedMethod?: string | null;
+  /** REQ-556: where the paid receipt reached the customer — "email" | "text"
+   *  | "none". Set by MarkInvoicePaid / ConfirmPayment; never from a request. */
+  @IsOptional() @IsString()
+  receiptSentVia?: string;
+  /** REQ-556: how signing's confirmation reached the customer for the
+   *  milestone it billed — ["email", "text"]; [] = nobody. Set by
+   *  SendSignedConfirmation; never from a request. */
+  @IsOptional() @IsArray() @IsString({ each: true })
+  deliveredVia?: string[];
+  // ---- REQ-627: set by POST /invoices/:id/void only; never from a PUT ----
+  @IsOptional() @IsString()
+  voidedAt?: string;
+  @IsOptional() @IsObject()
+  voidedBy?: VoidedBy;
+  @IsOptional() @IsString()
+  voidReason?: string;
+  /** the corrected draft made by "Void & duplicate" */
+  @IsOptional() @IsString()
+  replacedBy?: string;
 }
 
 export interface Invoice extends CreateInvoiceDto, NumberedFields {
@@ -273,6 +333,17 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   overpaidCents?: number;
   /** REQ-202: sum of confirmed payments. */
   paidCents?: number;
+  /** REQ-488 (demo m56): the contractor said "Didn't get it" to the last
+   *  claim — when, and the method the customer had claimed. Shown on /i
+   *  until the customer claims again (which clears both). */
+  claimRejectedAt?: string;
+  claimRejectedMethod?: string;
+  /** REQ-627: when, by whom and why it was voided (status "void"). */
+  voidedAt?: string;
+  voidedBy?: VoidedBy;
+  voidReason?: string;
+  /** REQ-627: the corrected draft that replaced this voided invoice. */
+  replacedBy?: string;
   id: string;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;
@@ -283,6 +354,13 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   updatedAt: string;
   /** Computed read-only field: never accepted from request bodies; projected on read. */
   urgency?: InvoiceUrgency;
+  /** REQ-556: see UpdateInvoiceDto — the delivery results, server-written. */
+  receiptSentVia?: string;
+  deliveredVia?: string[];
+  /** REQ-497: see UpdateInvoiceDto — set by TranslateInvoice only. */
+  lang?: string;
+  jobNameByLang?: Record<string, string>;
+  descriptionByLang?: Record<string, string>;
 }
 
 export function parseCreateInvoice(input: unknown): CreateInvoiceDto {

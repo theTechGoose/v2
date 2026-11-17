@@ -1,4 +1,5 @@
 import { Body, Context, Controller, Get, Param, Post } from "#danet/core";
+import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
 import type { ExecutionContext } from "#danet/core";
 import { IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
@@ -10,32 +11,83 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
+import { endsWithState } from "@core/business/address-parse/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
+import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
+import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
 import { RenderInvoicePdf } from "@paperwork/domain/coordinators/render-invoice-pdf/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { FileStore } from "@files/domain/data/file-store/mod.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
-import { groupVisits } from "#quote-flow/visit-groups.ts";
+import { hasSignOverride } from "#quote-flow/public-doc-state.ts";
+import { groupVisits, visitPeriodOf } from "#quote-flow/visit-groups.ts";
+import { invoiceLineItemsByLang } from "#documents/invoice-lang.ts"; // REQ-710
+import { sniffLogoImage } from "#quote-flow/logo-image.ts";
+import { logoVersion } from "#quote-flow/public-logo-url.ts";
+import {
+  isValidSignerName,
+  normalizeSignerName,
+  signerNameOnFile,
+} from "#quote-flow/signer-name.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"; // REQ-212
+import {
+  STRIPE_API,
+  StripeError,
+  StripeGateway,
+  type StripeIntent,
+} from "@core/data/stripe-gateway/mod.ts"; // REQ-213
+import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-payment/mod.ts"; // REQ-213
+import { FAKE_STRIPE_API } from "#payments/stripe-keys.ts"; // REQ-213
+import { ConnectSquare } from "@users/domain/coordinators/connect-square/mod.ts"; // REQ-803
+import { SquareError, SquareGateway } from "@core/data/square-gateway/mod.ts"; // REQ-803
+import { SquareCheckoutStore } from "@paperwork/domain/data/square-checkout-store/mod.ts"; // REQ-803
+import { SettleSquareCheckouts } from "@paperwork/domain/coordinators/settle-square-checkouts/mod.ts"; // REQ-803
+import { squareCheckoutName, squareReturnUrl } from "#payments/square.ts"; // REQ-803
+import { squareReturnOrigin } from "./square-return.ts"; // REQ-803
+import {
+  projectPayMethods,
+  type PublicPayMethod,
+} from "#payments/pay-links.ts"; // REQ-630
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import { docNumberOf } from "#documents/numbering.ts";
+import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
 import {
   invoiceBalance,
   invoiceState,
   isInvoiceIssued,
   isQuoteIssued,
+  quoteSignRefusal,
   quoteState,
+  versionChanges,
   versionOf,
 } from "#documents/versions.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { readSessionId } from "@users/domain/coordinators/require-user/mod.ts";
+import { isInternalViewer } from "@paperwork/domain/business/internal-viewer/mod.ts";
+import {
+  changeOrderChanges,
+  changeOrderJobTotals,
+} from "#quote-flow/change-order-view.ts";
+import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-497
+import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-697
+import {
+  asCommsLang,
+  type CommsLang,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts"; // REQ-715
 
 /**
  * Map a NotFoundError into a 404 JSON response. Public endpoints used to
@@ -49,9 +101,56 @@ function notFoundResponse(ctx: ExecutionContext, e: unknown) {
   throw e;
 }
 
+/** REQ-398 (demo M15): a 409 owner_cannot_approve for the business's own
+ *  session (owner, admin acting for them, staff impersonating) without the
+ *  full in-person override `?as=customer&confirm=1`; undefined for anyone
+ *  else. A module function, not a controller method (Danet routes those). */
+async function ownerCannotApprove(
+  ctx: ExecutionContext,
+  sessions: SessionStore,
+  ownerId: string,
+) {
+  const sessionId = readSessionId(ctx);
+  const session = sessionId
+    ? await sessions.get(sessionId).catch(() => null)
+    : null;
+  if (
+    isInternalViewer(session, ownerId) &&
+    !hasSignOverride(new URL(ctx.req.url).search)
+  ) {
+    return ctx.json({ ok: false, reason: "owner_cannot_approve" }, 409);
+  }
+  return undefined;
+}
+
+/** REQ-460: why an OPEN quote cannot be signed yet; undefined once signed or
+ *  declined (those pages have their own state) or when it can be. */
+function signRefusalOf(q: Quote) {
+  if (isAccepted(q) || q.status === "lost") return undefined;
+  return quoteSignRefusal(q);
+}
+
+/** REQ-479 (demo M30, cycle 3): true when this request comes from the
+ *  business's own session (owner, admin acting for them, staff
+ *  impersonating) — the public invoice's `internal` flag and the claim
+ *  guard read the same answer. */
+async function isInternalRequest(
+  ctx: ExecutionContext,
+  sessions: SessionStore,
+  ownerId: string,
+): Promise<boolean> {
+  const sessionId = readSessionId(ctx);
+  const session = sessionId
+    ? await sessions.get(sessionId).catch(() => null)
+    : null;
+  return isInternalViewer(session, ownerId);
+}
+
 class AcceptQuoteDto {
   @IsOptional() @IsString()
   signature?: string;
+  /** REQ-470 (demo m61): required — the typed legal name IS the signature
+   *  record; its shape is checked by `isValidSignerName` in acceptQuote. */
   @IsOptional() @IsString()
   name?: string;
   @IsOptional() @IsString()
@@ -77,6 +176,10 @@ class InquireQuoteDto {
   contactBack?: string; // phone or email — how the contractor should follow up
   @IsOptional() @IsString()
   name?: string;
+  /** REQ-701: the language of the page the client asked from ("en" | "es") —
+   *  the contractor's answer reaches them in it. */
+  @IsOptional() @IsString()
+  lang?: string;
 }
 
 function parseAccept(input: unknown): AcceptQuoteDto {
@@ -136,11 +239,24 @@ export class PaperworkPublicController {
     private acceptedAlert: SendAcceptedAlert,
     private inquiryAlert: SendInquiryAlert,
     private views: ViewStore,
+    private stripe: ConnectStripe, // REQ-212
+    private gateway: StripeGateway, // REQ-213
+    private cardPayment: RecordCardPayment, // REQ-213
+    private square: ConnectSquare, // REQ-803
+    private squareGateway: SquareGateway, // REQ-803
+    private squareCheckouts: SquareCheckoutStore, // REQ-803
+    private settleSquare: SettleSquareCheckouts, // REQ-803
     private shortlinks: ShortLinkStore,
     private files: FileStore,
     private invoicePdf: RenderInvoicePdf,
     private quotePdf: RenderQuotePdf,
     private payments: PaymentStore,
+    private sessions: SessionStore,
+    private logos: LoadBusinessLogo, // REQ-628
+    // REQ-563: optional so a hand-built controller (tests) needs no chat
+    private signedChat?: QuoteSignedPort,
+    /** REQ-701: the questions clients send (defaulted for a hand-built controller) */
+    private inquiries: QuoteInquiryStore = new QuoteInquiryStore(),
   ) {}
 
   /**
@@ -165,15 +281,34 @@ export class PaperworkPublicController {
       const ident = await this.identity.get(ownerId).catch(() => null);
       const fileId = ident?.logoFileId;
       if (!fileId) return ctx.json({ error: "no_logo" }, 404);
-      const meta = await this.files.getOwnedMeta(fileId, ownerId);
+      // REQ-252 (M30): only an image is ever served as the logo, typed by its bytes
+      const type = await logoImageType(this.files, fileId, ownerId);
+      if (!type) return ctx.json({ error: "no_logo" }, 404);
+      // REQ-613 (M31): the pages and emails ask for ?v=<logoVersion>. That URL's bytes never
+      // change (a new logo is a new version, so a new URL) → cache it for good. A bare URL or a
+      // stale ?v= is revalidated on every load against the version as its ETag, so a replaced
+      // logo shows at once instead of after a cache lifetime.
+      const version = logoVersion(fileId);
+      const etag = `"${version}"`;
+      const requested = new URL(ctx.req.url).searchParams.get("v");
+      const cacheControl = requested === version
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      const inm = ctx.req.header("if-none-match");
+      if (inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag)) {
+        return new Response(null, {
+          status: 304,
+          headers: { etag, "cache-control": cacheControl },
+        });
+      }
       const bytes = await this.files.readBytes(fileId);
       return new Response(bytes as BodyInit, {
         status: 200,
         headers: {
-          "content-type": meta.mimeType,
+          "content-type": type,
           "content-length": String(bytes.length),
-          // Short-lived cache: replacing the logo shows up within minutes.
-          "cache-control": "public, max-age=300",
+          etag,
+          "cache-control": cacheControl,
         },
       });
     } catch (e) {
@@ -228,9 +363,10 @@ export class PaperworkPublicController {
     try {
       const quote = await this.quotes.get(id);
       const userId = quote.userId;
-      const [contractor, ident] = await Promise.all([
+      const [contractor, ident, logo] = await Promise.all([
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
+        this.logos.run(userId), // REQ-628
       ]);
       const customer = quote.customerId
         ? await this.customers.getOwned(quote.customerId, userId)
@@ -247,6 +383,9 @@ export class PaperworkPublicController {
           ? { websiteUrl: ident.websiteUrl.trim() }
           : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
+        // REQ-697 (m22): the payment term states the days to pay
+        invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
+        ...(logo ? { logo } : {}),
       });
       return new Response(bytes as BodyInit, {
         status: 200,
@@ -300,11 +439,29 @@ export class PaperworkPublicController {
   ) {
     try {
       const co = await this.changeOrders.get(id);
+      // REQ-398 (demo M15): the business's own viewer (owner, admin acting
+      // for them, staff impersonating) previews — /co shows the banner, not
+      // the approve form, exactly like /q (REQ-306).
+      const sessionId = readSessionId(ctx);
+      const session = sessionId
+        ? await this.sessions.get(sessionId).catch(() => null)
+        : null;
+      const internal = isInternalViewer(session, co.userId);
+      // REQ-715 (demo-loop cycle 5, m31): the customer's own language
+      const coCustomerLang = await customerLanguageOf(
+        this.customers,
+        co.customerId,
+        co.userId,
+      );
       let invoiceAmount: number | undefined;
+      // REQ-398 (demo m25): the JOB's agreed total before/after this order —
+      // the headline; the invoice amounts are "This invoice".
+      let jobTotals: { beforeCents: number; afterCents: number } | undefined;
       let businessName: string | undefined;
-      // Language the customer document should render in (the contractor's
-      // outgoing-comms language). Defaults EN if the identity can't be read.
-      let commsLanguage: "en" | "es" = "en";
+      // Language the customer document should render in: REQ-715 the
+      // customer's own language, else the contractor's outgoing-comms
+      // language. Defaults EN if neither can be read.
+      let commsLanguage: "en" | "es" = coCustomerLang ?? "en";
       // REQ-205: the documents this order belongs to, as clickable links
       let invoiceLink: {
         id: string;
@@ -329,7 +486,11 @@ export class PaperworkPublicController {
         };
         const ident = await this.identity.get(inv.userId).catch(() => null);
         businessName = ident?.businessName ?? ident?.legalName ?? undefined;
-        commsLanguage = ident?.commsLanguage === "es" ? "es" : "en";
+        commsLanguage = resolveCommsLanguage({
+          customerLanguage: coCustomerLang ??
+            await customerLanguageOf(this.customers, inv.customerId, co.userId),
+          identityCommsLanguage: ident?.commsLanguage,
+        });
         const quoteId = co.quoteId ?? inv.quoteId;
         if (quoteId) {
           const q = await this.quotes.get(quoteId).catch(() => undefined);
@@ -340,9 +501,26 @@ export class PaperworkPublicController {
               url: `/q/${q.id}`,
               accepted: isAccepted(q),
             };
+            const cos = await this.changeOrders.listByQuote(co.userId, q.id)
+              .catch(() => [] as ChangeOrder[]);
+            jobTotals = changeOrderJobTotals(
+              q,
+              cos.some((c) => c.id === co.id) ? cos : [...cos, co],
+              co.id,
+            );
           }
         }
       } catch { /* invoice may be gone; still show the order */ }
+      // REQ-685 (demo-loop cycle 5, m42): an edited order (Version 2+) says
+      // what changed against the filed version before it, like /q (REQ-304).
+      const filed = versionOf(co) > 1
+        ? await this.changeOrders.listVersions(co.id, co.userId)
+          .catch(() => [])
+        : [];
+      const previous = filed.find((v) => v.version === versionOf(co) - 1);
+      const changesFromPrevious = previous
+        ? changeOrderChanges(previous.content, co)
+        : undefined;
       const originalAmount = co.originalAmountCents ??
         (invoiceAmount != null
           ? (co.status === "approved"
@@ -358,11 +536,19 @@ export class PaperworkPublicController {
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         description: co.description,
         deltaAmountCents: co.deltaAmountCents,
+        ...(changesFromPrevious ? { changesFromPrevious } : {}),
         status: co.status,
         currentAmount: originalAmount,
         newAmount: originalAmount != null
           ? Math.max(0, originalAmount + co.deltaAmountCents)
           : undefined,
+        ...(jobTotals
+          ? {
+            jobCurrentAmount: jobTotals.beforeCents,
+            jobNewAmount: jobTotals.afterCents,
+          }
+          : {}),
+        ...(internal ? { internal: true } : {}),
         businessName,
         commsLanguage,
         decidedAt: co.decidedAt,
@@ -391,6 +577,11 @@ export class PaperworkPublicController {
     } catch (e) {
       return notFoundResponse(ctx, e);
     }
+    // REQ-398 (demo M15): the business's own session cannot decide its
+    // customer's change order — the in-person override (?as=customer&confirm=1)
+    // the preview banner links to is the one way through (REQ-306 parity).
+    const refusal = await ownerCannotApprove(ctx, this.sessions, co.userId);
+    if (refusal) return refusal;
     if (co.status !== "pending") {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
@@ -475,6 +666,11 @@ export class PaperworkPublicController {
     } catch (e) {
       return notFoundResponse(ctx, e);
     }
+    // REQ-398 (demo M15): the business's own session cannot decide its
+    // customer's change order — the in-person override (?as=customer&confirm=1)
+    // the preview banner links to is the one way through (REQ-306 parity).
+    const refusal = await ownerCannotApprove(ctx, this.sessions, co.userId);
+    if (refusal) return refusal;
     if (co.status !== "pending") {
       return ctx.json({ ok: false, reason: `already_${co.status}` }, 409);
     }
@@ -503,22 +699,37 @@ export class PaperworkPublicController {
   ) {
     try {
       let q = await this.quotes.get(id); // no ownership gate — knowledge of id is the capability
+      // REQ-225: the owner, an admin acting for them, or staff behind an
+      // impersonation session (the demo replica) is not the client opening
+      // the link. Serve the page, but record no open and leave the status.
+      const sessionId = readSessionId(ctx);
+      const session = sessionId
+        ? await this.sessions.get(sessionId).catch(() => null)
+        : null;
+      const internal = isInternalViewer(session, q.userId);
+      // REQ-396 (demo-loop c2 M13): the open /q page re-reads this every
+      // 10 s with ?refresh=1 to follow a signature or a revision — a poll is
+      // not the customer opening the link, so it records no open and leaves
+      // the status (the page's first, plain load already did both).
+      const polled = new URL(ctx.req.url).searchParams.get("refresh") === "1";
       // Record the open so the /quotes pipeline card can derive the
       // "Viewed" stage + opens count (roadmap p.13). BuildQuoteCards
       // dedupes to ≤1 open per hour, so SSR double-fetches don't inflate.
-      try {
-        await this.views.create({
-          paperworkType: "quote",
-          paperworkId: q.id,
-          viewedAt: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn(`[quotes/${id}/public] view record failed:`, err);
+      if (!internal && !polled) {
+        try {
+          await this.views.create({
+            paperworkType: "quote",
+            paperworkId: q.id,
+            viewedAt: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.warn(`[quotes/${id}/public] view record failed:`, err);
+        }
       }
       // First open flips sent → viewed so the contractor's pipeline card
       // reflects that the link actually landed.
       // Idempotent: subsequent GETs find a non-"sent" status and skip.
-      if (q.status === "sent") {
+      if (!internal && !polled && q.status === "sent") {
         try {
           q = await this.quotes.update(id, q.userId, { status: "viewed" });
           await this.bus.emit({
@@ -531,8 +742,14 @@ export class PaperworkPublicController {
           console.warn(`[quotes/${id}/public] mark-viewed failed:`, err);
         }
       }
-      const [contractor, customer, related, cos] = await Promise.all([
-        loadContractor(this.users, this.identity, this.addresses, q.userId),
+      const [contractor, customer, related, cos, filed, docLang] = await Promise.all([
+        loadContractor(
+          this.users,
+          this.identity,
+          this.addresses,
+          this.files,
+          q.userId,
+        ),
         // Full public customer projection (name/phone/email) — the /q page
         // renders the agreement's To/Para contact card (P-13). REQ-204: an
         // issued quote shows the customer as they were when it was issued.
@@ -542,12 +759,30 @@ export class PaperworkPublicController {
           q.userId,
           isQuoteIssued(q) ? q.customerSnapshot : undefined,
         ),
-        // REQ-205: the invoices billed against this agreement, by number
+        // REQ-205: the invoices billed against this agreement, by number.
+        // REQ-312 (demo m29): only the ISSUED ones — a draft or scheduled
+        // invoice the contractor has not sent stays on their own ledger.
         this.invoices.listByUser(q.userId).then((all) =>
-          all.filter((i) => i.quoteId === q.id)
+          all.filter((i) => i.quoteId === q.id && isInvoiceIssued(i))
         ).catch(() => []),
         this.changeOrders.listByQuote(q.userId, q.id).catch(() => []),
+        // REQ-304 (demo M28): the version before this one, so the page can
+        // say what changed.
+        versionOf(q) > 1
+          ? this.quotes.listVersions(q.id, q.userId).catch(() => [])
+          : Promise.resolve([]),
+        // REQ-715 (demo-loop cycle 5, m31): the language the customer reads
+        // (live, never the issued snapshot) — /q opens in it when the
+        // visitor chose none (no ?lang=, no pm_lang pick).
+        customerLanguageOf(this.customers, q.customerId, q.userId),
       ]);
+      const previous = filed.find((v) => v.version === versionOf(q) - 1);
+      const changesFromPrevious = previous
+        ? versionChanges(
+          previous.content,
+          q as unknown as Record<string, unknown>,
+        )
+        : undefined;
       const invoices = await Promise.all(
         related
           .slice()
@@ -563,12 +798,26 @@ export class PaperworkPublicController {
           })
           .map((i) => projectLinkedInvoice(this.payments, i)),
       );
+      const signRefusal = signRefusalOf(q);
       return ctx.json({
         ...redactQuote(q),
         contractor,
         customer,
+        // REQ-715: the customer's own language, when one is on file
+        ...(docLang ? { docLang } : {}),
         invoices,
         changeOrders: cos.map(projectLinkedChangeOrder),
+        ...(changesFromPrevious ? { changesFromPrevious } : {}),
+        // REQ-403 (demo m11): the confirmation the signed page may promise —
+        // a text only to a textable number whose latest text did not fail.
+        confirmChannel: signedConfirmChannel(customer, q.lastDelivery),
+        // REQ-306 (demo B3): tell the business's own viewer they are
+        // previewing — the page swaps the pad for a banner. Absent for the
+        // customer so the public shape is unchanged for them.
+        ...(internal ? { internal: true } : {}),
+        // REQ-460 (demo-loop cycle 3, M16): an open quote the accept would
+        // refuse says why, so the page shows no pad (to anyone).
+        ...(signRefusal ? { signRefusal } : {}),
       });
     } catch (e) {
       return notFoundResponse(ctx, e);
@@ -582,7 +831,28 @@ export class PaperworkPublicController {
     @Body() body: unknown,
   ) {
     const dto = parseAccept(body);
+    // REQ-470 (demo m61): "x" signed a binding agreement. A missing name, or
+    // one that is not two lettered words / three letters, signs nothing.
+    if (!isValidSignerName(dto.name)) {
+      return ctx.json({ ok: false, reason: "invalid_name" }, 400);
+    }
+    dto.name = normalizeSignerName(dto.name!);
     const existing = await this.quotes.get(id);
+    // REQ-306 (demo B3): the business's own session — the owner on "View as
+    // customer", an admin acting for them, staff behind an impersonation —
+    // cannot sign its customer's agreement. The one way through is the
+    // explicit in-person override (?as=customer&confirm=1) the preview
+    // banner links to, for when the customer is handed the device.
+    const sessionId = readSessionId(ctx);
+    const session = sessionId
+      ? await this.sessions.get(sessionId).catch(() => null)
+      : null;
+    if (
+      isInternalViewer(session, existing.userId) &&
+      !hasSignOverride(new URL(ctx.req.url).search)
+    ) {
+      return ctx.json({ ok: false, reason: "owner_cannot_sign" }, 409);
+    }
     // "accepted" is the terminal signed state (roadmap p.10) — the quote IS
     // the agreement, and accepting it is the one signature ceremony.
     if (isAccepted(existing)) {
@@ -600,6 +870,25 @@ export class PaperworkPublicController {
     if (existing.status === "lost") {
       return ctx.json({ ok: false, reason: "declined" }, 409);
     }
+    // REQ-750 (demo-loop cycle 5v1, p18-6a): "Carmen Nunez" signing the
+    // agreement made out to "Carmen Núñez" records the agreement's spelling
+    // (accent/case/spacing-only differences); any other name stays as typed.
+    const onFileName = (isQuoteIssued(existing)
+      ? existing.customerSnapshot?.name
+      : undefined) ??
+      await lookupCustomerName(
+        this.customers,
+        existing.customerId,
+        existing.userId,
+      );
+    dto.name = signerNameOnFile(dto.name, onFileName);
+    // REQ-460 (demo-loop cycle 3, M16 + M15): nothing is signed before it was
+    // offered with its payment terms — a locked quote whose terms wizard is
+    // still asking is `not_issued` (the in-person override does not change
+    // that), one with the wizard's terms but no payment terms is
+    // `terms_incomplete`. Signing it billed the whole total as one invoice.
+    const notReady = quoteSignRefusal(existing);
+    if (notReady) return ctx.json({ ok: false, reason: notReady }, 409);
     // REQ-203: a page showing an older version cannot sign the current one.
     const expected = dto.version;
     if (expected !== undefined && expected !== versionOf(existing)) {
@@ -658,6 +947,10 @@ export class PaperworkPublicController {
         ...(customerName ? { customerName } : {}),
         // UX-20: the feed event names the job, not just "tu cotización".
         ...(updated.jobName ? { jobName: updated.jobName } : {}),
+        // REQ-589 (cycle 4, m15): the feed names it in the reader's language.
+        ...(updated.jobNameByLang
+          ? { jobNameByLang: updated.jobNameByLang }
+          : {}),
       },
     });
     // Completion Text + Email to the contractor (roadmap p.10). Best-effort —
@@ -679,13 +972,38 @@ export class PaperworkPublicController {
     // because a second accept 409s before reaching here, and the coordinator
     // stamps acceptedNotifiedAt as its own replay guard. Errors MUST NOT
     // fail the customer's accept — the acceptance is captured regardless.
-    await this.signedConfirmation.run(updated.id).catch((err) => {
-      console.error(
-        `[quotes/${updated.id}/accept] signed-confirmation failed:`,
-        err,
-      );
+    const confirmed = await this.signedConfirmation.run(updated.id).catch(
+      (err) => {
+        console.error(
+          `[quotes/${updated.id}/accept] signed-confirmation failed:`,
+          err,
+        );
+        return undefined;
+      },
+    );
+    // REQ-563 (demo-loop cycle 4, m3): the owner's chat says who signed and
+    // the invoice that went out — after the confirmation, so it can name it.
+    // Never fails the accept (the port logs its own errors).
+    await this.signedChat?.run({
+      userId: existing.userId,
+      quoteId: updated.id,
+      ...(confirmed?.invoiceId ? { invoiceId: confirmed.invoiceId } : {}),
+      // REQ-697 (m22): or the completion bill it scheduled, unsent
+      ...(confirmed?.scheduledInvoiceId
+        ? { scheduledInvoiceId: confirmed.scheduledInvoiceId }
+        : {}),
+      // REQ-699: or the Field subscription that bills it each period
+      ...(confirmed?.subscriptionId
+        ? { subscriptionId: confirmed.subscriptionId }
+        : {}),
     });
-    return ctx.json({ ok: true, quoteId: updated.id });
+    return ctx.json({
+      ok: true,
+      quoteId: updated.id,
+      // REQ-750: the name the signature recorded (the on-file spelling when
+      // the typed one differed only by accents or case)
+      acceptedName: dto.name,
+    });
   }
 
   /** Customer declines a quote (audit P5.1).
@@ -739,8 +1057,10 @@ export class PaperworkPublicController {
   /** Customer asks a question on a quote (audit P5.1).
    *
    *  This is a one-shot inbound message — the customer doesn't have a chat
-   *  thread of their own, so it lands as a notification on the contractor's
-   *  bell + activity feed. No quote-status change. */
+   *  thread of their own. It lands as a notification on the contractor's
+   *  bell + activity feed, and (REQ-701) is KEPT on its quote: the panel the
+   *  notice opens lists it under "Questions from the client" and answers it.
+   *  No quote-status change. */
   @Post("quotes/:id/inquiry")
   async inquireQuote(
     @Context() ctx: ExecutionContext,
@@ -749,6 +1069,25 @@ export class PaperworkPublicController {
   ) {
     const dto = parseInquire(body);
     const existing = await this.quotes.get(id);
+    // REQ-701 (demo-loop cycle 5, M21): the question is stored on its quote,
+    // owned by the contractor — pair 9's notice opened a panel that had no
+    // question and no reply box. Best-effort: a failed write never stops the
+    // notification and the alert below.
+    const stored = await this.inquiries.create({
+      quoteId: existing.id,
+      userId: existing.userId,
+      ...(existing.customerId ? { customerId: existing.customerId } : {}),
+      question: dto.question,
+      ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
+      ...(dto.name ? { name: dto.name } : {}),
+      ...(dto.lang ? { lang: dto.lang } : {}),
+    }).catch((err) => {
+      console.error(
+        `[quotes/${existing.id}/inquiry] storing the question failed:`,
+        err,
+      );
+      return null;
+    });
     const customerName = await lookupCustomerName(
       this.customers,
       existing.customerId,
@@ -768,6 +1107,7 @@ export class PaperworkPublicController {
         ...(dto.contactBack ? { contactBack: dto.contactBack } : {}),
         ...(dto.name ? { askName: dto.name } : {}),
         quoteId: existing.id,
+        ...(stored ? { inquiryId: stored.id } : {}),
       },
     });
     // REQ-031 (NW-26): the contractor gets the full question + contactBack
@@ -795,11 +1135,23 @@ export class PaperworkPublicController {
     @Param("id") id: string,
   ) {
     try {
-      const i = await this.invoices.get(id);
+      let i = await this.invoices.get(id);
+      // REQ-803 — a Square checkout the customer started is read back on the business's token:
+      // always on the way back from Square (?square=return), else at most every few seconds
+      const recorded = await this.settleSquare.run(i, {
+        force: new URL(ctx.req.url).searchParams.get("square") === "return",
+      }).catch(() => 0);
+      if (recorded) i = await this.invoices.get(id);
       const [contractor, customer, quote, siblings, cos, payments] =
         await Promise
           .all([
-            loadContractor(this.users, this.identity, this.addresses, i.userId),
+            loadContractor(
+              this.users,
+              this.identity,
+              this.addresses,
+              this.files,
+              i.userId,
+            ),
             // REQ-204: an issued invoice shows the customer as they were when it was issued
             lookupCustomerPublic(
               this.customers,
@@ -815,10 +1167,13 @@ export class PaperworkPublicController {
               : Promise.resolve(undefined),
             // Sibling invoices for the same quote — used to render the
             // "Invoice X of Y" framing and the "What you've paid so far"
-            // strip on the public page.
+            // strip on the public page. REQ-312 (demo m29): issued ones only;
+            // an unsent draft is never shown to the customer.
             i.quoteId
               ? this.invoices.listByUser(i.userId).then((all) =>
-                all.filter((row) => row.quoteId === i.quoteId)
+                all.filter((row) =>
+                  row.quoteId === i.quoteId && isInvoiceIssued(row)
+                )
               ).catch(() => [])
               : Promise.resolve([]),
             // REQ-205: this invoice's change orders, by number
@@ -856,19 +1211,45 @@ export class PaperworkPublicController {
           summaryByLang: quote.summaryByLang,
           lineItems: quote.lineItems,
         };
-        agreementTotal = quote.estimatedTotal ??
-          ((quote.lineItems ?? []).reduce(
-            (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
-            0,
-          ) || undefined);
+        // REQ-679 (cycle 5, M18): the agreement is the quote PLUS its
+        // approved change orders — approving one revises only its invoice.
+        const quoteCos = await this.changeOrders.listByQuote(
+          i.userId,
+          quote.id,
+        ).catch(() => [] as ChangeOrder[]);
+        const agreed = agreedTotalCents(quote, quoteCos);
+        agreementTotal = typeof quote.estimatedTotal === "number"
+          ? agreed
+          : agreed || undefined;
       }
       // Standalone invoices (no quote) carry their own jobName +
       // description — the assistant's "Job done, need to invoice." flow and
       // the /invoices "New invoice" modal write them directly (roadmap p.3).
-      if (!jobDetails && (i.jobName || i.description)) {
+      // REQ-497 (demo m23): plus their per-language text (TranslateInvoice),
+      // while it still matches what was typed — /i reads map[lang] ?? jobName.
+      // REQ-487 (demo m58): its OWN line items fill the itemized table too —
+      // except a batch invoice, whose visits render grouped by address.
+      // REQ-710 (cycle 5, M4): each with its per-language text while it
+      // still describes the line — /i?lang=en kept "Retiro de refrigerador y
+      // lavadora" under an English title.
+      const ownItems = !jobDetails && i.lineItems?.length &&
+          !groupVisits(i.lineItems, visitPeriodOf(i))
+        ? invoiceLineItemsByLang(i, i.lineItems).map((li) => ({
+          description: li.description,
+          ...(li.descriptionByLang
+            ? { descriptionByLang: li.descriptionByLang }
+            : {}),
+          quantity: li.quantity,
+          unit: li.unit,
+          price: li.price,
+        }))
+        : undefined;
+      if (!jobDetails && (i.jobName || i.description || ownItems)) {
         jobDetails = {
           ...(i.jobName ? { jobName: i.jobName } : {}),
           ...(i.description ? { description: i.description } : {}),
+          ...invoiceTextByLang(i),
+          ...(ownItems ? { lineItems: ownItems } : {}),
         };
       }
       // Project sibling invoices into a public-safe shape, sorted by
@@ -894,14 +1275,40 @@ export class PaperworkPublicController {
           installmentIndex: row.installmentIndex,
           installmentTotal: row.installmentTotal,
         }));
+      // REQ-523 (demo m16): the channel the payment receipt can arrive on.
+      // ConfirmPayment emails the customer's CURRENT record and texts it only
+      // when the number can take a text — REQ-403's rule, so the claim page
+      // never promises "we'll text you a receipt" to a 555-01XX number.
+      const receiptTo = i.customerId
+        ? await this.customers.getOwned(i.customerId, i.userId).catch(() =>
+          undefined
+        )
+        : undefined;
+      const receiptChannel = signedConfirmChannel(receiptTo);
       // Method config drives the public page's "How would you like to
       // pay?" buttons. We surface only methods the contractor has
       // explicitly enabled (handles non-empty).
-      const acceptedMethods = projectAcceptedMethods(contractor);
+      let acceptedMethods = projectAcceptedMethods(contractor);
+      // REQ-213 — while Stripe is on, the card is the widget, not a manual chip
+      // REQ-803 — and while the business's own Square is on, the card is Square's checkout
+      if (
+        await this.stripe.isConnected(i.userId).catch(() => false) ||
+        await this.square.isConnected(i.userId).catch(() => false)
+      ) {
+        acceptedMethods = acceptedMethods.filter((m) => m.method !== "card");
+      }
       // REQ-173: a batch invoice's visits, grouped under their address
-      const visits = groupVisits(i.lineItems);
+      const visits = groupVisits(i.lineItems, visitPeriodOf(i));
+      const docLang = invoiceDocLang(
+        i,
+        quote && quote.userId === i.userId ? quote : undefined,
+        receiptTo, // REQ-715: the customer's own language first
+      );
+      // REQ-479 (demo M30): the business's own viewer previews the claim
+      const internal = await isInternalRequest(ctx, this.sessions, i.userId);
       return ctx.json({
         ...redactInvoice(i),
+        ...(internal ? { internal: true } : {}),
         // REQ-202: one current balance, whatever page is open
         paidCents: balance.paidCents,
         balanceCents: balance.balanceCents,
@@ -911,6 +1318,10 @@ export class PaperworkPublicController {
         contractor,
         customer,
         jobDetails,
+        // REQ-586 (cycle 4, M11): the document's language — /i reads it
+        // ahead of the contractor's default commsLanguage (REQ-715: the
+        // customer's own language first).
+        ...(docLang ? { docLang } : {}),
         ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
         changeOrders: cos.map(projectLinkedChangeOrder),
@@ -928,6 +1339,7 @@ export class PaperworkPublicController {
           }
           : {}),
         acceptedMethods,
+        receiptChannel,
         // Agreement context mirrored from the linked quote so the invoice
         // renders the same itemized job + term grid as the signed agreement
         // (minus the legal clauses + signature block). Omitted for standalone
@@ -945,7 +1357,12 @@ export class PaperworkPublicController {
             // payment split / warranty) — feeds the invoice's TermGrid and
             // the payment-schedule milestones. This is NOT the numbered
             // legal clauses, which stay on the signed agreement only.
-            terms: quote.terms ?? [],
+            // REQ-659 (cycle 5, m53): minus a relative start ("Next
+            // week") the bill has outlived — counted from the quote's send.
+            terms: invoiceTerms(quote.terms, {
+              quotedAt: quote.sentAt ?? quote.createdAt,
+              issuedAt: i.issuedDate ?? i.sentAt ?? i.createdAt,
+            }),
             // "View the signed agreement" link target — only once actually
             // accepted (the user's "link to the signed quote if one exists").
             ...(isAccepted(quote)
@@ -970,7 +1387,8 @@ export class PaperworkPublicController {
    *
    * Records a PaymentIntent on the invoice and flips status to
    * `claimed`. No auth — knowledge of the invoice id is the capability,
-   * matching the rest of the public surface.
+   * matching the rest of the public surface — except that the business's
+   * own session is refused (REQ-479, 409 owner_cannot_claim).
    *
    * Idempotent: replaying the same body just overwrites the existing
    * intent; we don't keep a history (the contractor confirms or rejects
@@ -993,6 +1411,18 @@ export class PaperworkPublicController {
     }
     try {
       const invoice = await this.invoices.get(id);
+      // REQ-479 (demo M30, cycle 3): the business's own session — the owner
+      // on her own invoice link, an admin acting for her, staff behind an
+      // impersonation — cannot file "the customer paid" on its own invoice
+      // (REQ-306's accept guard, applied to the claim). A payment she got is
+      // recorded from /invoices; the in-person override (?as=customer&
+      // confirm=1) is for the customer handed her device.
+      if (
+        await isInternalRequest(ctx, this.sessions, invoice.userId) &&
+        !hasSignOverride(new URL(ctx.req.url).search)
+      ) {
+        return ctx.json({ ok: false, reason: "owner_cannot_claim" }, 409);
+      }
       if (invoice.status === "paid") {
         return ctx.json({ ok: false, reason: "already_paid" }, 409);
       }
@@ -1039,6 +1469,9 @@ export class PaperworkPublicController {
           claimedAt: new Date().toISOString(),
           ...(dto.claimedBy ? { claimedBy: dto.claimedBy } : {}),
         },
+        // REQ-488: a new claim replaces any earlier "not received" note.
+        claimRejectedAt: null,
+        claimRejectedMethod: null,
       });
       // Fire a domain event so the contractor's bell + activity feed
       // surface the claim ("you got a payment — confirm it"). customerName
@@ -1065,6 +1498,434 @@ export class PaperworkPublicController {
       return notFoundResponse(ctx, e);
     }
   }
+
+  // ------------------------------------------------------------ REQ-213: pay by card
+
+  /**
+   * GET /invoices/:id/card — whether the business takes cards (REQ-212), and what the page
+   * needs to take one: the business's PUBLISHABLE key, where the browser tokenizes (Stripe, or
+   * the in-process fake for a fake key), the merchant's name and logo, and the balance.
+   */
+  @Get("invoices/:id/card")
+  async cardConfig(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    try {
+      const i = await this.invoices.get(id);
+      const conn = await this.stripe.secretFor(i.userId).catch(() => null);
+      if (!conn || i.status === "paid" || i.status === "void") {
+        return ctx.json({ available: false });
+      }
+      const balance = await currentBalance(this.payments, i);
+      if (balance.balanceCents <= 0) return ctx.json({ available: false });
+      const merchant = await this.stripe.merchant(i.userId);
+      return ctx.json({
+        available: true,
+        provider: "stripe", // REQ-216 — the gateway the widget is configured with
+        publishableKey: conn.publishableKey,
+        mode: conn.mode,
+        fake: conn.fake,
+        apiBase: conn.fake ? FAKE_STRIPE_API : STRIPE_API,
+        merchantName: merchant.name,
+        logoUrl: merchant.hasLogo ? `/api/public-logo/invoice/${i.id}` : null,
+        amountCents: balance.balanceCents,
+        currency: "usd",
+        version: versionOf(i),
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * POST /invoices/:id/card — charge the balance on the business's own Stripe: a PaymentIntent
+   * created and confirmed with the business's secret key for the PaymentMethod the browser made
+   * with its publishable key. The balance and version the page showed must still hold (REQ-203's
+   * rule). Succeeded → recorded like the contractor's confirmation; requires_action → the client
+   * secret for Stripe.js's challenge; declined → 402 with Stripe's words.
+   */
+  @Post("invoices/:id/card")
+  async chargeCard(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    let dto: ChargeCardDto;
+    try {
+      dto = parseChargeCard(body);
+    } catch {
+      return ctx.json({ ok: false, reason: "invalid_body" }, 400);
+    }
+    try {
+      const invoice = await this.invoices.get(id);
+      if (invoice.status === "paid") {
+        return ctx.json({ ok: false, reason: "already_paid" }, 409);
+      }
+      if (invoice.status === "void") {
+        return ctx.json({ ok: false, reason: "void" }, 409);
+      }
+      const balance = await currentBalance(this.payments, invoice);
+      if (balance.balanceCents <= 0) {
+        return ctx.json(
+          { ok: false, reason: "already_paid", balanceCents: 0 },
+          409,
+        );
+      }
+      const staleVersion = dto.version !== undefined &&
+        dto.version !== versionOf(invoice);
+      const staleAmount = dto.amountCents !== undefined &&
+        Math.round(dto.amountCents) !== balance.balanceCents;
+      if (staleVersion || staleAmount) {
+        return ctx.json(
+          {
+            ok: false,
+            reason: "stale_balance",
+            balanceCents: balance.balanceCents,
+            version: versionOf(invoice),
+          },
+          409,
+        );
+      }
+      const conn = await this.stripe.secretFor(invoice.userId).catch(() =>
+        null
+      );
+      if (!conn) {
+        return ctx.json({ ok: false, reason: "card_unavailable" }, 404);
+      }
+      const merchant = await this.stripe.merchant(invoice.userId);
+      let pi;
+      try {
+        pi = await this.gateway.createPaymentIntent(conn.secretKey, {
+          amountCents: balance.balanceCents,
+          currency: "usd",
+          paymentMethodId: dto.paymentMethodId,
+          description: `${docNumberOf(invoice)}${
+            merchant.name ? ` · ${merchant.name}` : ""
+          }`,
+          metadata: {
+            invoiceId: invoice.id,
+            userId: invoice.userId,
+            app: "documonster",
+          },
+          ...(dto.payerEmail?.trim()
+            ? { receiptEmail: dto.payerEmail.trim() }
+            : {}),
+          idempotencyKey: `${invoice.id}:${
+            versionOf(invoice)
+          }:${dto.paymentMethodId}`,
+        });
+      } catch (e) {
+        if (e instanceof StripeError) {
+          if (e.status === 402) {
+            return ctx.json({
+              ok: false,
+              reason: "declined",
+              message: e.message,
+            }, 402);
+          }
+          return ctx.json({
+            ok: false,
+            reason: "stripe_error",
+            message: e.message,
+          }, 502);
+        }
+        throw e;
+      }
+      return ctx.json(
+        await settleIntent(
+          this.cardPayment,
+          invoice.id,
+          invoice.userId,
+          pi,
+          dto.payerName,
+        ),
+      );
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * POST /invoices/:id/card/complete — after Stripe.js's 3-D Secure challenge: the intent is
+   * RE-READ on the business's key (never trusted from the browser) and, succeeded, recorded.
+   */
+  @Post("invoices/:id/card/complete")
+  async completeCard(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const b = (body && typeof body === "object" ? body : {}) as Record<
+      string,
+      unknown
+    >;
+    const intentId = typeof b.paymentIntentId === "string"
+      ? b.paymentIntentId.trim()
+      : "";
+    if (!intentId) return ctx.json({ ok: false, reason: "invalid_body" }, 400);
+    try {
+      const invoice = await this.invoices.get(id);
+      const conn = await this.stripe.secretFor(invoice.userId).catch(() =>
+        null
+      );
+      if (!conn) {
+        return ctx.json({ ok: false, reason: "card_unavailable" }, 404);
+      }
+      let pi;
+      try {
+        pi = await this.gateway.retrievePaymentIntent(conn.secretKey, intentId);
+      } catch (e) {
+        if (e instanceof StripeError) {
+          return ctx.json({
+            ok: false,
+            reason: "stripe_error",
+            message: e.message,
+          }, 502);
+        }
+        throw e;
+      }
+      if (pi.metadata?.invoiceId !== invoice.id) {
+        return ctx.json({ ok: false, reason: "intent_mismatch" }, 409);
+      }
+      return ctx.json(
+        await settleIntent(this.cardPayment, invoice.id, invoice.userId, pi),
+      );
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  // ------------------------------------------------------------ REQ-803: pay by card on Square
+
+  /**
+   * GET /invoices/:id/square — whether the business takes cards on its OWN Square (REQ-803),
+   * and what the "Pay by card" button needs: the merchant's name, the balance and the version
+   * the checkout will be asked for. Never the token.
+   */
+  @Get("invoices/:id/square")
+  async squareConfig(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    try {
+      const i = await this.invoices.get(id);
+      if (i.status === "paid" || i.status === "void") {
+        return ctx.json({ available: false });
+      }
+      const conn = await this.square.tokenFor(i.userId).catch(() => null);
+      if (!conn) return ctx.json({ available: false });
+      const balance = await currentBalance(this.payments, i);
+      if (balance.balanceCents <= 0) return ctx.json({ available: false });
+      const merchant = await this.square.merchant(i.userId);
+      return ctx.json({
+        available: true,
+        provider: "square",
+        environment: conn.environment,
+        fake: conn.fake,
+        merchantName: merchant.name || conn.sellerName,
+        amountCents: balance.balanceCents,
+        currency: "usd",
+        version: versionOf(i),
+      });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+
+  /**
+   * POST /invoices/:id/square/checkout — a Square payment link (Square's hosted checkout) for
+   * the invoice's CURRENT balance, made on the business's own token and location, that sends
+   * the customer back to /i/:id?square=return. The balance and version the page showed must
+   * still hold (REQ-203's rule): else 409 with the current ones, before Square is asked. The
+   * same balance at the same version reuses the link already made. Answers the URL to go to.
+   */
+  @Post("invoices/:id/square/checkout")
+  async squareCheckout(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    let dto: SquareCheckoutDto;
+    try {
+      dto = parseSquareCheckout(body);
+    } catch {
+      return ctx.json({ ok: false, reason: "invalid_body" }, 400);
+    }
+    try {
+      const invoice = await this.invoices.get(id);
+      if (invoice.status === "paid") {
+        return ctx.json({ ok: false, reason: "already_paid" }, 409);
+      }
+      if (invoice.status === "void") {
+        return ctx.json({ ok: false, reason: "void" }, 409);
+      }
+      const conn = await this.square.tokenFor(invoice.userId).catch(() => null);
+      if (!conn) {
+        return ctx.json({ ok: false, reason: "card_unavailable" }, 404);
+      }
+      const balance = await currentBalance(this.payments, invoice);
+      if (balance.balanceCents <= 0) {
+        return ctx.json(
+          { ok: false, reason: "already_paid", balanceCents: 0 },
+          409,
+        );
+      }
+      const version = versionOf(invoice);
+      const staleVersion = dto.version !== undefined &&
+        dto.version !== version;
+      const staleAmount = Math.round(dto.amountCents) !== balance.balanceCents;
+      if (staleVersion || staleAmount) {
+        return ctx.json(
+          {
+            ok: false,
+            reason: "stale_balance",
+            balanceCents: balance.balanceCents,
+            version,
+          },
+          409,
+        );
+      }
+      const redirectUrl = squareReturnUrl(
+        squareReturnOrigin(ctx.req.header("origin")),
+        invoice.id,
+      );
+      const reuse = (await this.squareCheckouts.listByInvoice(invoice.id))
+        .find((c) =>
+          c.status === "pending" && c.userId === invoice.userId &&
+          c.version === version && c.amountCents === balance.balanceCents &&
+          c.redirectUrl === redirectUrl
+        );
+      if (reuse) return ctx.json({ ok: true, url: reuse.url });
+      const merchant = await this.square.merchant(invoice.userId);
+      const number = docNumberOf(invoice);
+      let link;
+      try {
+        link = await this.squareGateway.createPaymentLink(
+          conn.token,
+          conn.environment,
+          {
+            idempotencyKey: `${invoice.id}:${version}:${balance.balanceCents}:${
+              crypto.randomUUID().slice(0, 8)
+            }`,
+            name: squareCheckoutName(
+              number,
+              merchant.name || conn.sellerName,
+            ),
+            amountCents: balance.balanceCents,
+            currency: "USD",
+            locationId: conn.locationId,
+            redirectUrl,
+            ...(number ? { note: number } : {}),
+          },
+        );
+      } catch (e) {
+        if (e instanceof SquareError) {
+          return ctx.json({
+            ok: false,
+            reason: "square_error",
+            message: e.message,
+          }, 502);
+        }
+        throw e;
+      }
+      await this.squareCheckouts.put({
+        userId: invoice.userId,
+        invoiceId: invoice.id,
+        version,
+        amountCents: balance.balanceCents,
+        paymentLinkId: link.id,
+        orderId: link.orderId,
+        url: link.url,
+        redirectUrl,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      });
+      return ctx.json({ ok: true, url: link.url });
+    } catch (e) {
+      return notFoundResponse(ctx, e);
+    }
+  }
+}
+
+/** REQ-803 — the public Square checkout's body: the balance and version the page showed. */
+class SquareCheckoutDto {
+  @IsNumber()
+  amountCents!: number;
+  @IsOptional() @IsNumber()
+  version?: number;
+}
+
+function parseSquareCheckout(input: unknown): SquareCheckoutDto {
+  const dto = plainToInstance(SquareCheckoutDto, input ?? {});
+  const errors = validateSync(dto);
+  if (errors.length) {
+    throw new Error(`invalid square checkout body: ${JSON.stringify(errors)}`);
+  }
+  return dto;
+}
+
+/** REQ-213 — what a Stripe intent means for the invoice: succeeded is recorded (RecordCardPayment),
+ *  requires_action hands the client secret to Stripe.js, anything else is reported as is. */
+async function settleIntent(
+  cardPayment: RecordCardPayment,
+  invoiceId: string,
+  userId: string,
+  pi: StripeIntent,
+  payerName?: string,
+) {
+  if (pi.status === "succeeded") {
+    const rec = await cardPayment.run(userId, invoiceId, {
+      id: pi.id,
+      amount: pi.amount,
+      ...(payerName ? { payerName } : {}),
+    });
+    return {
+      ok: true,
+      status: "succeeded",
+      paymentIntentId: pi.id,
+      balanceCents: rec.balanceCents,
+    };
+  }
+  if (pi.status === "requires_action") {
+    return {
+      ok: false,
+      status: "requires_action",
+      paymentIntentId: pi.id,
+      clientSecret: pi.clientSecret ?? "",
+    };
+  }
+  return { ok: false, status: pi.status, paymentIntentId: pi.id };
+}
+
+/** REQ-202/203 — the invoice balance now, from the ledger when the invoice carries no total. */
+async function currentBalance(payments: PaymentStore, invoice: Invoice) {
+  const paidCents = typeof invoice.paidCents === "number"
+    ? invoice.paidCents
+    : (await payments.listByInvoice(invoice.id, invoice.userId).catch(() => []))
+      .reduce((s, p) => s + (p.amount ?? 0), 0);
+  return invoiceBalance(invoice.amount, paidCents);
+}
+
+/** REQ-213 — the public card charge's body. */
+class ChargeCardDto {
+  @IsString()
+  paymentMethodId!: string;
+  /** the balance the customer saw — must still be the balance (REQ-203) */
+  @IsOptional() @IsNumber()
+  amountCents?: number;
+  @IsOptional() @IsNumber()
+  version?: number;
+  @IsOptional() @IsString()
+  payerName?: string;
+  @IsOptional() @IsString()
+  payerEmail?: string;
+}
+
+function parseChargeCard(input: unknown): ChargeCardDto {
+  const dto = plainToInstance(ChargeCardDto, input);
+  const errors = validateSync(dto);
+  if (errors.length || !dto.paymentMethodId.trim()) {
+    throw new Error(`invalid card body: ${JSON.stringify(errors)}`);
+  }
+  return dto;
 }
 
 /** Validation DTO for the public claim endpoint. */
@@ -1116,31 +1977,17 @@ function parseClaim(input: unknown): ClaimPaymentDto {
  *  authenticated request flow (out of v1 scope). */
 function projectAcceptedMethods(
   contractor: { acceptedPaymentMethods?: AcceptedPaymentMethods } | undefined,
-): Array<{ method: string; handle?: string }> {
-  const m = contractor?.acceptedPaymentMethods;
-  if (!m) return [];
-  const out: Array<{ method: string; handle?: string }> = [];
-  if (m.check?.enabled) out.push({ method: "check", handle: m.check.mailTo });
-  if (m.venmo?.enabled) out.push({ method: "venmo", handle: m.venmo.handle });
-  if (m.zelle?.enabled) out.push({ method: "zelle", handle: m.zelle.handle });
-  if (m.cashapp?.enabled) {
-    out.push({ method: "cashapp", handle: m.cashapp.cashtag });
-  }
-  if (m.paypal?.enabled) {
-    out.push({ method: "paypal", handle: m.paypal.handle });
-  }
-  if (m.cash?.enabled) out.push({ method: "cash" });
-  if (m.ach?.enabled) out.push({ method: "ach", handle: m.ach.instructions });
-  if (m.card?.enabled) {
-    out.push({ method: "card", handle: m.card.instructions });
-  }
-  if (m.other?.enabled) {
-    out.push({ method: "other", handle: m.other.instructions });
-  }
-  return out;
+): PublicPayMethod[] {
+  // REQ-630 — the shared projection: the old { method, handle } rows unchanged, then one
+  // { method: "link", id, name, url } row per enabled https payment link
+  return projectPayMethods(contractor?.acceptedPaymentMethods);
 }
 
 interface PublicContractor {
+  /** REQ-697 (demo-loop cycle 5, m22): the days the customer has to pay an
+   *  invoice (Settings, default 30) — the agreement's "Payment upon
+   *  completion" term states it. */
+  invoiceNetDays?: number;
   name?: string;
   businessName?: string;
   phoneNumber?: string;
@@ -1167,14 +2014,34 @@ interface PublicContractor {
    *  use it to render GET /public-logo/:kind/:id (roadmap p.2 — the logo
    *  shows on quotes & invoices). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): a short tag of the current logo file (never the file id). Pages render
+   *  GET /public-logo/:kind/:id?v=<logoVersion>, so a replaced logo is a new URL. Present
+   *  only with hasLogo. */
+  logoVersion?: string;
 }
 
 /** Public-safe contractor projection — never returns internal IDs or
  *  private profile fields (insurance/tax/etc.). */
+/** REQ-252 (M30) — the logo's image type when the file is the owner's and its bytes are an
+ *  image; null otherwise (a file the old unchecked path let through, or one that is gone). */
+async function logoImageType(
+  files: FileStore,
+  fileId: string,
+  ownerId: string,
+): Promise<string | null> {
+  try {
+    await files.getOwnedMeta(fileId, ownerId);
+    return sniffLogoImage(await files.readHead(fileId));
+  } catch {
+    return null;
+  }
+}
+
 async function loadContractor(
   users: UserStore,
   identity: BusinessIdentityStore,
   addresses: BusinessAddressStore,
+  files: FileStore,
   ownerId: string,
 ): Promise<PublicContractor | undefined> {
   try {
@@ -1198,7 +2065,12 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
-      hasLogo: !!ident?.logoFileId,
+      invoiceNetDays: accountNetDays(ident?.invoiceNetDays), // REQ-697
+      // REQ-252: no <img> for a logo that would not draw; REQ-613: its version rides along
+      ...(ident?.logoFileId &&
+          (await logoImageType(files, ident.logoFileId, ownerId)) !== null
+        ? { hasLogo: true, logoVersion: logoVersion(ident.logoFileId) }
+        : { hasLogo: false }),
     };
   } catch {
     return undefined;
@@ -1233,6 +2105,36 @@ export function composeAddressLine(
   const city = addr.city?.trim();
   const state = addr.state?.trim();
   const postal = addr.postal?.trim();
+  // REQ-610 (demo m51): a state and/or ZIP with no street or city is not a
+  // mailing address — onboarding's state step saves `{ state }` alone, and the
+  // client's quote printed the business address as just "FL". No line at all.
+  if (!street && !city) return undefined;
+  // REQ-420 (demo m28): a row saved before the address save path split
+  // one-line streets can hold the whole "street, City, ST ZIP" in `street`.
+  // Don't repeat what the street already ends with ("…, TX 78702, TX").
+  const tailState = !!street && street.includes(",") && !!state &&
+    endsWithState(street, state);
+  const tailZip = !!street && street.includes(",") &&
+    /\b\d{5}(?:-?\d{4})?$/.test(street);
+  if (tailState || tailZip) {
+    const lower = street!.toLowerCase();
+    const keepCity = city &&
+      !new RegExp(
+        `,\\s*${
+          city.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        }\\s*(?:,|\\s|$)`,
+      )
+        .test(lower);
+    const keepState = state && !tailState;
+    const keepPostal = postal && !tailZip &&
+      !lower.includes(postal.toLowerCase());
+    const rest = [
+      keepCity ? city : undefined,
+      [keepState ? state : undefined, keepPostal ? postal : undefined]
+        .filter(Boolean).join(" ").trim(),
+    ].filter(Boolean).join(", ");
+    return [street, rest].filter(Boolean).join(", ");
+  }
   // City + ST [postal] is the canonical second half. Skip the second half
   // entirely if neither city nor state is set so we don't render a stray comma.
   const cityState = [city, [state, postal].filter(Boolean).join(" ").trim()]
@@ -1259,13 +2161,19 @@ function redactQuote(q: Quote) {
     summary: q.summary,
     description: q.description,
     descriptionByLang: q.descriptionByLang,
+    lang: q.lang, // REQ-333 (M24): the base text's language
     jobName: q.jobName,
     jobNameByLang: q.jobNameByLang,
     summaryByLang: q.summaryByLang,
+    // REQ-263: where the job is
+    serviceAddress: q.serviceAddress,
     customerId: q.customerId,
     lineItems: q.lineItems,
     estimatedTotal: q.estimatedTotal,
     status: q.status,
+    // REQ-256: the onboarding sample — the page shows it as a sample to a
+    // placeholder customer, not a numbered document addressed to nobody.
+    isSample: q.isSample === true || undefined,
     createdAt: q.createdAt,
     // The agreement half of the document: the wizard-captured terms + the
     // schedule dates, rendered as the numbered Terms grid on /q.
@@ -1310,6 +2218,10 @@ function redactInvoice(i: Invoice) {
     dueDate: i.dueDate,
     status: i.status,
     paidAt: i.paidAt,
+    // REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went
+    receiptSentVia: i.receiptSentVia,
+    // REQ-627: when it was cancelled (who and why stay with the business)
+    ...(i.status === "void" && i.voidedAt ? { voidedAt: i.voidedAt } : {}),
     createdAt: i.createdAt,
     installmentIndex: i.installmentIndex,
     installmentTotal: i.installmentTotal,
@@ -1318,6 +2230,10 @@ function redactInvoice(i: Invoice) {
     // a "you said you paid by X on Y" confirmation strip after the
     // customer submits a claim.
     paymentIntent: i.paymentIntent,
+    // REQ-488 (demo m56): the contractor said the last claim never arrived —
+    // /i tells the customer and where to check.
+    claimRejectedAt: i.claimRejectedAt,
+    claimRejectedMethod: i.claimRejectedMethod,
     // Quote parity (roadmap p.6): the bill itself carries the job identity
     // and itemization the quote had.
     jobName: i.jobName,
@@ -1342,6 +2258,23 @@ async function lookupCustomerName(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * REQ-715 (demo-loop cycle 5, m31): the language a document's customer reads
+ * (Customer.language), read live — an issued document's snapshot (REQ-204)
+ * is who they were, not the language they read today. Undefined when the
+ * customer has none or can't be read. Module-level: Danet routes every
+ * controller method.
+ */
+async function customerLanguageOf(
+  customers: CustomerStore,
+  customerId: string | undefined,
+  ownerId: string,
+): Promise<CommsLang | undefined> {
+  if (!customerId) return undefined;
+  const c = await customers.getOwned(customerId, ownerId).catch(() => undefined);
+  return asCommsLang(c?.language);
 }
 
 /** Safe-to-expose customer projection for public preview "To:" block.
@@ -1432,11 +2365,6 @@ function projectLinkedChangeOrder(co: ChangeOrder) {
   };
 }
 
-/** Signed money string for notification copy: 25050 → "+$250.50". */
-function fmtDelta(cents: number): string {
-  return `${cents >= 0 ? "+" : "−"}$${(Math.abs(cents) / 100).toFixed(2)}`;
-}
-
 /** Fire the contractor-facing bus event for a CO decision so the bell
  *  picks it up (the decline copy promises "we've let your contractor
  *  know" — this is what makes that true). Best-effort lookups mirror the
@@ -1472,8 +2400,8 @@ async function emitChangeOrderDecision(
       ...(customerName ? { customerName } : {}),
       ...(contractor?.language ? { language: contractor.language } : {}),
       description: co.description,
+      // REQ-717: raw cents only — NotifyOnEvent formats it ("+$1,600").
       deltaAmountCents: co.deltaAmountCents,
-      delta: fmtDelta(co.deltaAmountCents),
       ...extra,
     },
   });

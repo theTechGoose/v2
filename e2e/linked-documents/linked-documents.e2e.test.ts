@@ -139,7 +139,7 @@ async function seedAgreement(
   return { customer, quote, invoice };
 }
 
-Deno.test("REQ-205: the quote panel shows the documents ledger — Q-001 · Version 1, Agreed $1,000.00, Invoiced $400.00, Remaining to invoice $600.00, the INV-001 row and the WO-001 row", (t) =>
+Deno.test("REQ-205 / REQ-249: the quote panel shows the documents ledger — Q-001 · Version 1, Quoted $1,000.00 (sent, not signed), Invoiced $400.00, Remaining to invoice $600.00, the INV-001 row and the WO-001 row", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const { customer, quote, invoice } = await seedAgreement(http, auth);
@@ -156,7 +156,7 @@ Deno.test("REQ-205: the quote panel shows the documents ledger — Q-001 · Vers
     await page.goto(`/quotes?open=${quote.id}`);
     await page.locator("[data-cy='quote-ledger']").waitFor({ timeout: 15_000 });
     await expect.see("Q-001 · Version 1");
-    await expect.see("Agreed $1,000.00");
+    await expect.see("Quoted $1,000.00");
     await expect.see("Invoiced $400.00");
     await expect.see("Remaining to invoice $600.00");
     const invRow = page.locator("[data-cy='ledger-invoice-row']", {
@@ -181,6 +181,39 @@ Deno.test("REQ-205: the quote panel shows the documents ledger — Q-001 · Vers
         `/invoices?new=1&quoteId=${quote.id}`,
       ),
       "the CTA pre-links the quote",
+    );
+  }));
+
+Deno.test("REQ-249: an unsigned quote's ledger reads 'Quoted $1,000.00' and never 'Agreed'; once the customer signs, the same row reads 'Agreed $1,000.00' (demo quote-invoice-money-m10)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const { quote } = await seedAgreement(http, auth);
+    const totals = page.locator("[data-cy='quote-ledger-totals']");
+
+    await page.goto(`/quotes?open=${quote.id}`);
+    await totals.waitFor({ timeout: 15_000 });
+    await expect.see("Quoted $1,000.00");
+    expect.eq(
+      await totals.getByText("Agreed").count(),
+      0,
+      "nothing on an unsigned quote is called agreed",
+    );
+
+    const signed = await http(`/api/quotes/${quote.id}/accept`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ name: "Hans Hansen", version: 1 }),
+    });
+    expect.eq(signed.status, 200, "the customer signs Q-001");
+    await signed.body?.cancel();
+
+    await page.goto(`/quotes?open=${quote.id}`);
+    await totals.waitFor({ timeout: 15_000 });
+    await expect.see("Agreed $1,000.00");
+    expect.eq(
+      await totals.getByText("Quoted").count(),
+      0,
+      "a signed quote is no longer just quoted",
     );
   }));
 
@@ -290,4 +323,50 @@ Deno.test("REQ-210: a work order linked to the quote is listed on /work-orders a
       "the status change landed on the API",
     );
     expect.eq(after.version, 2, "the change is a new version");
+  }));
+
+Deno.test("REQ-457 (demo M27, cycle 3): a signed Q-001 with a pending CO-001 (+$120.00) shows 'waiting for your approval — new job total $1,120.00' and lists CO-001 under Related documents, linking /co/:id", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const { quote, invoice } = await seedAgreement(http, auth);
+
+    const signed = await http(`/api/quotes/${quote.id}/accept`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ name: "Hans Hansen", version: 1 }),
+    });
+    expect.eq(signed.status, 200, "the customer signs Q-001");
+    await signed.body?.cancel();
+    const co = await post(
+      http,
+      auth,
+      `/api/invoices/${invoice.id}/change-orders`,
+      { description: "Add stair railing", deltaAmountCents: 12000 },
+    );
+
+    await page.goto(`/q/${quote.id}`);
+    const banner = page.locator("[data-cy='quote-pending-change-order']");
+    await banner.first().waitFor({ timeout: 15_000 });
+    const text = (await banner.first().innerText()).replace(/\s+/g, " ");
+    expect(
+      text.includes(
+        "A change order (CO-001, +$120.00) is waiting for your approval — new job total $1,120.00",
+      ),
+      `the banner names the CO and the new total (got "${text}")`,
+    );
+    expect.eq(
+      await banner.first().locator("a").getAttribute("href"),
+      `/co/${co.id}`,
+      "the banner links the change order to approve",
+    );
+    const row = page.locator("[data-cy='related-doc-change-order']", {
+      hasText: "CO-001",
+    });
+    expect.eq(await row.count(), 1, "CO-001 is listed under Related documents");
+    expect.eq(
+      await row.getAttribute("href"),
+      `/co/${co.id}`,
+      "the related row links the public change order",
+    );
+    await expect.see("Waiting for your approval");
   }));

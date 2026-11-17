@@ -1,5 +1,7 @@
 import { asset, Head } from "fresh/runtime";
+import { personLanguage } from "../../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { getSessionId, loadUser } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
@@ -31,15 +33,17 @@ export default define.page(async function PlanPay(ctx) {
   const plan = read?.ok ? read.data ?? null : null;
   const next = read?.ok ? handoffNext(plan, back) : null;
   if (next) return redirect(next);
-  const lang: Lang = user.language === "en" || user.language === "es"
-    ? user.language
-    : langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+  const lang: Lang = personLanguage(user) ??
+    langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   const pricing = plan ? PRICING_PLANS.find((p) => p.id === plan.planId) : undefined;
   const planLabel = pricing ? `${pricing.name} · ${dollars(pricing.priceCents)}` : "";
   return (
     <>
       <Head>
-        <title>{tFor(lang, "planHandoff.title")} · {tFor(lang, "brand.name")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "planHandoff.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
         {/* no script: the page asks again by itself every few seconds (the island does it every second) */}

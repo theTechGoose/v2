@@ -5,6 +5,17 @@ import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-i
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { isReminderDay, type ReminderDay } from "#quote-flow/reminder-settings.ts";
+
+/** REQ-704: `{ invoiceId, day }` with day one of the cadence steps
+ *  (-3 / 0 / 3 / 7 / 14 / 30), or a thrown error. */
+function reminderBody(body: unknown): { invoiceId: string; day: ReminderDay } {
+  const b = (body ?? {}) as { invoiceId?: string; day?: number };
+  if (!b.invoiceId || !isReminderDay(b.day)) {
+    throw new Error("invoiceId + day∈{-3,0,3,7,14,30} are required");
+  }
+  return { invoiceId: b.invoiceId, day: b.day };
+}
 
 /**
  * CronController — manual trigger endpoints for the daily cadences.
@@ -51,15 +62,21 @@ export class CronController {
   }
 
   /** Single-invoice manual reminder — backs the "Send nudge" button on
-   *  the overdue card. Body: { day: 3 | 7 | 14 | 30 }. */
+   *  the invoice card. Body: { invoiceId, day: -3 | 0 | 3 | 7 | 14 | 30 }. */
   @Post("invoice-reminder")
   async oneOffReminder(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { invoiceId?: string; day?: number };
-    if (!b.invoiceId || ![3, 7, 14, 30].includes(b.day ?? -1)) {
-      throw new Error("invoiceId + day∈{3,7,14,30} are required");
-    }
-    const out = await this.reminders.runForInvoice(user.id, b.invoiceId, b.day as 3 | 7 | 14 | 30, new Date());
+    const { invoiceId, day } = reminderBody(body);
+    const out = await this.reminders.runForInvoice(user.id, invoiceId, day, new Date());
     return ctx.json(out);
+  }
+
+  /** REQ-704 (demo cycle 5, m60): what that nudge would send — the text and
+   *  subject, and who gets it — without sending anything. Same body. */
+  @Post("reminder-preview")
+  async previewReminder(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const { invoiceId, day } = reminderBody(body);
+    return ctx.json(await this.reminders.preview(user.id, invoiceId, day, new Date()));
   }
 }

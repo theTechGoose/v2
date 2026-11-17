@@ -16,6 +16,14 @@ export interface AccountAdmin {
   createdAt: string;
 }
 
+/** REQ-523 (demo m16): the invite's answer says whether the text went out */
+export interface InvitedAdmin extends AccountAdmin {
+  texted?: boolean;
+  /** REQ-601 (cycle 4, M12): the sign-in address and the invite text, to share when it was not texted */
+  signInUrl?: string;
+  shareText?: string;
+}
+
 export interface AccountEntry {
   userId: string;
   label: string;
@@ -33,7 +41,7 @@ export const adminsClient = {
   invite: (
     input: { phoneNumber: string; name?: string },
     opts: ApiOptions = {},
-  ) => api.post<AccountAdmin>("/me/admins", input, opts),
+  ) => api.post<InvitedAdmin>("/me/admins", input, opts),
   remove: (id: string, opts: ApiOptions = {}) =>
     api.delete<{ ok: true }>(`/me/admins/${id}`, opts),
   accounts: (opts: ApiOptions = {}) =>

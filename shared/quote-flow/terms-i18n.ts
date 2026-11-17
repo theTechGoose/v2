@@ -9,7 +9,8 @@
  * AsstChat.tsx:7705 (duration), 8075-8081 (warranty), 8479-8483 (payment).
  */
 
-export type DurationUnit = "days" | "weeks" | "months";
+/** REQ-343: service trades (cleaning, lawn, junk) quote jobs in hours. */
+export type DurationUnit = "hours" | "days" | "weeks" | "months";
 
 export type Term =
   | { kind: "duration"; value: { n: number; unit: DurationUnit } }
@@ -20,12 +21,14 @@ type Lang = "en" | "es";
 
 const UNIT_LABELS: Record<Lang, Record<string, { one: string; other: string }>> = {
   en: {
+    hours: { one: "hour", other: "hours" },
     days: { one: "day", other: "days" },
     weeks: { one: "week", other: "weeks" },
     months: { one: "month", other: "months" },
     years: { one: "year", other: "years" },
   },
   es: {
+    hours: { one: "hora", other: "horas" },
     days: { one: "día", other: "días" },
     weeks: { one: "semana", other: "semanas" },
     months: { one: "mes", other: "meses" },
@@ -60,9 +63,49 @@ export function termLabel(term: Term, lang: Lang): string {
         }
         return lang === "es" ? `Neto ${v.net}` : `Net ${v.net}`;
       }
-      return v.splits.join(" / ");
+      return splitLabel(v.splits, lang);
     }
   }
+}
+
+/**
+ * REQ-665 (demo-loop cycle 5, m47): a payment split as the agreement prints
+ * it. A bare "100 / 0" was stored and signed — readable as $100 / $0. Every
+ * share now carries its "%", a two-payment split names the deposit and the
+ * balance, and the two one-payment splits are their presets: 100/0 is
+ * "Due Now" (paid in full upfront), 0/100 is "Payment upon completion".
+ * computePaymentSplit still reads every one of these strings to the same money.
+ */
+function splitLabel(splits: number[], lang: Lang): string {
+  const es = lang === "es";
+  const paying = splits.filter((n) => n > 0);
+  if (paying.length === 1 && splits[0] > 0) {
+    return es ? DUE_NOW_ES : DUE_NOW_EN;
+  }
+  if (paying.length === 1 && splits[splits.length - 1] > 0) {
+    return es ? "Pago al finalizar" : "Payment upon completion";
+  }
+  if (splits.length === 2) {
+    const [a, b] = splits;
+    return es
+      ? `${a}% por adelantado, ${b}% al terminar`
+      : `${a}% upfront, ${b}% on completion`;
+  }
+  return splits.map((n) => `${n}%`).join(" / ");
+}
+
+const DUE_NOW_EN = "Due Now";
+/** lang/es.json quoteDoc.termValue.dueNow — what "Due Now" reads as. */
+const DUE_NOW_ES = "Pago inmediato";
+
+/**
+ * REQ-665: true when a stored payment term is owed at signing — the "Due Now"
+ * preset, or the Spanish picker's "Pago inmediato" for a 100/0 split. The
+ * invoice due date, the "on signing" milestone and the New-invoice days all
+ * read it.
+ */
+export function isDueNowTermValue(value: string | null | undefined): boolean {
+  return /\bdue now\b|\bpago inmediato\b/i.test(value ?? "");
 }
 
 /**

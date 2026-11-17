@@ -1,6 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
 import { langSignal, STRINGS } from "../lib/lang.ts";
 import { t } from "../lib/i18n.ts";
+import { welcomeBackMessage } from "../lib/greeting-identity.ts";
+import {
+  greetingFirstName,
+  type PersonLike,
+} from "../../shared/person-name/mod.ts";
 
 const PINK = "#FF6B6B";
 const TEAL = "#144852";
@@ -27,10 +32,11 @@ export default function WelcomeBackToast() {
       try {
         const r = await fetch("/api/me", { credentials: "include" });
         if (!r.ok) return;
-        const me = await r.json() as { name?: string };
+        const me = await r.json() as PersonLike;
         if (!cancelled) {
-          const first = (me.name ?? "").trim().split(/\s+/)[0] ?? "";
-          setName(first);
+          // REQ-624: the person signed in — an editor's own name, never the owner's.
+          // REQ-506: welcomeBackMessage drops the seeded placeholder, never "…, Nuevo."
+          setName(greetingFirstName(me) ?? "");
           setShow(true);
         }
       } catch { /* network blip — render the generic version */ }
@@ -55,11 +61,7 @@ export default function WelcomeBackToast() {
 
   if (!show) return null;
   const lang = langSignal.value;
-  const tpl = STRINGS[lang]["welcome.back"];
-  const message = tpl.replace(
-    "{firstName}",
-    name || t("welcomeBackToast.nameFallback"),
-  );
+  const message = welcomeBackMessage(t, STRINGS[lang]["welcome.back"], name);
 
   return (
     <div

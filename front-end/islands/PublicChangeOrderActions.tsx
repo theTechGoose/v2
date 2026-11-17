@@ -1,5 +1,12 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { announceChange } from "../lib/change-announce.ts";
+import { startChangeOrderRefresh } from "../lib/public-change-order-refresh.ts";
+import { changeOrderPreview } from "../../shared/quote-flow/change-order-view.ts";
+import {
+  hasSignOverride,
+  SIGN_OVERRIDE_QUERY,
+} from "../../shared/quote-flow/public-doc-state.ts";
 
 interface Props {
   changeOrderId: string;
@@ -9,6 +16,18 @@ interface Props {
   /** Pre-fills the typed name (the customer on the invoice). */
   customerName?: string;
   lang?: "en" | "es";
+  /** REQ-398 (demo M15): the backend says the viewer is the business itself
+   *  (owner, admin, staff impersonating) — a preview, not the customer. */
+  internal?: boolean;
+  /** REQ-398: the page's query string — `?as=customer&confirm=1` is the
+   *  in-person override that shows the form to the business's own viewer. */
+  search?: string;
+  /** REQ-398: the order's version as rendered (the refresh baseline). */
+  version?: number;
+  /** REQ-554 (demo cycle 4, M9): the invoice the order changes, and the
+   *  quote behind it — announced to the owner's other tabs on a decision. */
+  invoiceId?: string;
+  quoteId?: string;
 }
 
 const GREEN = "#519843";
@@ -23,10 +42,44 @@ const TEAL = "#144852";
  * linked invoice server-side (roadmap p.12).
  */
 export default function PublicChangeOrderActions(
-  { changeOrderId, initialStatus, approvedName, customerName, lang = "en" }:
-    Props,
+  {
+    changeOrderId,
+    initialStatus,
+    approvedName,
+    customerName,
+    lang = "en",
+    internal = false,
+    search = "",
+    version,
+    invoiceId,
+    quoteId,
+  }: Props,
 ) {
   const [status, setStatus] = useState(initialStatus);
+  // REQ-398 (M13's /co part): the open page re-reads the order and reloads
+  // when the decision lands elsewhere — the SSR headline and totals follow.
+  const shown = useRef({ status: initialStatus as string, version });
+  shown.current = { status, version };
+  useEffect(
+    () =>
+      startChangeOrderRefresh({
+        changeOrderId,
+        shown: () => shown.current,
+      }),
+    [changeOrderId],
+  );
+  // REQ-398 (demo M15): the business's own viewer previews, never approves
+  // — unless the customer is handed the device (the in-person override).
+  const preview = changeOrderPreview({ internal, status }, search);
+  const override = internal && hasSignOverride(search);
+  const overrideHref = (() => {
+    const q = new URLSearchParams(
+      search.startsWith("?") ? search.slice(1) : search,
+    );
+    q.set("as", "customer");
+    q.set("confirm", "1");
+    return `?${q.toString()}`;
+  })();
   const [busy, setBusy] = useState<"approve" | "decline" | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   // REQ-205: the approver types their name; it is recorded as approvedName.
@@ -43,12 +96,17 @@ export default function PublicChangeOrderActions(
     setBusy(action);
     setError(undefined);
     try {
-      const res = await fetch(`/api/change-orders/${changeOrderId}/${action}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(action === "approve" ? { name: typed } : {}),
-      });
+      const res = await fetch(
+        `/api/change-orders/${changeOrderId}/${action}${
+          override ? `?${SIGN_OVERRIDE_QUERY}` : ""
+        }`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(action === "approve" ? { name: typed } : {}),
+        },
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         // REQ-200/202: a decision already taken, or an invoice already paid,
@@ -64,7 +122,9 @@ export default function PublicChangeOrderActions(
         // The backend refuses to mark the order approved if the invoice
         // write fails — translate that reason instead of echoing it raw.
         throw new Error(
-          body.reason === "invoice_update_failed"
+          body.reason === "owner_cannot_approve"
+            ? tFor(lang, "changeOrderPublic.internalPreviewBody")
+            : body.reason === "invoice_update_failed"
             ? tFor(lang, "publicChangeOrderActions.applyError")
             : body.reason === "invoice_paid"
             ? tFor(lang, "public.doc.invoicePaid")
@@ -76,6 +136,18 @@ export default function PublicChangeOrderActions(
       }
       if (action === "approve") setWho(typed);
       setStatus(action === "approve" ? "approved" : "declined");
+      // REQ-554 (demo cycle 4, M9; extends REQ-493): the decision moved the
+      // invoice (and the job's quote) — tell the owner's open /invoices and
+      // /quotes in this browser at once, before this page reloads.
+      if (invoiceId) {
+        announceChange({ entityType: "invoice", entityId: invoiceId });
+      }
+      if (quoteId) announceChange({ entityType: "quote", entityId: quoteId });
+      // REQ-398: the status headline and the totals above are server-
+      // rendered — re-render the page so they follow the decision.
+      try {
+        globalThis.location.reload();
+      } catch { /* SSR-safe */ }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -118,6 +190,30 @@ export default function PublicChangeOrderActions(
             </p>
           )
           : null}
+      </div>
+    );
+  }
+
+  if (preview) {
+    return (
+      <div
+        data-cy="co-internal-preview"
+        role="status"
+        style="margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.45);border-radius:14px;padding:16px 18px;color:#8a5a10;font-size:13px;line-height:1.5"
+      >
+        <div style="font-weight:800;font-size:14px">
+          {tFor(lang, "changeOrderPublic.internalPreview")}
+        </div>
+        <div style="margin-top:4px">
+          {tFor(lang, "changeOrderPublic.internalPreviewBody")}
+        </div>
+        <a
+          href={overrideHref}
+          data-cy="co-approve-in-person"
+          style="display:inline-block;margin-top:10px;font-weight:700;color:#8a5a10;text-decoration:underline"
+        >
+          {tFor(lang, "changeOrderPublic.internalPreviewInPerson")}
+        </a>
       </div>
     );
   }

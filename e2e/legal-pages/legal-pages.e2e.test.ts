@@ -315,3 +315,21 @@ Deno.test("REQ-067: the website's footer links wrap between links instead of run
     const heights = await links.locator("a").evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).getBoundingClientRect().height));
     expect(heights.length === 8 && heights.every((h: number) => h <= 26), `each of the 8 links is one line (${heights.join(",")})`);
   }));
+
+// REQ-510 (demo-loop cycle 3, issue m35): "/terms says 'Log in' while signed in" — a signed-in
+// contractor reading a policy gets "Back to app" → /dashboard in the header, not the Log in button.
+Deno.test("REQ-510 m35: signed in, every policy page's header says Back to app → /dashboard, not Log in", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    for (const p of PAGES) {
+      await page.goto(p.path);
+      const header = page.locator(".nav-wrap .nav");
+      await header.waitFor({ timeout: 15000 });
+      expect.eq(await header.locator('a[href="/login"]').count(), 0, `${p.path}: no Log in button for a signed-in visitor`);
+      const btn = header.locator("a.btn-outline");
+      expect.eq(await btn.getAttribute("href"), "/dashboard", `${p.path}: the header button goes back to the app`);
+      expect.eq((await btn.innerText()).trim(), "Back to app", `${p.path}: the header button reads Back to app`);
+    }
+    await page.locator(".nav-wrap .nav a.btn-outline").click();
+    await page.waitForURL((u: URL) => u.pathname === "/dashboard", { timeout: 15000 });
+  }));

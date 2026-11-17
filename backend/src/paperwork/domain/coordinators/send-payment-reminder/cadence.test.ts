@@ -74,12 +74,34 @@ Deno.test("pickNextDay: muted invoices fire nothing", () => {
   assertEquals(pickNextDay(inv({ remindersMuted: true }), NOW), undefined);
 });
 
-Deno.test("pickNextDay: only fires for sent/viewed/claimed (not paid/void/scheduled)", () => {
+Deno.test("pickNextDay: only fires for sent/viewed (not paid/void/scheduled/claimed)", () => {
   assertEquals(pickNextDay(inv({ status: "paid" }), NOW), undefined);
   assertEquals(pickNextDay(inv({ status: "void" }), NOW), undefined);
   assertEquals(pickNextDay(inv({ status: "scheduled" }), NOW), undefined);
   assertEquals(pickNextDay(inv({ status: "viewed" }), NOW), 30);
-  assertEquals(pickNextDay(inv({ status: "claimed" }), NOW), 30);
+});
+
+Deno.test("REQ-250 (demo quote-invoice-money-m12): a claimed invoice is paused — the customer said they paid, the cadence does not dun them", () => {
+  // 4, 8, 15 and 31 days past due: every rung is elapsed, none fires.
+  for (const at of ["2026-05-05", "2026-05-09", "2026-05-16", "2026-06-01"]) {
+    assertEquals(
+      pickNextDay(inv({ status: "claimed" }), new Date(`${at}T12:00:00Z`)),
+      undefined,
+      `claimed at ${at}`,
+    );
+  }
+  // Rejecting the claim flips the invoice back to `sent` — the cadence resumes
+  // where it left off (Day 3 fired before the claim → Day 7 next).
+  assertEquals(
+    pickNextDay(
+      inv({
+        status: "sent",
+        reminderHistory: [{ day: 3, sentAt: "x", channels: ["sms"] }],
+      }),
+      new Date("2026-05-09T12:00:00Z"),
+    ),
+    7,
+  );
 });
 
 Deno.test("pickNextDay: nothing within the first 3 days past due", () => {
@@ -168,4 +190,18 @@ Deno.test("REQ-204 composeReminderCopy: subject, email body and text name the in
     lang: "es",
   });
   assertEquals(es.emailSubject.includes("INV-5000"), true, es.emailSubject);
+});
+
+// REQ-623 (demo cycle 4, M26): the cadence is the business's setting, not a constant
+Deno.test("REQ-623 M26 pickNextDay: follows the business's cadence days", () => {
+  // 31 days past due, cadence [7, 14] → Day 14 (the largest elapsed step in the list)
+  assertEquals(pickNextDay(inv({}), NOW, [7, 14]), 14);
+  // 4 days past due, cadence [7] → nothing yet (Day 3 is not in the list)
+  const fourPast = new Date("2026-05-05T12:00:00Z");
+  assertEquals(pickNextDay(inv({}), fourPast, [7]), undefined);
+  // 8 days past due, cadence [7] → Day 7
+  const eightPast = new Date("2026-05-09T12:00:00Z");
+  assertEquals(pickNextDay(inv({}), eightPast, [7]), 7);
+  // no list → the default 3/7/14/30
+  assertEquals(pickNextDay(inv({}), fourPast), 3);
 });

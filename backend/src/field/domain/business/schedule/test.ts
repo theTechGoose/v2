@@ -179,3 +179,73 @@ Deno.test("REQ-157 scheduleText — the picked days in words, singular and plura
     "Monthly · day 5",
   );
 });
+
+// REQ-699 (demo-loop cycle 5, M20): a quote's recurring term may end — the
+// subscription it became bills nothing after that day.
+Deno.test("REQ-699 isDue: nothing is due after the subscription's endDate", () => {
+  const ending = sub({
+    cadence: "monthly",
+    startDate: "2026-11-19",
+    endDate: "2027-01-31",
+  });
+  assertEquals([
+    isDue(ending, "2026-12-19"),
+    isDue(ending, "2027-01-19"),
+    isDue(ending, "2027-02-19"),
+  ], [true, true, false]);
+  const weekly = sub({ startDate: "2026-11-16", endDate: "2026-11-23" });
+  assertEquals([
+    isDue(weekly, "2026-11-23"),
+    isDue(weekly, "2026-11-30"),
+  ], [true, false]);
+});
+
+Deno.test("REQ-787 isDue — annual: once a year on the picked day(s) of the picked month, clamped to the month's last day, never before the first visit", () => {
+  const a = sub({
+    cadence: "annual",
+    month: 3,
+    startDate: "2026-01-01",
+    daysOfMonth: [5],
+  });
+  assertEquals(
+    ["2026-03-05", "2026-03-06", "2026-04-05", "2027-03-05", "2026-02-05"]
+      .map((d) => isDue(a, d)),
+    [true, false, false, true, false],
+  );
+  const late = sub({
+    cadence: "annual",
+    month: 3,
+    startDate: "2026-04-01",
+    daysOfMonth: [5],
+  });
+  assertEquals(
+    [isDue(late, "2026-03-05"), isDue(late, "2027-03-05")],
+    [false, true],
+    "a start after this year's visit makes the first visit next year",
+  );
+  const leap = sub({
+    cadence: "annual",
+    month: 2,
+    startDate: "2026-01-01",
+    daysOfMonth: [29],
+  });
+  assertEquals(
+    ["2027-02-28", "2028-02-29", "2028-02-28"].map((d) => isDue(leap, d)),
+    [true, true, false],
+  );
+  const plain = sub({ cadence: "annual", startDate: "2026-06-10" });
+  assertEquals(
+    [isDue(plain, "2027-06-10"), isDue(plain, "2027-07-10")],
+    [true, false],
+    "no month or days picked = the first visit's month and day",
+  );
+});
+
+Deno.test("REQ-787 scheduleText — annual reads the month and day(s), both languages", () => {
+  const a = (daysOfMonth: number[]) =>
+    sub({ cadence: "annual", month: 3, startDate: "2026-01-01", daysOfMonth });
+  assertEquals(scheduleText(a([5]), "en"), "Annual · March 5");
+  assertEquals(scheduleText(a([5]), "es"), "Anual · 5 de marzo");
+  assertEquals(scheduleText(a([5, 20]), "en"), "Annual · March 5, 20");
+  assertEquals(scheduleText(a([5, 20]), "es"), "Anual · 5, 20 de marzo");
+});

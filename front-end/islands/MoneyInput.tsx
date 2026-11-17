@@ -5,8 +5,10 @@
  *   • Per-digit odometer roll on every value change (CSS-only, no rAF)
  *   • Aurora mesh background that subtly responds to focus
  *   • Mouse-tracked 3D tilt for a premium tactile feel
- *   • Quick-amount chips that animate the number rolling to a target
- *   • Magnitude bar (log scale, anchored at $10k) under the input
+ *   • Quick-amount chips that animate the number rolling to a target —
+ *     REQ-329: scaled to `anchorCents` (0.5×…1.5× of the AI's market price)
+ *     when the caller knows the size of the job, the fixed $50…$5k otherwise
+ *   • Magnitude bar under the input (linear to the anchor, else log scale)
  *   • Caret hidden — type-and-replace UX (à la Cash App / Stripe)
  *   • Spelled-out value sub-line, animates in on each change
  *
@@ -16,6 +18,14 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { amountInWords } from "../../shared/quote-flow/locale-format.ts";
+import {
+  chipPresetsFor,
+  formatTyping,
+  magnitudeFill,
+  type MoneyRejected,
+  typeMoney,
+} from "../lib/money-input.ts";
 
 interface MoneyInputProps {
   initialCents?: number;
@@ -25,14 +35,20 @@ interface MoneyInputProps {
   name?: string;
   /** Optional SSR seed only; the live language is self-sourced from langSignal. */
   lang?: Lang;
+  /**
+   * REQ-329 (demo p15-13): the expected size of the amount — the AI's market
+   * price, the draft total. The quick chips become nice-number fractions and
+   * multiples of it and the magnitude bar fills at 1.5× it. Omitted or ≤ 0:
+   * the fixed $50 · $100 · $500 · $1k · $5k chips and the log bar.
+   */
+  anchorCents?: number | null;
 }
 
-const CHIP_PRESETS_CENTS = [50_00, 100_00, 500_00, 1_000_00, 5_000_00];
-const MAGNITUDE_REF_CENTS = 100_000_000_00; // bar fills at $100M (log scale)
-
 export default function MoneyInput(
-  { initialCents = 0, onChange, onSubmit, autoFocus, name }: MoneyInputProps,
+  { initialCents = 0, onChange, onSubmit, autoFocus, name, anchorCents }:
+    MoneyInputProps,
 ) {
+  const chipPresets = chipPresetsFor(anchorCents);
   // Self-source the live UI language; reading .value during render makes this
   // island re-render whenever the language flips (SettingsPage).
   const lang = langSignal.value;
@@ -45,6 +61,9 @@ export default function MoneyInput(
   const [cents, setCents] = useState<number | null>(
     initialCents > 0 ? initialCents : null,
   );
+  // REQ-680 (demo-loop cycle 5, M25 + m62): what the last keystroke typed that the field dropped
+  // (a minus, letters) — named under the field until the next valid keystroke.
+  const [rejected, setRejected] = useState<MoneyRejected>(null);
   const [focused, setFocused] = useState(false);
   const [ready, setReady] = useState(false);
   const [stageWidth, setStageWidth] = useState(380);
@@ -98,6 +117,7 @@ export default function MoneyInput(
   }, [cents]);
 
   function setValue(c: number | null) {
+    setRejected(null);
     if (c === null || c === 0) {
       setDisplay("");
       setCents(null);
@@ -110,28 +130,19 @@ export default function MoneyInput(
 
   function handleInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
-    const oldVal = el.value;
-    const oldCaret = el.selectionStart ?? oldVal.length;
-    const tokensBeforeCaret = oldVal
-      .slice(0, oldCaret)
-      .replace(/[^\d.]/g, "")
-      .length;
-
-    const formatted = formatTyping(oldVal);
+    // typeMoney writes the formatted text into the field itself (REQ-280, demo M33): a keystroke
+    // that leaves the amount unchanged (a letter, a minus) gets no render to clear it.
+    // REQ-680: …and says what it dropped, so a minus or a letter is never stripped in silence.
+    const { formatted, cents: typed, caret, rejected: dropped } = typeMoney(el);
+    el.setSelectionRange(caret, caret);
+    setRejected(dropped);
     setDisplay(formatted);
-    setCents(parseToCents(formatted));
+    setCents(typed);
 
     queueMicrotask(() => {
       const node = inputRef.current;
       if (!node) return;
-      let pos = 0;
-      let counted = 0;
-      for (let i = 0; i < formatted.length; i++) {
-        if (counted >= tokensBeforeCaret) break;
-        if (/[\d.]/.test(formatted[i])) counted++;
-        pos = i + 1;
-      }
-      node.setSelectionRange(pos, pos);
+      node.setSelectionRange(caret, caret);
     });
   }
 
@@ -174,7 +185,7 @@ export default function MoneyInput(
   }
 
   const hasValue = (cents ?? 0) > 0;
-  const words = hasValue ? centsToWords(cents!, lang) : "";
+  const words = hasValue ? amountInWords(cents!, lang) : "";
 
   // Auto-shrink hero font so big numbers always fit. Counts the rendered
   // chars (digits + commas + ".00" tail + glyph buffer) and divides the
@@ -193,11 +204,9 @@ export default function MoneyInput(
     Math.min(88, Math.floor(stageWidth / (totalChars * PX_PER_CH))),
   );
 
-  // Magnitude bar fill: log-scaled so $50 reads, $5k still has headroom
-  const magnitude = (cents ?? 0) === 0 ? 0 : Math.min(
-    1,
-    Math.log10(1 + (cents ?? 0)) / Math.log10(1 + MAGNITUDE_REF_CENTS),
-  );
+  // Magnitude bar fill: linear to the anchor (full at the top chip) when there
+  // is one; else log-scaled so $50 reads, $5k still has headroom (REQ-329).
+  const magnitude = magnitudeFill(cents, anchorCents);
 
   // Split display into integer / decimal halves so the cents render smaller
   const dotIdx = display.indexOf(".");
@@ -291,12 +300,26 @@ export default function MoneyInput(
             : tFor(lang, "moneyInput.hintKeyboard")}
         </div>
 
+        {/* REQ-680: always mounted so screen readers hear the note when it fills in */}
+        <div
+          class={`mi__note ${rejected ? "is-shown" : ""}`}
+          data-cy="money-input-note"
+          role="status"
+          aria-live="polite"
+        >
+          {rejected === "minus"
+            ? tFor(lang, "moneyInput.rejectedMinus")
+            : rejected === "letters"
+            ? tFor(lang, "moneyInput.rejectedLetters")
+            : ""}
+        </div>
+
         <div
           class="mi__chips"
           role="group"
           aria-label={tFor(lang, "moneyInput.quickAmountsAriaLabel")}
         >
-          {CHIP_PRESETS_CENTS.map((c) => (
+          {chipPresets.map((c) => (
             <button
               key={`chip-${c}`}
               type="button"
@@ -326,7 +349,10 @@ function Odometer(
   },
 ) {
   return (
-    <span class={`odo ${className ?? ""} ${empty ? "is-empty" : ""}`}>
+    <span
+      class={`odo ${className ?? ""} ${empty ? "is-empty" : ""}`}
+      aria-hidden="true"
+    >
       {Array.from(text).map((ch, i) => <OdoCell key={`${i}-${ch}`} ch={ch} />)}
     </span>
   );
@@ -364,101 +390,10 @@ function OdoCell({ ch }: { ch: string }) {
 /* Helpers                                                                */
 /* --------------------------------------------------------------------- */
 
-function parseToCents(raw: string): number | null {
-  const cleaned = raw.replace(/[^\d.]/g, "");
-  if (cleaned === "" || cleaned === ".") return null;
-  const firstDot = cleaned.indexOf(".");
-  let intPart = firstDot === -1 ? cleaned : cleaned.slice(0, firstDot);
-  let decPart = firstDot === -1
-    ? ""
-    : cleaned.slice(firstDot + 1).replace(/\./g, "");
-  if (intPart === "") intPart = "0";
-  decPart = (decPart + "00").slice(0, 2);
-  const cents = parseInt(intPart, 10) * 100 + parseInt(decPart, 10);
-  return Number.isFinite(cents) ? cents : null;
-}
-
-function formatTyping(raw: string): string {
-  let s = raw.replace(/[^\d.]/g, "");
-  const firstDot = s.indexOf(".");
-  if (firstDot !== -1) {
-    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
-  }
-  if (firstDot !== -1) {
-    const dec = s.slice(firstDot + 1, firstDot + 3);
-    s = s.slice(0, firstDot + 1) + dec;
-  }
-  const dot2 = s.indexOf(".");
-  let intPart = dot2 === -1 ? s : s.slice(0, dot2);
-  const decPart = dot2 === -1 ? "" : s.slice(dot2);
-  if (intPart.length > 1) intPart = intPart.replace(/^0+/, "") || "0";
-  const intFmt = intPart === "" ? "" : Number(intPart).toLocaleString("en-US");
-  return intFmt + decPart;
-}
-
 function shortMoney(cents: number): string {
   const d = cents / 100;
   if (d >= 1000) return (d / 1000) + "k";
   return String(d);
-}
-
-function centsToWords(cents: number, lang: Lang): string {
-  if (!Number.isFinite(cents) || cents < 0) return "";
-  if (cents === 0) return tFor(lang, "moneyInput.words.zeroDollars");
-  const dollars = Math.floor(cents / 100);
-  const c = cents % 100;
-  const dStr = numToWords(dollars, lang);
-  const dLabel = tFor(
-    lang,
-    dollars === 1 ? "moneyInput.words.dollar" : "moneyInput.words.dollars",
-  );
-  if (c === 0) return `${dStr} ${dLabel}`;
-  const cStr = numToWords(c, lang);
-  const cLabel = tFor(
-    lang,
-    c === 1 ? "moneyInput.words.cent" : "moneyInput.words.cents",
-  );
-  return `${dStr} ${dLabel} ${tFor(lang, "moneyInput.words.and")} ${cStr} ${cLabel}`;
-}
-function ones(lang: Lang, i: number): string {
-  return tFor(lang, `moneyInput.ones.${i}`);
-}
-function tens(lang: Lang, i: number): string {
-  return tFor(lang, `moneyInput.tens.${i}`);
-}
-function numToWords(n: number, lang: Lang): string {
-  if (n < 0 || !Number.isFinite(n)) return "";
-  if (n < 20) return ones(lang, n);
-  if (n < 100) {
-    const t = Math.floor(n / 10);
-    const o = n % 10;
-    return o === 0 ? tens(lang, t) : `${tens(lang, t)}-${ones(lang, o)}`;
-  }
-  if (n < 1000) {
-    const h = Math.floor(n / 100);
-    const r = n % 100;
-    return r === 0
-      ? `${ones(lang, h)} ${tFor(lang, "moneyInput.words.hundred")}`
-      : `${ones(lang, h)} ${tFor(lang, "moneyInput.words.hundred")} ${
-        numToWords(r, lang)
-      }`;
-  }
-  if (n < 1_000_000) {
-    const k = Math.floor(n / 1000);
-    const r = n % 1000;
-    return r === 0
-      ? `${numToWords(k, lang)} ${tFor(lang, "moneyInput.words.thousand")}`
-      : `${numToWords(k, lang)} ${tFor(lang, "moneyInput.words.thousand")} ${
-        numToWords(r, lang)
-      }`;
-  }
-  const m = Math.floor(n / 1_000_000);
-  const r = n % 1_000_000;
-  return r === 0
-    ? `${numToWords(m, lang)} ${tFor(lang, "moneyInput.words.million")}`
-    : `${numToWords(m, lang)} ${tFor(lang, "moneyInput.words.million")} ${
-      numToWords(r, lang)
-    }`;
 }
 
 /* --------------------------------------------------------------------- */
@@ -727,6 +662,17 @@ const STYLES = `
   font-weight: 600;
 }
 .mi__words::first-letter { text-transform: capitalize; }
+
+/* REQ-680: what the field dropped */
+.mi__note {
+  position: relative;
+  z-index: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #B23B3B;
+}
+.mi__note.is-shown { margin-top: 6px; }
 
 /* quick chips */
 .mi__chips {

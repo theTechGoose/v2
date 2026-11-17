@@ -1,0 +1,10 @@
+/* REQ-270 — /demo/stage: the staff's demo page. The stage pill and the
+   impersonation banner style themselves inline with `font:inherit`; without a
+   page font they inherited the browser default (serif / monospace). */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

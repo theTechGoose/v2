@@ -13,31 +13,78 @@
  * shown, the banner publishes its height (`--banner-h` on <html>, re-measured when it wraps)
  * and pads the body; the shells' CSS subtracts it (lib/banner-room.ts).
  *
- * REQ-187 — inside the stage's replica frame it renders nothing: the customer has no banner.
+ * REQ-242 — it is marked `data-demo-skip`: the stage measures it by that, and the demo mirror never
+ * records it (the customer's screen has no banner).
+ *
+ * REQ-232 (M21) — during a demo this staff presents, "Return to your account" asks first ("…takes
+ * you out of the demo with {name}"), then LEAVES the demo (POST /demo-mode/sessions/:id/leave: it
+ * ends when the last presenter leaves) and only then hands the account back — so /admin is where
+ * it stays, not a stop on the way back to the stage.
+ *
+ * REQ-537 (demo-loop cycle 4, m36) — not drawn on the stage (/demo/stage): the stage pill's End is
+ * its one exit (and, with other presenters, its "Leave the demo"); every other page keeps the bar.
+ *
+ * REQ-855 (demo-loop cycle dm3, m5) — one notice per page: nor while this staff PRESENTS the demo
+ * (asked of /demo-mode/active on mount, once whoami says impersonating, before anything is drawn —
+ * the presenter's pill is then the notice and carries the way out and the language), nor over
+ * /admin's guide gate (it has both exits). When the overlay says the demo is gone
+ * (DEMO_PRESENTING_EVENT), the bar comes back: an impersonation is never left unsaid.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type WhoAmI } from "../clients/admin.ts";
-import { fmtPhone } from "../lib/format.ts";
+import { DEMO_PRESENTING_EVENT, demoModeClient } from "../clients/demo-mode.ts";
 import { clearBannerRoom, setBannerRoom } from "../lib/banner-room.ts";
-import { isReplicaFrame } from "../lib/demo-mode/replica.ts";
+import { ImpersonationBannerView } from "../components/ImpersonationBannerView.tsx";
+import {
+  impersonationBannerOn,
+  impersonationBarShown,
+} from "../../shared/demo-mode/stage-chrome.ts";
 
 export default function ImpersonationBanner() {
   const [who, setWho] = useState<WhoAmI | null>(null);
   const [busy, setBusy] = useState(false);
+  /** REQ-232 — the demo this staff presents, while the banner asks whether to leave it */
+  /** REQ-298 — `presenters`: how many present; alone, leaving ends the demo for the customer */
+  const [leaving, setLeaving] = useState<
+    { id: string; name: string; presenters: number } | null
+  >(null);
+  /** REQ-855 — this staff presents the demo this impersonation is for: the pill is the notice */
+  const [presenting, setPresenting] = useState(false);
   const el = useRef<HTMLDivElement>(null);
-  const replica = isReplicaFrame();
-  const shown = Boolean(who?.impersonating) && !replica;
+  // REQ-537 — on the stage the pill is the one exit: no bar (and no whoami asked for it)
+  const [onPage] = useState(() =>
+    typeof globalThis.location === "undefined" ||
+    impersonationBannerOn(globalThis.location.pathname)
+  );
+  const shown = onPage && Boolean(who) && impersonationBarShown({
+    path: globalThis.location?.pathname ?? "",
+    impersonating: who?.impersonating === true,
+    superAdmin: who?.superAdmin === true,
+    presenting,
+  });
 
   useEffect(() => {
-    if (replica) return;
+    if (!onPage) return;
     let alive = true;
     adminClient.whoami()
-      .then((w) => {
-        if (alive) setWho(w);
+      .then(async (w) => {
+        // REQ-855 — an impersonation is asked whether it is a demo this staff presents BEFORE the
+        // bar can be drawn (no red flash beside the pill); the demo side away: a plain bar
+        const a = w.impersonating
+          ? await demoModeClient.active().catch(() => null)
+          : null;
+        if (!alive) return;
+        setPresenting(a?.role === "presenter" && Boolean(a.session));
+        setWho(w);
       })
       .catch(() => {/* not logged in / backend down — show nothing */});
+    // REQ-855 — the overlay says the presented demo appeared or went while this page is up
+    const onPresenting = (e: Event) =>
+      setPresenting((e as CustomEvent).detail === true);
+    globalThis.addEventListener(DEMO_PRESENTING_EVENT, onPresenting);
     return () => {
       alive = false;
+      globalThis.removeEventListener(DEMO_PRESENTING_EVENT, onPresenting);
     };
   }, []);
 
@@ -62,14 +109,29 @@ export default function ImpersonationBanner() {
 
   if (!shown || !who) return null;
 
-  const acting = who.user;
-  const actingLabel = acting
-    ? (acting.name || acting.businessName || fmtPhone(acting.phoneNumber))
-    : "another user";
-
-  async function stop() {
+  /** REQ-232 (M21) — `confirmed`: the staff said yes to leaving the demo they present */
+  async function stop(confirmed = false) {
     setBusy(true);
+    if (!confirmed) {
+      // a demo this staff presents? ask first — Return takes them out of it
+      try {
+        const a = await demoModeClient.active();
+        if (a.session && a.role === "presenter") {
+          setLeaving({
+            id: a.session.id,
+            name: a.session.targetName,
+            presenters: a.session.presenters.length,
+          });
+          setBusy(false);
+          return;
+        }
+      } catch {
+        // the demo side is away: nothing to leave
+      }
+    }
     try {
+      // leave first: an account handed back with the demo still on would be sent to the stage again
+      if (leaving) await demoModeClient.leave(leaving.id).catch(() => {});
       await adminClient.stopImpersonating();
       globalThis.location.href = "/admin";
     } catch {
@@ -78,26 +140,14 @@ export default function ImpersonationBanner() {
   }
 
   return (
-    <div
-      ref={el}
-      // REQ-153 — demo mode's pointer paths never count this banner (the staff side alone has it)
-      data-demo-skip
-      role="status"
-      data-cy="imp-banner"
-      style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 14px;background:#7a2e2e;color:#fff;font:inherit;font-size:13px;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)"
-    >
-      <span>
-        Impersonating <strong>{actingLabel}</strong>
-        {who.impersonator?.name ? ` (as ${who.impersonator.name})` : ""}
-      </span>
-      <button
-        type="button"
-        onClick={stop}
-        disabled={busy}
-        style="padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#7a2e2e;cursor:pointer;font:inherit;font-weight:700"
-      >
-        {busy ? "Returning…" : "Return to your account"}
-      </button>
-    </div>
+    <ImpersonationBannerView
+      who={who}
+      busy={busy}
+      onStop={() => stop()}
+      el={el}
+      leaving={leaving}
+      onLeave={() => stop(true)}
+      onCancelLeave={() => setLeaving(null)}
+    />
   );
 }

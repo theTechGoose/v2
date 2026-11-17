@@ -22,10 +22,18 @@ import {
   telHref,
 } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { localizeTermValue } from "../lib/term-i18n.ts";
+import { localizeTermValue, paymentTermValue } from "../lib/term-i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
-import { isTbdTermValue } from "../../shared/quote-flow/terms-i18n.ts";
+import {
+  isDueNowTermValue,
+  isTbdTermValue,
+} from "../../shared/quote-flow/terms-i18n.ts";
+import {
+  parseRecurringTerm,
+  recurringScheduleRow,
+} from "../../shared/quote-flow/recurring-billing.ts"; // REQ-699
+import { isNoWarrantyValue } from "../../shared/documents/warranty-clause.ts";
 
 /* ---------- palette ---------- */
 export const PINK = "#FF6B6B";
@@ -54,6 +62,9 @@ export interface DocContractor {
 
 export interface LineItem {
   description: string;
+  /** REQ-264 (M15) / REQ-256: the line's text per language, keyed by lang
+   *  code; the document picks its own. */
+  descriptionByLang?: Record<string, string>;
   price?: number;
   quantity?: number;
   unit?: string;
@@ -191,9 +202,12 @@ export function PartyCard(props: {
   email?: string;
   phone?: string;
   address?: string;
+  /** REQ-906: the name's font size in px (the invoice's Bill-to uses 18). */
+  nameSize?: number;
 }) {
   const displayName = props.name?.trim();
   const biz = props.businessName?.trim();
+  const nameSize = props.nameSize ?? 15;
   return (
     <div
       style={`background:#fff;border:1px solid ${LINE};border-radius:12px;padding:14px 16px`}
@@ -204,7 +218,8 @@ export function PartyCard(props: {
         {props.role}
       </div>
       <div
-        style={`margin-top:6px;color:${INK};font-weight:800;font-size:15px;line-height:1.25`}
+        data-cy="party-name"
+        style={`margin-top:6px;color:${INK};font-weight:800;font-size:${nameSize}px;line-height:1.25`}
       >
         {displayName ?? "—"}
       </div>
@@ -270,15 +285,6 @@ export function sumLineTotals(items: LineItem[] | undefined): number {
   return items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
 }
 
-export function initialsFromName(name?: string): string {
-  if (!name) return "DM";
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  }
-  return (parts[0] ?? "DM").slice(0, 2).toUpperCase();
-}
-
 /**
  * Long date in the DOCUMENT's language. Delegates to the one shared
  * formatter so the web page, the PDF and the email can never drift — and so
@@ -305,8 +311,13 @@ export function expandTermValue(
   term: Term,
   contractorState: string | undefined,
   lang: Lang = "en",
+  /** REQ-697: the business's days to pay — stated on "upon completion" */
+  paymentNetDays?: number,
 ): string {
   const stateName = expandStateName(contractorState);
+  if (term.stepId === "payment_terms") {
+    return paymentTermValue(term.value, lang, paymentNetDays);
+  }
   if (term.stepId === "wraps") {
     const v = localizeTermValue(term.value, lang);
     // REQ-047: a TBD duration is not an estimate — print it bare.
@@ -344,12 +355,11 @@ export function expandTermValue(
 }
 
 /** Hide warranty term row when the contractor selected "No warranty" — the
- *  legal-text warranty clause still applies on the agreement. */
+ *  agreement's warranty clause then says no workmanship warranty is
+ *  included (REQ-463: the same rule picks clause 7's body). */
 export function isEmptyWarranty(term: Term): boolean {
   if (term.stepId !== "warranty") return false;
-  const v = term.value.trim().toLowerCase();
-  return v === "" || v === "no warranty" || v === "none" || v === "n/a" ||
-    v === "no";
+  return isNoWarrantyValue(term.value);
 }
 
 export function computeMilestones(
@@ -376,7 +386,12 @@ export function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term bills each period —
+  // one "Monthly $180.00 · Billed every month" row, never "Final … On
+  // completion".
+  const recurring = parseRecurringTerm(term);
+  if (recurring) return [recurringScheduleRow(recurring, lang)];
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((p) => ({
     ...roleLabel[p.role],
     ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),
@@ -578,6 +593,9 @@ export function TermGrid(props: {
    *  always shows a Start row — deck p12 Terms anatomy). Omit to hide the
    *  row entirely when startDate is absent (invoice behavior). */
   startFallback?: string;
+  /** REQ-697 (demo-loop cycle 5, m22): the agreement's days to pay, stated
+   *  in its "Payment upon completion" row. Omit to print the term bare. */
+  paymentNetDays?: number;
   labels: {
     start: string;
     estCompletion: string;
@@ -620,6 +638,9 @@ export function TermGrid(props: {
       {(props.terms ?? [])
         .filter((term) =>
           term.stepId !== "customer" && !isEmptyWarranty(term) &&
+          // REQ-783: the cancellation notice is the agreement's own row
+          // (extraRows), stated from this term — never printed twice.
+          term.stepId !== "cancellation" &&
           // A concrete start date on the agreement supersedes the coarse
           // wizard answer — never print both.
           !(term.stepId === "start_date" && !!props.startDate)
@@ -628,7 +649,12 @@ export function TermGrid(props: {
           <KV
             key={term.stepId}
             k={props.labels.termLabels[term.stepId] ?? term.label}
-            v={expandTermValue(term, props.contractorState, props.lang)}
+            v={expandTermValue(
+              term,
+              props.contractorState,
+              props.lang,
+              props.paymentNetDays,
+            )}
           />
         ))}
       {(props.extraRows ?? []).map((row) => (

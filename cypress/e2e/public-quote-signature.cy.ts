@@ -131,12 +131,12 @@ describe("public quote — agreement anatomy + signature ceremony", () => {
       .click();
     cy.get("details[data-cy=terms-details]").should("have.attr", "open");
     cy.get("details[data-cy=terms-details] ol > li").should("have.length", 14);
-    cy.get("details[data-cy=terms-details]").should("contain.text", "Work completed before cancelation will be paid for.");
+    cy.get("details[data-cy=terms-details]").should("contain.text", "Work completed before cancellation will be paid for.");
   });
 
   it("REQ-035 NW-55 the term grid carries a Cancelation row with the 7-day notice", () => {
     cy.get(".ctr__terms-grid", { timeout: 10_000 })
-      .should("contain.text", "Cancelation")
+      .should("contain.text", "Cancellation")
       .and("contain.text", "7 days");
   });
 

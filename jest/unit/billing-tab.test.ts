@@ -90,8 +90,15 @@ describe("REQ-127 the Billing tab", () => {
   test("REQ-129 the first-pick note says the whole shape, and the next-bill fact carries its amount and the prorated word", () => {
     const en = dict("en");
     const es = dict("es");
-    expect(en["billing.note.first"]).toBe("{monthly} today · prorated on the 1st · then {monthly}/month");
-    expect(es["billing.note.first"]).toMatch(/\{monthly\}/);
+    // REQ-615 (demo-loop c4 m4) — each charge with its date: today's and the days it covers, the
+    // 1st's prorated bill and the days it covers, then the monthly price
+    expect(en["billing.note.first"]).toBe(
+      "{monthly} today (covers {from}–{to}) · {billDate}: {prorated} for {proFrom}–{proTo} · then {monthly}/month on the 1st",
+    );
+    expect(es["billing.note.first"]).toBe(
+      "{monthly} hoy (cubre {from}–{to}) · {billDate}: {prorated} por {proFrom}–{proTo} · luego {monthly}/mes cada día 1",
+    );
+    expect(read("front-end/islands/SettingsPage.tsx")).toMatch(/firstPickNote\(/);
     expect(typeof en["billing.prorated"]).toBe("string");
     expect(typeof es["billing.prorated"]).toBe("string");
     const settings = read("front-end/islands/SettingsPage.tsx");

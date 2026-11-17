@@ -137,3 +137,15 @@ Deno.test("REQ-031 NW-26 both channels fail → ok:false, nothing logged as deli
   assertEquals(ctx.logged.length, 0);
   await resetKv();
 });
+
+Deno.test("REQ-701 M21 the alert's link opens the quote's questions (/quotes?open=<id>#questions), by email and by text", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { quote } = await seed(ctx, "es");
+  await ctx.alert.run(quote.id, { question: QUESTION, name: "María" });
+  const link = `/quotes?open=${quote.id}#questions`;
+  assert(ctx.texts[0].body.includes(link), ctx.texts[0].body);
+  assert(ctx.emails[0].htmlBody.includes(link), "the email's button");
+  await resetKv();
+});

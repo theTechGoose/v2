@@ -170,3 +170,29 @@ Deno.test("REQ-050 verify-email-otp: a closed account is ClosedAccountError", as
     await resetKv();
   }
 });
+
+Deno.test("REQ-286 test-setup-claims-m1 verify-email-otp: with DENO_DEPLOY set off Deno Deploy, 000000 is NOT a master code — no account, no session", async () => {
+  const { otps, users, flow } = await fresh();
+  const prev = { d: Deno.env.get("DENO_DEPLOY"), id: Deno.env.get("DENO_DEPLOYMENT_ID") };
+  Deno.env.set("DENO_DEPLOY", "1");
+  Deno.env.delete("DENO_DEPLOYMENT_ID");
+  try {
+    await assertRejects(
+      () => flow.run({ email: "stranger@example.com", code: "000000" }),
+      ExpiredCodeError,
+    );
+    assertEquals(await users.findByEmail("stranger@example.com"), null);
+
+    await userWithEmail(users, "+15125550965", "owner@example.com");
+    await otps.put({ phoneNumber: "email:owner@example.com", code: "424242" });
+    await assertRejects(
+      () => flow.run({ email: "owner@example.com", code: "000000" }),
+      InvalidCodeError,
+    );
+  } finally {
+    if (prev.d === undefined) Deno.env.delete("DENO_DEPLOY");
+    else Deno.env.set("DENO_DEPLOY", prev.d);
+    if (prev.id !== undefined) Deno.env.set("DENO_DEPLOYMENT_ID", prev.id);
+    await resetKv();
+  }
+});

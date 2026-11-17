@@ -66,10 +66,10 @@
   inset: 0;
   background-image:
     radial-gradient(
-      circle at 18% 22%,
-      rgba(255, 255, 255, 0.18) 0,
-      transparent 35%
-    ),
+    circle at 18% 22%,
+    rgba(255, 255, 255, 0.18) 0,
+    transparent 35%
+  ),
     radial-gradient(circle at 82% 78%, rgba(0, 0, 0, 0.10) 0, transparent 40%);
 }
 .ccard2__since {
@@ -144,7 +144,8 @@
   animation: pulse-dot 2.4s infinite;
 }
 @keyframes pulse-dot {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -269,6 +270,7 @@
   text-align: left;
   line-height: 1.3;
   transition: gap var(--dur-fast) var(--ease-out);
+  text-decoration: none; /* REQ-277: a message nudge is a link */
 }
 .ccard2__nudge:hover {
   gap: 9px;
@@ -321,19 +323,36 @@
   transform: translateY(8%);
   opacity: 0;
   pointer-events: none;
-  transition: transform 380ms var(--ease-bounce), opacity 240ms var(--ease-out);
+  /* REQ-419 (demo-loop cycle 2, m40): the back is pinned to the front's
+     height (inset:0), so when its contact, subscriptions and documents groups
+     are taller it scrolls as a whole instead of squeezing each group */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* REQ-419 (S7c): a closed back is not just transparent — it is hidden
+     once its fade-out has finished (visibility flips after 240ms) */
+  visibility: hidden;
+  transition:
+    transform 380ms var(--ease-bounce),
+    opacity 240ms var(--ease-out),
+    visibility 0s linear 240ms;
   box-shadow: inset 0 0 0 1px rgba(26, 83, 92, 0.06);
 }
 .ccard2--open .ccard2__panel {
   transform: translateY(0);
   opacity: 1;
   pointer-events: auto;
+  visibility: visible;
+  transition:
+    transform 380ms var(--ease-bounce),
+    opacity 240ms var(--ease-out),
+    visibility 0s linear 0s;
 }
 .ccard2__panel-head {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
+  flex-shrink: 0;
 }
 .ccard2__panel-av {
   width: 44px;
@@ -402,6 +421,9 @@
   border-radius: var(--radius-md);
   overflow: hidden;
   margin-bottom: 12px;
+  /* REQ-419 (m40): overflow:hidden gave this flex item min-height:0, so it
+     shrank below its rows (ADDRESS cut, DOCUMENTS half hidden) */
+  flex-shrink: 0;
 }
 .ccard2__panel-row {
   display: flex;
@@ -461,7 +483,7 @@
 .ccard2__panel-actions {
   margin-top: auto;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr; /* REQ-277: Message is the one action */
   gap: 8px;
 }
 .ccard2__panel-act {
@@ -478,6 +500,7 @@
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
+  text-decoration: none; /* REQ-277: Message is a link */
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .ccard2__panel-act--pink {
@@ -485,6 +508,42 @@
 }
 .ccard2__panel-act:hover {
   transform: translateY(-1px);
+}
+/* REQ-802: Delete customer — a quiet danger action, never a filled primary;
+   Keep is the ghost */
+.ccard2__panel-act--danger {
+  background: transparent;
+  color: var(--danger, #c0392b);
+  border: 1.5px solid var(--danger, #c0392b);
+  box-shadow: none;
+}
+.ccard2__panel-act--danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.ccard2__panel-act--ghost {
+  background: transparent;
+  color: var(--ink-2, #5b6b73);
+  border: 1.5px solid var(--line, #d8e0e3);
+  box-shadow: none;
+}
+.ccard2__panel-ask {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(192, 57, 43, 0.06);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.ccard2__panel-ask-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.ccard2__panel-ask-err {
+  color: var(--danger, #c0392b);
+  font-size: 12px;
 }
 
 /* ============== HERO + RIBBON + TOOLBAR + LAYOUT + RAIL ============== */
@@ -516,7 +575,8 @@
   animation: ph2-pulse 2.4s infinite;
 }
 @keyframes ph2-pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55);
   }
   50% {
@@ -689,11 +749,20 @@
   gap: 18px;
   align-items: start;
 }
+/* REQ-419 (p13-k): the cards grid and its pager share the main column;
+   the pager sits under the grid, not in a card's cell */
+.clay2__main {
+  min-width: 0;
+}
 
 /* Toolbar */
+/* REQ-357 (demo cycle 1, p5): search, sort and export share the first row;
+   the filter chips get a full row of their own and wrap, so no chip is ever
+   clipped or scrolled out of sight, at any width or in any language. */
 .ctoolbar2 {
+  /* REQ-799: no search cell — the chips take the row, the sort sits at its end */
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   background: #fff;
@@ -702,29 +771,14 @@
   padding: 8px;
   margin-bottom: 14px;
 }
-.ctoolbar2__search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  background: var(--bg-sunken);
-  border-radius: var(--radius-md);
-  color: var(--fg-muted);
-}
-.ctoolbar2__search input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--brand-teal);
-}
-.ctoolbar2__search input::placeholder {
-  color: var(--fg-subtle);
-}
 .ctoolbar2__filters {
+  /* REQ-799: the chips lead the only row, the sort buttons close it */
+  grid-column: 1;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 2px;
   background: var(--bg-sunken);
@@ -900,9 +954,6 @@
   .ctoolbar2 {
     grid-template-columns: 1fr;
   }
-  .ctoolbar2__filters {
-    overflow-x: auto;
-  }
   .ph2__title {
     font-size: 28px;
   }
@@ -913,7 +964,31 @@
 }
 
 /* REQ-135 — the pager under the cards: one page at a time from the API */
-.cpager{display:flex;align-items:center;justify-content:center;gap:14px;padding:18px 0 6px}
-.cpager__btn{padding:9px 14px;border:1px solid var(--border,#d8dcd5);border-radius:10px;background:#fff;color:var(--fg,#144852);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
-.cpager__btn:disabled{opacity:.4;cursor:default}
-.cpager__where{font-size:13px;font-weight:700;color:var(--fg-muted,#6b7560);letter-spacing:.02em}
+.cpager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 18px 0 6px;
+}
+.cpager__btn {
+  padding: 9px 14px;
+  border: 1px solid var(--border,#d8dcd5);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--fg,#144852);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cpager__btn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+.cpager__where {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-muted,#6b7560);
+  letter-spacing: .02em;
+}

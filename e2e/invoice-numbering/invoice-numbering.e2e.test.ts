@@ -106,8 +106,21 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       async () =>
         await page.locator("[data-cy='new-invoice-modal']").isVisible(),
     );
-    await page.locator("[data-cy='new-invoice-client']").selectOption(
+    // REQ-801: the client field is the search-and-pick — type the name, click the match
+    const clientBox = page.locator(
+      "[data-cy='new-invoice-client'] [data-cy='search-select-input']",
+    );
+    await clientBox.waitFor({ timeout: 15_000 });
+    await clientBox.fill("Ann");
+    await page.locator(
+      "[data-cy='new-invoice-client'] [data-cy='search-select-option']",
+    ).filter({ hasText: "Ann Lee" }).first().click();
+    expect.eq(
+      await page.locator(
+        "[data-cy='new-invoice-client'] input[name='customerId']",
+      ).inputValue(),
       customer.id,
+      "the picked client's id is the field's value",
     );
     // the customer prefills the bill-to and the service address
     await page.waitForFunction(() =>
@@ -158,6 +171,10 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       "net 15 sets the due date from the issue date",
     );
     await page.locator("[data-cy='new-invoice-submit']").click();
+    // REQ-727 (cycle 5, c4-M16): the send sheet opens on the new invoice —
+    // nothing is sent until its Send.
+    await page.locator("[data-cy='send-dialog']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='send-keep']").click();
     // the page reloads onto the list
     await page.locator("[data-cy='invoice-card-headline']").first().waitFor({
       timeout: 15_000,
@@ -250,9 +267,11 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       await page.locator("[data-cy='invoice-edit']").isDisabled(),
       "edit is disabled on a paid invoice",
     );
-    expect(
-      await page.locator("[data-cy='invoice-delete']").isDisabled(),
-      "delete is disabled on a paid invoice",
+    // REQ-485 (m22): Delete is not offered at all on a paid invoice.
+    expect.eq(
+      await page.locator("[data-cy='invoice-delete']").count(),
+      0,
+      "no delete on a paid invoice",
     );
     expect(
       await page.locator("[data-cy='invoice-discount-btn']").isDisabled(),
@@ -306,8 +325,9 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
       ledgerText.includes("Q-001"),
       `the quote's number is named (${ledgerText})`,
     );
+    // REQ-409: a quote not yet accepted reads "Quoted", an accepted one "Agreed"
     expect(
-      ledgerText.includes("Agreed $1,000.00"),
+      /(Agreed|Quoted) \$1,000\.00/.test(ledgerText),
       `agreed total (${ledgerText})`,
     );
     expect(
@@ -323,8 +343,19 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
       "600.00",
       "the amount is prefilled with what remains",
     );
+    // the pick lands once the customers list has arrived (its own fetch)
+    await page.waitForFunction(
+      (id) =>
+        (document.querySelector(
+          "[data-cy='new-invoice-client'] input[name='customerId']",
+        ) as HTMLInputElement | null)?.value === id,
+      customer.id,
+      { timeout: 15_000 },
+    );
     expect.eq(
-      await page.locator("[data-cy='new-invoice-client']").inputValue(),
+      await page.locator(
+        "[data-cy='new-invoice-client'] input[name='customerId']",
+      ).inputValue(),
       customer.id,
       "the quote's customer is picked",
     );

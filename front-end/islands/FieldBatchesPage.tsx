@@ -3,7 +3,12 @@
  * a date range into one DRAFT invoice per customer (REQ-142), reviews the
  * drafts as cards, ticks the ones to send, and sends. Earlier batches are listed
  * below. Invoices themselves are the existing feature (REQ-137) — a card only
- * links to that invoice on /invoices (REQ-162); nothing is edited here.
+ * links to that invoice (REQ-162); since REQ-790 the link opens the
+ * customer-facing page /i/<id> in a new tab — what the customer would see —
+ * never the invoices list. Nothing else is edited here: REQ-810 lets a DRAFT
+ * leave the batch ("Remove from batch", confirmed inline in its card) and a
+ * draft's line leave its invoice (the line's ×) — each frees its tasks, and the
+ * page updates in place from the batch the server answers.
  *
  * Ported from a2z/web/lotes.html (minus the demo driver and the inline line
  * editor, which belongs to the invoices page).
@@ -17,16 +22,24 @@ import {
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
+import { customerFixHref } from "../lib/customer-card-edit.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoneyExact, shiftIso, todayIso } from "../lib/field.ts";
-import { langSignal, t, type Vars } from "../lib/i18n.ts";
+import {
+  batchCounts,
+  defaultBatchChecks,
+  describeSend,
+  lineKey,
+  pluralParens,
+  replaceBatch,
+  type SendFailureLine,
+} from "../lib/field-batches.ts";
+import { langSignal, t, tn, type Vars } from "../lib/i18n.ts";
+import type { FieldBatchesSeed } from "../lib/field-ssr.ts";
 
 /** "{n} invoice(s)" → "1 invoice" / "3 invoices" (the lang files carry the "(s)") */
 function tp(key: string, vars: Vars): string {
-  return t(key, vars).replace(
-    /\((s|es)\)/g,
-    (_m, x: string) => (vars.n === 1 ? "" : x),
-  );
+  return pluralParens(t(key, vars), Number(vars.n));
 }
 
 const KNOWN_STATUS = new Set([
@@ -76,20 +89,43 @@ const batchTotal = (b: BatchView) =>
     0,
   );
 
-export default function FieldBatchesPage() {
+/** the past batches as listed: only those with invoices, newest first */
+const pastBatches = (all: BatchView[]) =>
+  all.filter((b) => b.invoices.length > 0)
+    .sort((a, b) => b.from.localeCompare(a.from));
+
+/** REQ-730 (demo c2-p13-p) — `seed`: the batches read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldBatchesPage(
+  { seed }: { seed?: FieldBatchesSeed | null } = {},
+) {
   const lang = langSignal.value;
+  const seeded = seed ? pastBatches(seed.batches) : null;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [batches, setBatches] = useState<BatchView[]>([]);
-  const [current, setCurrent] = useState<BatchView | null>(null);
+  const [batches, setBatches] = useState<BatchView[]>(seeded ?? []);
+  const [current, setCurrent] = useState<BatchView | null>(
+    seeded?.[0] ?? null,
+  );
   const [summary, setSummary] = useState<PullSummary | null>(null);
   const [flash, setFlash] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // REQ-401: a send's failures, each with its fix (demo M30)
+  const [failures, setFailures] = useState<SendFailureLine[]>([]);
   /** a send refused with 409 because of a $0 line — offer "Send anyway" */
   const [zeroBlocked, setZeroBlocked] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [checked, setChecked] = useState<Set<string>>(() =>
+    defaultBatchChecks(seeded?.[0] ?? null, new Set())
+  );
   const [busy, setBusy] = useState<"pull" | "send" | null>(null);
-  const [loading, setLoading] = useState(true);
+  // REQ-810: the card whose removal is running ("<invoiceId>" or "<invoiceId>:<line>"), its inline ask, its error
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [asking, setAsking] = useState<string | null>(null);
+  const [cardError, setCardError] = useState<
+    { id: string; text: string } | null
+  >(
+    null,
+  );
+  const [loading, setLoading] = useState(!seed);
 
   // Default range: the last two weeks. Resolved in an effect — the browser's
   // day, not the server's.
@@ -100,9 +136,7 @@ export default function FieldBatchesPage() {
   }, []);
 
   async function load(keepId?: string): Promise<BatchView[]> {
-    const rows = (await fieldClient.batches())
-      .filter((b) => b.invoices.length > 0)
-      .sort((a, b) => b.from.localeCompare(a.from));
+    const rows = pastBatches(await fieldClient.batches());
     setBatches(rows);
     if (keepId) {
       const found = rows.find((b) => b.id === keepId);
@@ -112,8 +146,14 @@ export default function FieldBatchesPage() {
   }
 
   useEffect(() => {
+    if (seed) return; // REQ-730 — seeded on the server: no client fetch on mount
     load()
-      .then((rows) => setCurrent((c) => c ?? rows[0] ?? null))
+      .then((rows) => {
+        const first = rows[0] ?? null;
+        setCurrent((c) => c ?? first);
+        // REQ-608 (demo m47): a reload ticks the drafts, as the pull did
+        setChecked((c) => defaultBatchChecks(first, c));
+      })
       .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -122,6 +162,7 @@ export default function FieldBatchesPage() {
     if (busy || !from || !to) return;
     setBusy("pull");
     setError(null);
+    setFailures([]);
     setZeroBlocked(false);
     try {
       const r = await fieldClient.pull(from, to);
@@ -159,18 +200,14 @@ export default function FieldBatchesPage() {
     if (busy || !current || checked.size === 0) return;
     setBusy("send");
     setError(null);
+    setFailures([]);
     try {
       const r = await fieldClient.send(current.id, [...checked], allowZero);
       setZeroBlocked(false);
-      setFlash(tp("field.lt.sent", { n: r.sent }));
-      if (r.failed.length) {
-        setError(
-          r.failed.map((f) => {
-            const inv = current.invoices.find((i) => i.id === f.invoiceId);
-            return `${inv?.customerName ?? f.invoiceId}: ${f.reason}`;
-          }).join(" · "),
-        );
-      }
+      // REQ-401 (demo M30): "each client got theirs" only when something went out
+      const told = describeSend(r, current.invoices, t);
+      setFlash(told.flash);
+      setFailures(told.failures);
       setChecked(new Set());
       setCurrent(r.batch);
       await load(r.batch.id);
@@ -186,13 +223,91 @@ export default function FieldBatchesPage() {
     }
   }
 
+  /** REQ-810: the batch as the server now has it — the open batch, the list (a batch left empty drops off it), the ticks */
+  function applyBatch(b: BatchView) {
+    setCurrent(b);
+    setBatches((all) => pastBatches(replaceBatch(all, b)));
+    setChecked((prev) =>
+      new Set([...prev].filter((id) => b.invoiceIds.includes(id)))
+    );
+    setZeroBlocked(false);
+  }
+
+  /** REQ-810: a refused removal — said in the card; a stale row shows the invoice as it is now */
+  function removalFailed(invoiceId: string, e: unknown) {
+    const body = e instanceof ApiError
+      ? e.body as
+        | { code?: string; detail?: { invoice?: BatchInvoice } }
+        | null
+      : null;
+    const fresh = body?.detail?.invoice;
+    if (fresh && current) {
+      applyBatch({
+        ...current,
+        invoices: current.invoices.map((i) => i.id === fresh.id ? fresh : i),
+      });
+    }
+    const text = body?.code === "stale_line"
+      ? t("field.lt.stale")
+      : body?.code === "not_draft"
+      ? t("field.lt.notDraft")
+      : errorMessage(e);
+    setCardError({ id: invoiceId, text });
+  }
+
+  async function removeInvoice(inv: BatchInvoice) {
+    if (!current || removing) return;
+    setRemoving(inv.id);
+    setCardError(null);
+    setError(null);
+    try {
+      const b = await fieldClient.removeInvoice(current.id, inv.id);
+      setAsking(null);
+      applyBatch(b);
+      setFlash(t("field.lt.removed"));
+    } catch (e) {
+      removalFailed(inv.id, e);
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  async function removeLine(inv: BatchInvoice, index: number) {
+    const line = inv.lineItems?.[index];
+    if (!current || removing || !line) return;
+    setRemoving(`${inv.id}:${index}`);
+    setCardError(null);
+    setError(null);
+    try {
+      const b = await fieldClient.removeLine(
+        current.id,
+        inv.id,
+        index,
+        lineKey(line),
+      );
+      applyBatch(b);
+      setFlash(
+        b.invoiceIds.includes(inv.id)
+          ? t("field.lt.lineRemoved")
+          : t("field.lt.removed"),
+      );
+    } catch (e) {
+      removalFailed(inv.id, e);
+    } finally {
+      setRemoving(null);
+    }
+  }
+
   function openBatch(b: BatchView) {
     setCurrent(b);
     setSummary(null);
     setFlash("");
     setError(null);
+    setFailures([]);
     setZeroBlocked(false);
-    setChecked(new Set());
+    setAsking(null);
+    setCardError(null);
+    setChecked(defaultBatchChecks(b, new Set())); // REQ-608 — its drafts, ticked
   }
 
   function toggle(id: string, on: boolean) {
@@ -273,6 +388,24 @@ export default function FieldBatchesPage() {
           </div>
         )}
         {error && <p class="alert">{error}</p>}
+        {failures.map((f, i) => (
+          <p class="alert" data-cy="lt-send-failure" key={i}>
+            {f.text}
+            {f.fix && (
+              <>
+                {" "}
+                {/* REQ-600 (cycle 4, M5): straight to that customer's card */}
+                <a
+                  class="link"
+                  href={customerFixHref(f.customerId)}
+                  data-cy="lt-send-fix"
+                >
+                  {f.fix}
+                </a>
+              </>
+            )}
+          </p>
+        ))}
       </div>
 
       {current && (
@@ -280,7 +413,7 @@ export default function FieldBatchesPage() {
           <h3 class="panel__title">
             {t("field.lt.batch")} {fmtD(current.from, lang)} →{" "}
             {fmtD(current.to, lang)}{" "}
-            <span class="count">
+            <span class="count" data-cy="lt-count">
               {tp("field.lt.invoices", { n: current.invoices.length })}
             </span>
             <span style="flex:1"></span>
@@ -327,14 +460,30 @@ export default function FieldBatchesPage() {
           </h3>
           <div class="hint" style="margin-bottom:10px">
             {t("field.lt.noteHint")} ·{" "}
-            <b>{t("field.lt.total")}: {fmtMoneyExact(batchTotal(current))}</b>
+            <b data-cy="lt-batch-total">
+              {t("field.lt.total")}: {fmtMoneyExact(batchTotal(current))}
+            </b>
           </div>
+          {current.invoices.length === 0 && (
+            <div class="hint" data-cy="lt-empty">
+              {t("field.lt.emptyBatch")}
+            </div>
+          )}
           {current.invoices.map((inv) => (
             <InvoiceCard
               key={inv.id}
               inv={inv}
               checked={checked.has(inv.id)}
               onToggle={(on) => toggle(inv.id, on)}
+              removing={removing}
+              asking={asking === inv.id}
+              error={cardError?.id === inv.id ? cardError.text : null}
+              onAsk={(on) => {
+                setAsking(on ? inv.id : null);
+                setCardError(null);
+              }}
+              onRemove={() => removeInvoice(inv)}
+              onRemoveLine={(i) => removeLine(inv, i)}
             />
           ))}
         </div>
@@ -359,14 +508,7 @@ export default function FieldBatchesPage() {
                   >
                     <td>{fmtD(b.from, lang)} → {fmtD(b.to, lang)}</td>
                     <td>
-                      {t("field.lt.counts", {
-                        d: b.invoices.filter((i) => i.status === "draft")
-                          .length,
-                        s: b.invoices.filter((i) => i.status === "sent")
-                          .length,
-                        p: b.invoices.filter((i) => i.status === "paid")
-                          .length,
-                      })}
+                      {batchCounts(b.invoices, tn)}
                     </td>
                     <td class="money">{fmtMoneyExact(batchTotal(b))}</td>
                   </tr>
@@ -381,14 +523,32 @@ export default function FieldBatchesPage() {
 }
 
 function InvoiceCard(
-  { inv, checked, onToggle }: {
+  {
+    inv,
+    checked,
+    onToggle,
+    removing,
+    asking,
+    error,
+    onAsk,
+    onRemove,
+    onRemoveLine,
+  }: {
     inv: BatchInvoice;
     checked: boolean;
     onToggle: (on: boolean) => void;
+    /** REQ-810: the removal running on the page ("<invoiceId>" or "<invoiceId>:<line>"), if any */
+    removing: string | null;
+    asking: boolean;
+    error: string | null;
+    onAsk: (on: boolean) => void;
+    onRemove: () => void;
+    onRemoveLine: (index: number) => void;
   },
 ) {
   const draft = inv.status === "draft";
   const lines = inv.lineItems ?? [];
+
   return (
     <div
       class={`inv${draft ? "" : " inv--sent"}`}
@@ -411,16 +571,40 @@ function InvoiceCard(
             {t("field.lt.zero", { n: inv.zeroLines })}
           </span>
         )}
-        <span class="inv__total">{fmtMoneyExact(inv.amount)}</span>
+        <span class="inv__total" data-cy="lt-inv-total">
+          {fmtMoneyExact(inv.amount)}
+        </span>
       </div>
       <div class="inv__line">
         {lines.map((l, i) => (
-          <div key={i}>
-            {l.description} — {fmtMoneyExact(l.price)}
+          <div
+            key={`${i}:${l.taskId ?? l.description}`}
+            class="inv__row"
+            data-cy="lt-line"
+          >
+            <span>{l.description} — {fmtMoneyExact(l.price)}</span>
+            {draft && (
+              <button
+                type="button"
+                class="inv__x"
+                data-cy="lt-line-remove"
+                aria-label={t("field.lt.removeLine")}
+                title={t("field.lt.removeLine")}
+                aria-busy={removing === `${inv.id}:${i}`}
+                disabled={removing !== null}
+                onClick={() => onRemoveLine(i)}
+              >
+                {removing === `${inv.id}:${i}`
+                  ? <span class="inv__spin" aria-hidden="true">…</span>
+                  : <I d={ICN.x} size={12} />}
+              </button>
+            )}
           </div>
         ))}
         <a
-          href={`/invoices?open=${inv.id}`}
+          href={`/i/${inv.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
           data-cy="lt-open"
           style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-weight:700;color:var(--brand-teal)"
         >
@@ -428,6 +612,51 @@ function InvoiceCard(
           {t("field.lt.openInvoice")}
         </a>
       </div>
+      {draft && (
+        <div class="inv__actions">
+          {asking
+            ? (
+              <span class="inv__ask" data-cy="lt-remove-ask">
+                <span>{t("field.lt.removeAsk")}</span>
+                <button
+                  type="button"
+                  class="btn btn--danger btn--sm"
+                  data-cy="lt-remove-confirm"
+                  aria-busy={removing === inv.id}
+                  disabled={removing !== null}
+                  onClick={onRemove}
+                >
+                  {removing === inv.id
+                    ? t("field.common.loading")
+                    : t("field.lt.removeYes")}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-cy="lt-remove-cancel"
+                  disabled={removing === inv.id}
+                  onClick={() => onAsk(false)}
+                >
+                  {t("field.common.cancel")}
+                </button>
+              </span>
+            )
+            : (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm inv__remove"
+                data-cy="lt-remove"
+                disabled={removing !== null}
+                onClick={() => onAsk(true)}
+              >
+                <I d={ICN.trash} size={12} /> {t("field.lt.removeFromBatch")}
+              </button>
+            )}
+        </div>
+      )}
+      {error && (
+        <p class="alert" data-cy="lt-card-error" role="alert">{error}</p>
+      )}
     </div>
   );
 }

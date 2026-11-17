@@ -57,6 +57,22 @@ import { DocNumbering } from "@core/data/doc-numbering/mod.ts"; // REQ-198
 import { NumberingStore } from "@users/domain/data/numbering-store/mod.ts"; // REQ-199
 import { NumberingController } from "@users/entrypoints/numbering-controller/mod.ts"; // REQ-199
 import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // REQ-199
+import { TransferAccount } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
+import { FileStore } from "@files/domain/data/file-store/mod.ts"; // REQ-252 — the logo is checked to be an image
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-212
+import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"; // REQ-212
+import { StripeSettingsController } from "@users/entrypoints/stripe-settings-controller/mod.ts"; // REQ-212
+import { DevStripeController } from "@users/entrypoints/dev-stripe-controller/mod.ts"; // REQ-212
+import { DevAccountAdminsController } from "@users/entrypoints/dev-account-admins-controller/mod.ts"; // REQ-632
+import { OpsAccessController } from "@users/entrypoints/ops-access-controller/mod.ts"; // REQ-806
+import { OpsAccess } from "@users/domain/coordinators/ops-access/mod.ts"; // REQ-806
+import { OpsRequestStore } from "@users/domain/data/ops-request-store/mod.ts"; // REQ-806
+import { StripeGateway } from "@core/data/stripe-gateway/mod.ts"; // REQ-212
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
+import { ConnectSquare } from "@users/domain/coordinators/connect-square/mod.ts"; // REQ-803
+import { SquareSettingsController } from "@users/entrypoints/square-settings-controller/mod.ts"; // REQ-803
+import { DevSquareController } from "@users/entrypoints/dev-square-controller/mod.ts"; // REQ-803
+import { SquareGateway } from "@core/data/square-gateway/mod.ts"; // REQ-803
 
 /**
  * UsersModule — owns the full user identity surface:
@@ -90,6 +106,12 @@ import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // R
     ContractDefaultsController,
     ProfileCompositeController,
     NumberingController, // REQ-199
+    StripeSettingsController, // REQ-212
+    DevStripeController, // REQ-212
+    SquareSettingsController, // REQ-803
+    DevSquareController, // REQ-803 — fakes only
+    DevAccountAdminsController, // REQ-632 — fakes only
+    OpsAccessController, // REQ-806
   ],
   injectables: [
     // identity
@@ -112,6 +134,8 @@ import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // R
     RateLimiter,
     AccountAdminStore, // REQ-146
     AccountAdmins, // REQ-146
+    OpsAccess, // REQ-806
+    OpsRequestStore, // REQ-806
     // profile
     BusinessIdentityStore,
     BusinessAddressStore,
@@ -132,6 +156,14 @@ import { SetupReset } from "@users/domain/coordinators/setup-reset/mod.ts"; // R
     DocNumbering, // REQ-198
     NumberingStore, // REQ-199
     SetupReset, // REQ-199
+    StripeSettingsStore, // REQ-212
+    ConnectStripe, // REQ-212
+    StripeGateway, // REQ-212
+    SquareSettingsStore, // REQ-803
+    ConnectSquare, // REQ-803
+    SquareGateway, // REQ-803
+    TransferAccount, // REQ-220
+    FileStore, // REQ-252
   ],
 })
 export class UsersModule {}

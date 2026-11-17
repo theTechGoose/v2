@@ -1,5 +1,7 @@
 import { asset, Head } from "fresh/runtime";
+import { personLanguage } from "../../../shared/person-name/mod.ts"; // REQ-631
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import { loadUser } from "../../lib/auth.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, langFromCookie, pickLangFromAcceptLanguage } from "../../lib/lang.ts";
@@ -24,9 +26,8 @@ export default define.page(async function PlanTest(ctx) {
   const asked = ctx.url.searchParams.get("lang");
   const lang: Lang = asked === "en" || asked === "es"
     ? asked
-    : user.language === "en" || user.language === "es"
-    ? user.language
-    : langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
+    : personLanguage(user) ??
+      langFromCookie(ctx.req.headers.get("cookie")) ?? pickLangFromAcceptLanguage(ctx.req.headers.get("accept-language"));
   // REQ-101 — the account this page's charge goes through: the one named on the address, else sandbox
   const merchant = accountForPick("test", merchantOf(ctx.url.searchParams.get("merchant") ?? ""));
   const plans = PRICING_PLANS.filter((p) => p.id === "test");
@@ -34,7 +35,10 @@ export default define.page(async function PlanTest(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "planTest.title")} · {tFor(lang, "brand.name")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "planTest.title")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
         <link key="css-plan-cards" rel="stylesheet" href={asset("/plan-cards.css")} />

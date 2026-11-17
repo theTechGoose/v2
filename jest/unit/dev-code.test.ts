@@ -50,14 +50,14 @@ describe("REQ-082 the dev code pops up on every page that sends a code", () => {
     expect(exists("front-end/lib/dev-code.ts")).toBe(true);
     const lib = read("front-end/lib/dev-code.ts");
     expect(lib).toMatch(/export function stashDevCode/);
-    expect(lib).toMatch(/export function takeDevCode/);
+    expect(lib).toMatch(/export function peekDevCode/); // REQ-590: peek, not take
     expect(lib).toMatch(/"pm:dev-code"/);
     expect(read("front-end/islands/TrialSignup.tsx")).toMatch(/stashDevCode\(/);
     expect(read("front-end/islands/LoginForm.tsx")).toMatch(/stashDevCode\(/);
     // the home page's form is a static script: it writes the same key the lib reads
     expect(read("front-end/static/landing-scripts.js")).toMatch(/"pm:dev-code"/);
     const code = read("front-end/islands/CodeInput.tsx");
-    expect(code).toMatch(/takeDevCode\(/);
+    expect(code).toMatch(/peekDevCode\(/);
     expect(code).toMatch(/DevCodeCard/);
     expect(code).toMatch(/resendOtp[\s\S]*devCode/);
   });

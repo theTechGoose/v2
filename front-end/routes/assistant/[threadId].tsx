@@ -1,5 +1,13 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  editableName,
+  greetingFirstName,
+  personName,
+} from "../../../shared/person-name/mod.ts"; // REQ-624
 import { define } from "../../utils.ts";
+import { resolveSsrLang } from "../../lib/ssr-lang.ts";
+import type { Lang } from "../../lib/lang.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { getSessionId } from "../../lib/auth.ts";
 import { ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
@@ -8,6 +16,11 @@ import DashTopbar from "../../islands/DashTopbar.tsx";
 import AsstThreads from "../../islands/AsstThreads.tsx";
 import AsstChat, { deriveUserInitials } from "../../islands/AsstChat.tsx";
 import ChatHeaderLive from "../../islands/ChatHeaderLive.tsx";
+import { numberedLabel } from "../../../shared/documents/numbering.ts";
+import {
+  deriveChatHeader,
+  draftOwesDetails,
+} from "../../../shared/quote-flow/chat-header.ts";
 import {
   type Conversation,
   type ConversationDetail,
@@ -49,28 +62,42 @@ export default define.page(async function AssistantThread(ctx) {
     null as ProfileSnapshot | null
   );
 
-  const lang = profile?.user?.language ?? "en";
-  const greetingName =
-    (user?.name?.trim() || tFor(lang, "assistantThread.greetingFallback"))
-      .split(" ")[0];
+  // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
+  // pm_lang), so the tab title and footer match the page they sit on.
+  const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  const greetingName = greetingFirstName(user);
 
   const businessName = profile?.identity?.businessName ??
     profile?.identity?.displayName;
   const userInitials = profile?.initials && profile.initials !== "?"
     ? profile.initials
     : deriveUserInitials({
-      name: user?.name,
+      name: personName(user), // REQ-624: the chat's "me" is the person signed in
       businessName,
       phoneNumber: user?.phoneNumber,
     });
 
-  const headerTitle = detail?.conversation?.customerName ??
-    detail?.conversation?.title ??
-    tFor(lang, "assistantThread.newConversation");
-  const headerStatus = detail?.conversation?.currentPhase
-    ? tFor(lang, "assistantThread.phasePrefix", {
-      phase: detail.conversation.currentPhase,
+  // REQ-369 (demo m2): the server-rendered status line is the rule the
+  // island dispatches once it hydrates — never "Phase: terms" first.
+  // REQ-385 (cycle 2, m6): the title too — the job name, then "· customer"
+  // — so the first paint does not say the customer and then flip.
+  const ssrHeader = detail
+    ? deriveChatHeader({
+      customerName: detail.customer?.name,
+      // REQ-447 (cycle 3, p8-pair10-d): the list's title fallback too.
+      title: detail.conversation?.title,
+      quote: detail.quote,
+      messages: detail.messages ?? [],
+      detailsPending: draftOwesDetails(detail.draft),
+      // REQ-700 (cycle 5, m20): the bill as the invoice row says it now.
+      invoiceStatus: detail.invoiceStatus,
     })
+    : null;
+  const headerTitle = ssrHeader?.clientName ??
+    tFor(lang, ssrHeader?.clientKey ?? "asstChat.header.newConversation");
+  // REQ-465 (demo cycle 3, m37): the first paint already names the number.
+  const headerStatus = ssrHeader
+    ? numberedLabel(ssrHeader.number, tFor(lang, ssrHeader.statusKey))
     : tFor(lang, "assistantThread.statusFallback");
 
   // Surface a soft "we're getting you set up" banner when the user
@@ -89,7 +116,7 @@ export default define.page(async function AssistantThread(ctx) {
     postalCode?: string;
   } | undefined;
   const profileFilled = {
-    name: !!profile?.user?.name?.trim(),
+    name: !!editableName(profile?.user, profile?.actor).trim(), // REQ-624: the person signed in
     biz: !!(profile?.identity?.businessName?.trim() ??
       profile?.identity?.legalName?.trim()),
     state: !!addr?.state?.trim(),
@@ -118,16 +145,21 @@ export default define.page(async function AssistantThread(ctx) {
   return (
     <>
       <Head>
-        <title>{tFor(lang, "assistantThread.pageTitle")}</title>
+        <DocTitle
+          lang={lang}
+          title={(l) => tFor(l, "assistantThread.pageTitle")}
+        />
         <link rel="stylesheet" href={asset("/assistant-page.css")} />
       </Head>
       <div class="app">
         <DashSidebar active="messages" />
         <main class="main">
           <DashTopbar
-            greetingDate={tFor(lang, "assistantThread.greetingDate")}
+            greetingDate={tFor(lang, "assistantPage.greetingDate")}
             greetingName={greetingName}
-            greetingOverrideKey="assistantThread.greetingOverride"
+            // REQ-674 (cycle 5, p18-4a): the same greeting keys as /assistant —
+            // the first message moves this very screen here.
+            greetingOverrideKey="assistantPage.greetingOverride"
           />
           <div class="asst">
             <AsstThreads initialThreads={initialThreads} activeId={threadId} />
@@ -145,6 +177,9 @@ export default define.page(async function AssistantThread(ctx) {
                   initialMessages={detail?.messages ?? []}
                   initialCustomer={detail?.customer}
                   initialQuote={detail?.quote}
+                  initialTitle={detail?.conversation?.title}
+                  initialDraft={detail?.draft}
+                  initialInvoiceStatus={detail?.invoiceStatus}
                   userInitials={userInitials}
                   from={{
                     business: businessName,
@@ -157,11 +192,12 @@ export default define.page(async function AssistantThread(ctx) {
                     (profile?.identity?.commsLanguage
                       ? [profile.identity.commsLanguage]
                       : ["en"])}
+                  invoiceNetDays={profile?.identity?.invoiceNetDays}
                 />
               </section>
             </div>
           </div>
-          <SiteFooter lang={lang} />
+          <SiteFooter lang={lang} compact />
         </main>
       </div>
     </>

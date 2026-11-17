@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 const PINK = "#FF6B6B";
 const PINK_DARK = "#d94e4e";
@@ -53,11 +55,12 @@ export default function OnboardingProgress(
         if (!r.ok) return;
         const j = await r.json() as {
           user?: { name?: string };
+          actor?: { name?: string; needsName?: boolean };
           identity?: { businessName?: string; legalName?: string };
           address?: { state?: string; postal?: string };
         };
         let s: Step = 0;
-        if (j.user?.name?.trim()) s = (s + 1) as Step;
+        if (editableName(j.user, j.actor).trim()) s = (s + 1) as Step; // REQ-624: the person signed in
         if (
           (j.identity?.businessName?.trim() || j.identity?.legalName?.trim())
         ) s = (s + 1) as Step;
@@ -162,8 +165,9 @@ export default function OnboardingProgress(
     // Mark "skip" so the gate doesn't bounce them back on next visit
     // (best-effort — the FE doesn't currently persist a skip flag, so the
     // user will see onboarding again on next ?onboard=1 visit. Acceptable
-    // for now; the dashboard checklist will catch them).
-    globalThis.location.assign("/dashboard");
+    // for now; the dashboard checklist will catch them). REQ-797: leaving setup
+    // lands on the assistant.
+    globalThis.location.assign("/assistant");
   }
 
   const pct = (step / TOTAL_STEPS) * 100;
@@ -197,7 +201,7 @@ export default function OnboardingProgress(
             done ? GREEN : PINK
           };color:#fff;font-weight:800;flex-shrink:0;font-size:15px;transition:background 280ms`}
         >
-          {done ? "✓" : "👋"}
+          {done ? <Icon name="check" size={16} stroke-width={3} /> : "👋"}
         </span>
         <div style="flex:1;min-width:160px">
           <div

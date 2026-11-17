@@ -23,7 +23,7 @@
  *
  *   shared/quote-flow/landing-offers.ts
  *     export const LANDING_OFFER: {
- *       trialDays: number;            // ONE trial claim for both pages
+ *       // (no trialDays — REQ-505: billing has no trial, so no page claims one)
  *       priceFromCents: number;       // "from $99/month" — derives from the cheapest public paid plan
  *       unlimitedTier: string;        // id of the ONE plan sold as "unlimited" (a real plan id)
  *       socialProof: { contractors: number; docsSent: number };
@@ -122,10 +122,9 @@ describe("P-16 ES rotor words carry their own agreeing article (shared/quote-flo
 /* P-08 — one configurable offer source                                */
 /* ================================================================== */
 describe("P-08 single landing-offer source (shared/quote-flow/landing-offers)", () => {
-  it("P-08 exports ONE offer config: trialDays, priceFromCents, unlimitedTier, socialProof", () => {
+  it("P-08 exports ONE offer config: priceFromCents, unlimitedTier, socialProof (REQ-505: no trialDays)", () => {
     const { LANDING_OFFER } = require("../../shared/quote-flow/landing-offers");
-    expect(Number.isInteger(LANDING_OFFER.trialDays)).toBe(true);
-    expect(LANDING_OFFER.trialDays).toBeGreaterThanOrEqual(0);
+    expect("trialDays" in LANDING_OFFER).toBe(false);
     expect(LANDING_OFFER.priceFromCents).toBeGreaterThan(0);
     expect(typeof LANDING_OFFER.unlimitedTier).toBe("string");
     expect(Number.isInteger(LANDING_OFFER.socialProof?.contractors)).toBe(true);
@@ -154,8 +153,10 @@ describe("P-08 single landing-offer source (shared/quote-flow/landing-offers)", 
       "../../shared/quote-flow/landing-offers",
     );
     expect(formatSocialProof(1200, "en")).toBe("1,200");
-    expect(formatSocialProof(1200, "es")).toBe("1.200");
-    expect(formatSocialProof(48215, "es")).toBe("48.215");
+    // REQ-499 (demo p6, cycle 3) amends P-08: counts are US-grouped in
+    // Spanish too, matching the landing's US-grouped money (REQ-413).
+    expect(formatSocialProof(1200, "es")).toBe("1,200");
+    expect(formatSocialProof(48215, "es")).toBe("48,215");
   });
 
   it('P-08 routes/index.tsx no longer hardcodes the "34 contractors" weekly counter', () => {

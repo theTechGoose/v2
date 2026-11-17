@@ -1,6 +1,8 @@
 import { HttpError } from "fresh";
+import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
+import DocTitle from "../components/DocTitle.tsx";
 import { tFor } from "../lib/i18n.ts";
 import { resolvePublicLang } from "../../shared/quote-flow/public-lang.ts";
 
@@ -33,38 +35,76 @@ export default define.page((ctx) => {
   const homeCta = tFor(lang, "errorPage.home");
 
   return (
-    <div style="min-height:100dvh;display:flex;flex-direction:column;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
-      <div style="flex:1;width:100%;max-width:472px;margin:0 auto;padding:32px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
-        <a
-          href="/"
-          style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#144852;font-weight:800;font-size:18px;letter-spacing:-0.01em"
-        >
-          <img
-            src="/logo-monster.png"
-            alt={brand}
-            style="height:40px;width:auto;display:block"
-          />
-          <span>
-            Paperwork <em style="font-style:normal;color:#519843">Monster</em>
-          </span>
-        </a>
-        <div style="margin:28px auto 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:64px;letter-spacing:-0.04em;color:#519843;line-height:1">
-          {status}
+    <>
+      {
+        /* REQ-294 / REQ-825 — the body font and the Inter webfont: this page links no app
+          stylesheet, so error-page.css loads Inter (like demo-stage.css) for the demo pill,
+          styled inline with PILL_FONT in <body> beside this div */
+      }
+      <Head>
+        <link rel="stylesheet" href={asset("/error-page.css")} />
+        {
+          /* REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — the page says what it is in its title (the
+            browser tab read "DocuMonster"; the demo stage names an unknown mirrored page by its
+            title, and read "(Outbox)" off a mistyped path) */
+        }
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${
+              tFor(
+                l,
+                isNotFound
+                  ? "errorPage.notFound.heading"
+                  : "errorPage.server.heading",
+              )
+            } · ${tFor(l, "brand.name")}`}
+        />
+      </Head>
+      {
+        /* REQ-826 AMENDMENT 4 (demo-loop run 10, m2) — the page says what it is to the demo stage
+          too: its mirrored copy carries this mark, so the tab notice names it by its title even
+          under a known path (/quotes/new) */
+      }
+      <div
+        data-error-page=""
+        style="min-height:100dvh;display:flex;flex-direction:column;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30"
+      >
+        <div style="flex:1;width:100%;max-width:472px;margin:0 auto;padding:32px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <a
+            href="/"
+            style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#144852;font-weight:800;font-size:18px;letter-spacing:-0.01em"
+          >
+            <img
+              src="/logo-monster.png"
+              alt={brand}
+              style="height:40px;width:auto;display:block"
+            />
+            <span>
+              {tFor(lang, "brand.namePrefix")}
+              <em style="font-style:normal;color:#519843">
+                {tFor(lang, "brand.nameSuffix")}
+              </em>
+            </span>
+          </a>
+          <div style="margin:28px auto 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:64px;letter-spacing:-0.04em;color:#519843;line-height:1">
+            {status}
+          </div>
+          <h1 style="margin:10px 0 0;font-size:22px;font-weight:900;letter-spacing:-0.02em;color:#144852">
+            {heading}
+          </h1>
+          <p style="margin:10px 0 0;color:#6b7a7e;font-size:15px;line-height:1.55">
+            {body}
+          </p>
+          <a
+            href="/"
+            style="display:inline-block;margin-top:24px;background:#519843;color:#fff;text-decoration:none;font-weight:800;font-size:15px;padding:14px 26px;border-radius:12px;box-shadow:0 10px 22px -8px rgba(81,152,67,0.55)"
+          >
+            {homeCta}
+          </a>
         </div>
-        <h1 style="margin:10px 0 0;font-size:22px;font-weight:900;letter-spacing:-0.02em;color:#144852">
-          {heading}
-        </h1>
-        <p style="margin:10px 0 0;color:#6b7a7e;font-size:15px;line-height:1.55">
-          {body}
-        </p>
-        <a
-          href="/"
-          style="display:inline-block;margin-top:24px;background:#519843;color:#fff;text-decoration:none;font-weight:800;font-size:15px;padding:14px 26px;border-radius:12px;box-shadow:0 10px 22px -8px rgba(81,152,67,0.55)"
-        >
-          {homeCta}
-        </a>
+        <SiteFooter lang={lang} />
       </div>
-      <SiteFooter lang={lang} />
-    </div>
+    </>
   );
 });

@@ -1,5 +1,7 @@
 import { useState } from "preact/hooks";
 import { tFor } from "../lib/i18n.ts";
+import { Icon } from "../components/ui/Icon.tsx";
+import { announceChange } from "../lib/change-announce.ts";
 
 interface Props {
   quoteId: string;
@@ -10,6 +12,9 @@ interface Props {
   customerName?: string;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
+  /** REQ-559 (demo-loop c4 m17): the business's own preview — Ask and
+   *  Decline are the customer's verbs, so they are off (with a tooltip). */
+  preview?: boolean;
 }
 
 type Mode = "actions" | "decline" | "ask";
@@ -59,7 +64,7 @@ function friendlyError(raw: string, es = false): string {
  * renders its persisted declined state.
  */
 export default function PublicQuoteActions(
-  { quoteId, customerName, lang = "en" }: Props,
+  { quoteId, customerName, lang = "en", preview = false }: Props,
 ) {
   const [mode, setMode] = useState<Mode>("actions");
   const [resolved, setResolved] = useState<Resolved>(null);
@@ -68,6 +73,15 @@ export default function PublicQuoteActions(
   // with Decline still available (no reload needed).
   const [askSent, setAskSent] = useState(false);
   const es = lang === "es";
+  const offTip = preview
+    ? tFor(lang, "publicQuoteActions.previewDisabled")
+    : undefined;
+  // REQ-691 (demo p15, cycle 5): both disabled buttons wear the SAME muted
+  // grey text and border — opacity alone left Ask in its active teal, so it
+  // still looked clickable next to a grey Decline.
+  const off = preview
+    ? ";color:#6b7a7e;border:1px solid #e6ebe8;opacity:0.55;cursor:not-allowed"
+    : "";
 
   return (
     <div>
@@ -76,6 +90,12 @@ export default function PublicQuoteActions(
       {resolved === null && mode === "actions" && askSent && (
         <div style="margin-top:18px;background:rgba(20,72,82,0.06);border:1px solid rgba(20,72,82,0.18);border-radius:14px;padding:18px 20px;text-align:center">
           <div style="font-weight:800;color:#144852;font-size:16px">
+            <Icon
+              name="check"
+              size={16}
+              stroke-width={3}
+              style="vertical-align:-2px;margin-right:6px"
+            />
             {tFor(lang, "publicQuoteActions.askForm.sentTitle")}
           </div>
           <div style="margin-top:6px;color:#6b7a7e;font-size:13px">
@@ -88,15 +108,21 @@ export default function PublicQuoteActions(
         <div style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
           <button
             type="button"
+            data-cy="quote-ask"
+            disabled={preview}
+            title={offTip}
             onClick={() => setMode("ask")}
-            style="background:#fff;border:1px solid #d8e0db;color:#144852;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer"
+            style={`background:#fff;border:1px solid #d8e0db;color:#144852;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer${off}`}
           >
             {tFor(lang, "publicQuoteActions.askButton")}
           </button>
           <button
             type="button"
+            data-cy="quote-decline"
+            disabled={preview}
+            title={offTip}
             onClick={() => setMode("decline")}
-            style="background:#fff;border:1px solid #d8e0db;color:#6b7a7e;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer"
+            style={`background:#fff;border:1px solid #d8e0db;color:#6b7a7e;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;cursor:pointer${off}`}
           >
             {tFor(lang, "publicQuoteActions.declineButton")}
           </button>
@@ -196,6 +222,8 @@ function DeclineForm(
         }
       }
       setStatus("ok");
+      // REQ-493 (demo-loop c3 m7): the owner's tabs in this browser follow.
+      announceChange({ entityType: "quote", entityId: quoteId });
       onDeclined();
     } catch (e) {
       setStatus("error");
@@ -258,10 +286,15 @@ function DeclineForm(
         )}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff;resize:vertical"
       />
-      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
+      {/* REQ-289: the label names its input */}
+      <label
+        htmlFor="pqa-decline-name"
+        style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px"
+      >
         {tFor(lang, "publicQuoteActions.nameLabel")}
       </label>
       <input
+        id="pqa-decline-name"
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}
@@ -321,6 +354,9 @@ function AskForm(
           question: question.trim(),
           ...(contactBack.trim() ? { contactBack: contactBack.trim() } : {}),
           ...(name.trim() ? { name: name.trim() } : {}),
+          // REQ-701 (cycle 5, M21): the contractor's answer reaches them in
+          // the language they asked in.
+          lang,
         }),
       });
       if (!r.ok) {
@@ -382,10 +418,15 @@ function AskForm(
         )}
         style="width:100%;padding:10px 12px;border:1px solid #e3e8e6;border-radius:10px;font-size:14px;color:#1c2c30;font-family:inherit;background:#fff"
       />
-      <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px">
+      {/* REQ-289: the label names its input */}
+      <label
+        htmlFor="pqa-ask-name"
+        style="display:block;font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:#6b7a7e;margin:12px 0 6px"
+      >
         {tFor(lang, "publicQuoteActions.nameLabel")}
       </label>
       <input
+        id="pqa-ask-name"
         type="text"
         value={name}
         onInput={(e) => setName((e.target as HTMLInputElement).value)}

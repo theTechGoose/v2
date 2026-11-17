@@ -102,12 +102,14 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
 
     // 1. a worker, on /field/workers
     await page.goto("/field/workers");
-    // REQ-155 — the language picker reads Spanish by default
+    // REQ-774 (demo dv1-d5) — on an English account the picker reads English by default;
+    // Luis is set to Spanish on purpose
     expect.eq(
       await page.locator("[data-cy='wk-language']").inputValue(),
-      "es",
-      "the picker is Spanish by default",
+      "en",
+      "the picker defaults to the account's English, not Spanish",
     );
+    await page.locator("[data-cy='wk-language']").selectOption("es");
     await page.locator("[data-cy='wk-name']").fill("Luis Herrera");
     await page.locator("[data-cy='wk-phone']").fill(cell);
     await page.locator("[data-cy='wk-pin']").fill("1234");
@@ -155,7 +157,11 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await page.goto("/field/subscriptions");
     await page.locator("[data-cy='subs-new']").click();
     const netDays = page.locator("[data-cy='subs-net-days']");
-    expect.eq(await netDays.inputValue(), "21", "days to pay defaults to the Settings number");
+    expect.eq(
+      await netDays.inputValue(),
+      "21",
+      "days to pay defaults to the Settings number",
+    );
     await netDays.fill("14");
     await pickCustomer(page, "Ana Torres");
     await page.locator("[data-cy='subs-address']").fill(
@@ -253,7 +259,47 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await expect.see("Ana Torres");
     await expect.notSee("$65");
     await page.locator("[data-cy='w-check']").first().click();
-    await expect.see("1 of 1 services done", { timeout: 15_000 });
+    // REQ-527 (demo m55, cycle 3): one noun — the day summary counts tasks;
+    // one task reads singular (worker.today.one, the c5 plural fix)
+    await expect.see("1 of 1 task done", { timeout: 15_000 });
+    await expect.notSee("services done");
+    // REQ-196 — the ring is the progressbar, the card says Done, the summary says the round is complete
+    expect.eq(
+      await page.locator("[data-cy='w-progress']").getAttribute(
+        "aria-valuenow",
+      ),
+      "1",
+      "the ring reads 1",
+    );
+    expect.eq(
+      (await page.locator("[data-cy='w-visit-state']").first().textContent())
+        ?.trim(),
+      "Done",
+      "the visit's chip says Done",
+    );
+    await expect.see("Round complete! Nice work.");
+    // REQ-194 — tomorrow and yesterday are one tap away and come back to today without a reload
+    expect.eq(
+      await page.locator("[data-cy='w-day-today']").getAttribute(
+        "aria-selected",
+      ),
+      "true",
+      "today is the selected day",
+    );
+    await page.locator("[data-cy='w-day-next']").click();
+    await expect.see("No tasks this day.", { timeout: 15_000 });
+    expect(
+      await page.evaluate(() => location.search.includes("date=")),
+      "tomorrow is in the URL",
+    );
+    await page.locator("[data-cy='w-day-prev']").click();
+    await expect.see("No tasks this day.", { timeout: 15_000 });
+    await page.locator("[data-cy='w-day-today']").click();
+    await expect.see("Ana Torres", { timeout: 15_000 });
+    expect(
+      await page.evaluate(() => !location.search.includes("date=")),
+      "today drops ?date=",
+    );
 
     // 6. the batch, on /field/batches — one draft per customer, through the existing invoices
     const [name, value] = auth.cookie.split("=");
@@ -277,11 +323,12 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await page.locator("[data-cy='lt-from']").fill(today);
     await page.locator("[data-cy='lt-to']").fill(today);
     await page.locator("[data-cy='lt-pull']").click();
-    await page.locator("[data-cy='lt-invoice']").first().waitFor({
-      timeout: 20_000,
-    });
-    await expect.see("Ana Torres");
-    await expect.see("$65.00");
+    const card = page.locator("[data-cy='lt-invoice']").first();
+    await card.waitFor({ timeout: 20_000 });
+    // scoped to the card: the page's search box also knows the customer
+    // (a hidden match that an unscoped text wait lands on first)
+    await card.getByText("Ana Torres").first().waitFor({ timeout: 15_000 });
+    await card.getByText("$65.00").first().waitFor({ timeout: 15_000 });
 
     // the invoice is a real one, in the existing invoices feature
     const invoices = await (await http("/api/invoices", { headers: auth }))
@@ -320,11 +367,38 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       "the line carries its date and service",
     );
 
-    // REQ-162: the batch's "Open invoice" opens THAT invoice, not the invoices list
-    await page.locator("[data-cy='lt-open']").first().click();
-    await page.waitForURL(/\/invoices\?open=/, { timeout: 15_000 });
-    await expect.see("Invoice detail", { timeout: 15_000 });
-    await expect.see("Ana Torres");
+    // REQ-162/REQ-790: the batch's "Open invoice" opens THAT invoice as the
+    // customer sees it — the public /i/<id> page in a new tab — never the
+    // invoices list or its tab.
+    const open = page.locator("[data-cy='lt-open']").first();
+    await open.waitFor({ timeout: 15_000 });
+    expect.eq(
+      await open.getAttribute("href"),
+      `/i/${inv.id}`,
+      "the link is the customer-facing invoice page",
+    );
+    expect.eq(
+      await open.getAttribute("target"),
+      "_blank",
+      "it opens in a new tab so the batch stays put",
+    );
+    const [popup] = await Promise.all([
+      page.context().waitForEvent("page", { timeout: 15_000 }),
+      open.click(),
+    ]);
+    await popup.waitForURL(new RegExp(`/i/${inv.id}$`), { timeout: 15_000 });
+    // the public page is server-rendered: once its DOM is in, the invoice's
+    // own line (the "Lawn cut" visit) is on it — no hydration to wait for.
+    // (A batch invoice has no quote, so the public page carries no "Bill to"
+    // card — the customer's name is not what identifies it here.)
+    await popup.waitForLoadState("domcontentloaded", { timeout: 60_000 });
+    await popup.getByText("Lawn cut").first().waitFor({ timeout: 15_000 });
+    expect.eq(
+      page.url().includes("/invoices"),
+      false,
+      "the batches page did not jump to the invoices tab",
+    );
+    await popup.close();
   }));
 
 Deno.test("REQ-144: picking a customer with an address on file fills the service address; a typed address survives a re-pick", (t) =>
@@ -432,7 +506,7 @@ Deno.test("REQ-145: Ana has two subscriptions and Bob one — Ana's card says 2 
     await anaCard.locator("[data-cy='ccard2-subs-count']").waitFor({
       timeout: 20_000,
     });
-    await expect.see("2 subscriptions");
+    await expect.see("2 repeat visits"); // REQ-743: was "2 subscriptions"
     await anaCard.click();
     const anaRows = anaCard.locator("[data-cy='ccard2-sub']");
     await anaRows.first().waitFor({ timeout: 10_000 });
@@ -532,8 +606,8 @@ Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 cli
     const cadence = page.locator("[data-cy='subs-cadence']");
     expect.eq(
       (await cadence.locator("option").allTextContents()).join("|"),
-      "Weekly|Monthly",
-      "two cadences on a new subscription",
+      "Weekly|Monthly|Annual",
+      "weekly, monthly and (REQ-787) annual on a new subscription",
     );
     await page.locator("[data-cy='subs-days']").waitFor();
     await cadence.selectOption("monthly");
@@ -576,50 +650,103 @@ Deno.test("REQ-159: the office clicks the circle on /field/tasks — the task re
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const post = async (path: string, body: unknown) => {
-      const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+      const r = await http(path, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify(body),
+      });
       return r.json();
     };
     const put = async (path: string, body: unknown) => {
-      const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+      const r = await http(path, {
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify(body),
+      });
       await r.body?.cancel();
     };
-    const customer = await post("/api/customers", { name: "Ana Torres", email: "ana.torres@blackhole.postmarkapp.com" });
-    const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
+    const customer = await post("/api/customers", {
+      name: "Ana Torres",
+      email: "ana.torres@blackhole.postmarkapp.com",
+    });
+    const worker = await post("/api/field/workers", {
+      name: "Luis Herrera",
+      phoneNumber: `843${digits()}`,
+      pin: "1234",
+    });
     const sub = await post("/api/field/subscriptions", {
       customerId: customer.id,
       address: "4601 Dick Pond Rd, Myrtle Beach, SC",
       startDate: todayIso(),
       items: [{ taskTypeName: "Lawn cut", priceCents: 6500 }],
     });
-    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    await put(`/api/field/regions/${sub.region.id}/worker`, {
+      workerId: worker.id,
+    });
     await page.goto("/field/tasks");
     const task = page.locator("[data-cy='tk-task']").first();
     await task.waitFor({ timeout: 15_000 });
-    expect.eq(await task.getAttribute("data-status"), "assigned", "open to begin with");
+    expect.eq(
+      await task.getAttribute("data-status"),
+      "assigned",
+      "open to begin with",
+    );
     await task.locator("[data-cy='tk-done']").click();
-    await page.locator("[data-cy='tk-task'][data-status='complete']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-status='complete']").first()
+      .waitFor({ timeout: 15_000 });
     await expect.see("1 of 1 complete");
     await task.locator("[data-cy='tk-done']").click();
-    await page.locator("[data-cy='tk-task'][data-status='assigned']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-status='assigned']").first()
+      .waitFor({ timeout: 15_000 });
     await expect.see("0 of 1 complete");
   }));
 
 /** REQ-163..166 — the office's day: one staffed subscription due today; answers the api helpers and the seeded ids */
-async function officeDay(tools: { page: StoryTools["page"]; http: StoryTools["http"]; baseUrl: string }, items = [{ taskTypeName: "Lawn cut", priceCents: 6500 }]) {
+async function officeDay(
+  tools: {
+    page: StoryTools["page"];
+    http: StoryTools["http"];
+    baseUrl: string;
+  },
+  items = [{ taskTypeName: "Lawn cut", priceCents: 6500 }],
+) {
   const { page, http, baseUrl } = tools;
   const { auth } = await signIn(http, page, baseUrl);
   const post = async (path: string, body: unknown) => {
-    const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+    const r = await http(path, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify(body),
+    });
     return r.json();
   };
   const put = async (path: string, body: unknown) => {
-    const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+    const r = await http(path, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify(body),
+    });
     await r.body?.cancel();
   };
-  const customer = await post("/api/customers", { name: "Ana Torres", address: "4601 Dick Pond Rd, Myrtle Beach, SC", email: "ana.torres@blackhole.postmarkapp.com" });
-  const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
-  const sub = await post("/api/field/subscriptions", { customerId: customer.id, address: "4601 Dick Pond Rd, Myrtle Beach, SC", startDate: todayIso(), items });
-  await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+  const customer = await post("/api/customers", {
+    name: "Ana Torres",
+    address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+    email: "ana.torres@blackhole.postmarkapp.com",
+  });
+  const worker = await post("/api/field/workers", {
+    name: "Luis Herrera",
+    phoneNumber: `843${digits()}`,
+    pin: "1234",
+  });
+  const sub = await post("/api/field/subscriptions", {
+    customerId: customer.id,
+    address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+    startDate: todayIso(),
+    items,
+  });
+  await put(`/api/field/regions/${sub.region.id}/worker`, {
+    workerId: worker.id,
+  });
   return { auth, post, put, customer, worker, sub };
 }
 
@@ -632,8 +759,15 @@ Deno.test("REQ-163: Delete on the card, confirm inline — the card is gone and 
     await expect.see("0 of 1 complete");
     await task.locator("[data-cy='tk-delete']").click();
     await task.locator("[data-cy='tk-delete-confirm']").click();
-    await page.locator("[data-cy='tk-task']").first().waitFor({ state: "detached", timeout: 15_000 });
-    expect.eq(await page.locator("[data-cy='tk-task']").count(), 0, "the card is gone");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      state: "detached",
+      timeout: 15_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      0,
+      "the card is gone",
+    );
     await expect.see("0 of 0 complete");
   }));
 
@@ -641,23 +775,179 @@ Deno.test("REQ-164: Add task → customer, type, price, worker → the card show
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { worker } = await officeDay({ page, http, baseUrl });
     await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const box = form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-input']",
+    );
+    await box.fill("Ana");
+    await form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-option']",
+    ).filter({ hasText: "Ana Torres" }).first().click();
+    expect.eq(
+      await form.locator("[data-cy='tk-add-address']").inputValue(),
+      "4601 Dick Pond Rd, Myrtle Beach, SC",
+      "the customer's address is filled in",
+    );
+    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await form.locator("[data-cy='tk-add-price']").fill("120");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-save']").click();
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first()
+      .waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      2,
+      "the round plus the one-off",
+    );
+    await expect.see("Mulch");
+    await expect.see("$120.00");
+    await expect.see("0 of 2 complete");
+  }));
+
+Deno.test("REQ-526 (demo m50, cycle 3): Add task for another day → Save moves the list to that day, the card is there and the flash names the day", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { worker } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    const later = new Date(todayIso() + "T12:00:00Z");
+    later.setUTCDate(later.getUTCDate() + 5);
+    const day = later.toISOString().slice(0, 10);
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']").fill("Ana");
+    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-option']").filter({ hasText: "Ana Torres" }).first().click();
+    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await form.locator("[data-cy='tk-add-price']").fill("120");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-date']").fill(day);
+    await form.locator("[data-cy='tk-add-save']").click();
+    await form.waitFor({ state: "detached", timeout: 15_000 });
+    await page.waitForFunction((d) => (document.querySelector("[data-cy='tk-date']") as HTMLInputElement | null)?.value === d, day, { timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await expect.see("Mulch");
+    const flash = (await page.locator("[data-cy='tk-flash']").innerText()).trim();
+    const label = later.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+    expect(flash.toLowerCase().includes(label.toLowerCase()), `the flash names the task's day ${label} (got "${flash}")`);
+  }));
+
+Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and sends nothing; a new name is added as a customer from the form and the task saves", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, worker } = await officeDay({ page, http, baseUrl });
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST") posts.push(new URL(r.url()).pathname);
+    });
+    await page.goto("/field/tasks");
     await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='tk-add']").click();
     const form = page.locator("[data-cy='tk-add-form']");
     await form.waitFor({ timeout: 15_000 });
     const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
-    await box.fill("Ana");
-    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-option']").filter({ hasText: "Ana Torres" }).first().click();
-    expect.eq(await form.locator("[data-cy='tk-add-address']").inputValue(), "4601 Dick Pond Rd, Myrtle Beach, SC", "the customer's address is filled in");
+    await box.fill("Jim Baker");
     await form.locator("[data-cy='tk-add-type']").fill("Mulch");
     await form.locator("[data-cy='tk-add-price']").fill("120");
+    // 1. no customer picked — the form says which field, and no task is POSTed
+    await form.locator("[data-cy='tk-add-save']").click();
+    await expect.see("Pick a customer from the list, or add a new one.");
+    expect.eq(await box.getAttribute("aria-invalid"), "true", "the customer box is marked invalid");
+    expect.eq(posts.filter((p) => p.endsWith("/field/tasks")).length, 0, "no task POST");
+    // 2. the box offers to add the typed name as a customer
+    await box.click();
+    const create = form.locator("[data-cy='tk-customer'] [data-cy='search-select-create']");
+    await create.waitFor({ timeout: 15_000 });
+    expect.eq((await create.textContent())?.trim(), '+ Add "Jim Baker" as a customer', "the create row");
+    await create.click();
+    await page.waitForFunction(() => document.querySelector("[data-cy='tk-customer'] input[name='customer']")?.getAttribute("value"));
+    // 3. a new customer has no staffed zone — the form asks for the worker by name, not "Something went wrong"
+    await form.locator("[data-cy='tk-add-save']").click();
+    await expect.see("Pick a worker — this customer has no zone with one yet.");
+    expect.eq(await form.locator("[data-cy='tk-add-worker']").getAttribute("aria-invalid"), "true", "the worker picker is marked invalid");
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
     await form.locator("[data-cy='tk-add-save']").click();
     await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
-    expect.eq(await page.locator("[data-cy='tk-task']").count(), 2, "the round plus the one-off");
-    await expect.see("Mulch");
-    await expect.see("$120.00");
-    await expect.see("0 of 2 complete");
+    await expect.see("Jim Baker");
+    const list = await http("/api/customers?q=Jim%20Baker", { headers: auth });
+    const body = await list.json();
+    expect((body.items ?? []).some((c: { name: string }) => c.name === "Jim Baker"), "Jim Baker is a customer now");
+  }));
+
+Deno.test("REQ-340 (demo M37): a new customer added from the form BEFORE the address is typed gets the task's address on file once the task saves", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, worker } = await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    await box.fill("Dave Kowalski");
+    const create = form.locator("[data-cy='tk-customer'] [data-cy='search-select-create']");
+    await create.waitFor({ timeout: 15_000 });
+    await create.click(); // the demo's order: the customer is made with no address…
+    await page.waitForFunction(() => document.querySelector("[data-cy='tk-customer'] input[name='customer']")?.getAttribute("value"));
+    await form.locator("[data-cy='tk-add-type']").fill("Gutter clean");
+    await form.locator("[data-cy='tk-add-price']").fill("150");
+    await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
+    await form.locator("[data-cy='tk-add-address']").fill("8807 Spicewood Springs Rd, Austin, TX"); // …and the address is typed after
+    await form.locator("[data-cy='tk-add-save']").click();
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await expect.see("8807 Spicewood Springs Rd, Austin, TX");
+    const list = await http("/api/customers?q=Dave%20Kowalski", { headers: auth });
+    const body = await list.json();
+    const dave = (body.items ?? []).find((c: { name: string }) => c.name === "Dave Kowalski");
+    expect(!!dave, "Dave Kowalski is a customer");
+    expect.eq(dave.address, "8807 Spicewood Springs Rd, Austin, TX", "the customer carries the task's address — not 'No address on file'");
+  }));
+
+Deno.test("REQ-415 (demo p11, cycle 2): a fence builder's Add-task Service box shows its own services as the example, not lawn care", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl }, [{ taskTypeName: "Fence install", priceCents: 90000 }]);
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    const type = form.locator("[data-cy='tk-add-type']");
+    await page.waitForFunction(() => (document.querySelector("[data-cy='tk-add-type']")?.getAttribute("placeholder") ?? "").includes("Fence install"), undefined, { timeout: 15_000 });
+    const ph = (await type.getAttribute("placeholder")) ?? "";
+    expect(ph.includes("Fence install"), `the placeholder names the account's own service (got "${ph}")`);
+    expect(!/lawn|mulch|pool/i.test(ph), `no lawn-care example for a fence builder (got "${ph}")`);
+  }));
+
+Deno.test("REQ-521 (demo m54, cycle 3): an account with no workers opens Add task — the Worker picker says so and links to /field/workers; an empty Save names Customer first, not Service", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST") posts.push(new URL(r.url()).pathname);
+    });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-add']").click();
+    const form = page.locator("[data-cy='tk-add-form']");
+    await form.waitFor({ timeout: 15_000 });
+    // 1. no workers yet — a hint under the picker, with the way to add one
+    const hint = form.locator("[data-cy='tk-add-no-workers']");
+    await hint.waitFor({ timeout: 15_000 });
+    expect((await hint.textContent() ?? "").includes("No workers yet."), "the hint says there are no workers");
+    const link = hint.locator("a[href='/field/workers']");
+    expect.eq((await link.textContent())?.trim(), "Add a worker", "the hint links to /field/workers");
+    // 2. an empty Save — the form's own check runs (customer first), not the browser's bubble on Service
+    await form.locator("[data-cy='tk-add-save']").click();
+    await expect.see("Pick a customer from the list, or add a new one.");
+    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    expect.eq(await box.getAttribute("aria-invalid"), "true", "the customer box is marked invalid");
+    expect.eq(await form.locator("[data-cy='tk-add-type']").getAttribute("aria-invalid"), null, "Service is not the field flagged");
+    expect.eq(await form.evaluate((f) => (f as HTMLFormElement).noValidate), true, "the browser's 'Please fill out this field.' bubble is off — the form's own check speaks");
+    expect.eq(posts.filter((p) => p.endsWith("/field/tasks")).length, 0, "no task POST");
+    // 3. the link goes to the workers page
+    await link.click();
+    await page.waitForURL(/\/field\/workers/, { timeout: 15_000 });
   }));
 
 Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in the same group", (t) =>
@@ -670,9 +960,19 @@ Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in 
     await task.locator("[data-cy='tk-service-type']").fill("Edging");
     await task.locator("[data-cy='tk-service-price']").fill("25");
     await task.locator("[data-cy='tk-service-save']").click();
-    await page.locator("[data-cy='tk-task']").nth(1).waitFor({ timeout: 15_000 });
-    expect.eq(await page.locator("[data-cy='tk-task']").count(), 2, "two services on the visit");
-    expect.eq(await page.locator(".panel .tasks").count(), 1, "the same worker · zone group");
+    await page.locator("[data-cy='tk-task']").nth(1).waitFor({
+      timeout: 15_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      2,
+      "two services on the visit",
+    );
+    expect.eq(
+      await page.locator(".panel .tasks").count(),
+      1,
+      "the same worker · zone group",
+    );
     await expect.see("Edging");
     await expect.see("$25.00");
   }));
@@ -680,30 +980,899 @@ Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in 
 Deno.test("REQ-166: the card's worker picker moves the task to the other worker's group", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { post } = await officeDay({ page, http, baseUrl });
-    const other = await post("/api/field/workers", { name: "Marta Ríos", phoneNumber: `843${digits()}`, pin: "1234" });
+    const other = await post("/api/field/workers", {
+      name: "Marta Ríos",
+      phoneNumber: `843${digits()}`,
+      pin: "1234",
+    });
     await page.goto("/field/tasks");
     const task = page.locator("[data-cy='tk-task']").first();
     await task.waitFor({ timeout: 15_000 });
     await expect.see("Luis Herrera · ");
     await task.locator("[data-cy='tk-worker']").selectOption(other.id);
-    await page.locator("[data-cy='tk-task'][data-worker='" + other.id + "']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-worker='" + other.id + "']")
+      .first().waitFor({ timeout: 15_000 });
     await expect.see("Marta Ríos · ");
-    expect.eq(await page.locator(".panel__title").filter({ hasText: "Luis Herrera" }).count(), 0, "Luis's group is gone");
+    expect.eq(
+      await page.locator(".panel__title").filter({ hasText: "Luis Herrera" })
+        .count(),
+      0,
+      "Luis's group is gone",
+    );
   }));
 
 Deno.test("REQ-170: no Generate button; a week ahead shows its task on arrival; an unstaffed zone's subscription is listed", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { put, sub } = await officeDay({ page, http, baseUrl });
     await page.goto("/field/tasks");
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
-    expect.eq(await page.locator("[data-cy='tk-generate']").count(), 0, "no Generate button");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-generate']").count(),
+      0,
+      "no Generate button",
+    );
     const ahead = new Date(todayIso() + "T12:00:00Z");
     ahead.setUTCDate(ahead.getUTCDate() + 7);
-    await page.locator("[data-cy='tk-date']").fill(ahead.toISOString().slice(0, 10));
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-date']").fill(
+      ahead.toISOString().slice(0, 10),
+    );
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
     await expect.see("0 of 1 complete");
     await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: null });
     await page.reload();
-    await page.locator("[data-cy='tk-unstaffed']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-unstaffed']").first().waitFor({
+      timeout: 15_000,
+    });
     await expect.see("Ana Torres");
+  }));
+
+Deno.test("REQ-284: the day's only task checked off — the summary reads Complete 1 · To do 0, never Assigned 0 (demo customers-payments-fieldops-m4)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    const task = page.locator("[data-cy='tk-task']").first();
+    await task.waitFor({ timeout: 15_000 });
+    const summary = page.locator("[data-cy='tk-summary']");
+    await expect.see("0 of 1 complete");
+    const before = (await summary.innerText()).replace(/\s+/g, " "); // the chips are text-transform: uppercase
+    expect.eq(/To do 1/i.test(before), true, `one to do before: ${before}`);
+    await task.locator("[data-cy='tk-done']").click();
+    await page.locator("[data-cy='tk-task'][data-status='complete']").first().waitFor({ timeout: 15_000 });
+    await expect.see("1 of 1 complete");
+    const text = (await summary.innerText()).replace(/\s+/g, " ");
+    expect.eq(/Complete 1/i.test(text), true, `complete chip: ${text}`);
+    expect.eq(/To do 0/i.test(text), true, `to-do chip: ${text}`);
+    expect.eq(/Assigned/i.test(text), false, `no 'Assigned' counter: ${text}`);
+  }));
+
+Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft invoices'; a send to a customer with no email or phone shows only the failure with its fix; the row reads 1 draft; the worker's lock reads 'on a draft invoice'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const post = async (path: string, body: unknown) => {
+      const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+      return r.json();
+    };
+    const put = async (path: string, body: unknown) => {
+      const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+      await r.body?.cancel();
+    };
+    const customer = await post("/api/customers", { name: "Johnson" });
+    expect(!!customer.id, `Johnson created with no email or phone (${JSON.stringify(customer)})`);
+    const cell = `843${digits()}`;
+    const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: cell, pin: "1234" });
+    const today = todayIso();
+    const sub = await post("/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: today,
+      items: [{ taskTypeName: "Repair 3 fence panels", priceCents: 9000 }],
+    });
+    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    const tasks = await (await http(`/api/field/tasks?date=${today}`, { headers: auth })).json();
+    expect.eq(tasks.length, 1, "one task today");
+    await put(`/api/field/tasks/${tasks[0].id}`, { status: "complete" });
+
+    await page.goto("/field/batches");
+    await page.locator("[data-cy='lt-from']").fill(today);
+    await page.locator("[data-cy='lt-to']").fill(today);
+    await page.locator("[data-cy='lt-pull']").click();
+    await page.locator("[data-cy='lt-invoice']").first().waitFor({ timeout: 20_000 });
+    const summary = await page.locator("[data-cy='lt-summary']").innerText();
+    expect(/1 completed, on draft invoices/.test(summary), `summary: ${summary}`);
+    expect(!/completed and invoiced/.test(summary), `no 'invoiced' for a draft: ${summary}`);
+    await expect.see("1 draft · 0 sent · 0 paid");
+
+    await page.locator("[data-cy='lt-send']").click();
+    await page.locator("[data-cy='lt-send-failure']").first().waitFor({ timeout: 20_000 });
+    await expect.see("Johnson has no email or phone on file, so nothing was sent.");
+    await expect.see("Add an email or phone to Johnson");
+    await expect.notSee("each client got theirs");
+    await expect.notSee("no recipient:");
+
+    // the worker: the task is locked, worded by its draft invoice
+    await page.context().clearCookies();
+    await page.goto("/worker?lang=en");
+    await page.locator("[data-cy='w-cell']").fill(cell);
+    await page.locator("[data-cy='w-pin']").fill("1234");
+    await page.locator("[data-cy='w-login']").click();
+    await page.locator("[data-cy='w-visit']").first().waitFor({ timeout: 20_000 });
+    await expect.see("on a draft invoice");
+  }));
+
+Deno.test("REQ-611 (demo p4-p8a, cycle 4): the /field/tasks day stepper's buttons read Previous day / Next day, and 'Day' names only the date input", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await officeDay({ page, http, baseUrl });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    const prev = page.getByRole("button", { name: "Previous day", exact: true });
+    const next = page.getByRole("button", { name: "Next day", exact: true });
+    expect.eq(await prev.count(), 1, "one button named Previous day");
+    expect.eq(await next.count(), 1, "one button named Next day");
+    expect.eq(await prev.getAttribute("data-cy"), "tk-prev", "Previous day is the left chevron");
+    expect.eq(await next.getAttribute("data-cy"), "tk-next", "Next day is the right chevron");
+    expect.eq(await page.getByRole("button", { name: /^Day\b/ }).count(), 0, "no button is named after the 'Day' label");
+    expect.eq(await page.getByRole("button", { name: "+1", exact: true }).count(), 0, "no button named +1");
+    // "Day" names exactly two things: the stepper group and the date input — never a button
+    expect.eq(await page.getByLabel("Day", { exact: true }).and(page.locator("input")).getAttribute("data-cy"), "tk-date", "'Day' labels the date input");
+    expect.eq(await page.getByRole("group", { name: "Day", exact: true }).count(), 1, "the stepper is a group named Day");
+    const before = await page.locator("[data-cy='tk-date']").inputValue();
+    await next.click();
+    await page.waitForFunction(
+      (b) => (document.querySelector("[data-cy='tk-date']") as HTMLInputElement | null)?.value !== b,
+      before,
+      { timeout: 15_000 },
+    );
+    expect(await page.locator("[data-cy='tk-date']").inputValue() > before, "Next day moves the day forward");
+  }));
+
+Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; days are picked on it, February has its own length, the card reads Annual · March 5, and Edit opens it again on March 5", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Ana Torres",
+        address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+        email: "ana.torres@blackhole.postmarkapp.com",
+      }),
+    });
+    await r.body?.cancel();
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    const start = await page.locator("[data-cy='subs-start']").inputValue();
+    const [sy, sm, sd] = start.split("-").map(Number);
+    await page.locator("[data-cy='subs-cadence']").selectOption("annual");
+    expect.eq(
+      await page.locator("[data-cy='subs-days']").count(),
+      0,
+      "the weekday chips are gone",
+    );
+    const month = page.locator("[data-cy='subs-month']");
+    expect.eq(
+      await month.locator("option").count(),
+      12,
+      "a dropdown of the twelve months",
+    );
+    expect.eq(
+      await month.inputValue(),
+      String(sm),
+      "it starts on the first visit's month",
+    );
+    expect.eq(
+      (await page.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      String(sd),
+      "the first visit's day is on up front",
+    );
+    // the year shown is the first one on or after the first visit
+    const yearFor = (m: number) => (m >= sm ? sy : sy + 1);
+    const view = page.locator("[data-cy='subs-month-view']");
+    await month.selectOption("2");
+    const febDays = new Date(Date.UTC(yearFor(2), 2, 0)).getUTCDate();
+    expect.eq(
+      await view.locator("[data-cy='subs-dom-day']").count(),
+      febDays,
+      "February shows its own number of days",
+    );
+    await month.selectOption("3");
+    const y = yearFor(3);
+    await expect.see(`March ${y}`);
+    expect.eq(
+      await view.locator("[data-cy='subs-dow']").count(),
+      7,
+      "a week header",
+    );
+    expect.eq(
+      await view.locator("[data-cy='subs-dom-day']").count(),
+      31,
+      "March has 31 days",
+    );
+    expect.eq(
+      await view.locator("[data-cy='subs-dom-day'][data-dom='1']")
+        .getAttribute("data-weekday"),
+      String(new Date(Date.UTC(y, 2, 1)).getUTCDay()),
+      "day 1 sits under its real weekday",
+    );
+    for (const on of await view.locator("[data-cy='subs-dom-day'].on").all()) {
+      await on.click();
+    }
+    await view.locator("[data-cy='subs-dom-day'][data-dom='5']").click();
+    expect.eq(
+      (await view.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      "5",
+      "March 5 is the pick",
+    );
+    await page.locator("[data-cy='subs-type-q']").fill("Gutter clean");
+    await page.locator("[data-cy='subs-price']").fill("180");
+    await page.locator("[data-cy='subs-add-item']").click();
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Annual · March 5");
+    await page.locator("[data-cy='subs-edit']").first().click();
+    expect.eq(
+      await page.locator("[data-cy='subs-cadence']").inputValue(),
+      "annual",
+      "Edit keeps Annual",
+    );
+    expect.eq(
+      await page.locator("[data-cy='subs-month']").inputValue(),
+      "3",
+      "Edit keeps March",
+    );
+    expect.eq(
+      (await page.locator(
+        "[data-cy='subs-month-view'] [data-cy='subs-dom-day'].on",
+      ).allTextContents()).join("|"),
+      "5",
+      "Edit keeps day 5",
+    );
+  }));
+
+// REQ-788 — "a toggle button in the upper right that adds an overhead cost. that overhead cost is
+// defined in settings. the toggle button is in the same style as the weekday selection button."
+Deno.test("REQ-788: the overhead cost set in Settings; the form's upper-right chip (a weekday chip) toggles it on; the card lists it; the pulled draft bills services + overhead", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth, put, customer, worker, sub } = await officeDay({
+      page,
+      http,
+      baseUrl,
+    });
+    // the amount, on Settings
+    await page.goto("/settings");
+    const amount = page.locator("[data-cy='settings-overhead']");
+    await amount.waitFor({ timeout: 15_000 });
+    await amount.fill("25");
+    await amount.blur();
+    await page.waitForTimeout(800);
+    const ident = await (await http("/api/profile/identity", { headers: auth }))
+      .json();
+    expect.eq(
+      ident.fieldOverheadCents,
+      2500,
+      "Settings saved $25.00 as 2500 cents",
+    );
+    // the chip, in the form's upper right, styled as a weekday chip, off by default
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await page.locator("[data-cy='subs-edit']").first().click();
+    const chip = page.locator("[data-cy='subs-overhead']");
+    await chip.waitFor({ timeout: 15_000 });
+    expect.eq(
+      await chip.getAttribute("class"),
+      "day day--wide",
+      "off on a subscription that never had it",
+    );
+    const dayChip = page.locator("[data-cy='subs-day']").first();
+    const style = (l: typeof chip) =>
+      l.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.borderRadius, s.height, s.fontWeight].join("|");
+      });
+    expect.eq(
+      await style(chip),
+      await style(dayChip),
+      "the chip shares the weekday chip's shape",
+    );
+    const head = page.locator("[data-cy='subs-form'] .modal__head");
+    const [titleBox, chipBox] = await Promise.all([
+      head.locator("h2").boundingBox(),
+      chip.boundingBox(),
+    ]);
+    expect(
+      !!titleBox && !!chipBox && chipBox.x > titleBox.x + titleBox.width &&
+        chipBox.y < titleBox.y + titleBox.height,
+      "the chip is to the right of the title, on its row",
+    );
+    await expect.see("Overhead · $25.00");
+    await chip.click();
+    expect.eq(
+      await chip.getAttribute("class"),
+      "day day--wide on",
+      "toggled on",
+    );
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-form']").waitFor({
+      state: "detached",
+      timeout: 15_000,
+    });
+    const card = page.locator("[data-cy='subs-card']").first();
+    await card.locator("[data-cy='subs-card-overhead']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("$25.00");
+    const saved =
+      await (await http(`/api/field/subscriptions`, { headers: auth })).json();
+    expect.eq(
+      saved.find((s: { id: string }) => s.id === sub.id)?.overhead,
+      true,
+      "the subscription remembers the toggle",
+    );
+    // the day, completed by the office, pulled: services + overhead
+    const today = todayIso();
+    const gen = await http("/api/field/tasks/generate", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ date: today }),
+    });
+    await gen.body?.cancel();
+    const tasks =
+      await (await http(`/api/field/tasks?date=${today}`, { headers: auth }))
+        .json();
+    expect.eq(
+      tasks.length,
+      1,
+      `one task for the visit (${tasks.length}) — the overhead is no task (worker ${worker.id})`,
+    );
+    for (const tk of tasks) {
+      await put(`/api/field/tasks/${tk.id}`, { status: "complete" });
+    }
+    const pulled = await (await http("/api/field/batches/pull", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ from: today, to: today }),
+    })).json();
+    const inv = pulled.invoices.find((i: { customerId: string }) =>
+      i.customerId === customer.id
+    );
+    expect.eq(
+      inv?.amount,
+      6500 + 2500,
+      "the draft totals the service plus the overhead",
+    );
+    expect.eq(
+      inv?.lineItems?.map((l: { service: string; price: number }) =>
+        `${l.service}=${l.price}`
+      ).join(","),
+      "Lawn cut=6500,Overhead=2500",
+      "one service line, one Overhead line",
+    );
+    expect.eq(inv?.zeroLines, 0, "the overhead is not a $0 line");
+    // REQ-788 AMENDMENT — "we want it in percentage, or in dollars": the % switch in Settings
+    await page.goto("/settings");
+    await page.locator("[data-cy='settings-overhead-mode-percent']").click();
+    const pctBox = page.locator("[data-cy='settings-overhead']");
+    await pctBox.waitFor({ timeout: 15_000 });
+    await pctBox.fill("10");
+    await pctBox.blur();
+    await page.waitForTimeout(800);
+    const ident2 = await (await http("/api/profile/identity", { headers: auth })).json();
+    expect.eq(
+      [ident2.fieldOverheadMode, ident2.fieldOverheadPct].join("|"),
+      "percent|10",
+      "Settings saved the percent mode and 10%",
+    );
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-card-overhead']").first().waitFor({ timeout: 20_000 });
+    await expect.see("$6.50 · 10%");
+    await page.locator("[data-cy='subs-edit']").first().click();
+    await page.locator("[data-cy='subs-overhead']").waitFor({ timeout: 15_000 });
+    await expect.see("Overhead · 10%");
+  }));
+
+// REQ-810 — "i need a way to remove invoices from a batch and a way to remove a row from batch.
+// i think a button inline would work in each case."
+Deno.test("REQ-810: a batch of two customers — × a line and the totals drop in place; Remove from batch → confirm → the card is gone and the counts update; a sent invoice shows no remove buttons", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const call = async (method: string, path: string, body?: unknown) => {
+      const r = await http(path, { method, headers: auth, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return r.json();
+    };
+    const today = todayIso();
+    const worker = await call("POST", "/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
+    for (const [name, address, items] of [
+      ["Ana Torres", "4601 Dick Pond Rd, Myrtle Beach, SC", [{ taskTypeName: "Lawn cut", priceCents: 6500 }, { taskTypeName: "Hedge trim", priceCents: 4000 }]],
+      ["Bob Reyes", "845 Frederick Rd, Rockingham, VA", [{ taskTypeName: "Lawn cut", priceCents: 6500 }]],
+    ] as const) {
+      const c = await call("POST", "/api/customers", { name, address, email: `${name.replace(/\W+/g, ".").toLowerCase()}@blackhole.postmarkapp.com` });
+      const sub = await call("POST", "/api/field/subscriptions", { customerId: c.id, address, startDate: today, items });
+      await call("PUT", `/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    }
+    const tasks = await call("GET", `/api/field/tasks?date=${today}`);
+    expect.eq(tasks.length, 3, "three tasks today");
+    for (const tk of tasks) await call("PUT", `/api/field/tasks/${tk.id}`, { status: "complete" });
+
+    await page.goto("/field/batches");
+    await page.locator("[data-cy='lt-from']").fill(today);
+    await page.locator("[data-cy='lt-to']").fill(today);
+    await page.locator("[data-cy='lt-pull']").click();
+    await page.locator("[data-cy='lt-invoice']").nth(1).waitFor({ timeout: 20_000 });
+    const card = (name: string) => page.locator("[data-cy='lt-invoice']").filter({ hasText: name });
+    const total = page.locator("[data-cy='lt-batch-total']");
+    expect.eq((await total.innerText()).includes("$170.00"), true, `batch total $170.00 (${await total.innerText()})`);
+    await page.evaluate(() => ((window as unknown as { __noReload: number }).__noReload = 1));
+
+    // × the Hedge line on Ana's card: the line leaves, her total and the batch total drop, no reload
+    const ana = card("Ana Torres");
+    expect.eq(await ana.locator("[data-cy='lt-line']").count(), 2, "Ana has two lines");
+    const hedge = ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" });
+    const x = hedge.getByRole("button", { name: "Remove this line" });
+    await x.click();
+    await ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" }).waitFor({ state: "detached", timeout: 20_000 });
+    expect.eq(await ana.locator("[data-cy='lt-line']").count(), 1, "one line left");
+    await ana.locator("[data-cy='lt-inv-total']").getByText("$65.00").waitFor({ timeout: 15_000 });
+    await total.getByText("$130.00").waitFor({ timeout: 15_000 });
+    expect.eq(await page.evaluate(() => (window as unknown as { __noReload?: number }).__noReload), 1, "the page updated in place");
+
+    // Remove from batch on Bob's card: an inline confirm, then the card is gone and the counts update
+    const bob = card("Bob Reyes");
+    await bob.locator("[data-cy='lt-remove']").click();
+    await bob.locator("[data-cy='lt-remove-ask']").waitFor({ timeout: 10_000 });
+    await bob.locator("[data-cy='lt-remove-confirm']").click();
+    await card("Bob Reyes").waitFor({ state: "detached", timeout: 20_000 });
+    expect.eq(await page.locator("[data-cy='lt-invoice']").count(), 1, "one card left");
+    await page.locator("[data-cy='lt-count']").getByText("1 invoice").waitFor({ timeout: 15_000 });
+    await total.getByText("$65.00").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='lt-past']").first().getByText("1 draft · 0 sent · 0 paid").waitFor({ timeout: 15_000 });
+    expect.eq(await page.evaluate(() => (window as unknown as { __noReload?: number }).__noReload), 1, "still no reload");
+
+    // the freed work is billable again: Bob's task is un-invoiced
+    const after = await call("GET", `/api/field/tasks?date=${today}`);
+    expect.eq(after.filter((tk: { invoiceId?: string }) => !tk.invoiceId).length, 2, "Hedge trim and Bob's Lawn cut are un-invoiced");
+
+    // a sent invoice is a real invoice: no remove buttons on its card
+    const invId = await ana.getAttribute("data-id");
+    await call("PUT", `/api/invoices/${invId}`, { status: "sent" });
+    await page.reload();
+    const sent = card("Ana Torres");
+    await sent.waitFor({ timeout: 20_000 });
+    await sent.getByText("Sent").first().waitFor({ timeout: 15_000 });
+    expect.eq(await sent.locator("[data-cy='lt-remove']").count(), 0, "no Remove from batch on a sent invoice");
+    expect.eq(await sent.getByRole("button", { name: "Remove this line" }).count(), 0, "no × on a sent invoice's lines");
+  }));
+
+// REQ-811 — Raphael: "recurring has the same thing over and over … associate a checklist to recurring … a reference"
+Deno.test("REQ-811: a checklist made on /field/checklists → a repeat visit that picks it and adds no task type of its own → the card lists the checklist's services → today's tasks carry them", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const post = async (path: string, body: unknown) => {
+      const r = await http(path, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify(body),
+      });
+      return await r.json();
+    };
+    await post("/api/customers", {
+      name: "Ana Torres",
+      phoneNumber: `(843) 555-${digits().slice(0, 4)}`,
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    const worker = await post("/api/field/workers", {
+      name: "Luis Herrera",
+      phoneNumber: `843${digits()}`,
+      pin: "1234",
+    });
+
+    // 1. the checklist, on /field/checklists — two services with their prices
+    await page.goto("/field/checklists");
+    await page.locator("[data-cy='ckl-new']").click();
+    await page.locator("[data-cy='ckl-name']").fill("Full yard");
+    await page.locator("[data-cy='ckl-type-q']").fill("Lawn cut");
+    await page.locator("[data-cy='ckl-price']").fill("65");
+    await page.locator("[data-cy='ckl-add-item']").click();
+    await page.locator("[data-cy='ckl-type-q']").fill("Edging");
+    await page.locator("[data-cy='ckl-price']").fill("25");
+    await page.locator("[data-cy='ckl-add-item']").click();
+    expect.eq(
+      await page.locator("[data-cy='ckl-item']").count(),
+      2,
+      "two rows on the checklist form",
+    );
+    await page.locator("[data-cy='ckl-submit']").click();
+    const ckl = page.locator("[data-cy='ckl-card']").first();
+    await ckl.waitFor({ timeout: 20_000 });
+    await expect.see("Full yard");
+    await expect.see("$65.00");
+    await expect.see("$25.00");
+    await expect.see("Used by 0 repeat visits");
+
+    // 2. a repeat visit that picks the checklist and lists no task type of its own
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    await page.locator("[data-cy='subs-address']").fill(
+      "4601 Dick Pond Rd, Myrtle Beach, SC",
+    );
+    const select = page.locator("[data-cy='subs-checklist']");
+    await select.locator("option", { hasText: "Full yard" }).waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
+    await select.selectOption({ label: "Full yard" });
+    await expect.see("Extra task types");
+    await page.locator("[data-cy='subs-submit']").click();
+    const card = page.locator("[data-cy='subs-card']").first();
+    await card.waitFor({ timeout: 20_000 });
+    await card.locator("[data-cy='subs-card-checklist']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("Full yard");
+    expect.eq(
+      await card.locator("[data-cy='subs-item-from-checklist']").count(),
+      2,
+      "the card lists the checklist's two services, marked as the checklist's",
+    );
+    await expect.see("$65.00");
+    await expect.see("$25.00");
+
+    // the checklist page now says it is used once
+    await page.goto("/field/checklists");
+    await page.locator("[data-cy='ckl-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Used by 1 repeat visit");
+
+    // 3. the zone gets its worker (the API) — today's round, on /field/tasks, carries both services
+    const regions = await (await http("/api/field/regions", { headers: auth }))
+      .json();
+    expect(regions.length === 1, `one zone (${regions.length})`);
+    const staffed = await http(`/api/field/regions/${regions[0].id}/worker`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ workerId: worker.id }),
+    });
+    await staffed.body?.cancel();
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      2,
+      "both checklist services are today's tasks",
+    );
+    await expect.see("Lawn cut");
+    await expect.see("Edging");
+    await expect.see("Ana Torres");
+  }));
+
+// ---- REQ-839..842 — the service catalogue, crews, zones staffed by crews, who is out ----
+
+/** the owner's API, for the set-up a story is not about */
+function apiOf(http: StoryTools["http"], auth: Record<string, string>) {
+  return async (method: string, path: string, body?: unknown) => {
+    const r = await http(path, {
+      method,
+      headers: auth,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return await r.json();
+  };
+}
+
+// REQ-839 — Raphael: "a place to define line items … one of those tasks becomes an ID, a description, and then the price can be set wherever it's set"
+Deno.test("REQ-839: a service made on /field/services with a description → it is offered on the checklist form → the card counts the checklist → archived, it leaves the live list and the picker but a 'Show archived' toggle brings it back", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+
+    await page.goto("/field/services");
+    await page.locator("[data-cy='svc-new']").click();
+    await page.locator("[data-cy='svc-name']").fill("Mulching");
+    await page.locator("[data-cy='svc-description']").fill(
+      "Beds topped up, 2 inches",
+    );
+    await page.locator("[data-cy='svc-submit']").click();
+    const card = page.locator("[data-cy='svc-card']").first();
+    await card.waitFor({ timeout: 20_000 });
+    await expect.see("Mulching");
+    await expect.see("Beds topped up, 2 inches");
+    await expect.see("Used by 0 repeat visits · 0 checklists");
+
+    // the same name again is refused in the owner's words
+    await page.locator("[data-cy='svc-new']").click();
+    await page.locator("[data-cy='svc-name']").fill("mulching");
+    await page.locator("[data-cy='svc-submit']").click();
+    await page.locator("[data-cy='svc-error']").waitFor({ timeout: 15_000 });
+    await expect.see("already have a service");
+    await page.keyboard.press("Escape");
+
+    // offered on the checklist form; a checklist that picks it counts on the card
+    await page.goto("/field/checklists");
+    await page.locator("[data-cy='ckl-new']").click();
+    await page.locator("[data-cy='ckl-type-q']").fill("Mulching");
+    await page.locator("[data-cy='ckl-price']").fill("120");
+    await page.locator("[data-cy='ckl-add-item']").click();
+    expect.eq(
+      await page.locator("[data-cy='ckl-item']").count(),
+      1,
+      "the catalogue's service is on the checklist",
+    );
+    await page.locator("[data-cy='ckl-name']").fill("Spring beds");
+    await page.locator("[data-cy='ckl-submit']").click();
+    await page.locator("[data-cy='ckl-card']").first().waitFor({
+      timeout: 20_000,
+    });
+
+    await page.goto("/field/services");
+    await page.locator("[data-cy='svc-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='svc-card']").count(),
+      1,
+      "the checklist picked the catalogue's service — no second one was made",
+    );
+    await expect.see("Used by 0 repeat visits · 1 checklist");
+    // in use → Delete is refused; Archive hides it
+    await page.locator("[data-cy='svc-delete']").first().click();
+    await page.locator("[data-cy='svc-delete-confirm']").click();
+    await page.locator("[data-cy='svc-card-error']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("archive it instead");
+    await page.locator("[data-cy='svc-archive']").first().click();
+    await page.locator("[data-cy='svc-empty']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='svc-show-archived']").check();
+    await page.locator("[data-cy='svc-archived']").waitFor({ timeout: 15_000 });
+    await expect.see("Mulching");
+  }));
+
+// REQ-840 — Raphael: "the worker belongs to a crew … each crew has a foreman, and then however many workers … clearly shown and chosen inside the worker view"
+Deno.test("REQ-840: two workers → a crew made on /field/workers with both, Ana as foreman and one service → the crew card lists them → each worker row wears the crew → a third worker joins from his row's Crew select", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mk = (name: string) =>
+      api("POST", "/api/field/workers", {
+        name,
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      });
+    await mk("Ana Ruiz");
+    await mk("Luis Herrera");
+    await mk("Pedro Gil");
+    await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='crew-empty']").waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='crew-new']").click();
+    await page.locator("[data-cy='crew-name']").fill("Grass crew");
+    const picks = page.locator("[data-cy='crew-member-picks'] label");
+    await picks.filter({ hasText: "Ana Ruiz" }).click();
+    await picks.filter({ hasText: "Luis Herrera" }).click();
+    await page.locator("[data-cy='crew-foreman']").selectOption({
+      label: "Ana Ruiz",
+    });
+    await page.locator("[data-cy='crew-service-picks'] label").filter({
+      hasText: "Lawn cut",
+    }).click();
+    await page.locator("[data-cy='crew-submit']").click();
+    const crew = page.locator("[data-cy='crew-card']").first();
+    await crew.waitFor({ timeout: 20_000 });
+    await expect.see("Grass crew");
+    await expect.see("Foreman: Ana Ruiz");
+    expect.eq(
+      await crew.locator("[data-cy='crew-members'] .chip").count(),
+      2,
+      "two members on the crew card",
+    );
+    await expect.see("Staffs 0 zones");
+    // the worker rows wear it
+    expect.eq(
+      await page.locator("[data-cy='wk-row-crew']").count(),
+      2,
+      "Ana's and Luis's rows carry the crew chip",
+    );
+    // Pedro joins from his own row
+    const pedro = page.locator("[data-cy='wk-row']", { hasText: "Pedro Gil" });
+    await pedro.locator("[data-cy='wk-row-crew-select']").selectOption({
+      label: "Grass crew",
+    });
+    await pedro.locator("[data-cy='wk-row-crew']").waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("[data-cy='crew-card']").first().locator(
+        "[data-cy='crew-members'] .chip",
+      ).count(),
+      3,
+      "the crew card now lists three",
+    );
+  }));
+
+// REQ-841 — Raphael: "a mulching crew and a grass cutting crew … one house that they have in common"
+Deno.test("REQ-841: a grass crew and a mulch crew → a visit with Lawn cut + Mulching → both crews toggled on its zone on /field/assignments → today's round on /field/tasks has one group per crew, each with the service it does", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mk = (name: string) =>
+      api("POST", "/api/field/workers", {
+        name,
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      });
+    const [ana, pedro] = [await mk("Ana Ruiz"), await mk("Pedro Gil")];
+    const mow = await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    const mulch = await api("POST", "/api/field/task-types", {
+      name: "Mulching",
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Grass crew",
+      memberIds: [ana.id],
+      foremanId: ana.id,
+      taskTypeIds: [mow.id],
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Mulch crew",
+      memberIds: [pedro.id],
+      taskTypeIds: [mulch.id],
+    });
+    const customer = await api("POST", "/api/customers", {
+      name: "Ana Torres",
+      phoneNumber: `(843) 555-${digits().slice(0, 4)}`,
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    await api("POST", "/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: todayIso(),
+      items: [{ taskTypeId: mow.id, priceCents: 6500 }, {
+        taskTypeId: mulch.id,
+        priceCents: 12_000,
+      }],
+    });
+
+    await page.goto("/field/assignments");
+    const region = page.locator("[data-cy='asg-region']").first();
+    await region.waitFor({ timeout: 20_000 });
+    await expect.see("1 zones with no crew");
+    const toggles = region.locator("[data-cy='asg-region-crew']");
+    expect.eq(await toggles.count(), 2, "both crews offered on the zone");
+    // the toggles are controlled: they flip once the server has answered, so click + wait, not check()
+    await toggles.nth(0).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll("[data-cy='asg-region-crew']:checked")
+          .length === 1,
+      undefined,
+      { timeout: 15_000 },
+    );
+    await toggles.nth(1).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll("[data-cy='asg-region-crew']:checked")
+          .length === 2,
+      undefined,
+      { timeout: 15_000 },
+    );
+    await expect.notSee("zones with no crew");
+
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      2,
+      "two tasks: one per service",
+    );
+    expect.eq(
+      await page.locator("[data-cy='tk-group']").count(),
+      2,
+      "one group per crew",
+    );
+    const chip = (name: string) =>
+      page.locator("[data-cy='tk-group-crew']", { hasText: name });
+    const grass = page.locator("[data-cy='tk-group']", { has: chip("Grass crew") });
+    expect(
+      (await grass.innerText()).includes("Lawn cut"),
+      "the grass crew's group holds Lawn cut",
+    );
+    const mulchGroup = page.locator("[data-cy='tk-group']", {
+      has: chip("Mulch crew"),
+    });
+    expect(
+      (await mulchGroup.innerText()).includes("Mulching"),
+      "the mulch crew's group holds Mulching",
+    );
+  }));
+
+// REQ-842 — Raphael: "what if so-and-so goes on vacation … change the assignment now or in advance"
+Deno.test("REQ-842: the grass crew is marked out today on /field/workers, covered by the mulch crew → Away lists it → today's tasks move to Pedro with 'Covering for Grass crew' → Remove brings them back to Ana", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mk = (name: string) =>
+      api("POST", "/api/field/workers", {
+        name,
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      });
+    const [ana, pedro] = [await mk("Ana Ruiz"), await mk("Pedro Gil")];
+    const mow = await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    const grass = await api("POST", "/api/field/crews", {
+      name: "Grass crew",
+      memberIds: [ana.id],
+      foremanId: ana.id,
+      taskTypeIds: [mow.id],
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Mulch crew",
+      memberIds: [pedro.id],
+    });
+    const customer = await api("POST", "/api/customers", {
+      name: "Ana Torres",
+      phoneNumber: `(843) 555-${digits().slice(0, 4)}`,
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    const sub = await api("POST", "/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: todayIso(),
+      items: [{ taskTypeId: mow.id, priceCents: 6500 }],
+    });
+    await api("PUT", `/api/field/regions/${sub.region.id}/worker`, {
+      crewIds: [grass.id],
+    });
+    // today's round, before: Ana's
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Ana Ruiz");
+    await expect.notSee("Covering for");
+
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='away-empty']").waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='crew-card']", { hasText: "Grass crew" })
+      .locator("[data-cy='crew-away']").click();
+    await expect.see("Grass crew is out");
+    await page.locator("[data-cy='away-disp-cover']").check();
+    await page.locator("[data-cy='away-cover']").selectOption({
+      label: "Crew: Mulch crew",
+    });
+    await page.locator("[data-cy='away-note']").fill("Vacation");
+    await page.locator("[data-cy='away-submit']").click();
+    const row = page.locator("[data-cy='away-row']").first();
+    await row.waitFor({ timeout: 20_000 });
+    await expect.see("covered by Mulch crew");
+    await expect.see("Vacation");
+
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-cover-for']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Pedro Gil");
+    await expect.see("Covering for Grass crew");
+
+    // the absence removed → the work is Ana's again
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='away-remove']").first().click();
+    await page.locator("[data-cy='away-empty']").waitFor({ timeout: 20_000 });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Ana Ruiz");
+    await expect.notSee("Covering for");
   }));

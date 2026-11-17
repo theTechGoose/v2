@@ -1,14 +1,23 @@
 import { Injectable } from "#danet/core";
-import { publishPendingInvoice, publishPendingQuote } from "@paperwork/domain/business/publish-pending/mod.ts";
+import { EventBus } from "@core/business/events/mod.ts";
+import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
+import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-630
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-803
+import { payWaysEmailHtml } from "@paperwork/domain/business/pay-ways/mod.ts"; // REQ-630
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
-import { type EmailLogo, emailLogo } from "@paperwork/domain/business/email-logo/mod.ts";
-import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
+import {
+  fmtVisitDate,
+  groupVisits,
+  visitPeriodOf,
+} from "#quote-flow/visit-groups.ts";
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
 import {
@@ -16,7 +25,9 @@ import {
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
-import { aliasFrom } from "@communication/domain/business/sender/mod.ts";
+import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
+import { senderInitials as senderInitialsOf } from "#identity/initials.ts";
 import {
   fmtPaperworkDate,
   invoiceStatusLabel,
@@ -34,17 +45,45 @@ import {
   revisedNote,
   versionLabel,
 } from "@paperwork/domain/business/doc-render/mod.ts";
-import { websiteLabel } from "#quote-flow/format-helpers.ts";
+import {
+  formatPhoneDisplay,
+  formatTermDate,
+  isUsPhone,
+  termDateIso,
+  websiteLabel,
+} from "#quote-flow/format-helpers.ts";
+import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { warrantyClauseKind } from "#documents/warranty-clause.ts";
+import { localizeTermValue } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.ts";
+
+/** REQ-719: a US phone reads "+1 (512) 555-0100" in the email; anything else is shown as stored. */
+function displayPhone(raw: string): string {
+  return isUsPhone(raw) ? formatPhoneDisplay(raw) : raw;
+}
 import {
   isPlaceholderName,
   outboundSenderName,
 } from "#quote-flow/outbound-identity.ts";
-import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import {
+  commsLanguageToAdopt,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts";
+import { withSendLang } from "#quote-flow/share-link.ts";
+import {
+  localizeLineItems,
+  quoteDescription,
+  quoteSummary,
+} from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
 
 export type PaperworkKind = "quote" | "invoice";
 
@@ -62,6 +101,10 @@ export interface SendPaperworkEmailInput {
    *  says Paid, the money card reads "PAID <date>" instead of "Amount due".
    *  Invoices only. */
   variant?: "paid";
+  /** REQ-682 (cycle 5, m28): the Send's channel. A quote email may promise
+   *  a text only when this send also texts ("sms"/"both") a textable
+   *  number; unset means email-only. */
+  channel?: "email" | "sms" | "both";
 }
 
 export interface SendPaperworkEmailResult extends SendEmailResult {
@@ -71,6 +114,11 @@ export interface SendPaperworkEmailResult extends SendEmailResult {
   /** P-06: set when the send was refused because the account has neither a
    *  real name nor a business name to introduce itself with. */
   needsName?: boolean;
+  /** REQ-695 (cycle 5, M23): "missing" when there is no address to send
+   *  to — the code the page translates ("no email on file"), so the
+   *  developer `reason` never reaches the contractor. Mirrors the SMS
+   *  dispatch's `failureCode` (REQ-226). */
+  failureCode?: "missing";
 }
 
 /** P-06 refusal reason — machine-readable needs-name signal (must keep
@@ -102,7 +150,47 @@ export class SendPaperworkEmail {
     private identity: BusinessIdentityStore,
     private email: EmailService,
     private commsLog: LogPaperworkMessage,
+    /** REQ-566: announces an invoice this delivery issued (optional for direct test construction) */
+    private bus?: EventBus,
+    /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    /** REQ-630 — whether the business takes cards on its own Stripe (the email's "Pay by card") */
+    private stripeSettings?: StripeSettingsStore,
+    /** REQ-803 — or on its own Square (the card is a way to pay all the same) */
+    private squareSettings?: SquareSettingsStore,
   ) {}
+
+  /** REQ-630 / REQ-803 — the business takes cards on its own Stripe or its own Square */
+  private async takesCard(userId: string): Promise<boolean> {
+    const [stripe, square] = await Promise.all([
+      this.stripeSettings?.get(userId).catch(() => null),
+      this.squareSettings?.get(userId).catch(() => null),
+    ]);
+    return !!stripe || !!square;
+  }
+
+  /**
+   * REQ-586 (demo-loop cycle 4, M11): the language a send goes out in — the
+   * same resolution `run` (and the SMS dispatcher) applies: the per-send
+   * pick, else (REQ-715) the customer's own language, else the stored
+   * Settings default, else en. SendQuote records it on the quote so the
+   * in-app customer links carry it as `?lang=`.
+   */
+  async sendLanguage(
+    userId: string,
+    override?: string | null,
+    customerId?: string,
+  ): Promise<"en" | "es"> {
+    const [biz, customer] = await Promise.all([
+      this.tryGetBusinessIdentity(userId),
+      this.tryGetCustomer(userId, customerId),
+    ]);
+    return resolveCommsLanguage({
+      override,
+      customerLanguage: customer?.language,
+      identityCommsLanguage: biz?.commsLanguage,
+    });
+  }
 
   async run(
     userId: string,
@@ -111,28 +199,18 @@ export class SendPaperworkEmail {
     const sender = await this.tryGetUser(userId);
     const rawBiz = await this.tryGetBusinessIdentity(userId);
     // UX-28: ONE commsLanguage resolution for every outbound (explicit
-    // per-send pick → stored Settings default → en); an explicit pick is
-    // adopted as the stored default when none exists yet. Overriding
+    // per-send pick → REQ-715 the customer's own language → stored Settings
+    // default → en), made once the document's customer is known. Overriding
     // commsLanguage on the resolved identity lets every downstream
     // subject/body helper honor the resolution without new params.
-    const resolvedLang = resolveCommsLanguage({
-      override: input.language,
-      identityCommsLanguage: rawBiz?.commsLanguage,
-    });
-    if (
-      (input.language === "en" || input.language === "es") &&
-      rawBiz?.commsLanguage !== "en" && rawBiz?.commsLanguage !== "es"
-    ) {
-      try {
-        await this.identity.upsert(userId, { commsLanguage: input.language });
-      } catch (err) {
-        console.warn("[send-paperwork-email] commsLanguage adopt failed:", err);
-      }
-    }
-    const senderBiz = {
+    const bizFor = (customer: Customer | undefined): BusinessIdentity => ({
       ...(rawBiz ?? {}),
-      commsLanguage: resolvedLang,
-    } as BusinessIdentity;
+      commsLanguage: resolveCommsLanguage({
+        override: input.language,
+        customerLanguage: customer?.language,
+        identityCommsLanguage: rawBiz?.commsLanguage,
+      }),
+    } as BusinessIdentity);
 
     // P-06 — the seeded placeholder account name ("Nuevo usuario"/"New user")
     // must never reach a customer. Resolve the outbound display name (real
@@ -141,7 +219,7 @@ export class SendPaperworkEmail {
     // <<solution>>: collect the missing info first).
     const displayName = outboundSenderName({
       userName: sender?.name,
-      businessName: senderBiz?.businessName ?? senderBiz?.legalName,
+      businessName: rawBiz?.businessName ?? rawBiz?.legalName,
     });
     if (!displayName) {
       return {
@@ -160,23 +238,48 @@ export class SendPaperworkEmail {
     let recipient: string | undefined = input.to;
 
     let quoteForStamp: Quote | undefined;
+    let invoiceToIssue = false;
     let customerIdForLog: string | undefined;
+    let customerNameForEvent: string | undefined;
+    /** REQ-715: the document's customer — their language joins the resolution */
+    let docCustomer: Customer | undefined;
+    /** REQ-784: what the outbox entry says about this email */
+    let outboxFacts: { docRef: string; customerName?: string; language: Lang } = {
+      docRef: "",
+      language: "en",
+    };
     if (input.kind === "quote") {
       // REQ-201: a send publishes what is pending — the link must show what was sent
-      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId);
+      const quote = await publishPendingQuote(this.quotes, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
       const customer = await this.tryGetCustomer(userId, quote.customerId);
+      docCustomer = customer;
+      const senderBiz = bizFor(customer);
       customerIdForLog = customer?.id;
       // the live address first (a corrected typo should reach them), the snapshot's otherwise
       if (!recipient) recipient = customer?.email ?? customerOnDocument(quote, customer)?.email;
       // The customer-facing flow goes: email → /q page → sign. The quote IS
       // the agreement, so this one email carries the review-and-sign CTA.
       subject = renderQuoteSubject(quote, safeSender, senderBiz, customer);
-      htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz);
+      htmlBody = renderQuoteHtml(quote, customer, safeSender, senderBiz, {
+        textable: quoteSendTexts(input.channel, customer, quote),
+      });
       quoteForStamp = quote;
+      outboxFacts = {
+        docRef: docRef(quote),
+        customerName: customerLabel(customerOnDocument(quote, customer)),
+        language: senderBiz.commsLanguage === "es" ? "es" : "en",
+      };
     } else {
-      const invoice = await publishPendingInvoice(this.invoices, input.resourceId, userId);
+      const stored = await publishPendingInvoice(this.invoices, input.resourceId, userId, senderAsPublisher(userId, sender?.name));
+      // REQ-480: an unissued invoice is issued by this delivery — the email
+      // reads "Sent", and the stamp lands only once it actually went.
+      invoiceToIssue = isUnissuedInvoice(stored) && input.variant !== "paid";
+      const invoice = invoiceToIssue ? asDelivered(stored) : stored;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
+      docCustomer = customer;
+      const senderBiz = bizFor(customer);
       customerIdForLog = customer?.id;
+      customerNameForEvent = customer?.name || undefined;
       if (!recipient) recipient = customer?.email ?? customerOnDocument(invoice, customer)?.email;
       // The email goes to the customer, so it follows the contractor's
       // outgoing-comms language (default en), not their UI language.
@@ -195,6 +298,21 @@ export class SendPaperworkEmail {
       subject = paid
         ? renderInvoicePaidSubject(invoice, senderBiz, safeSender, lang)
         : renderInvoiceSubject(invoice, safeSender, lang, senderBiz);
+      // REQ-679 (cycle 5, M18): the agreement value counts the approved
+      // change orders — the same figure /i and the PDF show.
+      const invQuoteCos = invQuote
+        ? await this.changeOrders.listByQuote(userId, invQuote.id).catch(
+          () => [],
+        )
+        : [];
+      // REQ-630 — the ways to pay, the same the invoice page offers (none on a paid email)
+      const payWays = paid ? "" : payWaysEmailHtml(senderBiz?.acceptedPaymentMethods, {
+        card: await this.takesCard(userId), // REQ-803: Stripe or Square
+        lang,
+        payUrl: `${APP_URL}/i/${invoice.id}`,
+        amountCents: Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0)),
+        note: docRef(invoice),
+      });
       htmlBody = renderInvoiceHtml(
         invoice,
         customer,
@@ -202,15 +320,64 @@ export class SendPaperworkEmail {
         senderBiz,
         invQuote,
         paid,
+        invQuoteCos,
+        payWays,
       );
+      outboxFacts = {
+        docRef: docRef(invoice),
+        customerName: customerLabel(customerOnDocument(invoice, customer)),
+        language: lang,
+      };
+    }
+
+    // REQ-784 (demo-loop dv1, d12): every customer email lands in the
+    // business's outbox — sent, or not and why — with the HTML as sent.
+    const toOutbox = (
+      ok: boolean,
+      what: { to?: string; body?: string; reasonCode?: string; reason?: string },
+    ) =>
+      this.commsLog.outbox({
+        userId,
+        channel: "email",
+        kind: input.kind === "quote"
+          ? "quote"
+          : input.variant === "paid"
+          ? "invoicePaid"
+          : "invoice",
+        language: outboxFacts.language,
+        ok,
+        customerId: customerIdForLog,
+        customerName: outboxFacts.customerName,
+        docId: input.resourceId,
+        docRef: outboxFacts.docRef,
+        subject,
+        ...what,
+      });
+
+    // UX-28: an explicit pick is adopted as the stored default when none
+    // exists yet — REQ-715: never a pick that is just this customer's own
+    // language (that one is theirs, not the account's).
+    const adopt = commsLanguageToAdopt({
+      override: input.language,
+      customerLanguage: docCustomer?.language,
+      identityCommsLanguage: rawBiz?.commsLanguage,
+    });
+    if (adopt) {
+      try {
+        await this.identity.upsert(userId, { commsLanguage: adopt });
+      } catch (err) {
+        console.warn("[send-paperwork-email] commsLanguage adopt failed:", err);
+      }
     }
 
     if (!recipient) {
+      await toOutbox(false, { reasonCode: "missing", reason: "no email on file" });
       return {
         ok: false,
         reason: "no recipient: pass `to` or attach a customer with an email",
         to: "",
         subject,
+        failureCode: "missing",
       };
     }
 
@@ -220,7 +387,18 @@ export class SendPaperworkEmail {
     // Roadmap p.7 + scope answer: From is a per-business alias at the send
     // domain (e.g. acme@documonster.com, REQ-123) when the business identity
     // has one set, noreply@ there when it has none.
-    const from = input.from ?? aliasFrom(senderBiz?.emailAlias);
+    // REQ-628: under the business's name — the customer's inbox reads
+    // "A2Z Landscape LLC", never DocuMonster.
+    const fromBiz = bizFor(docCustomer);
+    const from = input.from ??
+      businessFrom({
+        alias: rawBiz?.emailAlias,
+        name: bizLabel(
+          fromBiz,
+          safeSender,
+          fromBiz.commsLanguage === "es" ? "es" : "en",
+        ),
+      });
 
     // REQ-175: the customer's reply comes back through the inbound webhook, into their thread
     const replyTo = customerIdForLog
@@ -235,6 +413,11 @@ export class SendPaperworkEmail {
       cc,
       replyTo,
     });
+    await toOutbox(result.ok, {
+      to: recipient,
+      body: htmlBody,
+      ...(result.ok ? {} : { reason: result.reason }),
+    });
 
     // Stamp the quote's lifecycle: status→"sent" + sentAt→now (idempotent — only if not already set).
     // Mirrors the public-controller's accept-time stamping and powers the /quotes stage derivation.
@@ -246,6 +429,14 @@ export class SendPaperworkEmail {
         status: "sent",
         sentAt: new Date().toISOString(),
       });
+    }
+
+    // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
+    // "sent" only now that the email was delivered.
+    if (result.ok && invoiceToIssue) {
+      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      // REQ-566 (cycle 4, m11): the owner's activity feed says it went out.
+      if (issued) await this.bus?.emit(invoiceIssuedEvent(userId, issued, customerNameForEvent));
     }
 
     // Comms trail (roadmap p.8): record the dispatch in the customer's
@@ -371,7 +562,7 @@ function customerGreeting(c: RenderedCustomer | undefined, lang: Lang): string {
 function fromWho(senderBiz: BusinessIdentity | undefined, sender: User | undefined, lang: Lang): string {
   const trimmed = sender?.name?.trim();
   return senderBiz?.businessName?.trim() || senderBiz?.legalName?.trim() ||
-    (isPlaceholderName(trimmed) ? undefined : trimmed) || t(lang, "brand.name");
+    (isPlaceholderName(trimmed) ? undefined : trimmed) || t(lang, "paperworkEmail.senderFallback");
 }
 
 /** REQ-201: the "Revised … — replaces previous version" banner an email carries on a revision. */
@@ -416,11 +607,15 @@ function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang): str
   const overLine = state.overpaid
     ? `<div data-overpaid style="margin-top:6px;font-size:13px;font-weight:700;color:${COLOR_PINK_DARK}">${escapeHtml(state.overpaid)}</div>`
     : "";
+  // REQ-710 (cycle 5, M4): the methods' labels in the email's language —
+  // the form froze them in the owner's ("Zelle: … · Efectivo").
   const instructions = i.paymentInstructions?.trim()
     ? `<div style="margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
       escapeHtml(renderWord(lang, "paymentInstructions"))
     }</div><p data-payment-instructions style="margin:4px 0 0;font-size:14px;line-height:1.5;color:${COLOR_INK};white-space:pre-wrap">${
-      escapeHtml(i.paymentInstructions.trim())
+      escapeHtml(
+        localizePaymentInstructions(i.paymentInstructions, lang).trim(),
+      )
     }</p>`
     : "";
   if (!rows.length && !stateLine && !overLine && !instructions) return "";
@@ -457,6 +652,18 @@ function fmtDate(iso: string | undefined, lang: Lang, tz?: string): string {
   return fmtPaperworkDate(iso ?? "", lang, tz);
 }
 
+/**
+ * REQ-542 (demo-loop cycle 4, m8): the send dialog's ~350px preview frame (and
+ * a phone's mail app) clipped the email on the right — the card was a fixed
+ * 600/640px table. The card is now fluid (width 100%, max-width 600/640px),
+ * and on a narrow screen the gutters around and inside it tighten and the
+ * four "what happens next" steps sit two by two and the total drops under its
+ * label, so its content fits. Clients that drop <style> (Outlook desktop)
+ * keep the wide layout, where there is room for it.
+ */
+const NARROW_SCREEN_STYLE =
+  `<style>@media only screen and (max-width:480px){.pw-outer{padding:16px 6px!important}.pw-card>tbody>tr>td,.pw-card>tr>td{padding-left:18px!important;padding-right:18px!important}.pw-step{display:inline-block!important;width:50%!important;box-sizing:border-box;padding:0 4px 14px!important}.pw-amt{display:block!important;text-align:left!important;padding:16px 18px!important}.pw-amt+.pw-amt{padding-top:0!important}.pw-amt-n{font-size:32px!important}}</style>`;
+
 /** Wraps the per-doc body in a brand-consistent shell (header, sender block,
  *  CTA button row, footer). All inline-styled — Gmail/Outlook strip <style>. */
 function shell(opts: {
@@ -472,7 +679,7 @@ function shell(opts: {
   ctaUrl: string;
   sender: User | undefined;
   lang: Lang;
-  /** REQ-160: the business's own logo when it has one, the house logo otherwise */
+  /** REQ-160 / REQ-628: the business's own logo, else its name as a wordmark */
   logo: EmailLogo;
   /** REQ-168: the business website, linked in the From block */
   website?: string;
@@ -501,7 +708,7 @@ function shell(opts: {
     : "";
   const senderPhoneLine = sender?.phoneNumber
     ? `<div style="color:${COLOR_MUTED};font-size:13px;margin-top:2px">${
-      escapeHtml(sender.phoneNumber)
+      escapeHtml(displayPhone(sender.phoneNumber))
     }</div>`
     : "";
   const senderSiteLine = website?.trim()
@@ -520,16 +727,17 @@ function shell(opts: {
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${escapeHtml(kindLabel)} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
+    <tr><td class="pw-outer" align="center" style="padding:32px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:600px;background:${COLOR_CARD};border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(20,72,82,0.08);">
         <tr><td align="center" style="padding:24px 32px 0;">
-          <img src="${escapeAttr(logo.src)}" alt="${escapeAttr(logo.alt)}" width="160" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:160px;">
+          ${emailLogoHtml(logo)}
         </td></tr>
         <tr><td style="padding:24px 32px 0;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
@@ -592,6 +800,19 @@ function shell(opts: {
 
 // ---------- quote -------------------------------------------------------------
 
+/** REQ-682: does this quote send also text the customer at a number that
+ *  can take a text? (The live phone first, the issued snapshot's otherwise.) */
+export function quoteSendTexts(
+  channel: "email" | "sms" | "both" | undefined,
+  liveCustomer: RenderedCustomer | undefined,
+  quote: Quote,
+): boolean {
+  if (channel !== "sms" && channel !== "both") return false;
+  const phone = liveCustomer?.phoneNumber ??
+    customerOnDocument(quote, liveCustomer)?.phoneNumber;
+  return customerSmsTarget(phone).ok;
+}
+
 const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
 
@@ -610,7 +831,8 @@ export function renderQuoteSubject(
   const businessName =
     [senderBiz?.businessName, senderBiz?.legalName, sender?.name]
       .map((n) => (isPlaceholderName(n) ? undefined : n?.trim()))
-      .find((n): n is string => Boolean(n)) ?? t(lang, "brand.name");
+      .find((n): n is string => Boolean(n)) ??
+    t(lang, "paperworkEmail.senderFallback");
   const jobName = (q.jobNameByLang?.[lang] ?? q.jobName)?.trim() ||
     (q.summaryByLang?.[lang] ?? q.summary)?.replace(/^\s*quote\s*:\s*/i, "")
       .trim() ||
@@ -621,6 +843,84 @@ export function renderQuoteSubject(
   return `${renderWord(lang, "quote")} ${docRef(q)} ${renderWord(lang, "from")} ${businessName}${
     version ? ` — ${version}` : ""
   } — ${jobName}`;
+}
+
+/** The start term values that read as a phrase ("Work starts next week"). */
+const START_PRESET = /^(?:right away|next week|next month)$/i;
+
+/**
+ * REQ-682 (demo-loop cycle 5, m28) — the quote email's "What happens next"
+ * steps, built from the quote and the send instead of four fixed strings:
+ *   3. a set start (the ISO `startDate`, else the start term) → "Work starts
+ *      <when>"; none, or TBD → "We'll confirm a start day", promising a text
+ *      only when this send texts a number that can take one (`textable`).
+ *      The customer never "picks a start day" — no such step exists.
+ *   4. "Receipt + warranty in your inbox" only when the quote states a
+ *      warranty; otherwise "Receipt in your inbox".
+ * The send dialog's preview renders through renderQuoteHtml, so it shows the
+ * same steps the send dispatches.
+ */
+export function quoteEmailSteps(
+  q: Pick<Quote, "startDate" | "terms">,
+  lang: Lang,
+  opts: { textable: boolean },
+): [string, string, string][] {
+  const startTerm = q.terms?.find((x) => x.stepId === "start_date")?.value
+    ?.trim();
+  const startIso = (q.startDate && termDateIso(q.startDate)) ||
+    termDateIso(startTerm);
+  let step3: [string, string];
+  if (startIso) {
+    step3 = [
+      t(lang, "paperworkEmail.quote.step3StartsOnTitle", {
+        date: formatTermDate(startIso, lang),
+      }),
+      t(lang, "paperworkEmail.quote.step3StartsSub"),
+    ];
+  } else if (startTerm && !isTbdTermValue(startTerm)) {
+    const localized = localizeTermValue(startTerm, lang === "es" ? "es" : "en");
+    const when = START_PRESET.test(startTerm)
+      ? localized.charAt(0).toLocaleLowerCase(lang) + localized.slice(1)
+      : localized;
+    step3 = [
+      t(lang, "paperworkEmail.quote.step3StartsTitle", { when }),
+      t(lang, "paperworkEmail.quote.step3StartsSub"),
+    ];
+  } else {
+    step3 = [
+      t(lang, "paperworkEmail.quote.step3ConfirmTitle"),
+      t(
+        lang,
+        opts.textable
+          ? "paperworkEmail.quote.step3ConfirmSubText"
+          : "paperworkEmail.quote.step3ConfirmSub",
+      ),
+    ];
+  }
+  const warranty = warrantyClauseKind(q.terms).kind !== "none";
+  return [
+    [
+      "1",
+      t(lang, "paperworkEmail.quote.step1Title"),
+      t(lang, "paperworkEmail.quote.step1Sub"),
+    ],
+    [
+      "2",
+      t(lang, "paperworkEmail.quote.step2Title"),
+      t(lang, "paperworkEmail.quote.step2Sub"),
+    ],
+    ["3", ...step3],
+    [
+      "4",
+      t(lang, "paperworkEmail.quote.step4Title"),
+      t(
+        lang,
+        warranty
+          ? "paperworkEmail.quote.step4Sub"
+          : "paperworkEmail.quote.step4SubNoWarranty",
+      ),
+    ],
+  ];
 }
 
 /**
@@ -642,15 +942,24 @@ export function renderQuoteSubject(
  * remote images that mail clients block.
  */
 export function renderQuoteHtml(
-  q: Quote,
+  quote: Quote,
   liveCustomer: RenderedCustomer | undefined,
   sender: User | undefined,
   senderBiz: BusinessIdentity | undefined,
+  /** REQ-682: `textable` — this send also texts the customer at a number
+   *  that can take a text (only then may the steps promise a text). */
+  opts: { textable?: boolean } = {},
 ): string {
   // Roadmap p.13: the email goes to the customer, so it follows the
   // contractor's outgoing-comms language (default en), not their UI language.
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
+  // REQ-264 (M15): job details + line items in the email's language.
+  const q: Quote = {
+    ...quote,
+    description: quoteDescription(quote, lang),
+    lineItems: localizeLineItems(quote.lineItems, lang, quote.lang), // REQ-333
+  };
   // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice; an issued
   // quote shows the customer as snapshotted when it was issued.
   const docNumber = docRefWithVersion(q, lang);
@@ -674,54 +983,38 @@ export function renderQuoteHtml(
     whatNext: t(lang, "paperworkEmail.quote.whatNext"),
     questions: t(lang, "paperworkEmail.quote.questions"),
     yourContractor: t(lang, "paperworkEmail.quote.yourContractor"),
-    steps: [
-      [
-        "1",
-        t(lang, "paperworkEmail.quote.step1Title"),
-        t(lang, "paperworkEmail.quote.step1Sub"),
-      ],
-      [
-        "2",
-        t(lang, "paperworkEmail.quote.step2Title"),
-        t(lang, "paperworkEmail.quote.step2Sub"),
-      ],
-      [
-        "3",
-        t(lang, "paperworkEmail.quote.step3Title"),
-        t(lang, "paperworkEmail.quote.step3Sub"),
-      ],
-      [
-        "4",
-        t(lang, "paperworkEmail.quote.step4Title"),
-        t(lang, "paperworkEmail.quote.step4Sub"),
-      ],
-    ],
+    steps: quoteEmailSteps(q, lang, { textable: opts.textable === true }),
   };
   // CTA lands on the /q page — the one Quote + Agreement document the
   // customer reviews, accepts, and signs in a single ceremony.
-  const ctaUrl = `${APP_URL}/q/${q.id}`;
+  // REQ-342 (M13): the link carries the send language, so a cookie-less
+  // customer opens the document in the language it was sent in (REQ-048:
+  // `?lang=` on the link is the visitor's own pick).
+  const ctaUrl = withSendLang(`${APP_URL}/q/${q.id}`, lang);
   const ctaLabel = t(lang, "paperworkEmail.quote.ctaAccept");
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
-  const senderInitials = (() => {
-    const n = sender?.name?.trim();
-    if (!n) return "PM";
-    const parts = n.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return parts[0].slice(0, 2).toUpperCase();
-  })();
+  // REQ-502: the sidebar's rule (name + business), not a local two-letter one
+  const senderInitials = senderInitialsOf(
+    { name: sender?.name, businessName: senderBiz?.businessName },
+    "PM",
+  );
 
+  // REQ-591 (cycle 4, M32): the hero (and the preheader) in the send
+  // language — summaryByLang, else the job name in that language, else the
+  // typed summary — never the raw summary under a translated subject.
   const summaryClean =
-    (q.summary ?? t(lang, "paperworkEmail.quote.summaryFallback"))
+    (quoteSummary(q, lang) ?? t(lang, "paperworkEmail.quote.summaryFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .trim();
   // Title case for visual weight in the hero. P-07: Unicode-aware (the old
   // `\b\w` approach re-fired after accents: "InstalacióN De BañO") with es
   // stopwords kept lowercase.
-  const heroTitle = titleCaseJobName(summaryClean, lang);
+  // REQ-756: Spanish sentence case never lowercases the customer's name.
+  const heroTitle = titleCaseJobName(summaryClean, lang, {
+    keep: [customer?.name],
+  });
 
   const preheader = `${
     customerFirst
@@ -821,17 +1114,29 @@ export function renderQuoteHtml(
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${L.titleWord} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+    <tr><td class="pw-outer" align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
 
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
+
+        <!-- REQ-628: the business's own logo (or its name as a wordmark) -->
+        <tr><td align="center" style="padding:28px 36px 0;">${
+    emailLogoHtml(emailLogo({
+      appUrl: APP_URL,
+      kind: "quote",
+      id: q.id,
+      biz: senderBiz,
+      fallbackName: senderName(sender, lang),
+    }))
+  }</td></tr>
 
         <!-- doc tag + drafted date -->
         <tr><td style="padding:32px 36px 0;">
@@ -916,12 +1221,12 @@ export function renderQuoteHtml(
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
-              <td style="padding:22px 24px">
+              <td class="pw-amt" style="padding:22px 24px">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${L.estimatedTotal}</div>
                 <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${L.allIn}</div>
               </td>
-              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+              <td class="pw-amt" style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div class="pw-amt-n" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
     fmtUSD(total)
   }</div>
               </td>
@@ -950,7 +1255,7 @@ export function renderQuoteHtml(
             <tr>
               ${
     L.steps.map(([n, t, sub]) =>
-      `<td valign="top" align="center" style="width:25%;padding:0 6px">
+      `<td class="pw-step" valign="top" align="center" style="width:25%;padding:0 6px">
                 <div style="display:inline-block;width:30px;height:30px;border-radius:50%;background:${COLOR_PINK};color:#fff;font-weight:800;line-height:30px;text-align:center;font-size:13px">${n}</div>
                 <div style="margin-top:8px;color:${COLOR_INK};font-weight:700;font-size:13px">${t}</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:11px;line-height:1.4">${sub}</div>
@@ -983,7 +1288,7 @@ export function renderQuoteHtml(
       ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${
         escapeAttr(sender.phoneNumber)
       }" style="color:${COLOR_INK};text-decoration:none">${
-        escapeHtml(sender.phoneNumber)
+        escapeHtml(displayPhone(sender.phoneNumber))
       }</a></div>`
       : ""
   }
@@ -1086,19 +1391,27 @@ export function renderInvoiceHtml(
   senderBiz: BusinessIdentity | undefined,
   quote?: Quote,
   paid = false,
+  /** REQ-679: the quote's change orders — the approved ones join the agreement */
+  changeOrders: readonly { status?: string; deltaAmountCents: number }[] = [],
+  /** REQ-630 — the pre-rendered "Ways to pay" block (payWaysEmailHtml) */
+  payWays = "",
 ): string {
   const es = senderBiz?.commsLanguage === "es";
   const lang: Lang = es ? "es" : "en";
   // REQ-204: an issued bill shows the customer as snapshotted (billTo first)
   const customer = customerOnDocument(i, liveCustomer);
-  const items = quote?.lineItems ?? [];
-  const agreementTotal = quote?.estimatedTotal ??
-    (items.length
-      ? items.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0)
-      : undefined);
+  // REQ-264 (M15): the agreement's line items in the email's language.
+  const items = localizeLineItems(quote?.lineItems, lang, quote?.lang); // REQ-333
+  const agreementTotal = quote &&
+      (typeof quote.estimatedTotal === "number" || items.length)
+    ? agreedTotalCents(
+      { estimatedTotal: quote.estimatedTotal, lineItems: items },
+      changeOrders,
+    )
+    : undefined;
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
-    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid);
+    return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid, payWays);
   }
   const amountLabel = invoiceAmountLabel(i, lang, paid);
 
@@ -1135,26 +1448,27 @@ export function renderInvoiceHtml(
   const heroRaw = jobName || summaryClean ||
     t(lang, "publicInvoice.jobNameFallback");
   // P-07: Unicode-aware title case (accents survive, es stopwords stay low).
-  const heroTitle = titleCaseJobName(heroRaw, lang);
+  const heroTitle = titleCaseJobName(heroRaw, lang, {
+    keep: [customer?.name],
+  });
   const description = quote?.descriptionByLang?.[lang] ?? quote?.description;
 
-  const ctaUrl = `${APP_URL}/i/${i.id}`;
+  // REQ-727 (cycle 5, c4-M16): like the quote email (REQ-342) and the
+  // invoice text, the links carry the language the email went out in — the
+  // send sheet's "Sends in" — so the page opens in that language.
+  const ctaUrl = withSendLang(`${APP_URL}/i/${i.id}`, lang);
   const signedUrl = quote && (quote.status === "accepted" || quote.acceptedAt)
-    ? `${APP_URL}/q/${quote.id}`
+    ? withSendLang(`${APP_URL}/q/${quote.id}`, lang)
     : undefined;
   const pdfUrl = `${APP_URL}/api/invoices/${i.id}/pdf`;
 
   const customerFirst = customer?.name?.trim().split(/\s+/)[0];
   const senderFirst = sender?.name?.trim()?.split(/\s+/)[0];
-  const senderInitials = (() => {
-    const n = sender?.name?.trim();
-    if (!n) return "PM";
-    const parts = n.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return parts[0].slice(0, 2).toUpperCase();
-  })();
+  // REQ-502: the sidebar's rule (name + business), not a local two-letter one
+  const senderInitials = senderInitialsOf(
+    { name: sender?.name, businessName: senderBiz?.businessName },
+    "PM",
+  );
   const senderRoleLine = sender?.name?.trim()
     ? escapeHtml(sender.name.trim())
     : L.yourContractor;
@@ -1260,17 +1574,29 @@ export function renderInvoiceHtml(
   <meta name="color-scheme" content="light only">
   <meta name="supported-color-schemes" content="light only">
   <title>${escapeHtml(L.kindLabel)} ${escapeHtml(docNumber)}</title>
+  ${NARROW_SCREEN_STYLE}
 </head>
 <body style="margin:0;padding:0;background:${COLOR_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${COLOR_INK};line-height:1.5;">
   <span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all">${
     escapeHtml(preheader)
   }</span>
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:${COLOR_BG};">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" style="max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
+    <tr><td class="pw-outer" align="center" style="padding:40px 16px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="pw-card" style="width:100%;max-width:640px;background:${COLOR_CARD};border-radius:24px;overflow:hidden;box-shadow:0 12px 40px rgba(20,72,82,0.10);">
 
         <!-- pink ribbon header -->
         <tr><td style="height:6px;background:linear-gradient(90deg,${COLOR_PINK} 0%,${COLOR_PINK_DARK} 100%);font-size:0;line-height:0">&nbsp;</td></tr>
+
+        <!-- REQ-628: the business's own logo (or its name as a wordmark) -->
+        <tr><td align="center" style="padding:28px 36px 0;">${
+    emailLogoHtml(emailLogo({
+      appUrl: APP_URL,
+      kind: "invoice",
+      id: i.id,
+      biz: senderBiz,
+      fallbackName: senderName(sender, lang),
+    }))
+  }</td></tr>
 
         <!-- doc tag + issued date -->
         <tr><td style="padding:32px 36px 0;">
@@ -1349,15 +1675,15 @@ export function renderInvoiceHtml(
         <tr><td style="padding:24px 36px 0">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:linear-gradient(135deg,#e8f3e2 0%,#dceadb 100%);border:1px solid rgba(81,152,67,0.25);border-radius:18px">
             <tr>
-              <td style="padding:22px 24px">
+              <td class="pw-amt" style="padding:22px 24px">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_GREEN}">${
     escapeHtml(L.amountDue)
   }</div>
                 ${dueSub}
                 ${milestoneSub}
               </td>
-              <td style="padding:22px 24px;text-align:right;vertical-align:middle">
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
+              <td class="pw-amt" style="padding:22px 24px;text-align:right;vertical-align:middle">
+                <div class="pw-amt-n" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:42px;letter-spacing:-0.03em;color:${COLOR_TEAL};line-height:1;font-variant-numeric:tabular-nums">${
     fmtUSD(amount)
   }</div>
               </td>
@@ -1369,6 +1695,7 @@ export function renderInvoiceHtml(
       ? `<tr><td style="padding:18px 36px 0">${facts}</td></tr>`
       : ""
   }
+        ${payWays ? `<tr><td style="padding:0 36px">${payWays}</td></tr>` : ""}
 
         <!-- big CTA -->
         <tr><td style="padding:28px 36px 0;text-align:center">
@@ -1425,7 +1752,7 @@ export function renderInvoiceHtml(
       ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="tel:${
         escapeAttr(sender.phoneNumber)
       }" style="color:${COLOR_INK};text-decoration:none">${
-        escapeHtml(sender.phoneNumber)
+        escapeHtml(displayPhone(sender.phoneNumber))
       }</a></div>`
       : ""
   }
@@ -1468,6 +1795,7 @@ export function renderInvoiceBasicHtml(
   senderBiz: BusinessIdentity | undefined,
   lang: Lang,
   paid = false,
+  payWays = "",
 ): string {
   const amountLabel = invoiceAmountLabel(i, lang, paid);
   // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice; the
@@ -1478,13 +1806,16 @@ export function renderInvoiceBasicHtml(
   const amount = i.amount;
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
-  const jobName = (i as { jobName?: string }).jobName?.trim();
+  // REQ-710 (cycle 5, M4): in the e-mail's language while their copies
+  // (TranslateInvoice, REQ-497) still describe what was typed.
+  const own = invoiceTextByLang(i);
+  const jobName = (own.jobNameByLang?.[lang] ?? i.jobName)?.trim();
   // REQ-173: a batch invoice shows the address as a heading with the visits under it,
   // instead of the flat "date — service — address" description
-  const visits = groupVisits(i.lineItems);
+  const visits = groupVisits(i.lineItems, visitPeriodOf(i));
   const description = visits
     ? undefined
-    : (i as { description?: string }).description?.trim();
+    : (own.descriptionByLang?.[lang] ?? i.description)?.trim();
   const visitsBlock = visits
     ? visits.map((g) =>
       `<div data-visit-address style="margin:0 0 6px;font-size:15px;font-weight:800;color:${COLOR_TEAL}">${
@@ -1562,7 +1893,7 @@ export function renderInvoiceBasicHtml(
         </td>
       </tr>
     </table>
-    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}`;
+    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}${payWays}`;
 
   return shell({
     preheader: t(lang, "paperworkEmail.invoice.preheader", {
@@ -1577,10 +1908,10 @@ export function renderInvoiceBasicHtml(
     intro: t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }),
     body,
     ctaLabel: t(lang, "paperworkEmail.invoice.cta"),
-    ctaUrl: `${APP_URL}/i/${i.id}`,
+    ctaUrl: withSendLang(`${APP_URL}/i/${i.id}`, lang), // REQ-727
     sender,
     lang,
-    logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz }),
+    logo: emailLogo({ appUrl: APP_URL, kind: "invoice", id: i.id, biz: senderBiz, fallbackName: senderName(sender, lang) }),
     website: senderBiz?.websiteUrl,
   });
 }

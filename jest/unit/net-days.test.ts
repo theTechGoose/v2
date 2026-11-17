@@ -23,8 +23,12 @@ describe("REQ-174 days to pay", () => {
     expect(src).toMatch(/saveIdentity\(\{ invoiceNetDays/);
   });
   test("finishing a draft on /invoices dates it from today by its days to pay", () => {
+    // REQ-727 (demo-loop cycle 5, c4-M16): the rule lives in
+    // lib/invoice-send-sheet.ts finishDraftDates — "Finish + send" stamps,
+    // and the send sheet previews, the same dates.
     const src = read("front-end/islands/InvoicesPage.tsx");
-    expect(src).toMatch(/inv\.netDays/);
+    expect(src).toMatch(/finishDraftDates\(\s*inv,/);
+    expect(read("front-end/lib/invoice-send-sheet.ts")).toMatch(/inv\.netDays/);
   });
   test("labels in both languages", () => {
     for (const d of [en, es]) {

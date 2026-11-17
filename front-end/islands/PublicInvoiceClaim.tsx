@@ -1,20 +1,52 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { fmtMoneyExact } from "../lib/format.ts";
+import {
+  claimThanksKey,
+  type ReceiptChannel,
+} from "../../shared/documents/receipt-note.ts";
+import { fmtMoneyExact, fmtPayHandle } from "../lib/format.ts";
+import { startInvoiceRefresh } from "../lib/public-invoice-refresh.ts";
+import { announceChange } from "../lib/change-announce.ts";
 import {
   claimBody,
   claimDecision,
 } from "../../shared/documents/linked-view.ts";
+import {
+  claimPaymentPath,
+  invoiceClaimPreview,
+  recordPaymentHref,
+} from "../../shared/documents/invoice-claim-view.ts";
+import { signOverrideSearch } from "../../shared/quote-flow/public-doc-state.ts";
+import { type PayButton, payButtons } from "../../shared/payments/pay-links.ts"; // REQ-630
 
 interface Method {
   method: string;
   handle?: string;
+  /** REQ-630: a `link` row — the business's own payment link */
+  id?: string;
+  name?: string;
+  url?: string;
 }
+
+/** REQ-630: the chip key — a method, or `link-<id>` for each payment link. */
+const chipKey = (m: Method) => m.method === "link" ? `link-${m.id}` : m.method;
+
+/** REQ-630: each platform's colour, for the outline + mark of its button. */
+const BRAND_COLOR: Record<string, string> = {
+  venmo: "#008CFF",
+  cashapp: "#00A63A",
+  paypal: "#003087",
+  zelle: "#6D1ED4",
+  link: "#144852",
+};
 
 interface Props {
   invoiceId: string;
   acceptedMethods: Method[];
   customerName?: string;
+  /** REQ-523 (demo m16): where the payment receipt can arrive — the thanks
+   *  line promises a text only when the customer's number can take one. */
+  receiptChannel?: ReceiptChannel;
   /** REQ-203: the balance this page shows — the claim is for THIS amount;
    *  a changed balance comes back as 409 stale_balance with the current one. */
   balanceCents?: number;
@@ -22,6 +54,17 @@ interface Props {
   version?: number;
   /** Outgoing-comms language (roadmap p.13). Customer-facing. */
   lang?: "en" | "es";
+  /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
+   *  staff impersonating) — a preview, never the customer's claim. */
+  internal?: boolean;
+  /** The invoice's status (a paid / void one is never a preview). */
+  status?: string;
+  /** The page's query — carries the in-person override `?as=customer&confirm=1`. */
+  search?: string;
+  /** REQ-630: the card (Stripe) is offered above — no "reach out" fallback without methods. */
+  hasCard?: boolean;
+  /** REQ-630: the invoice number, the note on a Venmo payment. */
+  docNumber?: string;
 }
 
 const TEAL = "#144852";
@@ -53,11 +96,18 @@ export default function PublicInvoiceClaim(
     invoiceId,
     acceptedMethods,
     customerName,
+    receiptChannel,
     balanceCents,
     version: initialVersion,
     lang = "en",
+    internal = false,
+    status,
+    search = "",
+    hasCard = false,
+    docNumber,
   }: Props,
 ) {
+  const [copied, setCopied] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [reference, setReference] = useState("");
   const [claimedBy, setClaimedBy] = useState(customerName ?? "");
@@ -71,6 +121,22 @@ export default function PublicInvoiceClaim(
   const [version, setVersion] = useState<number | undefined>(initialVersion);
   const [stale, setStale] = useState(false);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+
+  // REQ-321 (demo M14): this page is SSR'd once; the badge patches below
+  // only mirror THIS island's own claim. The owner's later confirm-payment
+  // (another session) must reach the open tab too — poll the public invoice
+  // and reload the moment the server leaves the state shown here. `shown`
+  // is read at every tick, so a claim made in this tab moves the baseline
+  // (claimed) instead of triggering a reload of its own.
+  const shownRef = useRef({ status: "sent", version: initialVersion });
+  useEffect(
+    () => startInvoiceRefresh({ invoiceId, shown: () => shownRef.current }),
+    [invoiceId],
+  );
+  shownRef.current = {
+    status: alreadyPaid ? "paid" : done ? "claimed" : "sent",
+    version,
+  };
 
   if (alreadyPaid) {
     return (
@@ -92,7 +158,203 @@ export default function PublicInvoiceClaim(
     );
   }
 
+  // REQ-630: the app links (amount prefilled), the business's own links, then what is copied
+  const buttons = payButtons(acceptedMethods, {
+    amountCents: balance,
+    note: docNumber,
+  });
+
+  function copy(b: PayButton) {
+    if (b.kind !== "copy") return;
+    const done = () => {
+      setCopied(b.key);
+      setTimeout(() => setCopied((k) => (k === b.key ? undefined : k)), 2000);
+    };
+    try {
+      navigator.clipboard.writeText(b.value).then(done, done);
+    } catch {
+      done();
+    }
+  }
+
+  // REQ-805: the pay buttons — the customer's page and the owner's preview
+  // ("viewing as the customer") show the same ones
+  const payButtonsBlock = () => (
+    buttons.length > 0
+      ? (
+        <div data-cy="pay-buttons" style="margin-bottom:22px">
+          <div
+            style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+          >
+            {tFor(lang, "payLinks.page.heading")}
+          </div>
+          <div style="margin-top:12px;display:grid;gap:10px">
+            {buttons.map((b) => {
+              const color = BRAND_COLOR[b.method] ?? TEAL;
+              const mark = (
+                <span
+                  aria-hidden="true"
+                  style={`flex:none;width:32px;height:32px;border-radius:9px;background:${color};color:#fff;display:grid;place-items:center;font-weight:900;font-size:15px`}
+                >
+                  {b.label.trim().charAt(0).toUpperCase()}
+                </span>
+              );
+              if (b.kind === "link") {
+                const label = b.method === "link" ||
+                    typeof balance !== "number"
+                  ? tFor(lang, "payLinks.page.payWith", { brand: b.label })
+                  : tFor(lang, "payLinks.page.amountWith", {
+                    amount: fmtMoneyExact(balance),
+                    brand: b.label,
+                  });
+                return (
+                  <a
+                    key={b.key}
+                    data-cy={`pay-${b.key}`}
+                    href={b.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK};text-decoration:none`}
+                  >
+                    {mark}
+                    <span style="flex:1;min-width:0;display:grid">
+                      <span style="font-weight:800;font-size:15px;line-height:1.25;overflow-wrap:anywhere">
+                        {label}
+                      </span>
+                      {b.detail
+                        ? (
+                          <span
+                            style={`font-size:12.5px;color:${MUTED};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
+                          >
+                            {b.detail}
+                          </span>
+                        )
+                        : null}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      style={`flex:none;color:${color};font-weight:900;font-size:18px`}
+                    >
+                      ↗
+                    </span>
+                  </a>
+                );
+              }
+              return (
+                <div
+                  key={b.key}
+                  data-cy={`pay-${b.key}`}
+                  style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK}`}
+                >
+                  {mark}
+                  <span style="flex:1;min-width:0;display:grid">
+                    <span style="font-weight:800;font-size:15px;line-height:1.25">
+                      {b.label}
+                    </span>
+                    <span
+                      data-cy={`pay-${b.key}-value`}
+                      style={`font-size:13px;color:${INK};overflow-wrap:anywhere`}
+                    >
+                      {tFor(lang, "payLinks.page.sendTo", {
+                        handle: b.value,
+                      })}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    data-cy={`pay-${b.key}-copy`}
+                    onClick={() => copy(b)}
+                    style={`flex:none;appearance:none;cursor:pointer;background:#fff;color:${color};border:1px solid ${color};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:800`}
+                  >
+                    {copied === b.key
+                      ? tFor(lang, "payLinks.page.copied")
+                      : tFor(lang, "payLinks.page.copy")}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )
+      : null
+  );
+
+  // REQ-479 (demo M30): the owner on her own invoice records a payment she
+  // received; she never files "the customer paid" — unless the customer is
+  // handed the device (the in-person override).
+  if (invoiceClaimPreview({ internal, status }, search)) {
+    return (
+      <section
+        data-cy="invoice-internal-preview"
+        role="status"
+        style="margin-top:24px;background:#fff6e5;border:1px solid rgba(255,170,40,0.45);border-radius:14px;padding:16px 18px;color:#8a5a10;font-size:13px;line-height:1.5"
+      >
+        <div style="font-weight:800;font-size:14px">
+          {tFor(lang, "publicInvoiceClaim.internalPreview")}
+        </div>
+        <div style="margin-top:4px">
+          {tFor(lang, "publicInvoiceClaim.internalPreviewBody")}
+        </div>
+        {
+          /* REQ-705 (demo-loop c5 m68): the preview is "viewing as the
+           customer", so it lists the methods the customer's page offers —
+           the same chips, read-only (nothing to claim from here). */
+        }
+        {acceptedMethods.length > 0
+          ? (
+            <div
+              data-cy="invoice-preview-methods"
+              style={`margin-top:12px;background:#fff;border:1px solid ${LINE};border-radius:12px;padding:12px 14px`}
+            >
+              <div
+                style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+              >
+                {tFor(lang, "publicInvoiceClaim.howToPay")}
+              </div>
+              <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
+                {acceptedMethods.map((m) => (
+                  <button
+                    type="button"
+                    key={chipKey(m)}
+                    disabled
+                    aria-disabled="true"
+                    data-cy={`invoice-preview-method-${chipKey(m)}`}
+                    style={`appearance:none;cursor:default;background:#fff;color:${INK};border:1px solid ${LINE};border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em;opacity:.75`}
+                  >
+                    {/* REQ-805: a payment link by its own name ("Xpress Pay") */}
+                    {m.method === "link" ? m.name : methodLabel(m.method, lang)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+          : null}
+        {buttons.length > 0
+          ? <div style="margin-top:12px">{payButtonsBlock()}</div>
+          : null}
+        <a
+          href={recordPaymentHref(invoiceId)}
+          data-cy="invoice-record-payment"
+          style={`display:inline-block;margin-top:12px;background:${TEAL};color:#fff;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;text-decoration:none`}
+        >
+          {tFor(lang, "publicInvoiceClaim.recordPayment")}
+        </a>
+        <div style="margin-top:10px">
+          <a
+            href={signOverrideSearch(search)}
+            data-cy="invoice-claim-in-person"
+            style="font-weight:700;color:#8a5a10;text-decoration:underline"
+          >
+            {tFor(lang, "publicInvoiceClaim.internalPreviewInPerson")}
+          </a>
+        </div>
+      </section>
+    );
+  }
+
   if (acceptedMethods.length === 0) {
+    // REQ-630: the card above is a way to pay — nothing to add
+    if (hasCard) return null;
     return (
       <section
         data-cy="claim-no-methods"
@@ -117,35 +379,40 @@ export default function PublicInvoiceClaim(
         <p
           style={`margin:8px 0 0;color:${INK};font-size:15px;line-height:1.55`}
         >
-          {tFor(lang, "publicInvoiceClaim.thanksBody")}
+          {tFor(lang, claimThanksKey(receiptChannel))}
         </p>
       </section>
     );
   }
 
   const selectedMethod = selected
-    ? acceptedMethods.find((m) => m.method === selected)
+    ? acceptedMethods.find((m) => chipKey(m) === selected)
     : undefined;
-
   async function submit() {
-    if (!selected || submitting) return;
+    if (!selected || !selectedMethod || submitting) return;
+    // REQ-630: a payment link is claimed as "other", its name the reference
+    const method = selectedMethod.method === "link"
+      ? "other"
+      : selectedMethod.method;
+    const ref = reference.trim() ||
+      (selectedMethod.method === "link" ? selectedMethod.name ?? "" : "");
     setSubmitting(true);
     setError(undefined);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/claim-payment`, {
+      const res = await fetch(claimPaymentPath(invoiceId, search), {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
         body: JSON.stringify(
           typeof balance === "number"
             // REQ-203: claim the balance shown, on the version shown
-            ? claimBody({ method: selected, reference, claimedBy }, {
+            ? claimBody({ method, reference: ref, claimedBy }, {
               balanceCents: balance,
               ...(typeof version === "number" ? { version } : {}),
             })
             : {
-              method: selected,
-              ...(reference.trim() ? { reference: reference.trim() } : {}),
+              method,
+              ...(ref ? { reference: ref } : {}),
               ...(claimedBy.trim() ? { claimedBy: claimedBy.trim() } : {}),
             },
         ),
@@ -183,7 +450,9 @@ export default function PublicInvoiceClaim(
       }
       if (decision.kind === "error") {
         throw new Error(
-          decision.reason === String(res.status)
+          decision.reason === "owner_cannot_claim"
+            ? tFor(lang, "publicInvoiceClaim.ownerCannotClaim")
+            : decision.reason === String(res.status)
             ? tFor(lang, "publicInvoiceClaim.submitError", {
               status: res.status,
             })
@@ -191,6 +460,9 @@ export default function PublicInvoiceClaim(
         );
       }
       setDone(true);
+      // REQ-493 (demo-loop c3 m7): the owner's /invoices in this browser
+      // ("View as customer") follows at once.
+      announceChange({ entityType: "invoice", entityId: invoiceId });
       // UX-35: the SSR chrome OUTSIDE this island must reflect the claim
       // without a manual reload — flip the header badge to the awaiting-
       // confirmation state and retire the "questions before paying?" footer.
@@ -236,10 +508,13 @@ export default function PublicInvoiceClaim(
           </div>
         )
         : null}
+      {payButtonsBlock()}
       <div
         style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
       >
-        {tFor(lang, "publicInvoiceClaim.howToPay")}
+        {buttons.length > 0
+          ? tFor(lang, "payLinks.page.alreadyPaid")
+          : tFor(lang, "publicInvoiceClaim.howToPay")}
         {typeof balance === "number"
           ? (
             <span
@@ -253,20 +528,21 @@ export default function PublicInvoiceClaim(
       </div>
       <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px">
         {acceptedMethods.map((m) => {
-          const active = m.method === selected;
+          const key = chipKey(m);
+          const active = key === selected;
           return (
             <button
               type="button"
-              key={m.method}
-              data-cy={`claim-method-${m.method}`}
-              onClick={() => setSelected(m.method)}
+              key={key}
+              data-cy={`claim-method-${key}`}
+              onClick={() => setSelected(key)}
               style={`appearance:none;cursor:pointer;background:${
                 active ? PINK : "#fff"
               };color:${active ? "#fff" : INK};border:1px solid ${
                 active ? PINK_DARK : LINE
               };border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;letter-spacing:.01em`}
             >
-              {methodLabel(m.method, lang)}
+              {m.method === "link" ? m.name : methodLabel(m.method, lang)}
             </button>
           );
         })}
@@ -282,7 +558,9 @@ export default function PublicInvoiceClaim(
             <div
               style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${TEAL}`}
             >
-              {methodLabel(selectedMethod.method, lang)}
+              {selectedMethod.method === "link"
+                ? selectedMethod.name
+                : methodLabel(selectedMethod.method, lang)}
             </div>
             <div
               style={`margin-top:8px;color:${INK};font-size:14.5px;line-height:1.55`}
@@ -377,7 +655,8 @@ function methodInstructions(m: Method, lang: Lang = "en"): string {
   const sendTo = (svc: string) =>
     m.handle
       ? tFor(lang, "publicInvoiceClaim.instructions.sendToHandle", {
-        handle: m.handle,
+        // REQ-326 (demo m39): a phone typed as the handle reads as a phone
+        handle: fmtPayHandle(m.handle),
         svc,
       })
       : tFor(lang, "publicInvoiceClaim.instructions.sendVia", { svc });
@@ -410,6 +689,8 @@ function methodInstructions(m: Method, lang: Lang = "en"): string {
       return m.handle
         ? m.handle
         : tFor(lang, "publicInvoiceClaim.instructions.other");
+    case "link":
+      return tFor(lang, "payLinks.page.claimLink", { name: m.name ?? "" });
     default:
       return tFor(lang, "publicInvoiceClaim.instructions.default");
   }
@@ -434,6 +715,7 @@ function referencePlaceholder(method: string, lang: Lang = "en"): string {
     case "card":
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.card");
     case "other":
+    case "link":
       return tFor(lang, "publicInvoiceClaim.refPlaceholder.other");
     default:
       return "";

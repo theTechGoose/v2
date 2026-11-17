@@ -189,3 +189,154 @@ Deno.test("REQ-173 render-invoice-pdf: a batch invoice's PDF draws the address a
   );
   await resetKv();
 });
+
+async function drawnUpper(bytes: Uint8Array): Promise<string> {
+  const doc = await PDFDocument.load(bytes);
+  let drawn = "";
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (obj instanceof PDFRawStream) {
+      try {
+        drawn += new TextDecoder("latin1").decode(decodePDFRawStream(obj).decode());
+      } catch { /* not text */ }
+    }
+  }
+  return drawn.toUpperCase();
+}
+const hexOf = (s: string) =>
+  [...s].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("").toUpperCase();
+
+async function renderOne(
+  fields: Record<string, unknown>,
+  identity: Record<string, unknown> = {},
+) {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const invoices = new InvoiceStore();
+  const customers = new CustomerStore();
+  const identities = new BusinessIdentityStore();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", {
+    businessName: "A2Z Landscape LLC",
+    ...identity,
+  } as never);
+  const customer = await customers.create("u-1", { name: "Robert Thall", email: "rt@acme.test" });
+  // deno-lint-ignore no-explicit-any
+  const inv = await invoices.create("u-1", { customerId: customer.id, status: "draft", ...fields } as any);
+  const bytes = await new RenderInvoicePdf(invoices, new QuoteStore(), customers, new UserStore(), identities).run(inv.id);
+  const up = await drawnUpper(bytes);
+  await resetKv();
+  return up;
+}
+
+// REQ-791 — A2Z's edited batch draft: the lines lost date/service/address; the PDF still groups
+// them by address, then date, with the amount at the end — and the joined "Oct 2 — Lawn — …"
+// paragraph is not drawn under the title.
+Deno.test("REQ-791 render-invoice-pdf: a batch draft whose lines lost their visit fields is drawn grouped by address, then date — no flat paragraph", async () => {
+  const addr = "845 Frederick Rd, Rockingham, VA 22801-1314";
+  const days = ["Oct 2", "Oct 8", "Oct 9"];
+  const up = await renderOne({
+    jobName: "Maintenance 2026-10-01 → 2026-10-31",
+    serviceDateFrom: "2026-10-01",
+    serviceDateTo: "2026-10-31",
+    description: days.map((d) => `${d} — Lawn — ${addr}`).join("\n"),
+    lineItems: days.map((d) => ({ description: `${d} — Lawn — ${addr}`, quantity: 1, unit: "visit", price: 6500 })),
+    amount: 19500,
+  });
+  assert(up.includes(hexOf(addr)), "the address is a heading");
+  assert(up.includes(hexOf("Oct 8")) && up.includes(hexOf("$65.00")), "each date, with its amount");
+  assert(!up.includes(hexOf("Oct 2 ") + "97" + hexOf(" Lawn ") + "97"), "no flat 'Oct 2 — Lawn — …' line");
+});
+
+// REQ-792 — "printable invoices should look the same as the site invoices": the site's numbered
+// "01 Job details" section with the DESCRIPTION / AMOUNT table of the invoice's own lines.
+Deno.test("REQ-792 render-invoice-pdf: a standalone invoice draws the site's numbered Job details section with its own lines and amounts", async () => {
+  const up = await renderOne({
+    jobName: "Spring cleanup",
+    description: "Front beds\nBack beds",
+    lineItems: [
+      { description: "Mulch install", quantity: 1, price: 30000 },
+      { description: "Hedge trim", quantity: 1, price: 12500 },
+    ],
+    amount: 42500,
+  });
+  assert(up.includes(hexOf("JOB DETAILS")), "the Job details section header");
+  assert(up.includes(hexOf("DESCRIPTION")) && up.includes(hexOf("AMOUNT")), "the table header");
+  assert(up.includes(hexOf("Mulch install")) && up.includes(hexOf("$300.00")), "a line and its amount");
+  assert(up.includes(hexOf("Hedge trim")) && up.includes(hexOf("$125.00")), "the other line");
+  assert(up.includes(hexOf("Front beds")), "the description, in the section");
+});
+
+// REQ-805 — A2Z added Xpress Pay in Settings; the site's invoice offers it, so the printable one
+// does too: a "How to pay" section with every way on, the payment link by its name and its URL.
+Deno.test("REQ-805 render-invoice-pdf: the invoice PDF lists how to pay — the methods on and the business's payment link by name and URL", async () => {
+  const up = await renderOne({
+    jobName: "Lawn care",
+    lineItems: [{ description: "Lawn", quantity: 1, price: 6500 }],
+    amount: 6500,
+  }, {
+    acceptedPaymentMethods: {
+      zelle: { enabled: true, handle: "pay@a2z.test" },
+      links: [{ id: "l1", name: "Xpress Pay", url: "https://www.xpress-pay.com/a2z", enabled: true }],
+    },
+  });
+  assert(up.includes(hexOf("HOW TO PAY")), "the How to pay section");
+  assert(up.includes(hexOf("Xpress Pay")), "the payment link, by its name");
+  assert(up.includes(hexOf("https://www.xpress-pay.com/a2z")), "and its URL");
+  assert(up.includes(hexOf("pay@a2z.test")), "Zelle with its handle");
+});
+
+// REQ-906 — the customer's name is the biggest thing on the invoice: the PDF
+// draws the first Bill-to line at 11 pt (the From block stays 9 pt).
+Deno.test("REQ-906 render-invoice-pdf: the Bill-to name is drawn at 11pt", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const invoices = new InvoiceStore();
+  const customers = new CustomerStore();
+  const identities = new BusinessIdentityStore();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const customer = await customers.create("u-1", {
+    name: "Robert Frakes",
+    email: "rf@acme.test",
+  });
+  const inv = await invoices.create("u-1", {
+    customerId: customer.id,
+    status: "draft",
+    jobName: "Maintenance 2026-10-01 → 2026-10-31",
+    amount: 35000,
+  });
+  const render = new RenderInvoicePdf(
+    invoices,
+    new QuoteStore(),
+    customers,
+    new UserStore(),
+    identities,
+  );
+  const bytes = await render.run(inv.id);
+  const doc = await PDFDocument.load(bytes);
+  let drawn = "";
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (obj instanceof PDFRawStream) {
+      try {
+        drawn += new TextDecoder("latin1").decode(
+          decodePDFRawStream(obj).decode(),
+        );
+      } catch { /* an image or font stream */ }
+    }
+  }
+  const up = drawn.toUpperCase();
+  const hex = (s: string) =>
+    [...s].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("")
+      .toUpperCase();
+  assert(up.includes(hex("Robert Frakes")), "the customer's name is drawn");
+  // pdf-lib emits "/F<n> <size> Tf" right before the text it sizes
+  assert(
+    new RegExp(`11 TF[\\s\\S]{0,200}?${hex("Robert Frakes")}`).test(up),
+    "the name follows an 11 Tf (the Bill-to first line is 11 pt)",
+  );
+  assert(
+    new RegExp(`9 TF[\\s\\S]{0,200}?${hex("A2Z Landscape LLC")}`).test(up),
+    "the From block's business line is still 9 pt",
+  );
+  await resetKv();
+});

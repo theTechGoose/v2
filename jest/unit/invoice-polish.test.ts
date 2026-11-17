@@ -17,7 +17,8 @@ describe("REQ-167 each invoice has a Delete with an inline confirm", () => {
     expect(src).toMatch(/data-cy="invoice-delete"/);
     expect(src).toMatch(/data-cy="invoice-delete-confirm"/);
     expect(src).toMatch(/data-cy="invoice-card-delete"/);
-    expect(src).toMatch(/data-cy="invoice-card-delete-confirm"/);
+    // REQ-707: the card's ask is a <ConfirmRow>, Yes keeps its data-cy
+    expect(src).toMatch(/yesCy="invoice-card-delete-confirm"/);
     expect(src).toMatch(
       /fetch\(`\/api\/invoices\/\$\{inv\.id\}`,\s*\{\s*method:\s*"DELETE"/,
     );

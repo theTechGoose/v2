@@ -59,7 +59,10 @@ describe("assistant — I know the job, help me price it", () => {
     cy.get("textarea.composer__input").type(DETAILS);
     cy.get("button.composer__send").click();
     cy.get("[data-cy=confirm-details]", { timeout: 20_000 }).should("be.visible").click();
+    // REQ-449 (m48): a tier tap selects it; Continue moves on.
     cy.get("[data-cy=pricing-option]", { timeout: 20_000 }).first().click();
+    cy.get("[data-cy=pricing-option]").first().should("have.attr", "aria-pressed", "true");
+    cy.get(".chat__price-capture button.chat__price-continue").click();
 
     // The flow proceeds like "I know my price": customer step next.
     cy.contains(/who is this for/i, { timeout: 15_000 }).should("be.visible");

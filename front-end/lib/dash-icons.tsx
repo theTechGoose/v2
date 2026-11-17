@@ -108,6 +108,14 @@ export const ICN = {
   chev: <path d="m9 18 6-6-6-6" />,
   chevLeft: <path d="m15 18-6-6 6-6" />,
   check: <path d="M20 6 9 17l-5-5" />,
+  /** REQ-236: warning triangle — a failed send, never a tick. */
+  alert: (
+    <>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  ),
   hardhat: (
     <>
       <path d="M2 18h20" />
@@ -267,6 +275,20 @@ export const ICN = {
     <>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <path d="M9 12l2 2 4-4" />
+    </>
+  ),
+  // REQ-883 — the HR folder (an ID badge) and a connected system (a plug)
+  badge: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="2" />
+      <path d="M6 16c0-1.7 1.3-3 3-3s3 1.3 3 3M14 9h4M14 13h4" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0z" />
+      <path d="M12 16v6" />
     </>
   ),
 } as const;

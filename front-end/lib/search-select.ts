@@ -67,3 +67,15 @@ export function moveActive(
   if (current < 0) return delta > 0 ? 0 : count - 1;
   return (current + delta + count) % count;
 }
+
+/** REQ-283 — the name a "+ Add …" row offers to create: the trimmed query, or null when it is
+ *  blank or already an option's label (case, accents and spacing ignored). */
+export function createOffer(
+  options: readonly SearchOption[],
+  query: string,
+): string | null {
+  const name = query.trim().replace(/\s+/g, " ");
+  if (!name) return null;
+  const q = fold(name);
+  return options.some((o) => fold(o.label) === q) ? null : name;
+}

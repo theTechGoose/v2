@@ -5,11 +5,13 @@ import { GenerateJobOptions } from "@agents/domain/coordinators/generate-job-opt
 import { SuggestPrices } from "@agents/domain/coordinators/suggest-prices/mod.ts";
 import { ProfessionalizeBullet } from "@agents/domain/coordinators/professionalize-bullet/mod.ts";
 import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requestedLangs } from "@agents/domain/business/requested-langs/mod.ts";
 
 /**
  * Outgoing-comms language (customer-facing copy). Defaults to "en".
@@ -28,22 +30,40 @@ async function commsLang(
   return ident?.commsLanguage === "es" ? "es" : "en";
 }
 
+/** REQ-332: the job context a professionalize call may carry — bounded,
+ *  strings only. */
+function parseProfessionalizeContext(
+  v: unknown,
+): { raw?: string; siblings?: string[] } | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const c = v as { raw?: unknown; siblings?: unknown };
+  const raw = typeof c.raw === "string" ? c.raw.slice(0, 8_000) : undefined;
+  const siblings = Array.isArray(c.siblings)
+    ? c.siblings.filter((s): s is string => typeof s === "string").slice(0, 40)
+      .map((s) => s.slice(0, 500))
+    : undefined;
+  return raw || siblings?.length ? { raw, siblings } : undefined;
+}
+
 /**
  * Every language the job options should be generated in: the contractor's app
  * language (primary — they review in it) ∪ their selected outgoing-comms
- * languages (the customer's quote renders in one of these). Deduped, app-first.
+ * languages (the customer's quote renders in one of these) ∪ any language the
+ * job text itself asks for ("… in Spanish and English" — REQ-262, demo M25:
+ * that ask used to be dropped). Deduped, app-first.
  */
-async function targetLangs(
+export async function targetLangs(
   identity: BusinessIdentityStore,
   userId: string,
   appLang: string,
+  raw = "",
 ): Promise<string[]> {
   const ident = await identity.get(userId).catch(() => null);
   const comms = ident?.commsLanguages && ident.commsLanguages.length
     ? ident.commsLanguages
     : [ident?.commsLanguage ?? "en"];
   const langs: string[] = [];
-  for (const l of [appLang, ...comms]) {
+  for (const l of [appLang, ...comms, ...requestedLangs(raw)]) {
     const v = l === "es" ? "es" : "en";
     if (!langs.includes(v)) langs.push(v);
   }
@@ -70,6 +90,7 @@ export class JobDetailsController {
     private prices: SuggestPrices,
     private professionalize: ProfessionalizeBullet,
     private translate: TranslateBullets,
+    private translateQuoteFlow: TranslateQuote,
     private users: UserStore,
     private sessions: SessionStore,
     private identity: BusinessIdentityStore,
@@ -78,7 +99,9 @@ export class JobDetailsController {
 
   /**
    * POST /agents/job-details/prices
-   * Body: { raw: string }
+   * Body: { raw: string, scope?: string }
+   *   raw   — the contractor's ORIGINAL message (REQ-260 / M24)
+   *   scope — the bullets they confirmed in the picker, priced beside raw
    * Returns: { options: [{ tier, label, priceCents, rationale }] }
    *
    * Powers the "I know the job, help me price it" flow — three suggested
@@ -87,10 +110,11 @@ export class JobDetailsController {
   @Post("prices")
   async suggestPrices(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { raw?: unknown };
+    const b = (body ?? {}) as { raw?: unknown; scope?: unknown };
     if (typeof b.raw !== "string" || !b.raw.trim()) {
       throw new Error("raw is required");
     }
+    const scope = typeof b.scope === "string" && b.scope.trim() ? b.scope : undefined;
     // REQ-017 (NW-09): the contractor's saved business address — the model
     // prices for their city / state / ZIP.
     const address = await this.addresses.get(user.id)
@@ -100,6 +124,7 @@ export class JobDetailsController {
       await this.prices.run({
         userId: user.id,
         raw: b.raw,
+        scope,
         lang: user.language === "es" ? "es" : "en",
         address,
       }),
@@ -162,6 +187,7 @@ export class JobDetailsController {
           this.identity,
           user.id,
           user.language === "es" ? "es" : "en",
+          b.raw,
         ),
       }),
     );
@@ -171,7 +197,12 @@ export class JobDetailsController {
    * POST /agents/job-details/professionalize
    *
    * Two shapes (TDD-QUOTE-FLOW contract):
-   *   { text: string }     → { text: string }      — legacy single-bullet cleanup
+   *   { text: string, context?: { raw?, siblings? } }
+   *     → { text: string, lines: string[] } — single-bullet cleanup. REQ-332
+   *     (demo m30): `context` is the job the bullet belongs to (the original
+   *     message + the option's other bullets), so the rewrite never re-scopes
+   *     a job-wide item; `lines` is what the bullet became (an "A + B" bullet
+   *     → two lines), `text` the first of them.
    *   { details: string }  → { items: string[] }   — roadmap p.5: break the
    *     contractor's raw multi-line "write it myself" input into professional
    *     line items. The result is a PROPOSAL — the client offers accept/edit,
@@ -183,7 +214,7 @@ export class JobDetailsController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const b = (body ?? {}) as { text?: unknown; details?: unknown };
+    const b = (body ?? {}) as { text?: unknown; details?: unknown; context?: unknown };
 
     if (typeof b.details === "string") {
       const lines = b.details
@@ -191,12 +222,15 @@ export class JobDetailsController {
         .map((l) => l.replace(/^\s*[-•*·]\s*/, "").trim())
         .filter((l) => l.length > 0);
       if (!lines.length) throw new Error("details is empty");
-      const items = await Promise.all(
+      const items = (await Promise.all(
         lines.map((line) =>
-          this.professionalize.run({ userId: user.id, text: line })
-            .then((r) => r.text)
+          this.professionalize.run({
+            userId: user.id,
+            text: line,
+            context: { raw: b.details as string, siblings: lines.filter((l) => l !== line) },
+          }).then((r) => r.lines)
         ),
-      );
+      )).flat();
       return ctx.json({ items });
     }
 
@@ -204,7 +238,11 @@ export class JobDetailsController {
       throw new Error("text is required");
     }
     return ctx.json(
-      await this.professionalize.run({ userId: user.id, text: b.text }),
+      await this.professionalize.run({
+        userId: user.id,
+        text: b.text,
+        context: parseProfessionalizeContext(b.context),
+      }),
     );
   }
 
@@ -229,5 +267,36 @@ export class JobDetailsController {
       : [];
     const to = b.to === "es" ? "es" : "en";
     return ctx.json(await this.translate.run({ userId: user.id, texts, to }));
+  }
+
+  /**
+   * POST /agents/job-details/translate-quote
+   * Body: { quoteId: string, langs?: ("en" | "es")[] }
+   * Returns: the quote, with every missing translation filled
+   *
+   * REQ-264 (M15): the contractor's preview asks the SERVER to fill the
+   * quote's translations — job-details description AND line items — for the
+   * language it shows, the same pass SendQuote runs before dispatch.
+   */
+  @Post("translate-quote")
+  async translateQuote(
+    @Context() ctx: ExecutionContext,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = (body ?? {}) as { quoteId?: unknown; langs?: unknown };
+    if (typeof b.quoteId !== "string" || !b.quoteId) {
+      throw new Error("quoteId is required");
+    }
+    const langs = Array.isArray(b.langs)
+      ? [...new Set(b.langs.map((l): "en" | "es" => l === "es" ? "es" : "en"))]
+      : undefined;
+    return ctx.json(
+      await this.translateQuoteFlow.run({
+        userId: user.id,
+        quoteId: b.quoteId,
+        langs,
+      }),
+    );
   }
 }

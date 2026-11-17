@@ -46,6 +46,8 @@ describe("public doc state (accept persistence, customer block, signature, pdf)"
 
     beforeAll(async () => {
       quoteId = await seedQuote(s, { customerId });
+      // REQ-460: the customer signs only a quote that went out.
+      await s.put(`/quotes/${quoteId}`, { status: "sent" });
       const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
         name: CUSTOMER_NAME,
         signature: CUSTOMER_NAME,
@@ -111,6 +113,8 @@ describe("public doc state (accept persistence, customer block, signature, pdf)"
 
     beforeAll(async () => {
       quoteId = await seedQuote(s, { customerId });
+      // REQ-460: the customer signs only a quote that went out.
+      await s.put(`/quotes/${quoteId}`, { status: "sent" });
       const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
         signature: SIGNATURE_PNG,
         name: CUSTOMER_NAME,

@@ -1,5 +1,6 @@
 import { IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
+import type { ChatI18nRef } from "#quote-flow/chat-i18n.ts"; // REQ-589
 
 /**
  * Two-phase agent flow:
@@ -26,12 +27,26 @@ export interface AgentConversation {
   currentPhase: AgentPhase;
   title?: string; // first user message, truncated
   preview?: string; // last meaningful message snippet
+  /** REQ-589 (cycle 4, M15): the key `preview` was rendered from, so the
+   *  thread list re-renders it in the reader's language. Dropped by the
+   *  store whenever a later write sets `preview` without one. */
+  previewI18n?: ChatI18nRef;
   /** Threads-sidebar badge. Set by accept-quote; cleared by load-conversation on next read. */
   hasUnreadEvent?: boolean;
-  /** Denormalized quote.status so the sidebar chip can show sent/accepted without N+1. */
+  /** Denormalized quote.status, written by Lock / Send / AcceptQuote only —
+   *  the customer's public accept never touches it. REQ-369: never a status
+   *  to show; the thread list's chip is ListConversations' `threadStatus`. */
   quoteStatus?: string;
   /** Denormalized invoice.status (sent/paid) for the sidebar chip. */
   invoiceStatus?: string;
+  /** REQ-258 (demo M22): terms already stated in the chat, wizard step id →
+   *  option id (e.g. `{ payment_terms: "50_50" }`). The terms wizard shows
+   *  that option pre-selected. */
+  termsPrefill?: Record<string, string>;
+  /** REQ-715 (demo-loop cycle 5, c4-M34): the customer's language the user
+   *  stated before the customer was known ("Ella habla español") — the
+   *  customer step puts it on the customer it binds. */
+  customerLanguage?: "en" | "es";
   createdAt: string;
   updatedAt: string;
 }

@@ -1,7 +1,9 @@
+import { asset } from "fresh/runtime";
 import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import DemoModeOverlay from "../islands/DemoModeOverlay.tsx";
+import { adminEndedNotice } from "../lib/demo-mode/pill-carry.ts";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
 import GoogleTag from "../components/GoogleTag.tsx";
@@ -11,7 +13,8 @@ import GoogleTagManager, {
 import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
-import { langFromCookie } from "../lib/lang.ts";
+import { bootLangScript, resolveSsrLang } from "../lib/ssr-lang.ts";
+import { DEMO_EARLY_SRC, DEMO_REJOIN_SRC } from "../lib/demo-mode/early-src.ts";
 import { pmLangFromAcceptLanguage } from "../../shared/quote-flow/public-lang.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
@@ -82,11 +85,25 @@ location.reload();
 window.addEventListener("unhandledrejection",function(e){var m=e.reason&&(e.reason.message||String(e.reason))||"";if(/Importing a module script failed|dynamically imported module/i.test(m))recover()});
 }catch(_e){}})();`;
 
+// REQ-195 — page transitions: every same-origin navigation cross-fades and slides through the
+// View Transitions API (static/motion.css opts in with @view-transition). This classic,
+// parser-blocking script (the spec requires it in <head>, not a module) tags the transition with
+// a type — "back" for a history traversal backwards, "same" for a reload or a ?query change on
+// the same path, nothing for a forward move — so the CSS can slide the right way.
+const MOTION_SCRIPT = `(function(){try{
+window.__pmMotion=1;
+addEventListener("pagereveal",function(e){
+var vt=e.viewTransition;if(!vt)return;
+var act=navigation&&navigation.activation;if(!act)return;
+var from=act.from&&new URL(act.from.url),to=new URL(act.entry.url);
+if(from&&from.pathname===to.pathname)vt.types.add("same");
+else if(act.navigationType==="traverse"&&act.from&&act.from.index>act.entry.index)vt.types.add("back");
+else vt.types.add("forward");
+});
+}catch(_e){}})();`;
+
 export default define.page(function App(ctx) {
   const { Component } = ctx;
-  const bootScript = (PUBLIC_BACKEND_URL
-    ? `window.__PUBLIC_BACKEND_URL=${JSON.stringify(PUBLIC_BACKEND_URL)};`
-    : "") + SW_PURGE_SCRIPT + MODULE_RECOVERY_SCRIPT;
   // P-67: only mount the impersonation banner when the request actually
   // carries a session cookie. pm_session is HttpOnly, so the island can't
   // gate itself client-side — without this SSR gate it probed
@@ -97,32 +114,37 @@ export default define.page(function App(ctx) {
   // SSR-resolve <html lang> so the very first paint declares the right
   // language (screen readers, crawlers, browser translate prompts).
   //
-  // A page that resolved its own language says so on ctx.state.lang (REQ-122:
-  // the public pages — the four legal pages and /contact — through
-  // lib/public-page.ts) and the shell labels <html> with THAT: those pages are
-  // Spanish-first regardless of the browser, and guessing from Accept-Language
-  // here labelled a Spanish page "en" for every English browser. Otherwise:
-  // an explicit ?lang= is the strongest signal (a Spanish ad set links
-  // "/?lang=es"), then the visitor's persisted pm_lang choice. With neither:
-  // the two marketing landings are Spanish-first BY PRODUCT DECISION
-  // (lib/lang.ts pickLangFromAcceptLanguage) and render ES regardless of the
-  // browser, so <html lang> must say "es" to match what they actually paint;
-  // every other surface — the public customer documents, the branded 404 —
-  // follows the visitor's own Accept-Language, which is why English pages
-  // used to be mislabelled <html lang="es">.
+  // REQ-231: the request's own language (lib/ssr-lang.ts resolveSsrLang — the
+  // same one every island on this page was rendered in) when it names one: a
+  // page that resolved its own language on ctx.state.lang (REQ-122: the public
+  // pages — the four legal pages and /contact — through lib/public-page.ts),
+  // else an explicit ?lang= (a Spanish ad set links "/?lang=es"), else the
+  // signed-in user's language, else the visitor's persisted pm_lang choice.
+  // With none: the two marketing landings are Spanish-first BY PRODUCT
+  // DECISION (lib/lang.ts pickLangFromAcceptLanguage) and render ES regardless
+  // of the browser, so <html lang> must say "es" to match what they actually
+  // paint; every other surface — the public customer documents, the branded
+  // 404 — follows the visitor's own Accept-Language, which is why English
+  // pages used to be mislabelled <html lang="es">.
   const url = new URL(ctx.req.url);
-  const qLang = url.searchParams.get("lang");
   const spanishFirst = url.pathname === "/" || url.pathname === "/landing" ||
     url.pathname === "/landing2" || url.pathname === "/landing3" ||
     url.pathname === "/landing4" || url.pathname === "/landing5";
-  const lang: Lang = ctx.state.lang ??
-    ((qLang === "en" || qLang === "es")
-      ? qLang
-      : langFromCookie(ctx.req?.headers?.get("cookie")) ??
-        (spanishFirst ? "es" : pmLangFromAcceptLanguage(
-          ctx.req?.headers?.get("accept-language"),
-        ) ??
-          "es"));
+  const ssrLang = resolveSsrLang(ctx);
+  // (ctx.state.lang is resolveSsrLang's first source too; REQ-122 pins that
+  // the page's own language is the first thing the shell asks.)
+  const lang: Lang = ctx.state.lang ?? ssrLang ??
+    (spanishFirst ? "es" : pmLangFromAcceptLanguage(
+      ctx.req?.headers?.get("accept-language"),
+    ) ??
+      "es");
+  // REQ-231: the language the islands were rendered in goes first, so the
+  // browser's module-load seed (lib/lang.ts) hydrates them in that language.
+  const bootScript = bootLangScript(ssrLang) +
+    (PUBLIC_BACKEND_URL
+      ? `window.__PUBLIC_BACKEND_URL=${JSON.stringify(PUBLIC_BACKEND_URL)};`
+      : "") +
+    SW_PURGE_SCRIPT + MODULE_RECOVERY_SCRIPT;
   return (
     <html lang={lang}>
       <head>
@@ -143,6 +165,14 @@ export default define.page(function App(ctx) {
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
+        {/* REQ-195 — the motion system: page transitions, entrances, press feedback */}
+        {/* REQ-858 — keyed, or a page's lone unkeyed <Head> link takes its place */}
+        <link key="css-motion" rel="stylesheet" href={asset("/motion.css")} />
+        <script
+          // Server-built page-transition tagging (no user input).
+          // deno-lint-ignore react-no-danger
+          dangerouslySetInnerHTML={{ __html: MOTION_SCRIPT }}
+        />
         {
           /* REQ-124: the Google tag (gtag.js, G-RN3H6L5263) on every page —
             Google's loader on the real deploy, the app's own fake on the gate
@@ -170,6 +200,22 @@ export default define.page(function App(ctx) {
               dangerouslySetInnerHTML={{ __html: bootScript }}
             />
           )
+          : null}
+        {
+          /* REQ-648 (demo-loop cycle 5, M3 + c4-m28): a page of a customer
+            in a demo opens its link at once — a module script of its own,
+            never waiting for the islands' code (the overlay takes it over). */
+        }
+        {hasSession && DEMO_EARLY_SRC
+          ? <script type="module" async src={DEMO_EARLY_SRC} />
+          : null}
+        {
+          /* REQ-892 (demo-loop run 6, m3): a page WITHOUT a session — the landing a sign-out
+            lands on, a public page — watches for the customer signing in again in another tab
+            when this browser tab's demo was dropped by that sign-out, and rejoins. */
+        }
+        {!hasSession && DEMO_REJOIN_SRC
+          ? <script type="module" async src={DEMO_REJOIN_SRC} />
           : null}
       </head>
       <body>
@@ -202,8 +248,18 @@ export default define.page(function App(ctx) {
             sessions. */
         }
         {hasSession ? <ImpersonationBanner /> : null}
-        {/* REQ-153 — demo mode: self-gates on /demo-mode/active, renders nothing otherwise. */}
-        {hasSession ? <DemoModeOverlay /> : null}
+        {
+          /* REQ-153 — demo mode: self-gates on /demo-mode/active, renders nothing otherwise.
+            REQ-647 (cycle 5, c2-p13-r) — /admin's "?demo=ended&by=…" handover is read here, so
+            the notice is in the server's HTML: on first paint, hydrated or not. */
+        }
+        {hasSession
+          ? (
+            <DemoModeOverlay
+              endedNotice={adminEndedNotice(url.pathname, url.search)}
+            />
+          )
+          : null}
         <Component />
       </body>
     </html>

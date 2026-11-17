@@ -13,7 +13,7 @@
  *
  *   GET /api/admin/landing-offers   (authed session)
  *   → 200 {
- *       trialDays: number,
+ *       // no trialDays — REQ-505 (demo cycle 3, m5): billing has no trial
  *       priceFromCents: number,
  *       unlimitedTier: string,
  *       socialProof: { contractors: number, docsSent: number },
@@ -134,7 +134,8 @@ describe("P-19 / SSR is already Spanish when pm_lang=es (no wrong-language first
   it("P-19 hero copy is server-rendered in Spanish, not EN-with-a-Spanish-title", () => {
     // Red today: the <title> is Spanish but the body says
     // "You communicate with us in Spanish…" (hero.lead EN).
-    expect(html).toContain("Nos escribes en español");
+    // REQ-775 (dv1 d2): the Spanish lead now makes the English lead's promise.
+    expect(html).toContain("Háblanos en español o en inglés");
     expect(html).not.toContain("You communicate with us in Spanish");
   });
 
@@ -151,12 +152,57 @@ describe("P-19 / SSR is already Spanish when pm_lang=es (no wrong-language first
   });
 });
 
+describe("REQ-413 (demo-loop cycle 2, p5 / m49) the landing SSR speaks one language", () => {
+  it("REQ-413 es: the tablist and the sign-in steps are labelled in Spanish", async () => {
+    const html = await pageHtml("/", "es");
+    expect(html).toMatch(/class="lang-toggle"[^>]*aria-label="Idioma"/);
+    expect(html).toMatch(/class="pm-steps"[^>]*aria-label="Pasos para entrar"/);
+    expect(html).not.toContain("aria-label=\"Sign-in steps\"");
+    expect(html).not.toMatch(/\$10\.800/);
+    expect(html).toContain("Mándanos un mensaje");
+  });
+  it("REQ-413 en: the hero lead is written for an English reader", async () => {
+    const html = await pageHtml("/", "en");
+    expect(html).not.toContain("You communicate with us in Spanish");
+    expect(html).toContain("Talk to us in English or Spanish.");
+    expect(html).toMatch(/class="lang-toggle"[^>]*aria-label="Language"/);
+  });
+});
+
+describe("REQ-775 (demo-loop dv1, d2) / makes the same language promise in English and Spanish", () => {
+  it("REQ-775 es: the SSR hero lead promises clients get their own language, not 'inglés perfecto'", async () => {
+    const html = await pageHtml("/", "es");
+    expect(html).toContain("en su idioma, listo para firmar");
+    expect(html).not.toContain("inglés perfecto");
+  });
+  it("REQ-775 en: the SSR hero lead promises the same thing", async () => {
+    const html = await pageHtml("/", "en");
+    expect(html).toContain("in their language, ready to sign");
+    expect(html).not.toContain("perfect English");
+  });
+});
+
+describe("REQ-505 (demo cycle 3, m5) neither landing page promises a free trial billing doesn't have", () => {
+  for (const lang of ["en", "es"]) {
+    for (const path of ["/", "/landing"]) {
+      it(`REQ-505 ${lang} ${path}: no trial claim in the SSR HTML`, async () => {
+        const html = await pageHtml(path, lang);
+        const hit = html.match(
+          /free trial|free for \d+ days|\d+ days free|prueba gratis|gratis por \d+|\d+ d[ií]as gratis/i,
+        );
+        expect(hit?.[0] ?? null).toBeNull();
+      });
+    }
+  }
+});
+
 describe("P-08 admin-configurable landing offers (PROPOSED CONTRACT — see header)", () => {
   it("P-08 authed GET /admin/landing-offers returns the single offer config (red today: 404)", async () => {
     const s = await contractor("+15125552900");
     const { status, body } = await s.get("/admin/landing-offers");
     expect(status).toBe(200);
-    expect(Number.isInteger(body?.trialDays)).toBe(true);
+    // REQ-505 (demo cycle 3, m5): billing has no trial, so the offer has none.
+    expect(body).not.toHaveProperty("trialDays");
     expect(body?.priceFromCents).toBeGreaterThan(0);
     expect(typeof body?.unlimitedTier).toBe("string");
     expect(Number.isInteger(body?.socialProof?.contractors)).toBe(true);

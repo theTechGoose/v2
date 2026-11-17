@@ -11,6 +11,8 @@
  *     "1 activos" artifacts (P-36).
  */
 
+import { isUndelivered, type QuoteDelivery } from "./delivery.ts";
+
 export type PipelineClass = "awaiting" | "won" | "lost" | "draft";
 
 export interface PipelineQuote {
@@ -18,6 +20,11 @@ export interface PipelineQuote {
   sentAt?: string | null;
   acceptedAt?: string | null;
   lostAt?: string | null;
+  /** REQ-236: the stored send outcome (see ./delivery.ts). */
+  lastDelivery?: QuoteDelivery | null;
+  deliveredAt?: string | null;
+  /** REQ-572: "link" — the owner shared the link and marked it sent. */
+  sentVia?: string | null;
   [key: string]: unknown;
 }
 
@@ -62,6 +69,9 @@ export function classifyQuoteForPipeline(quote: PipelineQuote): PipelineClass {
   if (WON_STATUSES.has(quote.status ?? "")) return "won";
   if (quote.lostAt) return "lost";
   if (LOST_STATUSES.has(quote.status ?? "")) return "lost";
+  // REQ-236 (demo M8): a send that reached nobody is not out with the
+  // customer — it is still on the contractor's desk.
+  if (isUndelivered(quote)) return "draft";
   if (quote.sentAt || quote.status === "sent" || quote.status === "viewed") {
     return "awaiting";
   }
@@ -123,11 +133,13 @@ export function resolveJobCustomerId(
  * Compact money display. Below $1,000 the FULL dollar amount always renders
  * ("$850", never "$0.8k"); stray sub-dollar cents round to "$0" (never
  * "$0.01"). At/above the threshold the amount may compact to a one-decimal
- * "k" figure (85_000¢ → "$850", 1_420_000 → "$1.4k" — the frozen contract).
+ * "k" figure in thousands of dollars (85_000¢ → "$850", 1_420_000¢ → "$14.2k",
+ * 1_875_000¢ → "$18.8k"). REQ-694: cents / 10_000 is tenths of a thousand
+ * dollars; the old cents / 100_000 shifted one place ("$18,750" → "$1.9k").
  */
 export function formatMoneyCompact(cents: number): string {
   if (cents < 100_000) return `$${Math.round(cents / 100)}`;
-  const compact = (Math.round(cents / 100_000) / 10).toFixed(1);
+  const compact = (Math.round(cents / 10_000) / 10).toFixed(1);
   return `$${compact.replace(/\.0$/, "")}k`;
 }
 

@@ -12,18 +12,32 @@
  */
 
 import { isAccepted } from "./quote-status.ts";
+import {
+  type LinkedInvoiceLike,
+  payNowTarget,
+} from "../documents/linked-view.ts";
 
 export interface PublicQuotePayloadLike {
   id: string;
   status?: string;
+  /** REQ-198/201: the headline state the server projected (quoteState). */
+  state?: string;
   acceptedName?: string;
   acceptedAt?: string;
   acceptedSignature?: string;
   customer?: { name?: string };
+  /** REQ-306: true when the viewer is the business itself (the owner, an
+   *  admin acting for them, an impersonation session) — never the customer. */
+  internal?: boolean;
+  /** REQ-460: why this open quote cannot be signed yet (`not_issued`,
+   *  `terms_incomplete` — quoteSignRefusal); absent when it can. */
+  signRefusal?: string;
 }
 
 export interface QuoteView {
-  mode: "open" | "accepted" | "declined";
+  /** REQ-460: "unready" — not signable yet (never sent, or its payment terms
+   *  are not on it); the page shows a notice where the pad would be. */
+  mode: "open" | "accepted" | "declined" | "unready";
   customerName: string;
   acceptedBy?: string;
   acceptedAt?: string;
@@ -63,12 +77,144 @@ export function deriveQuoteView(payload: PublicQuotePayloadLike): QuoteView {
       pendingSignature: false,
     };
   }
+  // REQ-460 (demo-loop cycle 3, M16): the server says it cannot be signed yet
+  // — no ceremony, no pad, no "Sign in person" until it is sent with its terms.
+  if (payload.signRefusal) {
+    return {
+      mode: "unready",
+      customerName,
+      footerVariant: "beforeSigning",
+      pendingSignature: false,
+    };
+  }
   return {
     mode: "open",
     customerName,
     footerVariant: "beforeSigning",
     pendingSignature: true,
   };
+}
+
+/* ---------- REQ-306: the business's own preview ---------- */
+
+/** The explicit in-person override: the contractor hands the device to the
+ *  customer. Carried on the /q link and on the accept POST. */
+export const SIGN_OVERRIDE_QUERY = "as=customer&confirm=1";
+
+/** True when the page's (or request's) query carries the full override —
+ *  `as=customer` AND `confirm=1`; half of it is no override. */
+export function hasSignOverride(search: string | undefined | null): boolean {
+  if (!search) return false;
+  const q = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
+  return q.get("as") === "customer" && q.get("confirm") === "1";
+}
+
+/** REQ-405 (demo m14, cycle 2): the in-person override laid onto the
+ *  page's CURRENT query — `?lang=es` and anything else already there stay,
+ *  `as=customer` and `confirm=1` are set (never duplicated). */
+export function signOverrideSearch(search: string | undefined | null): string {
+  const q = new URLSearchParams(
+    (search ?? "").startsWith("?") ? (search ?? "").slice(1) : search ?? "",
+  );
+  q.set("as", "customer");
+  q.set("confirm", "1");
+  return `?${q.toString()}`;
+}
+
+/** REQ-306 (demo B3): the business's own viewer of a still-open quote is
+ *  previewing — the page shows "you are viewing as the customer; signing is
+ *  disabled" instead of the pad, unless the in-person override is on. A
+ *  signed or declined quote has nothing to sign, so it is never a preview. */
+export function internalPreview(
+  payload: PublicQuotePayloadLike,
+  search: string | undefined | null,
+): boolean {
+  if (payload.internal !== true) return false;
+  if (deriveQuoteView(payload).mode !== "open") return false;
+  return !hasSignOverride(search);
+}
+
+/** REQ-687 (demo-loop cycle 5, m59): the business viewing its own SIGNED
+ *  quote — no in-person override on — is looking at the customer's copy.
+ *  The signed banner speaks to the owner ("Signed by Linda on …") with an
+ *  owner next step, never the customer's "Thanks, … your contractor will be
+ *  in touch". With the override on the customer holds the device. */
+export function ownerSignedView(
+  payload: PublicQuotePayloadLike,
+  search: string | undefined | null,
+): boolean {
+  if (payload.internal !== true) return false;
+  if (deriveQuoteView(payload).mode !== "accepted") return false;
+  return !hasSignOverride(search);
+}
+
+export type OwnerSignedNext =
+  | { kind: "invoice"; href: string; number?: string; balanceCents: number }
+  | { kind: "quote"; href: string };
+
+/** REQ-687: the owner's next step on a signed quote — the open invoice the
+ *  signature billed (in Invoices), else the quote itself in Quotes. */
+export function ownerSignedNext(
+  quote: PublicQuotePayloadLike & { invoices?: LinkedInvoiceLike[] },
+): OwnerSignedNext {
+  const pay = payNowTarget(quote);
+  if (pay) {
+    return {
+      kind: "invoice",
+      href: `/invoices?open=${encodeURIComponent(pay.invoiceId)}`,
+      number: pay.number,
+      balanceCents: pay.balanceCents,
+    };
+  }
+  return {
+    kind: "quote",
+    href: `/quotes?open=${encodeURIComponent(quote.id)}`,
+  };
+}
+
+/**
+ * REQ-320 (demo m15): the state word in the /q headline ("Q-001 · Version 1 ·
+ * Sent") comes from the SAME derive as the signature pad, so the page never
+ * reads "Borrador" above "PENDIENTE DE FIRMA". A quote the server still calls
+ * `draft` (a text-only send that failed stamps nothing) has a public link and
+ * a pad but was issued to no one: it shows no state word at all. Accepted and
+ * declined follow the view; an issued quote keeps the server's sent/revised.
+ */
+export function publicHeadlineState(
+  payload: PublicQuotePayloadLike,
+): "accepted" | "declined" | "sent" | "revised" | undefined {
+  const view = deriveQuoteView(payload);
+  if (view.mode === "accepted") return "accepted";
+  if (view.mode === "declined") return "declined";
+  if (payload.state === "draft") return undefined;
+  return payload.state === "revised" ? "revised" : "sent";
+}
+
+/** The calendar day a stamp shows as — UTC, the same day `shortDate` prints. */
+function dayOf(iso: string): string | undefined {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const d = new Date(iso);
+  return Number.isNaN(+d) ? undefined : d.toISOString().slice(0, 10);
+}
+
+/**
+ * REQ-706 (demo-loop cycle 5, p18-9a): the "Published <date>" line under the
+ * /q headline only when it says something the headline does not. Version 1
+ * reads "Q-001 · Version 1 · Sent · Nov 12, 2026" — the publish date IS that
+ * date, so a second "Published Nov 12, 2026" just repeats it under another
+ * verb. Returns the date to print, or undefined to hide the line.
+ */
+export function publishedLineDate(
+  publishedAt: string | undefined,
+  headlineDate: string | undefined,
+): string | undefined {
+  if (!publishedAt) return undefined;
+  if (headlineDate && dayOf(headlineDate) === dayOf(publishedAt)) {
+    return undefined;
+  }
+  return publishedAt;
 }
 
 /* ---------- per-language line items ---------- */

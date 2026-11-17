@@ -56,6 +56,8 @@ describe("P-59 activity feed renders in the viewer's language", () => {
       language: "es",
     });
     quoteId = await seedQuote(s);
+    // REQ-460: the customer signs only a quote that went out.
+    await s.put(`/quotes/${quoteId}`, { status: "sent" });
     // Public (anonymous) accept → materializes the "quote_accepted" event.
     const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
       signature: "Green Goblin",

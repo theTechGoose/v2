@@ -1,6 +1,6 @@
 /** REQ-144 — picking a customer fills the service address, never over a typed one. */
 import { assertEquals } from "@std/assert";
-import { customerOptions, prefillAddress } from "./field.ts";
+import { customerOptions, prefillAddress, workerScreenLang } from "./field.ts";
 
 const ana = { address: "4601 Dick Pond Rd, Myrtle Beach, SC" };
 const bob = { address: "6219 Forestbrook Rd, Myrtle Beach, SC" };
@@ -73,4 +73,19 @@ Deno.test("REQ-152 customerOptions — name is the label, the address on file is
       { id: "c3", label: "Bob Marshall" },
     ],
   );
+});
+
+Deno.test("REQ-285 workerScreenLang — once signed in, the screen takes the worker's language", () => {
+  assertEquals(workerScreenLang({ language: "es" }, false), "es");
+  assertEquals(workerScreenLang({ language: "en" }, false), "en");
+});
+
+Deno.test("REQ-285 workerScreenLang — a language the person chose (the EN/ES switch, or ?lang= in the address) is kept", () => {
+  assertEquals(workerScreenLang({ language: "es" }, true), null);
+});
+
+Deno.test("REQ-285 workerScreenLang — nobody signed in, or no language answered: nothing changes", () => {
+  assertEquals(workerScreenLang(null, false), null);
+  assertEquals(workerScreenLang({}, false), null);
+  assertEquals(workerScreenLang({ language: "fr" }, false), null);
 });

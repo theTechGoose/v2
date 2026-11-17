@@ -16,8 +16,19 @@
  * `searchRecords`; the island groups the rows with `groupHits`. Nothing here
  * touches I/O, so the ranking is the same in the unit tests, the backend and
  * the browser.
+ *
+ * REQ-360 (demo-loop cycle 1, m11): the onboarding sample quote (P-15's
+ * `isSample`, or the legacy summary tag) is not a record the contractor made —
+ * it never enters the candidate set, so it is never a row ("#9876481D … Draft")
+ * nor counted on a customer's row.
  */
+import { isSampleQuote } from "../quote-flow/pipeline-stats.ts";
+import {
+  foldSearch,
+  textsMatchAllWords,
+} from "../quote-flow/customer-search.ts";
 import { docNumberOf, matchesDocNumber } from "./numbering.ts";
+import { formatShortDate } from "../quote-flow/format-helpers.ts";
 import {
   invoiceBalance,
   invoiceState,
@@ -60,8 +71,17 @@ export interface SearchHit {
   url: string;
   /** the record's own title: job name, summary, description — the customer's name for a customer */
   label: string;
-  /** a second line: the address, the email, the service dates… */
+  /** a second line: the address, the email, the assignee… — free text, never a date (REQ-713) */
   sub?: string;
+  /**
+   * REQ-713 (demo-loop cycle 5, m27): dates travel as typed "YYYY-MM-DD"
+   * fields, not baked into `sub`, so the client spells them in the page
+   * language (searchHitLine) instead of printing raw ISO in the Spanish UI.
+   */
+  dueDate?: string;
+  serviceFrom?: string;
+  serviceTo?: string;
+  scheduledFor?: string;
   customerId?: string;
   customerName?: string;
   customerNumber?: string;
@@ -118,6 +138,8 @@ export interface SearchQuote {
   startDate?: string;
   createdAt?: string;
   customerSnapshot?: Snapshot;
+  /** P-15: the onboarding sample — never searchable (REQ-360) */
+  isSample?: boolean;
 }
 
 export interface SearchInvoice {
@@ -196,7 +218,8 @@ export interface SearchOptions {
 export function urlFor(type: SearchType, id: string): string {
   switch (type) {
     case "customer":
-      return "/customers";
+      // REQ-799: the customer's sheet (REQ-626), not the bare roster
+      return `/customers?open=${encodeURIComponent(id)}`;
     case "quote":
       return `/quotes?open=${id}`;
     case "invoice":
@@ -211,7 +234,8 @@ export function urlFor(type: SearchType, id: string): string {
 // ---- matching ----
 
 function fold(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // REQ-519: fold accents ("é" → "e") before stripping, never drop the letter
+  return foldSearch(s).replace(/[^a-z0-9]/g, "");
 }
 
 function splitNumber(folded: string): { letters: string; digits: string } {
@@ -317,10 +341,6 @@ export function matchesDate(value: string | undefined, query: string): boolean {
   return day === null || Number(d.slice(8, 10)) === day;
 }
 
-function hasText(hay: string | undefined, q: string): boolean {
-  return typeof hay === "string" && hay.toLowerCase().includes(q);
-}
-
 function hasPhone(phone: string | undefined, q: string): boolean {
   if (!phone) return false;
   const qd = q.replace(/\D/g, "");
@@ -333,8 +353,10 @@ function hasId(id: string, q: string): boolean {
   return q.length >= 4 && id.toLowerCase().startsWith(q);
 }
 
+/** REQ-519 (demo cycle 3, M33): accent- and case-blind, every word of q somewhere in the
+ *  record's texts, any order — "maria" and "maria pena" find "María José Peña" */
 function anyText(q: string, ...hays: Array<string | undefined>): boolean {
-  return hays.some((h) => hasText(h, q));
+  return textsMatchAllWords(hays, q);
 }
 
 function anyDate(q: string, ...dates: Array<string | undefined>): boolean {
@@ -364,6 +386,8 @@ export function searchRecords(
   if (!q) return [];
   const limit = Math.max(1, opts.limit ?? 10);
   const types = new Set<SearchType>(opts.types ?? SEARCH_TYPES);
+  // REQ-360: the onboarding sample is not the contractor's record.
+  data = { ...data, quotes: data.quotes.filter((x) => !isSampleQuote(x)) };
   const changeOrders = data.changeOrders ?? [];
   const workOrders = data.workOrders ?? [];
 
@@ -554,9 +578,6 @@ export function searchRecords(
         hasId(i.id, q),
       );
       if (rank === null) continue;
-      const service = [i.serviceDateFrom, i.serviceDateTo].filter(Boolean).join(
-        " → ",
-      );
       rows.push({
         type: "invoice",
         id: i.id,
@@ -566,8 +587,10 @@ export function searchRecords(
         url: urlFor("invoice", i.id),
         label: i.jobName ?? firstLine(i.description) ?? quote?.jobName ??
           quote?.summary ?? cust.name ?? docNumberOf(i),
-        sub: i.serviceAddress ?? (service || undefined) ??
-          (i.dueDate ? i.dueDate.slice(0, 10) : undefined),
+        sub: i.serviceAddress,
+        dueDate: dayOf(i.dueDate),
+        serviceFrom: dayOf(i.serviceDateFrom),
+        serviceTo: dayOf(i.serviceDateTo),
         customerId: cust.id,
         customerName: cust.name,
         customerNumber: cust.number,
@@ -651,7 +674,8 @@ export function searchRecords(
         rank,
         url: urlFor("workOrder", wo.id),
         label: wo.description,
-        sub: wo.serviceAddress ?? wo.scheduledFor ?? wo.assignee,
+        sub: wo.serviceAddress ?? (wo.scheduledFor ? undefined : wo.assignee),
+        scheduledFor: dayOf(wo.scheduledFor),
         customerId: cust.id,
         customerName: cust.name,
         customerNumber: cust.number,
@@ -676,6 +700,21 @@ export function groupHits(
     .filter((g) => g.hits.length > 0);
 }
 
+/**
+ * REQ-909 (A2Z, 2026-11-16): an unpaid invoice row's quick action — open
+ * /payments with Record a payment already on that invoice. Nothing for a
+ * draft, a paid or a voided invoice, and nothing for any other type.
+ */
+export function recordPaymentUrl(
+  h: Pick<SearchHit, "type" | "id" | "status">,
+): string | undefined {
+  if (h.type !== "invoice") return undefined;
+  if (h.status === "paid" || h.status === "void" || h.status === "draft") {
+    return undefined;
+  }
+  return `/payments?record=${encodeURIComponent(h.id)}`;
+}
+
 /** The row to open when the contractor presses Enter: the best-ranked one. */
 export function bestHit(hits: readonly SearchHit[]): SearchHit | undefined {
   return hits.length
@@ -698,6 +737,44 @@ function typeOrder(type: SearchType): number {
 }
 
 /** The best `limit` rows of one type, ranked, ties in number order (the lists are pre-sorted by seq). */
+/** REQ-713: a stored date (bare day or full ISO) as its "YYYY-MM-DD" day */
+function dayOf(v: string | undefined): string | undefined {
+  return v ? v.slice(0, 10) : undefined;
+}
+
+/**
+ * REQ-713 (demo-loop cycle 5, m27): a hit's typed dates in the page language
+ * — "20 nov → 22 nov" for a service window, else the due or scheduled day.
+ */
+export function searchHitDates(
+  h: SearchHit,
+  lang: "en" | "es",
+): string | undefined {
+  const service = [h.serviceFrom, h.serviceTo]
+    .filter((d): d is string => !!d)
+    .map((d) => formatShortDate(d, lang))
+    .join(" → ");
+  if (service) return service;
+  const day = h.dueDate ?? h.scheduledFor;
+  return day ? formatShortDate(day, lang) : undefined;
+}
+
+/**
+ * REQ-713: the row's second line in the topbar search — the record's own
+ * label when the title is the customer, then the address / email / assignee
+ * (`sub`), falling back to the localized date when there is no `sub`.
+ */
+export function searchHitLine(
+  h: SearchHit,
+  lang: "en" | "es",
+): string | undefined {
+  const second = h.sub ?? searchHitDates(h, lang);
+  if (h.type === "customer") return second;
+  const title = h.customerName ?? h.label;
+  return [h.label !== title ? h.label : undefined, second]
+    .filter(Boolean).join(" · ") || undefined;
+}
+
 function take(rows: SearchHit[], limit: number): SearchHit[] {
   return rows
     .map((h, i) => ({ h, i }))

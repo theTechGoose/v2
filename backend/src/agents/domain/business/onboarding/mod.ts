@@ -52,7 +52,7 @@ const QUOTE_SIGNAL_RE =
  * REQ-008 (NW-47): first tokens that mark a SENTENCE (pronoun / verb /
  * article), never a name. Checked on the name part regardless of length, so
  * the four starter-chip strings ("I know the job, …", "Job done, …",
- * "Sé mi precio, …", "Trabajo terminado, …") can never be locked in as the
+ * "Ya tengo el precio, …", "Trabajo terminado, …") can never be locked in as the
  * contractor's identity.
  */
 const FIRST_WORD_STOP = new Set([
@@ -61,7 +61,7 @@ const FIRST_WORD_STOP = new Set([
   "need", "want", "know", "have", "help", "give", "please", "can", "could",
   "make", "write", "send",
   // es
-  "yo", "necesito", "quiero", "tengo", "dame", "trabajo", "sé", "se", "solo",
+  "yo", "ya", "necesito", "quiero", "tengo", "dame", "trabajo", "sé", "se", "solo",
   "sólo", "conozco", "hazme", "quiero", "ayúdame", "mi", "el", "la", "un", "una",
 ]);
 
@@ -413,80 +413,14 @@ export function onboardAskStateWithGuess(
   return t(lang, "onboarding.askStateGuess", { stateName, code, firstName });
 }
 
-export interface ParsedAddress {
-  street?: string;
-  city?: string;
-  state?: string;
-  postal?: string;
-}
-
-/** Free-form US-address parser. Aimed at the onboarding "paste it on one
- *  line" reply. Handles the common shapes:
- *    "123 Main St, Austin, TX 78701"
- *    "123 Main St, Austin TX 78701"
- *    "123 Main St Austin TX 78701"
- *    "Austin, TX 78701"          (city + state + zip, no street)
- *    "TX 78701"                   (state + zip only)
- *    "78701"                      (zip only)
- *  Returns whatever fields it could pull. The caller decides if enough
- *  was captured to consider the question answered. */
-export function extractAddressOnly(input: string): ParsedAddress | undefined {
-  if (!input) return undefined;
-  const raw = input.trim().replace(/\s+/g, " ");
-  if (!raw) return undefined;
-  if (raw.length > 180) return undefined;
-  // Pull a 5-digit (optional +4) zip if present.
-  const zipMatch = raw.match(/\b(\d{5})(?:-?\d{4})?\b/);
-  const postal = zipMatch?.[1];
-  // Pull a state — either 2-letter code or full name.
-  let state: string | undefined;
-  const codeMatch = raw.match(/\b([A-Za-z]{2})\b\s*(?:\d{5})?$/);
-  if (codeMatch) {
-    const cand = codeMatch[1].toUpperCase();
-    if (US_STATES[cand]) state = cand;
-  }
-  if (!state) {
-    for (const [name, code] of Object.entries(STATE_NAME_TO_CODE)) {
-      const re = new RegExp(`\\b${name.replace(/\s+/g, "\\s+")}\\b`, "i");
-      if (re.test(raw)) {
-        state = code;
-        break;
-      }
-    }
-  }
-  // Strip zip + state from the end so we can split the rest by commas.
-  let rest = raw;
-  if (postal) {
-    rest = rest.replace(new RegExp(`\\b${postal}(?:-?\\d{4})?\\b\\s*$`), "")
-      .trim();
-  }
-  if (state) {
-    rest = rest.replace(new RegExp(`\\b${state}\\b\\s*$`, "i"), "").trim();
-    rest = rest.replace(new RegExp(`,?\\s*${state}\\s*,?$`, "i"), "").trim();
-  }
-  // Drop trailing commas/whitespace.
-  rest = rest.replace(/[,\s]+$/, "");
-  // Split remaining on commas. Last part = city, anything before = street.
-  const parts = rest.split(",").map((p) => p.trim()).filter(Boolean);
-  let street: string | undefined;
-  let city: string | undefined;
-  if (parts.length >= 2) {
-    city = parts[parts.length - 1];
-    street = parts.slice(0, -1).join(", ");
-  } else if (parts.length === 1) {
-    // Heuristic: if it starts with a number, treat as street, else as city.
-    if (/^\d/.test(parts[0])) street = parts[0];
-    else city = parts[0];
-  }
-  // Refuse near-empty parses (we want at least state+zip OR city).
-  if (!street && !city && !state && !postal) return undefined;
-  return {
-    ...(street ? { street } : {}),
-    ...(city ? { city } : {}),
-    ...(state ? { state } : {}),
-    ...(postal ? { postal } : {}),
-  };
-}
+// ParsedAddress + extractAddressOnly were hoisted to @core/business/address-parse
+// so the users/profile address save path can split a one-line street with the
+// same parser (REQ-420). Re-exported here so every existing import keeps working.
+import {
+  extractAddressOnly,
+  type ParsedAddress,
+} from "@core/business/address-parse/mod.ts";
+export { extractAddressOnly, type ParsedAddress };
 
 /** LLM fallback for free-form addresses the regex couldn't parse —
  *  e.g. "219 delano way myrtle beach sc" (no commas, lowercase, no zip).

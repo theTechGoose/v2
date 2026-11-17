@@ -1,21 +1,58 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
+import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
-import { ssrBackendGet } from "../../lib/backend-fetch.ts";
+import { ssrBackendGet, ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
+import { getSessionId } from "../../lib/auth.ts";
+import BizBrand from "../../components/BizBrand.tsx";
+import {
+  publicBusinessLabel,
+  publicDocTitle,
+} from "../../../shared/documents/public-brand.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../../lib/format.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
-import { resolvePublicLang } from "../../../shared/quote-flow/public-lang.ts";
+import {
+  langToggleHref,
+  resolvePublicLang,
+} from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
+import { publicLogoUrl } from "../../../shared/quote-flow/public-logo-url.ts";
+import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
+import { localizePaymentInstructions } from "../../../shared/documents/invoice-form.ts";
+import {
+  claimedNoteKey,
+  type ReceiptChannel,
+  receiptChannelOf,
+} from "../../../shared/documents/receipt-note.ts";
 import {
   fmtVisitDate,
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
+import {
+  type InvoicePillTone,
+  invoiceStatusPill,
+} from "../../lib/invoice-status-pill.ts";
 import PublicInvoiceClaim from "../../islands/PublicInvoiceClaim.tsx";
+import PublicInvoiceRefresh from "../../islands/PublicInvoiceRefresh.tsx";
+import OwnerClaimReview from "../../islands/OwnerClaimReview.tsx";
+import PublicLangToggle from "../../islands/PublicLangToggle.tsx";
+import type { CardConfig } from "../../islands/PublicCardPay.tsx"; // REQ-213
+import type { SquareConfig } from "../../../shared/payments/square.ts"; // REQ-803
+import PayByCard from "../../components/PayByCard.tsx"; // REQ-782
+import { cardPayWay } from "../../../shared/payments/pay-links.ts"; // REQ-782
 import {
   invoiceHeadline,
   shortDate,
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
+import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
+import { installmentSchedule } from "../../../shared/documents/ledger.ts"; // REQ-679
+import { receiptSentViaOf } from "../../../shared/documents/delivery-truth.ts";
+import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
+import {
+  ownerClaimNote,
+  ownerClaimNoteShown,
+} from "../../../shared/documents/owner-claim-note.ts";
 import {
   BG,
   computeMilestones,
@@ -54,9 +91,17 @@ interface Contractor {
   commsLanguage?: string;
   /** True when the contractor uploaded a business logo (roadmap p.2). */
   hasLogo?: boolean;
+  /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
+  logoVersion?: string;
 }
 
 interface InvoicePublic {
+  /** REQ-586 (cycle 4, M11): the document's language (shared
+   *  invoiceDocLang), when one is recorded. */
+  docLang?: string;
+  /** REQ-479 (demo M30): the viewer is the business itself (owner, admin,
+   *  staff impersonating) — a preview, not the customer. */
+  internal?: boolean;
   id: string;
   /** REQ-198/201: the document's number ("INV-5000"), version and headline state. */
   number?: string;
@@ -103,8 +148,12 @@ interface InvoicePublic {
   status?: string;
   amount?: number;
   dueDate?: string;
+  /** REQ-729: a scheduled installment's send date (owner preview pill). */
+  scheduledFor?: string;
   issuedDate?: string;
   paidAt?: string;
+  /** REQ-627: set when the business voided this invoice */
+  voidedAt?: string;
   installmentIndex?: number;
   installmentTotal?: number;
   paymentIntent?: {
@@ -114,8 +163,17 @@ interface InvoicePublic {
     claimedAt: string;
     claimedBy?: string;
   };
+  /** REQ-488: the contractor said the last claim never arrived. */
+  claimRejectedAt?: string;
+  claimRejectedMethod?: string;
   contractor?: Contractor;
-  customer?: { name?: string; email?: string; phoneNumber?: string };
+  customer?: {
+    name?: string;
+    email?: string;
+    phoneNumber?: string;
+    businessName?: string;
+    address?: string;
+  };
   jobDetails?: {
     summary?: string;
     jobName?: string;
@@ -150,33 +208,106 @@ interface InvoicePublic {
     installmentIndex?: number;
     installmentTotal?: number;
   }>;
-  acceptedMethods?: Array<{ method: string; handle?: string }>;
+  /** REQ-630: `method: "link"` rows carry the business's own payment link (id, name, https url) */
+  acceptedMethods?: Array<
+    {
+      method: string;
+      handle?: string;
+      id?: string;
+      name?: string;
+      url?: string;
+    }
+  >;
+  /** REQ-523 (demo m16): where the payment receipt can arrive — "email",
+   *  "text" (a number that can take one) or "none". */
+  receiptChannel?: string;
+  /** REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went —
+   *  "email" | "text" | "none" (absent on invoices paid before it was kept). */
+  receiptSentVia?: string;
 }
 
 export default define.page(async function PublicInvoice(ctx) {
   const id = ctx.params.id;
-  const r = await ssrBackendGet<InvoicePublic>(`/invoices/${id}/public`);
+  // REQ-803 — back from the business's Square checkout: the read checks the order first
+  const squareReturn =
+    new URL(ctx.req.url).searchParams.get("square") === "return";
+  // REQ-479 (demo M30): the read carries the viewer's session, so the
+  // backend can tell the business's own preview from the customer.
+  const r = await ssrBackendGetAuthed<InvoicePublic>(
+    `/invoices/${id}/public${squareReturn ? "?square=return" : ""}`,
+    getSessionId(ctx.req),
+  );
   const invoice = r.ok ? r.data : undefined;
-  // Chrome language — the visitor's own saved choice (pm_lang cookie) wins over
-  // the document's generation language, exactly like /q (P-12). The
-  // claim + change-order islands below receive this same resolved language.
+  // REQ-213 — whether the business takes cards (REQ-212) and what the card page needs;
+  // REQ-803 — or takes them on its own Square
+  const [cardRes, squareRes] = invoice
+    ? await Promise.all([
+      ssrBackendGet<CardConfig>(`/invoices/${id}/card`),
+      ssrBackendGet<SquareConfig>(`/invoices/${id}/square`),
+    ])
+    : [undefined, undefined];
+  const card = cardRes?.ok && cardRes.data?.available
+    ? cardRes.data
+    : undefined;
+  const square = squareRes?.ok && squareRes.data?.available
+    ? squareRes.data
+    : undefined;
+  // Chrome language — REQ-272: the link's ?lang= (the EN | ES toggle below)
+  // first, then the visitor's own saved choice (pm_lang cookie), over the
+  // document's generation language (P-12). The claim + change-order islands
+  // below receive this same resolved language.
+  const url = new URL(ctx.req.url);
   const lang: Lang = resolvePublicLang({
+    query: url.searchParams.get("lang"),
     cookie: ctx.req.headers.get("cookie"),
-    docLang: invoice?.contractor?.commsLanguage,
+    // REQ-586 (cycle 4, M11): the invoice's own document language (its
+    // `lang`, else the language its quote was sent in) ahead of the
+    // contractor's default.
+    docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
     header: ctx.req.headers.get("accept-language"),
   });
   const err = r.ok ? undefined : tFor(lang, "publicInvoice.error.expired");
+  // <html lang> says what this page actually paints (REQ-122 contract).
+  ctx.state.lang = lang;
 
   return (
     <>
       <Head>
-        <title>{tFor(lang, "publicInvoice.docTitle")}</title>
-        <link rel="stylesheet" href={asset("/landing.css")} />
+        {/* REQ-628: the tab names the business, never DocuMonster */}
+        {
+          /* REQ-826 AMENDMENT 5 (demo-loop run 11) — a dead link's tab says so ("Mmm, no se
+            puede abrir esto"), never "Factura": the demo stage names the page by its title */
+        }
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            publicDocTitle(
+              err
+                ? tFor(l, "publicInvoice.error.heading")
+                : tFor(l, "publicInvoice.docTitle"),
+              publicBusinessLabel(invoice?.contractor),
+            )}
+        />
+        <link key="css-landing" rel="stylesheet" href={asset("/landing.css")} />
+        <link
+          key="css-public-lang"
+          rel="stylesheet"
+          href={asset("/public-lang.css")}
+        />
       </Head>
       <div
+        data-error-page={err ? "" : undefined}
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:712px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
+          {/* REQ-272: the same EN | ES switch the contract has (REQ-048) */}
+          <PublicLangToggle
+            lang={lang}
+            hrefs={{
+              en: langToggleHref(url.href, "en"),
+              es: langToggleHref(url.href, "es"),
+            }}
+          />
           {err || !invoice
             ? (
               <ErrorCard
@@ -184,9 +315,18 @@ export default define.page(async function PublicInvoice(ctx) {
                 lang={lang}
               />
             )
-            : <InvoiceDoc invoice={invoice} lang={lang} />}
+            : (
+              <InvoiceDoc
+                invoice={invoice}
+                lang={lang}
+                search={url.search}
+                card={card}
+                square={square}
+                squareReturn={squareReturn}
+              />
+            )}
         </div>
-        <SiteFooter lang={lang} />
+        <SiteFooter lang={lang} document credited />
       </div>
     </>
   );
@@ -195,11 +335,6 @@ export default define.page(async function PublicInvoice(ctx) {
 function ErrorCard({ message, lang }: { message: string; lang: Lang }) {
   return (
     <>
-      <div
-        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN};text-align:center;margin-bottom:18px`}
-      >
-        {tFor(lang, "brand.name")}
-      </div>
       <div
         style={`background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center`}
       >
@@ -218,15 +353,30 @@ function siteLabel(url: string): string {
 }
 
 function InvoiceDoc(
-  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+  { invoice, lang, search, card, square, squareReturn }: {
+    invoice: InvoicePublic;
+    lang: Lang;
+    /** REQ-479: the page's query, for the claim's in-person override. */
+    search: string;
+    /** REQ-213: the business takes cards on its own Stripe */
+    card?: CardConfig;
+    /** REQ-803: the business takes cards on its own Square */
+    square?: SquareConfig;
+    /** REQ-803: the customer just came back from Square's checkout */
+    squareReturn?: boolean;
+  },
 ) {
-  const paid = invoice.status === "paid" || !!invoice.paidAt;
-  const claimed = invoice.status === "claimed" && !!invoice.paymentIntent;
-  const pastDue = !paid && !claimed && isPastDue(invoice.dueDate);
+  // REQ-627: a voided invoice says so and cannot be paid
+  const voided = invoice.status === "void";
+  const paid = !voided && (invoice.status === "paid" || !!invoice.paidAt);
+  const claimed = !voided && invoice.status === "claimed" &&
+    !!invoice.paymentIntent;
+  const pastDue = !voided && !paid && !claimed && isPastDue(invoice.dueDate);
   const es = lang === "es";
-  const businessLabel = invoice.contractor?.businessName?.trim() ||
-    invoice.contractor?.name?.trim() ||
-    tFor(lang, "brand.name");
+  const contractorFirst = invoice.contractor?.name?.split(/\s+/)[0];
+  // REQ-628: the business, else the contractor — never DocuMonster
+  const businessLabel = publicBusinessLabel(invoice.contractor) ??
+    tFor(lang, "publicInvoice.contractorFallback.capital");
   const jobName =
     (invoice.jobDetails?.jobNameByLang?.[lang] ?? invoice.jobDetails?.jobName)
       ?.trim() ||
@@ -262,6 +412,9 @@ function InvoiceDoc(
       version: invoice.version ?? 1,
       state: invoice.state ?? (paid ? "paid" : claimed ? "claimed" : "sent"),
       date: paid ? invoice.paidAt : invoice.publishedAt,
+      // REQ-558: owner-only states (scheduled, draft) are named only to the business.
+      internal: invoice.internal === true,
+      dueDate: invoice.dueDate,
     },
     lang,
   );
@@ -270,6 +423,15 @@ function InvoiceDoc(
   const balanceCents = invoice.balanceCents ??
     Math.max(0, amountCents - paidCents);
   const overpaidCents = invoice.overpaidCents ?? 0;
+  // REQ-782 — where "Pay by card" goes: the business's Stripe (REQ-213) → our card portal
+  // page; else the card pay link from Settings; else nowhere
+  const cardWay = cardPayWay({
+    invoiceId: invoice.id,
+    stripe: !!card,
+    square: !!square, // REQ-803
+    methods: invoice.acceptedMethods ?? [],
+    lang,
+  });
   const serviceDates = invoice.serviceDateFrom || invoice.serviceDateTo
     ? [invoice.serviceDateFrom, invoice.serviceDateTo]
       .filter((d): d is string => !!d)
@@ -280,21 +442,34 @@ function InvoiceDoc(
     invoice.paymentInstructions || invoice.taxCents || invoice.discountCents ||
     invoice.subtotalCents);
 
-  // Agreement mirror — present only for quote-linked invoices (getInvoicePublic
-  // projects the linked quote's line items, total, and term grid). Standalone
-  // invoices have none of this and keep the lightweight amount-only document.
+  // Agreement mirror — for quote-linked invoices getInvoicePublic projects the
+  // linked quote's line items, total, and term grid. A standalone invoice
+  // carries its own line items in the same field (REQ-487) and no agreement.
   // The itemized job in the BILL's language (descriptions only — the money
   // is language-neutral).
+  // REQ-264 (M15): each line's server-filled translation first.
   const items = projectLineItems(
-    invoice.jobDetails?.lineItems,
+    localizeLineItems(invoice.jobDetails?.lineItems, lang),
     invoice.jobDetails?.lineItemsByLang,
     lang,
   );
   const agreementTotal = invoice.agreementTotal ??
     (items.length ? sumLineTotals(items) : undefined);
-  const milestones = agreementTotal
+  // REQ-679 (cycle 5, M18): the schedule is the agreement's REAL
+  // installments — an approved change order lands on the invoice it revised
+  // (8,150 deposit · 9,750 balance), never a re-split of the total.
+  const split = agreementTotal
     ? computeMilestones(agreementTotal, invoice.terms, lang)
     : [];
+  const scheduled = installmentSchedule(
+    split.map((m) => m.amount),
+    agreementTotal ?? 0,
+    [
+      ...(invoice.siblings ?? []).filter((s) => s.id !== invoice.id),
+      invoice,
+    ],
+  );
+  const milestones = split.map((m, k) => ({ ...m, amount: scheduled[k] }));
   // PDF p6: the invoice mirrors the quote's info (job name, details, line
   // items, total) but NEVER the numbered Terms grid nor any signature block —
   // those live on the signed agreement, which is linked BELOW the document
@@ -317,20 +492,17 @@ function InvoiceDoc(
           {/* Eyebrow */}
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
             <div>
-              {invoice.contractor?.hasLogo
-                ? (
-                  <img
-                    src={`/api/public-logo/invoice/${invoice.id}`}
-                    alt=""
-                    style="max-height:44px;max-width:150px;object-fit:contain;display:block;margin-bottom:8px;border-radius:8px"
-                  />
-                )
-                : null}
-              <div
-                style={`font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:${PINK_DARK}`}
-              >
-                {businessLabel}
-              </div>
+              {/* REQ-628: their logo, or their name as a wordmark */}
+              <BizBrand
+                logoSrc={invoice.contractor?.hasLogo
+                  ? publicLogoUrl(
+                    "invoice",
+                    invoice.id,
+                    invoice.contractor.logoVersion,
+                  )
+                  : undefined}
+                name={businessLabel}
+              />
               {/* REQ-201: number · version · state (· date) */}
               <div
                 data-cy="invoice-headline"
@@ -361,6 +533,10 @@ function InvoiceDoc(
               paid={paid}
               claimed={claimed}
               pastDue={pastDue}
+              status={invoice.status}
+              internal={invoice.internal === true}
+              scheduledFor={invoice.scheduledFor}
+              voided={voided}
               es={es}
             />
           </div>
@@ -384,45 +560,6 @@ function InvoiceDoc(
             job-details section below only renders for quote-linked invoices, so
             carry the contractor's note here when it's absent. */
           }
-          {/* REQ-173: a batch invoice — the address is the heading, the visits sit under it */}
-          {invoice.visits?.length
-            ? (
-              <section data-cy="invoice-visits" style="margin-top:18px">
-                {invoice.visits.map((g) => (
-                  <div style="margin-top:14px">
-                    <h2
-                      data-cy="invoice-visit-address"
-                      style={`margin:0;font-size:15px;font-weight:800;color:${TEAL};letter-spacing:-0.01em`}
-                    >
-                      {g.address}
-                    </h2>
-                    <div style={`margin-top:6px;border-top:1px solid ${LINE}`}>
-                      {g.visits.map((v) => (
-                        <div
-                          data-cy="invoice-visit"
-                          style={`display:flex;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid ${LINE};font-size:14px`}
-                        >
-                          <span
-                            style={`flex:0 0 64px;color:${MUTED};font-variant-numeric:tabular-nums`}
-                          >
-                            {fmtVisitDate(v.date, lang)}
-                          </span>
-                          <span style={`flex:1;color:${INK};font-weight:600`}>
-                            {v.service}
-                          </span>
-                          <span
-                            style={`color:${INK};font-variant-numeric:tabular-nums`}
-                          >
-                            {fmtMoneyExact(v.price)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </section>
-            )
-            : null}
           {!rich && !invoice.visits?.length &&
               (invoice.jobDetails?.descriptionByLang?.[lang] ??
                 invoice.jobDetails?.description)
@@ -436,27 +573,33 @@ function InvoiceDoc(
             )
             : null}
 
-          {/* Bill to / From — only on the rich (quote-linked) document */}
-          {rich
-            ? (
-              <section style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
-                <PartyCard
-                  role={tFor(lang, "publicInvoice.billTo")}
-                  name={invoice.customer?.name}
-                  email={invoice.customer?.email}
-                  phone={invoice.customer?.phoneNumber}
-                />
-                <PartyCard
-                  role={tFor(lang, "quoteDoc.from")}
-                  name={invoice.contractor?.name}
-                  businessName={invoice.contractor?.businessName}
-                  email={invoice.contractor?.email}
-                  phone={invoice.contractor?.phoneNumber}
-                  address={invoice.contractor?.addressLine}
-                />
-              </section>
-            )
-            : null}
+          {
+            /* Bill to / From — on every invoice, standalone ones included
+              (REQ-487, demo m58). `customer` is the bill-to snapshot, else
+              the CRM record (getInvoicePublic). */
+          }
+          <section
+            data-cy="invoice-parties"
+            style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px"
+          >
+            <PartyCard
+              role={tFor(lang, "publicInvoice.billTo")}
+              nameSize={18}
+              name={invoice.customer?.name}
+              businessName={invoice.customer?.businessName}
+              email={invoice.customer?.email}
+              phone={invoice.customer?.phoneNumber}
+              address={invoice.customer?.address}
+            />
+            <PartyCard
+              role={tFor(lang, "quoteDoc.from")}
+              name={invoice.contractor?.name}
+              businessName={invoice.contractor?.businessName}
+              email={invoice.contractor?.email}
+              phone={invoice.contractor?.phoneNumber}
+              address={invoice.contractor?.addressLine}
+            />
+          </section>
 
           {
             /* Balance block (REQ-202): Amount, Paid, Balance due — one
@@ -471,11 +614,13 @@ function InvoiceDoc(
               <div
                 style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${GREEN}`}
               >
-                {paid
+                {voided
+                  ? tFor(lang, "publicInvoice.cancelled.label")
+                  : paid
                   ? tFor(lang, "status.paid")
                   : tFor(lang, "public.doc.balanceDue")}
               </div>
-              {invoice.dueDate
+              {invoice.dueDate && !voided
                 ? (
                   <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
                     {paid
@@ -521,7 +666,9 @@ function InvoiceDoc(
               data-cy="invoice-balance-due"
               style={`font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:38px;letter-spacing:-0.03em;color:${TEAL};line-height:1;font-variant-numeric:tabular-nums`}
             >
-              {fmtMoneyExact(paid ? amountCents : balanceCents)}
+              {voided
+                ? fmtMoneyExact(0)
+                : fmtMoneyExact(paid ? amountCents : balanceCents)}
             </div>
           </div>
 
@@ -578,7 +725,15 @@ function InvoiceDoc(
                       <div
                         style={`margin-top:3px;color:${INK};white-space:pre-wrap`}
                       >
-                        {invoice.paymentInstructions}
+                        {
+                          /* REQ-710 (cycle 5, M4): the methods' labels in
+                           the page's language — "· Efectivo" on the English
+                           invoice, beside a "Cash" button (pair 9) */
+                        }
+                        {localizePaymentInstructions(
+                          invoice.paymentInstructions,
+                          lang,
+                        )}
                       </div>
                     </div>
                   )
@@ -669,38 +824,192 @@ function InvoiceDoc(
             )
             : null}
 
-          {/* Already-claimed strip OR active pay UI */}
-          {paid
+          {/* Already-claimed strip OR active pay UI — REQ-627: none on a void bill */}
+          {voided
+            ? (
+              <div
+                data-cy="invoice-cancelled-note"
+                role="status"
+                style={`margin-top:18px;padding:16px 18px;border-radius:14px;background:#f1f1ef;border:1px solid #d9d9d5;color:${INK};font-size:14px;line-height:1.5`}
+              >
+                <strong>
+                  {tFor(lang, "publicInvoice.cancelled.note", {
+                    business: businessLabel,
+                    date: invoice.voidedAt
+                      ? fmtDate(invoice.voidedAt.slice(0, 10), lang)
+                      : "",
+                  })}
+                </strong>
+                {paidCents > 0 && (
+                  <div style={`margin-top:6px;color:${MUTED};font-size:13px`}>
+                    {tFor(lang, "publicInvoice.cancelled.paymentsNote", {
+                      business: businessLabel,
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+            : paid
             ? (
               <ReceivedNote
                 paidAt={invoice.paidAt}
+                channel={receiptSentViaOf(invoice.receiptSentVia) ??
+                  receiptChannelOf(invoice)}
                 contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
                 es={es}
               />
             )
             : claimed
             ? (
-              <ClaimedNote
-                intent={invoice.paymentIntent!}
-                contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
-                es={es}
-              />
+              <>
+                {
+                  /* REQ-557 (demo M25): the business's own preview of a
+                  claimed invoice is addressed to her — who says they paid,
+                  and Confirm received / Didn't get it. The customer keeps
+                  their own note. */
+                }
+                {ownerClaimNoteShown(invoice, search)
+                  ? <OwnerClaimedNote invoice={invoice} lang={lang} />
+                  : (
+                    <ClaimedNote
+                      invoice={invoice}
+                      contractorFirst={contractorFirst}
+                      es={es}
+                    />
+                  )}
+                {
+                  /* REQ-321 (demo M14): this page mounts no claim island, so it
+                  re-reads the invoice itself — the owner's confirm flips it to
+                  PAID without a manual reload. */
+                }
+                <PublicInvoiceRefresh
+                  invoiceId={invoice.id}
+                  status={invoice.status}
+                  version={invoice.version}
+                />
+              </>
             )
             : (
-              <PublicInvoiceClaim
-                invoiceId={invoice.id}
-                acceptedMethods={invoice.acceptedMethods ?? []}
-                customerName={invoice.customer?.name}
-                balanceCents={balanceCents}
-                version={invoice.version}
-                lang={es ? "es" : "en"}
-              />
+              <>
+                {
+                  /* REQ-488 (demo m56): the contractor answered the last
+                  claim with "Didn't get it" — say so, and where to check. */
+                }
+                <ClaimRejectedNote invoice={invoice} lang={lang} />
+                {
+                  /* REQ-782 — "Card payments should be a link to a separate portal": Pay by
+                  card first (the business's Stripe → /i/:id/pay, else its card pay link); the
+                  app buttons and the manual methods below */
+                }
+                {
+                  /* REQ-803 — back from Square without paying: say so; the button stays */
+                  squareReturn && cardWay?.kind === "square"
+                    ? (
+                      <p
+                        data-cy="square-not-completed"
+                        role="status"
+                        style={`margin:24px 0 0;background:rgba(20,72,82,0.05);border-radius:12px;padding:12px 16px;color:${INK};font-size:14px`}
+                      >
+                        {tFor(lang, "payByCard.square.notCompleted")}
+                      </p>
+                    )
+                    : null
+                }
+                <PayByCard
+                  way={cardWay}
+                  lang={lang}
+                  amountCents={balanceCents}
+                  business={businessLabel}
+                  number={invoice.number}
+                  internal={invoice.internal === true}
+                  invoiceId={invoice.id}
+                  version={square?.version ?? invoice.version}
+                />
+                <div data-claim-wrap>
+                  <PublicInvoiceClaim
+                    invoiceId={invoice.id}
+                    acceptedMethods={invoice.acceptedMethods ?? []}
+                    customerName={invoice.customer?.name}
+                    receiptChannel={receiptChannelOf(invoice)}
+                    balanceCents={balanceCents}
+                    version={invoice.version}
+                    lang={es ? "es" : "en"}
+                    internal={invoice.internal === true}
+                    status={invoice.status}
+                    search={search}
+                    hasCard={!!cardWay}
+                    docNumber={invoice.number}
+                  />
+                </div>
+              </>
             )}
 
           {
             /* What this invoice covers — mirrors the signed agreement, minus the
-            14 legal clauses + the signature block. Quote-linked invoices only. */
+            14 legal clauses + the signature block. A standalone invoice shows
+            its own line items here (REQ-487). */
           }
+          {
+            /* REQ-173/791: a batch invoice — its numbered Job details section:
+            each address a heading (with its subtotal when there are several),
+            under it one row per visit by date, the amount at the end. */
+          }
+          {invoice.visits?.length
+            ? (
+              <section data-cy="invoice-visits" style="margin-top:36px">
+                <SectionHeader
+                  n={num()}
+                  title={tFor(lang, "quoteDoc.jobDetails")}
+                />
+                {invoice.visits.map((g, gi) => (
+                  <div style={gi ? "margin-top:22px" : ""}>
+                    <div
+                      style={`display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-bottom:8px;border-bottom:1px solid ${LINE}`}
+                    >
+                      <h2
+                        data-cy="invoice-visit-address"
+                        style={`margin:0;font-size:16px;font-weight:800;color:${TEAL};letter-spacing:-0.01em;line-height:1.35`}
+                      >
+                        {g.address}
+                      </h2>
+                      {invoice.visits!.length > 1
+                        ? (
+                          <span
+                            data-cy="invoice-visit-subtotal"
+                            style={`color:${TEAL};font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap`}
+                          >
+                            {fmtMoneyExact(g.subtotal)}
+                          </span>
+                        )
+                        : null}
+                    </div>
+                    {g.visits.map((v) => (
+                      <div
+                        data-cy="invoice-visit"
+                        style={`display:flex;align-items:baseline;gap:14px;padding:12px 0;border-bottom:1px solid ${LINE};font-size:15px`}
+                      >
+                        <span
+                          data-cy="invoice-visit-date"
+                          style={`flex:0 0 64px;color:${MUTED};font-variant-numeric:tabular-nums`}
+                        >
+                          {fmtVisitDate(v.date, lang)}
+                        </span>
+                        <span style={`flex:1;color:${INK};font-weight:600`}>
+                          {v.service}
+                        </span>
+                        <span
+                          data-cy="invoice-visit-amount"
+                          style={`color:${INK};font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap`}
+                        >
+                          {fmtMoneyExact(v.price)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </section>
+            )
+            : null}
           {rich
             ? (
               <>
@@ -720,8 +1029,9 @@ function InvoiceDoc(
                     // renders when it DIFFERS from this invoice's amount
                     // (i.e. this bill is one installment of a larger job) —
                     // the amount-due card up top is the single total.
-                    showTotal={(agreementTotal ?? sumLineTotals(items)) !==
-                      invoice.amount}
+                    // A standalone bill (REQ-487) has no agreement at all.
+                    showTotal={invoice.agreementTotal != null &&
+                      invoice.agreementTotal !== invoice.amount}
                     labels={{
                       tableDescription: tFor(
                         lang,
@@ -916,8 +1226,20 @@ function InvoiceDoc(
             {(invoice.contractor?.phoneNumber || invoice.contractor?.email)
               ? (
                 <p style="margin:0">
+                  {
+                    /* REQ-499 (demo p6): the lead-in follows the status, so a
+                      paid invoice never asks for questions "before paying" —
+                      on a reload too, not only after an in-session claim. */
+                  }
                   <span data-invoice-question>
-                    {tFor(lang, "publicInvoice.footer.questions")}
+                    {tFor(
+                      lang,
+                      paid
+                        ? "publicInvoice.footer.questionsPaid"
+                        : claimed
+                        ? "publicInvoice.footer.questionsClaimed"
+                        : "publicInvoice.footer.questions",
+                    )}
                   </span>{" "}
                   {invoice.contractor.phoneNumber
                     ? (
@@ -953,17 +1275,6 @@ function InvoiceDoc(
               )
               : null}
           </footer>
-        </div>
-        <div
-          style={`display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;font-size:11px;color:#a8b2b3;letter-spacing:.04em`}
-        >
-          <img
-            src="/logo.png"
-            alt=""
-            height="16"
-            style="height:16px;width:auto;opacity:0.7;display:block"
-          />
-          {tFor(lang, "public.doc.poweredByInvoice", { number: docNumber })}
         </div>
       </article>
 
@@ -1029,49 +1340,36 @@ function InvoiceDoc(
   );
 }
 
+/** REQ-729 (cycle 5, m16): the tone of each pill — a draft or scheduled bill
+ *  in the business's preview is neutral, never the pink "Due". */
+const PILL_COLORS: Record<InvoicePillTone, { bg: string; color: string }> = {
+  good: { bg: "rgba(81,152,67,0.15)", color: GREEN },
+  pending: { bg: "rgba(255,170,40,0.15)", color: "#a06800" },
+  neutral: { bg: "rgba(107,122,126,0.14)", color: MUTED },
+  teal: { bg: "rgba(20,72,82,0.10)", color: TEAL },
+  alert: { bg: "rgba(168,59,59,0.10)", color: "#a83b3b" },
+  due: { bg: "rgba(255,107,107,0.10)", color: PINK_DARK },
+};
+
 function StatusPill(
-  { paid, claimed, pastDue, es }: {
+  { paid, claimed, pastDue, status, internal, scheduledFor, voided, es }: {
     paid: boolean;
     claimed: boolean;
     pastDue: boolean;
+    status?: string;
+    internal: boolean;
+    scheduledFor?: string;
+    voided?: boolean;
     es: boolean;
   },
 ) {
   const lang = es ? "es" : "en";
-  if (paid) {
-    return (
-      <Pill
-        bg={`rgba(81,152,67,0.15)`}
-        color={GREEN}
-        label={tFor(lang, "status.paid")}
-      />
-    );
-  }
-  if (claimed) {
-    return (
-      <Pill
-        bg={`rgba(255,170,40,0.15)`}
-        color="#a06800"
-        label={tFor(lang, "publicInvoice.status.awaitingConfirmation")}
-      />
-    );
-  }
-  if (pastDue) {
-    return (
-      <Pill
-        bg={`rgba(168,59,59,0.10)`}
-        color="#a83b3b"
-        label={tFor(lang, "publicInvoice.status.pastDue")}
-      />
-    );
-  }
-  return (
-    <Pill
-      bg={`rgba(255,107,107,0.10)`}
-      color={PINK_DARK}
-      label={tFor(lang, "publicInvoice.status.due")}
-    />
+  const pill = invoiceStatusPill(
+    { paid, claimed, pastDue, status, internal, scheduledFor, voided },
+    lang,
   );
+  const { bg, color } = PILL_COLORS[pill.tone];
+  return <Pill bg={bg} color={color} label={tFor(lang, pill.key, pill.vars)} />;
 }
 
 function Pill(
@@ -1089,13 +1387,36 @@ function Pill(
   );
 }
 
+/** REQ-557 (demo M25): the claimed note for the business's own viewer —
+ *  who says they paid, with Confirm received / Didn't get it. */
+function OwnerClaimedNote(
+  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+) {
+  const l = lang === "es" ? "es" : "en";
+  const intent = invoice.paymentIntent!;
+  return (
+    <OwnerClaimReview
+      invoiceId={invoice.id}
+      copy={ownerClaimNote((k, v) => tFor(l, k, v), {
+        customer: (intent.claimedBy ?? invoice.customer?.name)?.trim()
+          .split(/\s+/)[0],
+        methodName: methodFriendly(intent.method, l),
+        reference: intent.reference,
+      })}
+    />
+  );
+}
+
 function ClaimedNote(
-  { intent, contractorFirst, es }: {
-    intent: { method: string; reference?: string; claimedAt: string };
+  { invoice, contractorFirst, es }: {
+    /** the claimed invoice — its claim, and (REQ-523, demo m16) where the
+     *  receipt can arrive: a text is promised only when it can */
+    invoice: InvoicePublic;
     contractorFirst?: string;
     es: boolean;
   },
 ) {
+  const intent = invoice.paymentIntent!;
   const lang = es ? "es" : "en";
   const friendly = methodFriendly(intent.method, lang);
   const who = contractorFirst ??
@@ -1123,25 +1444,59 @@ function ClaimedNote(
           )
           : null}
         <br />
-        {tFor(lang, "publicInvoice.claimed.body", { who })}
+        {tFor(lang, claimedNoteKey(receiptChannelOf(invoice)), { who })}
+      </p>
+    </section>
+  );
+}
+
+function ClaimRejectedNote(
+  { invoice, lang }: { invoice: InvoicePublic; lang: Lang },
+) {
+  const l = lang === "es" ? "es" : "en";
+  const method = invoice.claimRejectedMethod;
+  const note = claimRejectedNote((k, v) => tFor(l, k, v), {
+    status: invoice.status,
+    claimRejectedAt: invoice.claimRejectedAt,
+    methodName: method ? methodFriendly(method, l) : "",
+    handle: (invoice.acceptedMethods ?? []).find((m) => m.method === method)
+      ?.handle,
+    who: invoice.contractor?.name?.split(/\s+/)[0] ??
+      tFor(l, "publicInvoice.contractorFallback.lower"),
+  });
+  if (!note) return null;
+  return (
+    <section
+      data-claim-rejected
+      role="status"
+      style={`margin-top:24px;background:rgba(220,60,60,0.05);border:1px solid rgba(220,60,60,0.30);border-radius:14px;padding:18px 22px`}
+    >
+      <div
+        style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#b03030`}
+      >
+        {note.heading}
+      </div>
+      <p
+        style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
+      >
+        {note.body}
       </p>
     </section>
   );
 }
 
 function ReceivedNote(
-  { paidAt, contractorFirst, es }: {
+  { paidAt, contractorFirst, es, channel }: {
     paidAt?: string;
     contractorFirst?: string;
     es: boolean;
+    /** REQ-556: where the receipt went — the inbox sentence only for email */
+    channel?: ReceiptChannel;
   },
 ) {
   const lang = es ? "es" : "en";
   const who = contractorFirst ??
     tFor(lang, "publicInvoice.contractorFallback.capital");
-  const when = paidAt
-    ? tFor(lang, "publicInvoice.received.onDate", { date: paidAt })
-    : "";
   return (
     <section
       style={`margin-top:24px;background:rgba(81,152,67,0.08);border:1px solid rgba(81,152,67,0.30);border-radius:14px;padding:18px 22px`}
@@ -1154,7 +1509,11 @@ function ReceivedNote(
       <p
         style={`margin:8px 0 0;color:${INK};font-size:14.5px;line-height:1.55`}
       >
-        {tFor(lang, "publicInvoice.received.body", { who, when })}
+        {receivedNoteBody((k, v) => tFor(lang, k, v), lang, {
+          paidAt,
+          who,
+          channel,
+        })}
       </p>
     </section>
   );

@@ -4,6 +4,7 @@
  * quote and invoice by number, an inline edit (PUT → a new version), the
  * version history, and delete behind the house modal.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
 import {
   type WorkOrder,
@@ -504,9 +505,9 @@ export default function WorkOrderPage({ id }: { id: string }) {
       )}
 
       {confirmDelete && (
-        <div
+        <Backdrop
           class="modal-bg"
-          onClick={() => !busy && setConfirmDelete(false)}
+          onClose={() => !busy && setConfirmDelete(false)}
         >
           <div
             class="modal"
@@ -537,7 +538,7 @@ export default function WorkOrderPage({ id }: { id: string }) {
               </button>
             </div>
           </div>
-        </div>
+        </Backdrop>
       )}
     </>
   );

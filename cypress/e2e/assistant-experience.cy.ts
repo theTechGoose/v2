@@ -39,7 +39,7 @@
  */
 
 const ES_CHIPS = {
-  knownPrice: "Sé mi precio, redáctalo.",
+  knownPrice: "Ya tengo el precio, redáctalo.",
   helpPrice: "Conozco el trabajo, ayúdame a ponerle precio.",
   quickQuote: "Solo dame una cotización rápida.",
   invoiceDone: "Trabajo terminado, necesito facturar.",

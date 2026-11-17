@@ -20,14 +20,19 @@ const es: Record<string, string> = require("../../lang/es.json");
 
 describe("REQ-078 the card's footer strip is a tidy block", () => {
   it("REQ-078 the SiteFooter is two blocks: a two-column grid of the four links, then the phone and the address — on every page it ends", () => {
-    const src = read("front-end/components/SiteFooter.tsx");
+    // REQ-367: the markup is SiteFooterView.tsx (the live island paints it); its words are
+    // SiteFooter.tsx's siteFooterCopy — the four links from the one list, the grid's label
+    const src = read("front-end/components/SiteFooterView.tsx");
+    const words = read("front-end/components/SiteFooter.tsx");
     // the links block: a nav, a two-column grid, the four links from the one list inside it
     const nav = src.match(/<nav[^>]*data-site-footer-links[\s\S]*?<\/nav>/);
     expect(nav).not.toBeNull();
     expect(nav![0]).toMatch(/display:grid;grid-template-columns:repeat\(2,/);
-    expect(nav![0]).toMatch(/LEGAL_LINKS\.map/);
-    expect(nav![0]).toMatch(
-      /aria-label=\{tFor\(lang, "siteFooter\.policiesAria"\)\}/,
+    expect(nav![0]).toMatch(/copy\.links\.map/);
+    expect(words).toMatch(/links: LEGAL_LINKS\.map/);
+    expect(nav![0]).toMatch(/aria-label=\{copy\.policiesAria\}/);
+    expect(words).toMatch(
+      /policiesAria: tFor\(lang, "siteFooter\.policiesAria"\)/,
     );
     // the contact block after it: the phone, then the address
     const after = src.slice(src.indexOf("</nav>"));
@@ -73,11 +78,15 @@ describe("REQ-078 the card's footer strip is a tidy block", () => {
  */
 describe("REQ-079 the block is the page's actual footer", () => {
   it("REQ-079 the SiteFooter paints itself teal and full width, no page styles it, the card pages end with it outside the card, and the padded panes bleed it to their edges", () => {
-    const src = read("front-end/components/SiteFooter.tsx");
+    // REQ-367: the markup is SiteFooterView.tsx, mounted by SiteFooter.tsx through the live island
+    const src = read("front-end/components/SiteFooterView.tsx");
     const tag = src.match(/<footer[\s\S]*?>/)![0];
     expect(tag).toMatch(/background:var\(--brand-teal/);
     expect(tag).not.toMatch(/border-radius/);
     expect(src).not.toMatch(/style\?: string/);
+    expect(read("front-end/components/SiteFooter.tsx")).not.toMatch(
+      /style\?: string/,
+    );
     // verify.css no longer paints every <footer> as a website footer
     const verify = read("front-end/static/verify.css");
     expect(verify).not.toMatch(/^footer \{/m);

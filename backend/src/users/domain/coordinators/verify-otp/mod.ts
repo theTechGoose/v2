@@ -9,7 +9,8 @@ import { issueRecoveryToken } from "@users/domain/data/recovery-token-store/mod.
 import { isPlaceholderName, placeholderNameFor } from "@users/domain/business/placeholder-name/mod.ts";
 import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
 import { pickSignInAccount } from "@users/domain/business/account-admins/mod.ts";
-import type { User } from "@users/dto/user.ts";
+import type { Language, User } from "@users/dto/user.ts";
+import { acceptsMasterCode } from "@users/domain/business/master-otp/mod.ts";
 
 /**
  * REQ-039 (NW-52): the verified phone belongs to a CLOSED account. No
@@ -28,11 +29,6 @@ const MAX_ATTEMPTS = 5;
 
 export { placeholderNameFor };
 
-/** Universal dev/CI bypass. When NOT running on Deno Deploy, any phone
- *  number paired with this code logs in (find-or-create user + mint
- *  session) without needing a real OTP record. Lets Cypress / local
- *  scripts log in as anyone in one POST. Hard-disabled in prod. */
-const DEV_MASTER_CODE = "000000";
 /** Opt-in flag for older Cypress specs that expect the master OTP to
  *  also seed a fully-onboarded "Dev User / Dev Business" identity and
  *  short-circuit the new-user redirect. Off by default — only the
@@ -41,13 +37,14 @@ const DEV_MASTER_CODE = "000000";
  *  send-OTP + verify-OTP flow end to end. */
 const SEED_DEV_DEFAULTS = (typeof Deno !== "undefined")
   && Deno.env.get("DEV_MASTER_OTP_SEED_DEFAULTS") === "1";
-const IS_PROD = typeof Deno !== "undefined" && Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined;
 
 export class InvalidCodeError    extends Error { constructor() { super("invalid_code");    this.name = "InvalidCodeError"; } }
 export class ExpiredCodeError    extends Error { constructor() { super("expired");         this.name = "ExpiredCodeError"; } }
 export class RateLimitedError    extends Error { constructor() { super("rate_limited");    this.name = "RateLimitedError"; } }
 
-export interface VerifyOtpInput  { phoneNumber: string; code: string; }
+/** REQ-590: `language` is the one showing on /verify (its EN | ES toggle) — a NEW account is born
+ *  in it over the OTP record's; an existing account keeps its own. */
+export interface VerifyOtpInput  { phoneNumber: string; code: string; language?: Language; }
 /** REQ-146: `userId` is the account the session opened IN — the owner's when the
  *  phone administers an account (`actorId` is then the person's own id). */
 export interface VerifyOtpResult { sessionId: string; userId: string; isNewUser: boolean; actorId?: string; }
@@ -98,7 +95,9 @@ export class VerifyOtp {
   async run(input: VerifyOtpInput): Promise<VerifyOtpResult> {
     const phone = normalizePhone(input.phoneNumber);
 
-    if (!IS_PROD && input.code === DEV_MASTER_CODE) {
+    // Universal dev/CI bypass (Cypress / local scripts log in as anyone in one POST) — only on
+    // the fakes, by REQ-318's switch (REQ-286).
+    if (acceptsMasterCode(input.code)) {
       const existing = await this.users.findByPhone(phone);
     if (existing?.deletedAt) {
       throw new AccountClosedError(existing.id, await issueRecoveryToken(existing.id));
@@ -108,7 +107,7 @@ export class VerifyOtp {
       // (so dev signups with 000000 still respect the EN/ES toggle).
       const otpRec = existing ? null : await this.otps.get(phone).catch(() => null);
       const otpLang = otpRec?.language;
-      const newLang = deriveLanguageOnVerify(null, otpLang) ?? "es";
+      const newLang = deriveLanguageOnVerify(null, otpLang, input.language) ?? "es"; // REQ-590
       let user = existing
         ?? await this.users.create({
           phoneNumber: phone,
@@ -151,7 +150,7 @@ export class VerifyOtp {
     if (existing?.deletedAt) {
       throw new AccountClosedError(existing.id, await issueRecoveryToken(existing.id));
     }
-    const language = deriveLanguageOnVerify(existing, otp.language);
+    const language = deriveLanguageOnVerify(existing, otp.language, input.language); // REQ-590
     const user = existing
       ? (language && language !== existing.language
           ? await this.users.update(existing.id, { language })

@@ -10,15 +10,28 @@ import { assert, assertEquals } from "#std/assert";
 import { DanetApplication, Module } from "#danet/core";
 import { UsersModule } from "@users/mod-root.ts";
 import { DemoModeModule } from "@demo-mode/mod-root.ts";
+import { DemoHub } from "@demo-mode/domain/coordinators/demo-hub/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { composeRouter } from "../../../../../compose-router.ts";
-import { parseServerMessage, type ServerMessage } from "#demo-mode/protocol.ts";
+import {
+  MIRROR_CHUNK_CHARS,
+  parseServerMessage,
+  PRESENTER_COLORS,
+  type ServerMessage,
+} from "#demo-mode/protocol.ts";
+import { ChunkAssembler, chunkText, newLoadId } from "#demo-mode/mirror.ts";
 
 @Module({ imports: [UsersModule, DemoModeModule] })
 class TestApp {}
-const PORT = 9193;
+/** a free port, so parallel worktrees running this file never collide */
+const PORT = (() => {
+  const l = Deno.listen({ port: 0, hostname: "127.0.0.1" });
+  const p = (l.addr as Deno.NetAddr).port;
+  l.close();
+  return p;
+})();
 const J = { "content-type": "application/json" };
 // deno-lint-ignore no-explicit-any
 type Res = { status: number; body: any };
@@ -29,7 +42,9 @@ type Call = (
   headers?: HeadersInit,
 ) => Promise<Res>;
 
-async function withServer(fn: (call: Call) => Promise<void>) {
+async function withServer(
+  fn: (call: Call, app: DanetApplication) => Promise<void>,
+) {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("TWILIO_ACCOUNT_SID");
   await resetKv();
@@ -62,7 +77,7 @@ async function withServer(fn: (call: Call) => Promise<void>) {
     return { status: r.status, body: parsed };
   };
   try {
-    await fn(call);
+    await fn(call, app);
   } finally {
     ac.abort();
     await srv.finished;
@@ -120,6 +135,18 @@ function open(sessionId: string, token: string) {
     await closed;
   };
   return { ws, next, send, close, closed, failed: () => failed };
+}
+
+/** REQ-232 — the socket id a welcome names */
+const cidOf = (m: ServerMessage) => m.t === "welcome" ? m.cid : undefined;
+/** REQ-232 — nothing more arrives on `s` within `ms` */
+async function quiet(
+  s: ReturnType<typeof open>,
+  what: string,
+  ms = 300,
+): Promise<void> {
+  const got = await s.next(what, ms).then((m) => m, () => null);
+  assertEquals(got, null, `${what}: nothing more`);
 }
 
 Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on active with the presenter's name; a stranger sees none and may not open one", async () => {
@@ -190,8 +217,15 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
         presenterName: "Hans",
         targetName: "Ana Torres",
         targetUserId: ana.body.userId,
+        // REQ-214 — who is presenting, each with their colour
+        presenters: [{
+          userId: hans.body.userId,
+          name: "Hans",
+          color: PRESENTER_COLORS[0],
+        }],
       },
       targetPath: null,
+      pid: null,
     });
     assertEquals(
       (await call(
@@ -200,7 +234,7 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
         undefined,
         H(carl.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     assertEquals(
       (await call(
@@ -264,8 +298,36 @@ Deno.test("REQ-153 a super admin opens a demo for a user; the user sees it on ac
         undefined,
         H(ana.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
+  });
+});
+
+/** REQ-227 (demo-lifecycle-p2) — a demo on yourself would make you both the customer and the presenter */
+Deno.test("REQ-227 a super admin may not open a demo on their own account: 400, and no demo is open", async () => {
+  await withServer(async (call) => {
+    const hans = await signIn(call, "+15125553011");
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553011",
+      })).status,
+      200,
+    );
+    const self = await call("POST", "/api/demo-mode/sessions", {
+      userId: hans.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(
+      self.status,
+      400,
+      `a demo on yourself is refused (${JSON.stringify(self.body)})`,
+    );
+    const active = await call(
+      "GET",
+      "/api/demo-mode/active",
+      undefined,
+      H(hans.body.sessionId),
+    );
+    assertEquals(active.body.session, null, "no demo was opened");
   });
 });
 
@@ -305,42 +367,73 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
 
     const presenter = open(made.body.id, imp.body.sessionId);
     const w1 = await presenter.next("the presenter's welcome");
+    // REQ-232 — every welcome names its own socket
+    const pc = cidOf(w1);
+    assert(typeof pc === "string" && pc.length > 8);
     assertEquals(w1, {
       t: "welcome",
       role: "presenter",
       sessionId: made.body.id,
       peerOnline: false,
+      pid: hans.body.userId,
+      cid: pc,
     });
     const viewer = open(made.body.id, ana.body.sessionId);
     const w2 = await viewer.next("the viewer's welcome");
+    const vc = cidOf(w2);
+    assert(typeof vc === "string" && vc !== pc);
     assertEquals(w2, {
       t: "welcome",
       role: "viewer",
       sessionId: made.body.id,
       peerOnline: true,
+      cid: vc,
+    });
+    // REQ-214 — after the welcome the viewer is told which presenters are here, by pid (and
+    // REQ-232 — by socket)
+    assertEquals(await viewer.next("who is presenting"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: pc,
     });
     assertEquals(await presenter.next("the presenter hears the viewer"), {
       t: "peer",
       online: true,
+      cid: vc,
     });
 
+    // a signal with no address (a client from before REQ-232) still reaches the other side
     presenter.send({ t: "signal", data: { type: "offer", sdp: "v=0" } });
     assertEquals(await viewer.next("the offer"), {
       t: "signal",
       from: "presenter",
+      pid: hans.body.userId,
+      cid: pc,
       data: { type: "offer", sdp: "v=0" },
     });
     viewer.send({ t: "signal", data: { type: "answer", sdp: "v=1" } });
     assertEquals(await presenter.next("the answer"), {
       t: "signal",
       from: "viewer",
+      cid: vc,
       data: { type: "answer", sdp: "v=1" },
     });
-    viewer.send({ t: "relay", data: { k: "view", v: { path: "/customers" } } });
-    assertEquals(await presenter.next("the view"), {
+    // REQ-242 — the customer's screen crosses as mirror chunks (the old view patch is gone)
+    const chunk = {
+      k: "dom" as const,
+      l: "lp0q1x2-ab12",
+      s: 0,
+      i: 0,
+      n: 1,
+      d: "{}",
+    };
+    viewer.send({ t: "relay", data: chunk });
+    assertEquals(await presenter.next("the mirror chunk"), {
       t: "relay",
       from: "viewer",
-      data: { k: "view", v: { path: "/customers" } },
+      cid: vc,
+      data: chunk,
     });
     presenter.send({
       t: "relay",
@@ -353,6 +446,8 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
     assertEquals(await viewer.next("the click"), {
       t: "relay",
       from: "presenter",
+      pid: hans.body.userId,
+      cid: pc,
       data: { k: "click", a: { vx: 0.2, vy: 0.3 } },
     });
     presenter.send("junk");
@@ -364,6 +459,8 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
     assertEquals(await viewer.next("only the good message after junk"), {
       t: "relay",
       from: "presenter",
+      pid: hans.body.userId,
+      cid: pc,
       data: { k: "leave" },
     });
 
@@ -382,7 +479,7 @@ Deno.test("REQ-153 the presenter (impersonating) and the viewer connect over the
         undefined,
         H(ana.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     const late = open(made.body.id, ana.body.sessionId);
     await late.closed;
@@ -420,7 +517,7 @@ Deno.test("REQ-153 AMENDMENT — Not now: the viewer declines over HTTP and the 
         undefined,
         H(hans.body.sessionId),
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
   });
 });
@@ -442,7 +539,7 @@ Deno.test("REQ-153 AMENDMENT — same screen at once: the customer's poll record
         undefined,
         A,
       )).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     const made = await call("POST", "/api/demo-mode/sessions", {
       userId: ana.body.userId,
@@ -539,7 +636,7 @@ Deno.test("REQ-153 AMENDMENT — same screen at once: the customer's poll record
     assert(other.body.id !== made.body.id);
     assertEquals(
       (await call("GET", "/api/demo-mode/active", undefined, A)).body,
-      { role: null, session: null, targetPath: null },
+      { role: null, session: null, targetPath: null, pid: null },
     );
     assertEquals(
       (await call(
@@ -561,5 +658,1504 @@ Deno.test("REQ-153 AMENDMENT — same screen at once: the customer's poll record
       null,
       "Bo's page is not known yet",
     );
+  });
+});
+
+Deno.test("REQ-214 two staff present to one customer: the second Demo joins the live demo; active lists both with distinct colours and the caller's pid; the sockets stamp and route; a demo for another customer leaves the first (and ends it when nobody is left); End ends it for all", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553041");
+    await call(
+      "PUT",
+      "/api/me",
+      { name: "Ana Torres", language: "en" },
+      H(ana.body.sessionId),
+    );
+    const bo = await signIn(call, "+15125553042");
+    const hans = await signIn(call, "+15125553043");
+    await call(
+      "PUT",
+      "/api/me",
+      { name: "Hans", language: "en" },
+      H(hans.body.sessionId),
+    );
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553043" });
+    const lia = await signIn(call, "+15125553044");
+    await call(
+      "PUT",
+      "/api/me",
+      { name: "Lia", language: "en" },
+      H(lia.body.sessionId),
+    );
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553044" });
+    const A = H(ana.body.sessionId);
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    // Lia clicks Demo on Ana too: she JOINS Hans's demo
+    const joined = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, L);
+    assertEquals(joined.status, 200, JSON.stringify(joined.body));
+    assertEquals(joined.body.id, made.body.id);
+
+    const forAna = await call("GET", "/api/demo-mode/active", undefined, A);
+    assertEquals(forAna.body.role, "viewer");
+    assertEquals(forAna.body.pid, null);
+    assertEquals(forAna.body.session.presenterName, "Hans");
+    assertEquals(forAna.body.session.presenters, [
+      { userId: hans.body.userId, name: "Hans", color: PRESENTER_COLORS[0] },
+      { userId: lia.body.userId, name: "Lia", color: PRESENTER_COLORS[1] },
+    ], "both presenters, each with a colour of their own");
+    const forLia = await call("GET", "/api/demo-mode/active", undefined, L);
+    assertEquals(forLia.body.role, "presenter");
+    assertEquals(
+      forLia.body.pid,
+      lia.body.userId,
+      "the caller's own presenter id",
+    );
+    assertEquals(forLia.body.session.id, made.body.id);
+    const imp = await call(
+      "POST",
+      `/api/admin/impersonate/${ana.body.userId}`,
+      undefined,
+      L,
+    );
+    assertEquals(imp.status, 200, JSON.stringify(imp.body));
+    const I = H(imp.body.sessionId);
+    const fromImp = await call("GET", "/api/demo-mode/active", undefined, I);
+    assertEquals(fromImp.body.role, "presenter");
+    assertEquals(
+      fromImp.body.pid,
+      lia.body.userId,
+      "impersonating Ana, Lia is still Lia",
+    );
+
+    // the sockets: Hans on his own session, Lia impersonating, then Ana
+    // REQ-232 — every message below also names the socket it is from (or about)
+    const ph = open(made.body.id, hans.body.sessionId);
+    const hw = await ph.next("Hans's welcome");
+    const hc = cidOf(hw);
+    assertEquals(hw, {
+      t: "welcome",
+      role: "presenter",
+      sessionId: made.body.id,
+      peerOnline: false,
+      pid: hans.body.userId,
+      cid: hc,
+    });
+    const pl = open(made.body.id, imp.body.sessionId);
+    const lw = await pl.next("Lia's welcome");
+    const lc = cidOf(lw);
+    assertEquals(lw, {
+      t: "welcome",
+      role: "presenter",
+      sessionId: made.body.id,
+      peerOnline: false,
+      pid: lia.body.userId,
+      cid: lc,
+    });
+    assertEquals(await pl.next("Lia is told Hans is here"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: hc,
+    });
+    assertEquals(await ph.next("Hans hears Lia arrive"), {
+      t: "peer",
+      online: true,
+      pid: lia.body.userId,
+      cid: lc,
+    });
+    const v = open(made.body.id, ana.body.sessionId);
+    const aw = await v.next("Ana's welcome");
+    const vc = cidOf(aw);
+    assertEquals(aw, {
+      t: "welcome",
+      role: "viewer",
+      sessionId: made.body.id,
+      peerOnline: true,
+      cid: vc,
+    });
+    assertEquals(await v.next("who is here: Hans"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: hc,
+    });
+    assertEquals(await v.next("who is here: Lia"), {
+      t: "peer",
+      online: true,
+      pid: lia.body.userId,
+      cid: lc,
+    });
+    assertEquals(await ph.next("Hans hears Ana"), {
+      t: "peer",
+      online: true,
+      cid: vc,
+    });
+    assertEquals(await pl.next("Lia hears Ana"), {
+      t: "peer",
+      online: true,
+      cid: vc,
+    });
+
+    // Hans's click: Ana and Lia get it stamped hans
+    ph.send({ t: "relay", data: { k: "click", a: { vx: 0.2, vy: 0.3 } } });
+    const click: ServerMessage = {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: hc,
+      data: { k: "click", a: { vx: 0.2, vy: 0.3 } },
+    };
+    assertEquals(await v.next("Ana gets Hans's click"), click);
+    assertEquals(await pl.next("Lia gets Hans's click"), click);
+    // Lia's pointer for her colleagues only: Hans gets it, Ana never (her next message is Hans's next click)
+    pl.send({ t: "relay", data: { k: "leave" }, to: "presenters" });
+    assertEquals(await ph.next("Hans gets Lia's leave"), {
+      t: "relay",
+      from: "presenter",
+      pid: lia.body.userId,
+      cid: lc,
+      data: { k: "leave" },
+    });
+    ph.send({ t: "relay", data: { k: "click", a: { vx: 0.5, vy: 0.5 } } });
+    assertEquals(
+      await v.next(
+        "Ana's next message is Hans's second click, not Lia's leave",
+      ),
+      {
+        ...click,
+        data: { k: "click", a: { vx: 0.5, vy: 0.5 } },
+      },
+    );
+    await pl.next("Lia gets it too");
+    // Ana's signal addressed to Lia (REQ-232: to her stage's socket) reaches Lia only; Ana's
+    // move reaches both
+    v.send({
+      t: "signal",
+      data: { type: "answer", sdp: "v=1" },
+      to: lc,
+    });
+    assertEquals(await pl.next("Lia gets the answer"), {
+      t: "signal",
+      from: "viewer",
+      cid: vc,
+      data: { type: "answer", sdp: "v=1" },
+    });
+    v.send({ t: "relay", data: { k: "move", a: { vx: 0.1, vy: 0.1 } } });
+    const move: ServerMessage = {
+      t: "relay",
+      from: "viewer",
+      cid: vc,
+      data: { k: "move", a: { vx: 0.1, vy: 0.1 } },
+    };
+    assertEquals(
+      await ph.next("Hans gets Ana's move (and never the answer for Lia)"),
+      move,
+    );
+    assertEquals(await pl.next("Lia gets Ana's move"), move);
+
+    // Lia opens a demo for Bo: she leaves Ana's demo, which goes on with Hans
+    const other = await call("POST", "/api/demo-mode/sessions", {
+      userId: bo.body.userId,
+    }, L);
+    assertEquals(other.status, 201, JSON.stringify(other.body));
+    assert(other.body.id !== made.body.id);
+    assertEquals(await ph.next("Hans hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    assertEquals(await v.next("Ana hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    await pl.closed;
+    const still = await call("GET", "/api/demo-mode/active", undefined, A);
+    assertEquals(still.body.session.id, made.body.id, "Ana's demo goes on");
+    assertEquals(
+      still.body.session.presenters.map((p: { name: string }) => p.name),
+      ["Hans"],
+    );
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, L)).body.session
+        .id,
+      other.body.id,
+    );
+    assertEquals(
+      (await call(
+        "GET",
+        "/api/demo-mode/active",
+        undefined,
+        H(bo.body.sessionId),
+      )).body.session.presenters,
+      [
+        { userId: lia.body.userId, name: "Lia", color: PRESENTER_COLORS[0] },
+      ],
+      "a fresh demo starts the palette over",
+    );
+
+    // Hans ends: everyone on Ana's demo hears it (REQ-235: and that it was Hans); Lia's demo for
+    // Bo is untouched
+    ph.send({ t: "end" });
+    assertEquals(await v.next("Ana hears the end"), {
+      t: "ended",
+      by: "presenter",
+      pid: hans.body.userId,
+    });
+    assertEquals(await ph.next("Hans hears it too"), {
+      t: "ended",
+      by: "presenter",
+      pid: hans.body.userId,
+    });
+    await v.closed;
+    await ph.closed;
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, A)).body,
+      { role: null, session: null, targetPath: null, pid: null },
+    );
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, L)).body.session
+        .id,
+      other.body.id,
+    );
+
+    // the last presenter leaving ends a demo: Lia opens one for Ana again, so Bo's is over
+    const again = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, L);
+    assertEquals(again.status, 201);
+    assertEquals(
+      (await call(
+        "GET",
+        "/api/demo-mode/active",
+        undefined,
+        H(bo.body.sessionId),
+      )).body.session,
+      null,
+      "nobody left on Bo's demo: it ended",
+    );
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, A)).body.session
+        .id,
+      again.body.id,
+    );
+  });
+});
+
+Deno.test("REQ-242 the mirror crosses the composed router's relay: a 120 KB snapshot as dom chunks reassembles byte-identical on the presenter, in order; a presenter's resync reaches the viewer; oversized and malformed chunks are dropped", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553062" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    const imp = await call(
+      "POST",
+      `/api/admin/impersonate/${ana.body.userId}`,
+      undefined,
+      H(hans.body.sessionId),
+    );
+    const presenter = open(made.body.id, imp.body.sessionId);
+    const pc = cidOf(await presenter.next("the presenter's welcome"));
+    const viewer = open(made.body.id, ana.body.sessionId);
+    const vc = cidOf(await viewer.next("the viewer's welcome"));
+    await viewer.next("who is presenting");
+    await presenter.next("the presenter hears the viewer");
+
+    // a snapshot-sized frame: quotes to escape, Spanish, an emoji (two-byte strings in the KV mail)
+    const bubbles = Array.from({ length: 1_000 }, (_, i) => ({
+      i: i + 10,
+      t: "div",
+      a: { class: "msg msg--user", "data-n": String(i) },
+      c: [{ i: 100_000 + i, x: `Cambiar el fregadero “${i}” 🚰 — ¿listo?` }],
+    }));
+    const text = JSON.stringify({
+      t: "snap",
+      w: 420,
+      h: 800,
+      u: "/assistant/abc",
+      root: { i: 1, t: "html", c: [{ i: 2, t: "body", c: bubbles }] },
+      ops: [],
+    });
+    assert(text.length > 120_000, `the frame is big (${text.length} chars)`);
+    const parts = chunkText(text);
+    assert(parts.length >= 8, `cut into ${parts.length} chunks`);
+    const l = newLoadId();
+    parts.forEach((d, i) =>
+      viewer.send({
+        t: "relay",
+        data: { k: "dom", l, s: 0, i, n: parts.length, d },
+      })
+    );
+    const asm = new ChunkAssembler();
+    let whole: { l: string; s: number; z: boolean; text: string } | null = null;
+    for (let k = 0; k < parts.length; k++) {
+      const m = await presenter.next(`chunk ${k}`);
+      assertEquals(m.t, "relay");
+      if (m.t !== "relay") return;
+      assertEquals(m.from, "viewer");
+      assertEquals(m.data.k, "dom");
+      if (m.data.k !== "dom") return;
+      assertEquals(m.data.i, k, "the relay keeps the order");
+      whole = asm.push(m.data) ?? whole;
+    }
+    assert(whole, "every chunk arrived");
+    assertEquals(whole!.text, text, "byte-identical");
+    assertEquals(whole!.l, l);
+
+    presenter.send({ t: "relay", data: { k: "resync" } });
+    assertEquals(await viewer.next("the resync"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: pc, // REQ-232 — every relay names its socket
+      data: { k: "resync" },
+    });
+
+    // junk never crosses: a chunk over the size, an index past the count, a bad load id
+    viewer.send({
+      t: "relay",
+      data: {
+        k: "dom",
+        l,
+        s: 1,
+        i: 0,
+        n: 1,
+        d: "x".repeat(MIRROR_CHUNK_CHARS + 1),
+      },
+    });
+    viewer.send({
+      t: "relay",
+      data: { k: "dom", l, s: 2, i: 1, n: 1, d: "x" },
+    });
+    viewer.send({
+      t: "relay",
+      data: { k: "dom", l: "no spaces", s: 3, i: 0, n: 1, d: "x" },
+    });
+    viewer.send({ t: "relay", data: { k: "leave" } });
+    assertEquals(await presenter.next("only the leave after the junk"), {
+      t: "relay",
+      from: "viewer",
+      cid: vc,
+      data: { k: "leave" },
+    });
+    await presenter.close();
+    await viewer.close();
+  });
+});
+
+Deno.test("REQ-232 two customer tabs over the composed router's socket: each welcome names its own cid; the stage hears each tab by cid; an offer addressed to tab 1 reaches tab 1 only and the answer the stage only; a claim and a sync cross; tab 2 closing tells the stage that tab 2 left while tab 1 stays", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553051");
+    const hans = await signIn(call, "+15125553052");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553052" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    const ws = await stage.next("the stage's welcome");
+    const sc = cidOf(ws);
+    assert(
+      typeof sc === "string" && sc.length > 8,
+      `the stage's welcome names its socket (${JSON.stringify(ws)})`,
+    );
+    const tab1 = open(made.body.id, ana.body.sessionId);
+    const c1 = cidOf(await tab1.next("tab 1's welcome"));
+    assertEquals(await tab1.next("tab 1 is told the stage is here"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: sc,
+    });
+    assertEquals(await stage.next("tab 1 arrives"), {
+      t: "peer",
+      online: true,
+      cid: c1,
+    });
+    const tab2 = open(made.body.id, ana.body.sessionId);
+    const c2 = cidOf(await tab2.next("tab 2's welcome"));
+    assert(c1 && c2 && c1 !== c2, "each tab has its own socket id");
+    await tab2.next("tab 2 is told the stage is here");
+    assertEquals(await stage.next("tab 2 arrives"), {
+      t: "peer",
+      online: true,
+      cid: c2,
+    });
+
+    stage.send({ t: "signal", data: { type: "offer", sdp: "v=0" }, to: c1 });
+    assertEquals(await tab1.next("the offer"), {
+      t: "signal",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: { type: "offer", sdp: "v=0" },
+    });
+    tab1.send({ t: "signal", data: { type: "answer", sdp: "v=1" }, to: sc });
+    assertEquals(await stage.next("the answer"), {
+      t: "signal",
+      from: "viewer",
+      cid: c1,
+      data: { type: "answer", sdp: "v=1" },
+    });
+    tab2.send({ t: "claim", at: 1234 });
+    assertEquals(await stage.next("tab 2's claim"), {
+      t: "claim",
+      cid: c2,
+      at: 1234,
+    });
+    stage.send({ t: "sync", to: c2 });
+    assertEquals(await tab2.next("the stage asks tab 2 for its view"), {
+      t: "sync",
+    });
+    await tab2.close();
+    assertEquals(await stage.next("tab 2 left — tab 2 only"), {
+      t: "peer",
+      online: false,
+      cid: c2,
+    });
+    // tab 1 is still in: its view reaches the stage, stamped tab 1
+    const tab1Chunk = {
+      k: "dom" as const,
+      l: "lp0q1x2-ab12",
+      s: 0,
+      i: 0,
+      n: 1,
+      d: "/customers",
+    };
+    tab1.send({ t: "relay", data: tab1Chunk });
+    assertEquals(await stage.next("tab 1's view"), {
+      t: "relay",
+      from: "viewer",
+      cid: c1,
+      data: tab1Chunk,
+    });
+    await quiet(tab1, "tab 1 got nothing meant for tab 2");
+    await stage.close();
+    await tab1.close();
+  });
+});
+
+Deno.test("REQ-393 (demo M2, M8 — cycle 2) over the composed router's socket: a stage's leave and move addressed to one tab (`tab`) reach that tab only — never the customer's other tab — and an anchor off the shared screen (o: 1) crosses intact", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553931");
+    const hans = await signIn(call, "+15125553932");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553932" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    const sc = cidOf(await stage.next("the stage's welcome"));
+    const tab1 = open(made.body.id, ana.body.sessionId);
+    const c1 = cidOf(await tab1.next("tab 1's welcome"));
+    await tab1.next("tab 1 is told the stage is here");
+    await stage.next("tab 1 arrives");
+    const tab2 = open(made.body.id, ana.body.sessionId);
+    const c2 = cidOf(await tab2.next("tab 2's welcome"));
+    await tab2.next("tab 2 is told the stage is here");
+    await stage.next("tab 2 arrives");
+    assert(c1 && c2 && sc, "every socket is named");
+
+    // the stage follows tab 2 now: tab 1, the tab it left, hears its leave — tab 1 only
+    stage.send({ t: "relay", data: { k: "leave" }, tab: c1 });
+    assertEquals(await tab1.next("tab 1 hears the leave"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: { k: "leave" },
+    });
+    // the presenter's mouse is beside the frame: tab 2 gets the move, off its screen
+    const off = {
+      k: "move" as const,
+      a: { vx: 0, vy: 0.4, o: 1 as const },
+      t: 12,
+    };
+    stage.send({ t: "relay", data: off, tab: c2 });
+    assertEquals(await tab2.next("tab 2 gets the off-screen move"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: off,
+    });
+    await quiet(tab1, "tab 1 never got tab 2's move");
+    await quiet(tab2, "tab 2 never got tab 1's leave");
+    await stage.close();
+    await tab1.close();
+    await tab2.close();
+  });
+});
+
+Deno.test("REQ-292 M6 — a customer tab whose socket closes the instant it opens (before its welcome, while the join is still awaited) is announced to the stage as arrived and then gone: never a ghost tab that keeps the pill Live", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553062" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+    for (let i = 0; i < 5; i++) {
+      // the tab's socket: closed as soon as it is open, before any frame from the server
+      const ws = new WebSocket(
+        `ws://localhost:${PORT}/api/demo-mode/ws?session=${made.body.id}&token=${ana.body.sessionId}`,
+      );
+      const closed = new Promise<void>((r) => (ws.onclose = () => r()));
+      ws.onerror = () => {};
+      ws.onopen = () => ws.close();
+      await closed;
+      const came = await stage.next(`tab ${i} arrives`);
+      assert(
+        came.t === "peer" && came.online && !("pid" in came),
+        `tab ${i} arrives: ${JSON.stringify(came)}`,
+      );
+      const went = await stage.next(`tab ${i} leaves`, 1500);
+      assertEquals(
+        went,
+        { t: "peer", online: false, cid: came.cid },
+        `tab ${i}: closed mid-join, it must still be announced gone`,
+      );
+    }
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-232 POST /demo-mode/sessions/:id/leave — the customer may not (403), a stranger neither (403), an unknown demo is 404; a presenter with a colleague leaves: the colleague and the customer hear them go and the demo goes on; the last presenter leaving ends it for everyone", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553062" });
+    const lia = await signIn(call, "+15125553063");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553063" });
+    const carl = await signIn(call, "+15125553064");
+    const A = H(ana.body.sessionId);
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(made.status, 201);
+    assertEquals(
+      (await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, L)).body.id,
+      made.body.id,
+      "Lia joins Hans's demo",
+    );
+    const id = made.body.id;
+    const ph = open(id, hans.body.sessionId);
+    const hc = cidOf(await ph.next("Hans's welcome"));
+    const pl = open(id, lia.body.sessionId);
+    await pl.next("Lia's welcome");
+    await pl.next("Lia is told Hans is here");
+    await ph.next("Hans hears Lia arrive");
+    const v = open(id, ana.body.sessionId);
+    await v.next("Ana's welcome");
+    await v.next("Ana is told of Hans");
+    await v.next("Ana is told of Lia");
+    await ph.next("Hans hears Ana");
+    await pl.next("Lia hears Ana");
+
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/${id}/leave`, undefined, A))
+        .status,
+      403,
+      "the customer ends a demo, never leaves it",
+    );
+    assertEquals(
+      (await call(
+        "POST",
+        `/api/demo-mode/sessions/${id}/leave`,
+        undefined,
+        H(carl.body.sessionId),
+      )).status,
+      403,
+    );
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/nope/leave`, undefined, P))
+        .status,
+      404,
+    );
+
+    // Lia leaves: Hans and Ana hear her go; her socket is closed; the demo goes on with Hans
+    const left = await call(
+      "POST",
+      `/api/demo-mode/sessions/${id}/leave`,
+      undefined,
+      L,
+    );
+    assertEquals(left.status, 200, JSON.stringify(left.body));
+    assertEquals(await ph.next("Hans hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    assertEquals(await v.next("Ana hears Lia go"), {
+      t: "peer",
+      online: false,
+      pid: lia.body.userId,
+    });
+    await pl.closed;
+    assertEquals(
+      (await call("GET", "/api/demo-mode/active", undefined, L)).body,
+      { role: null, session: null, targetPath: null, pid: null },
+      "Lia is out of it",
+    );
+    const still = await call("GET", "/api/demo-mode/active", undefined, A);
+    assertEquals(still.body.session.id, id, "the demo goes on");
+    assertEquals(
+      still.body.session.presenters.map((p: { userId: string }) => p.userId),
+      [hans.body.userId],
+    );
+
+    // Hans, the last one, leaves: it ends for everyone
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/${id}/leave`, undefined, P))
+        .status,
+      200,
+    );
+    // REQ-235 — and hears it was Hans who ended it
+    assertEquals(await v.next("Ana hears the end"), {
+      t: "ended",
+      by: "presenter",
+      pid: hans.body.userId,
+    });
+    assertEquals(await ph.next("Hans hears it too"), {
+      t: "ended",
+      by: "presenter",
+      pid: hans.body.userId,
+    });
+    await v.closed;
+    await ph.closed;
+    for (const who of [A, P]) {
+      assertEquals(
+        (await call("GET", "/api/demo-mode/active", undefined, who)).body,
+        { role: null, session: null, targetPath: null, pid: null },
+      );
+    }
+    assert(hc, "Hans's stage had its own cid");
+    assertEquals(
+      (await call("POST", `/api/demo-mode/sessions/${id}/leave`, undefined, P))
+        .status,
+      403,
+      "a demo you are not on any more",
+    );
+  });
+});
+
+Deno.test("REQ-870 (demo-loop dm5, p7) POST /demo-mode/sessions/:id/leave says whether the leave ended the demo: { ok: true, ended: false } while a colleague stays on it, { ok: true, ended: true } for the last presenter", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553081");
+    const hans = await signIn(call, "+15125553082");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553082" });
+    const lia = await signIn(call, "+15125553083");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553083" });
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(made.status, 201);
+    const id = made.body.id;
+    assertEquals(
+      (await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, L)).body.id,
+      id,
+      "Lia joins Hans's demo",
+    );
+
+    const lias = await call(
+      "POST",
+      `/api/demo-mode/sessions/${id}/leave`,
+      undefined,
+      L,
+    );
+    assertEquals(lias.status, 200, JSON.stringify(lias.body));
+    assertEquals(
+      lias.body,
+      { ok: true, ended: false },
+      "Hans is still on it: Lia left, she did not end it",
+    );
+
+    const hanss = await call(
+      "POST",
+      `/api/demo-mode/sessions/${id}/leave`,
+      undefined,
+      P,
+    );
+    assertEquals(hanss.status, 200, JSON.stringify(hanss.body));
+    assertEquals(
+      hanss.body,
+      { ok: true, ended: true },
+      "Hans was the last presenter: his leave ended the demo",
+    );
+  });
+});
+
+Deno.test("REQ-232 the same staff account opens a second stage: the first is told it is replaced and its socket closes; the customer hears the first stage go and the second arrive", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553071");
+    const hans = await signIn(call, "+15125553072");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553072" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    // window 2: the same account in another window (an impersonation session — the same pid)
+    const imp = await call(
+      "POST",
+      `/api/admin/impersonate/${ana.body.userId}`,
+      undefined,
+      H(hans.body.sessionId),
+    );
+    assertEquals(imp.status, 200, JSON.stringify(imp.body));
+    const w1 = open(made.body.id, hans.body.sessionId);
+    const c1 = cidOf(await w1.next("window 1's welcome"));
+    const v = open(made.body.id, ana.body.sessionId);
+    const vc = cidOf(await v.next("Ana's welcome"));
+    assertEquals(await v.next("Ana is told of window 1"), {
+      t: "peer",
+      online: true,
+      pid: hans.body.userId,
+      cid: c1,
+    });
+    await w1.next("window 1 hears Ana");
+
+    const w2 = open(made.body.id, imp.body.sessionId);
+    const c2 = cidOf(await w2.next("window 2's welcome"));
+    assert(c2 && c2 !== c1, "window 2 is a socket of its own");
+    assertEquals(await w1.next("window 1 is replaced"), { t: "replaced" });
+    await w1.closed;
+    const norm = (m: ServerMessage) =>
+      m.t === "peer" ? `${m.online}|${m.pid}|${m.cid}` : JSON.stringify(m);
+    const heard = [await v.next("Ana hears…"), await v.next("… both")];
+    assertEquals(
+      new Set(heard.map(norm)),
+      new Set([
+        `true|${hans.body.userId}|${c2}`,
+        `false|${hans.body.userId}|${c1}`,
+      ]),
+      "Ana hears window 2 come and window 1 go",
+    );
+    assertEquals(await w2.next("window 2 is told Ana is here"), {
+      t: "peer",
+      online: true,
+      cid: vc,
+    });
+    await quiet(w2, "window 2 is never told of its own account");
+    await w2.close();
+    await v.close();
+  });
+});
+
+Deno.test("REQ-235 who ended it rides `ended`: a colleague's HTTP End, a presenter's socket End and a presenter's Demo on another customer each name that presenter (pid); the customer's HTTP End names none", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553051");
+    const bo = await signIn(call, "+15125553052");
+    const hans = await signIn(call, "+15125553053");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553053" });
+    const lia = await signIn(call, "+15125553054");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553054" });
+    const P = H(hans.body.sessionId);
+    const L = H(lia.body.sessionId);
+    const open2 = async (demoId: string) => {
+      const ph = open(demoId, hans.body.sessionId);
+      await ph.next("Hans's welcome");
+      const v = open(demoId, ana.body.sessionId);
+      await v.next("Ana's welcome");
+      return { ph, v };
+    };
+    const byOf = (who: string): ServerMessage => ({
+      t: "ended",
+      by: "presenter",
+      pid: who,
+    });
+
+    // 1. Lia joins Hans's demo for Ana and ends it over HTTP: everyone hears it was Lia
+    const first = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(first.status, 201, JSON.stringify(first.body));
+    assertEquals(
+      (await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, L)).status,
+      200,
+      "Lia joins",
+    );
+    const one = await open2(first.body.id);
+    await one.v.next("Ana is told Hans is here");
+    await one.ph.next("Hans hears Ana");
+    const endByLia = await call(
+      "POST",
+      `/api/demo-mode/sessions/${first.body.id}/end`,
+      undefined,
+      L,
+    );
+    assertEquals(endByLia.status, 200, JSON.stringify(endByLia.body));
+    assertEquals(
+      await one.v.next("Ana hears Lia ended it"),
+      byOf(lia.body.userId),
+    );
+    assertEquals(
+      await one.ph.next("Hans hears Lia ended it"),
+      byOf(lia.body.userId),
+    );
+    await one.v.closed;
+    await one.ph.closed;
+
+    // 2. Hans ends a fresh demo from his socket: it was Hans
+    const second = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(second.status, 201, JSON.stringify(second.body));
+    const two = await open2(second.body.id);
+    await two.v.next("Ana is told Hans is here");
+    await two.ph.next("Hans hears Ana");
+    two.ph.send({ t: "end" });
+    assertEquals(
+      await two.v.next("Ana hears Hans ended it"),
+      byOf(hans.body.userId),
+    );
+    await two.v.closed;
+    await two.ph.closed;
+
+    // 3. Hans opens a demo for Bo while alone on Ana's: Ana's ends, in Hans's name
+    const third = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, P);
+    assertEquals(third.status, 201, JSON.stringify(third.body));
+    const v3 = open(third.body.id, ana.body.sessionId);
+    await v3.next("Ana's welcome");
+    const forBo = await call("POST", "/api/demo-mode/sessions", {
+      userId: bo.body.userId,
+    }, P);
+    assertEquals(forBo.status, 201, JSON.stringify(forBo.body));
+    assertEquals(
+      await v3.next("Ana hears her demo ended, by Hans"),
+      byOf(hans.body.userId),
+    );
+    await v3.closed;
+
+    // 4. Bo ends his own demo over HTTP: the presenter hears the customer ended it, no pid
+    const ph4 = open(forBo.body.id, hans.body.sessionId);
+    await ph4.next("Hans's welcome");
+    const endByBo = await call(
+      "POST",
+      `/api/demo-mode/sessions/${forBo.body.id}/end`,
+      undefined,
+      H(bo.body.sessionId),
+    );
+    assertEquals(endByBo.status, 200, JSON.stringify(endByBo.body));
+    assertEquals(await ph4.next("Hans hears Bo ended it"), {
+      t: "ended",
+      by: "viewer",
+    });
+    await ph4.closed;
+  });
+});
+
+Deno.test("REQ-355 (demo cycle 1, m1 / setup-m8) the sign-in placeholder is never a demo name: a staff member who never set a name guides as DocuMonster, never 'Nuevo usuario'; an unnamed customer is their phone", async () => {
+  await withServer(async (call) => {
+    // both sign in and never set a name — each carries the seeded placeholder
+    const ana = await signIn(call, "+15125553041");
+    const hans = await signIn(call, "+15125553042");
+    const me = await call("GET", "/api/me", undefined, H(hans.body.sessionId));
+    assertEquals(
+      me.body.name,
+      "Nuevo usuario",
+      "precondition: the placeholder is seeded at sign-in",
+    );
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553042",
+      })).status,
+      200,
+    );
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+
+    const forAna = await call(
+      "GET",
+      "/api/demo-mode/active",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    assertEquals(forAna.body.session.presenterName, "DocuMonster");
+    assertEquals(
+      forAna.body.session.presenters.map((p: { name: string }) => p.name),
+      ["DocuMonster"],
+    );
+    assertEquals(forAna.body.session.targetName, "(512) 555-3041"); // REQ-836: formatted
+    const raw = JSON.stringify(forAna.body);
+    assert(
+      !raw.includes("Nuevo usuario") && !raw.includes("New user"),
+      `no placeholder anywhere in the demo payload (${raw})`,
+    );
+  });
+});
+
+// REQ-817 — demo-loop cycle dm1, issue m3: the stage named the customer by their phone for the
+// whole demo after they saved a name. The stage now re-asks /active while connected and takes a
+// changed name; this pins the contract it reads: the name is the customer's as of each ask.
+Deno.test("REQ-817 (cycle dm1, m3) a customer who saves a name mid-demo: the presenter's next /active names them by it, not by their phone", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553051");
+    const hans = await signIn(call, "+15125553052");
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553052",
+      })).status,
+      200,
+    );
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    const ask = () =>
+      call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
+    const before = await ask();
+    assertEquals(before.body.role, "presenter", JSON.stringify(before.body));
+    assertEquals(before.body.session.targetName, "(512) 555-3051"); // REQ-836: formatted
+
+    const saved = await call(
+      "PUT",
+      "/api/me",
+      { name: "Maria Lopez" },
+      H(ana.body.sessionId),
+    );
+    assertEquals(saved.status, 200, JSON.stringify(saved.body));
+    const after = await ask();
+    assertEquals(
+      after.body.session.id,
+      before.body.session.id,
+      "the same demo",
+    );
+    assertEquals(after.body.session.targetName, "Maria Lopez");
+  });
+});
+
+// REQ-836 — demo-loop cycle dm2, issue m1: the stage learned a saved name only on its next 15 s
+// ask (or the customer's next page). Now the customer's overlay sends a `renamed` frame on the
+// demo link the moment the name is saved; the hub carries it to the presenter, whose stage asks
+// /active at once — and that ask already names the customer by the new name.
+Deno.test("REQ-836 (cycle dm2, m1) the customer's `renamed` frame reaches the presenter's socket, and the presenter's next /active names them by the saved name", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553061");
+    const hans = await signIn(call, "+15125553062");
+    assertEquals(
+      (await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553062",
+      })).status,
+      200,
+    );
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    const ask = () =>
+      call("GET", "/api/demo-mode/active", undefined, H(hans.body.sessionId));
+    assertEquals((await ask()).body.session.targetName, "(512) 555-3061");
+
+    const presenter = open(made.body.id, hans.body.sessionId);
+    await presenter.next("the presenter's welcome");
+    const customer = open(made.body.id, ana.body.sessionId);
+    const w = await customer.next("the customer's welcome");
+    await customer.next("the presenter is here");
+    await presenter.next("the presenter hears the customer");
+
+    const saved = await call(
+      "PUT",
+      "/api/me",
+      { name: "Maria Lopez" },
+      H(ana.body.sessionId),
+    );
+    assertEquals(saved.status, 200, JSON.stringify(saved.body));
+    customer.send({ t: "relay", data: { k: "renamed" } });
+    assertEquals(await presenter.next("the customer's renamed frame"), {
+      t: "relay",
+      from: "viewer",
+      cid: cidOf(w),
+      data: { k: "renamed" },
+    });
+    assertEquals((await ask()).body.session.targetName, "Maria Lopez");
+    await presenter.close();
+    await customer.close();
+  });
+});
+
+// REQ-296 — demo-loop cycle 1, issue nc-3: the two-hour expiry was silent (a KV `expireIn` and
+// nothing else); over the composed router's socket both sides now hear `ended … expired`
+Deno.test("REQ-296 a demo that reaches its TTL: the presenter's and the customer's sockets hear ended with reason expired and close; active is empty for both", async () => {
+  Deno.env.set("DEMO_SESSION_TTL_MS", "1500");
+  try {
+    await withServer(async (call) => {
+      const ana = await signIn(call, "+15125553041");
+      const hans = await signIn(call, "+15125553042");
+      await call("POST", "/api/admin/bootstrap", {
+        phoneNumber: "+15125553042",
+      });
+      const made = await call("POST", "/api/demo-mode/sessions", {
+        userId: ana.body.userId,
+      }, H(hans.body.sessionId));
+      assertEquals(made.status, 201);
+      const presenter = open(made.body.id, hans.body.sessionId);
+      await presenter.next("welcome");
+      const customer = open(made.body.id, ana.body.sessionId);
+      await customer.next("welcome");
+      await customer.next("the presenter is here");
+      await presenter.next("the customer arrived");
+      const expired: ServerMessage = {
+        t: "ended",
+        by: "presenter",
+        reason: "expired",
+      };
+      assertEquals(await presenter.next("the expiry", 4000), expired);
+      assertEquals(await customer.next("the expiry", 4000), expired);
+      await presenter.closed;
+      await customer.closed;
+      const none = { role: null, session: null, targetPath: null, pid: null };
+      assertEquals(
+        (await call(
+          "GET",
+          "/api/demo-mode/active",
+          undefined,
+          H(hans.body.sessionId),
+        )).body,
+        none,
+      );
+      assertEquals(
+        (await call(
+          "GET",
+          "/api/demo-mode/active",
+          undefined,
+          H(ana.body.sessionId),
+        )).body,
+        none,
+      );
+    });
+  } finally {
+    Deno.env.delete("DEMO_SESSION_TTL_MS");
+  }
+});
+
+Deno.test("REQ-391 (demo-loop cycle 2, M4 + m21) over the composed router's socket: a tab that says why it goes is announced gone WITH that reason — navigating, closing — one that says nothing without one, junk is ignored; a browser that asks the time is answered with the deploy's clock", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553091");
+    const hans = await signIn(call, "+15125553092");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553092" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+
+    // the clock: the browser's own time comes back with the deploy's
+    const before = Date.now();
+    stage.send({ t: "time", c: 1234 });
+    const tm = await stage.next("the deploy's time");
+    assert(tm.t === "time", JSON.stringify(tm));
+    assertEquals(tm.c, 1234);
+    assert(
+      tm.s >= before && tm.s <= Date.now(),
+      `the deploy's clock (${tm.s}) is now`,
+    );
+
+    /** a tab joins, says `why` (or nothing), and closes: what the stage hears of it */
+    const goes = async (why: unknown, what: string) => {
+      const tab = open(made.body.id, ana.body.sessionId);
+      const c = cidOf(await tab.next(`${what}: welcome`));
+      await tab.next(`${what}: the stage is here`);
+      assertEquals(await stage.next(`${what}: arrives`), {
+        t: "peer",
+        online: true,
+        cid: c,
+      });
+      if (why !== undefined) tab.send({ t: "leaving", why });
+      await tab.close();
+      // REQ-648 AMENDMENT — a departure that said why also says when (`at`): its own test below
+      const { at: _at, ...gone } =
+        (await stage.next(`${what}: leaves`, 1500)) as
+          & ServerMessage
+          & { at?: number };
+      return { c, gone };
+    };
+    const nav = await goes("navigating", "a page change");
+    assertEquals(nav.gone, {
+      t: "peer",
+      online: false,
+      cid: nav.c,
+      why: "navigating",
+    });
+    const closing = await goes("closing", "a closed tab");
+    assertEquals(closing.gone, {
+      t: "peer",
+      online: false,
+      cid: closing.c,
+      why: "closing",
+    });
+    const silent = await goes(undefined, "a tab that said nothing");
+    assertEquals(silent.gone, { t: "peer", online: false, cid: silent.c });
+    const junk = await goes("bored", "a tab that said junk");
+    assertEquals(junk.gone, { t: "peer", online: false, cid: junk.c });
+    await quiet(stage, "the leaving itself is never relayed");
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-648 (demo-loop cycle 5, M3 + c4-m28) over the composed router's socket: a tab's `leaving` is stamped with the deploy's clock and its departure carries it (`at`) — the stage times the page change from it; a tab that said nothing, or junk, has no stamp", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125556481");
+    const hans = await signIn(call, "+15125556482");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125556482" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+
+    /** a tab joins, says `why` (or nothing), and closes: when it said so, and what the stage hears */
+    const goes = async (why: unknown, what: string) => {
+      const tab = open(made.body.id, ana.body.sessionId);
+      const c = cidOf(await tab.next(`${what}: welcome`));
+      await tab.next(`${what}: the stage is here`);
+      await stage.next(`${what}: arrives`);
+      const before = Date.now();
+      if (why !== undefined) tab.send({ t: "leaving", why });
+      await new Promise((r) => setTimeout(r, 30)); // the leaving is in before the close
+      const said = Date.now();
+      await tab.close();
+      return {
+        c,
+        before,
+        said,
+        gone: await stage.next(`${what}: leaves`, 1500),
+      };
+    };
+    for (const why of ["navigating", "closing"] as const) {
+      const g = await goes(why, `a tab ${why}`);
+      const { at, ...rest } = g.gone as { at?: number };
+      assertEquals(rest, { t: "peer", online: false, cid: g.c, why });
+      assert(
+        typeof at === "number" && at >= g.before && at <= g.said,
+        `the departure says when its page said it was going (${at}, within ${g.before}..${g.said})`,
+      );
+    }
+    const silent = await goes(undefined, "a tab that said nothing");
+    assertEquals(silent.gone, { t: "peer", online: false, cid: silent.c });
+    const junk = await goes("bored", "a tab that said junk");
+    assertEquals(junk.gone, { t: "peer", online: false, cid: junk.c });
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-378 (demo-loop cycle 2, m22) a stage's socket gets its welcome and the tabs already here BEFORE any tab's answer to its arrival: a tab that sends its snapshot the instant it hears the stage is never ahead of the stage's welcome", async () => {
+  await withServer(async (call, app) => {
+    const ana = await signIn(call, "+15125553781");
+    const hans = await signIn(call, "+15125553782");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553782" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const id = made.body.id as string;
+    // the customer's tab, in the server's own hub: hearing a stage arrive it answers with its whole
+    // view at once — the fastest a real tab can be
+    const hub = app.get(DemoHub);
+    const chunk = {
+      k: "dom" as const,
+      l: "lp0q1x2-ab12",
+      s: 0,
+      i: 0,
+      n: 1,
+      d: "{}",
+    };
+    const tab = {
+      role: "viewer" as const,
+      cid: "tab-m22",
+      send: (m: ServerMessage) => {
+        if (m.t === "peer" && m.online && m.pid) {
+          void hub.send(id, { role: "viewer", cid: "tab-m22" }, {
+            t: "relay",
+            data: chunk,
+          });
+        }
+      },
+    };
+    const joined = await hub.join(id, tab);
+    const stage = open(id, hans.body.sessionId);
+    const first = await stage.next("the stage's first frame");
+    assertEquals(
+      first.t,
+      "welcome",
+      `the welcome comes first, not the tab's snapshot: ${
+        JSON.stringify(first)
+      }`,
+    );
+    assertEquals(await stage.next("the tab already here"), {
+      t: "peer",
+      online: true,
+      cid: "tab-m22",
+    });
+    assertEquals(await stage.next("the tab's snapshot"), {
+      t: "relay",
+      from: "viewer",
+      cid: "tab-m22",
+      data: chunk,
+    });
+    joined.leave();
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-378 (demo-loop cycle 2, m22) the customer's app hears of a new demo at once: GET /demo-mode/active?wait= with no demo is held and answers the moment a demo is opened for them; with none it answers null when the wait is up; without wait it answers at once", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125553783");
+    const hans = await signIn(call, "+15125553784");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125553784" });
+
+    let t0 = Date.now();
+    const plain = await call(
+      "GET",
+      "/api/demo-mode/active?path=/dashboard",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    assertEquals(plain.status, 200);
+    assertEquals(plain.body.session, null);
+    assert(Date.now() - t0 < 1000, "no wait: answered at once");
+
+    t0 = Date.now();
+    const none = await call(
+      "GET",
+      "/api/demo-mode/active?path=/dashboard&wait=800",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    const took = Date.now() - t0;
+    assertEquals(none.body.session, null);
+    assert(took >= 700, `held for the wait when nothing starts (${took} ms)`);
+
+    // the customer's ask is out, held; the demo opens 600 ms later
+    t0 = Date.now();
+    const held = call(
+      "GET",
+      "/api/demo-mode/active?path=/dashboard&wait=8000",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    await new Promise((r) => setTimeout(r, 600));
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const opened = Date.now();
+    const got = await held;
+    const after = Date.now() - opened;
+    assertEquals(got.status, 200);
+    assertEquals(got.body.role, "viewer");
+    assertEquals(got.body.session?.id, made.body.id);
+    assert(
+      after < 1500,
+      `answered as soon as the demo opened (${after} ms after, not at the 8 s wait)`,
+    );
+
+    // a demo already on: the wait is never held
+    t0 = Date.now();
+    const on = await call(
+      "GET",
+      "/api/demo-mode/active?wait=8000",
+      undefined,
+      H(ana.body.sessionId),
+    );
+    assertEquals(on.body.session?.id, made.body.id);
+    assert(Date.now() - t0 < 1000, "a demo already on answers at once");
+  });
+});
+
+Deno.test("REQ-645 (demo-loop cycle 5, M1 + M2) over the composed router's socket: a stage's `pending` (his pointer being found again — 'pointing…', never an arrow) addressed to the followed tab crosses as a bare fraction with the sender's clock: any element it named is stripped, junk is dropped", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125556451");
+    const hans = await signIn(call, "+15125556452");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125556452" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    const sc = cidOf(await stage.next("the stage's welcome"));
+    const tab = open(made.body.id, ana.body.sessionId);
+    const c1 = cidOf(await tab.next("the tab's welcome"));
+    await tab.next("the tab is told the stage is here");
+    await stage.next("the tab arrives");
+    assert(c1 && sc, "every socket is named");
+
+    // a provisional fraction of the stage: `pending`, a fraction only — an element it named (a
+    // sender that should not have) never reaches the customer's page
+    stage.send({
+      t: "relay",
+      data: {
+        k: "pending",
+        a: { vx: 0.25, vy: 0.5, n: { id: 7, x: 0.5, y: 0.5, l: "L1" } },
+        t: 40,
+      },
+      tab: c1,
+    });
+    assertEquals(await tab.next("the tab gets the pending"), {
+      t: "relay",
+      from: "presenter",
+      pid: hans.body.userId,
+      cid: sc,
+      data: { k: "pending", a: { vx: 0.25, vy: 0.5 }, t: 40 },
+    });
+    // junk on the same kind: dropped, never relayed
+    stage.send({
+      t: "relay",
+      data: { k: "pending", a: { vx: "x", vy: 0.5 } },
+      tab: c1,
+    });
+    await quiet(tab, "a pending without a fraction is never relayed");
+    await stage.close();
+    await tab.close();
+  });
+});
+
+Deno.test("REQ-823 (demo-loop cycle dm1, M2) over the composed router's socket: a tab that says it goes because she signed out is announced gone with why signout (and when)", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125558221");
+    const hans = await signIn(call, "+15125558222");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125558222" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+    const tab = open(made.body.id, ana.body.sessionId);
+    const c = cidOf(await tab.next("the tab's welcome"));
+    await tab.next("the tab: the stage is here");
+    await stage.next("the tab arrives");
+    // its overlay heard the app's sign-out (pm:logout): it says so, then closes
+    const before = Date.now();
+    tab.send({ t: "leaving", why: "signout" });
+    await new Promise((r) => setTimeout(r, 30)); // the leaving is in before the close
+    const said = Date.now();
+    await tab.close();
+    const { at, ...gone } = (await stage.next("its departure", 1500)) as
+      & ServerMessage
+      & { at?: number };
+    assertEquals(gone, { t: "peer", online: false, cid: c, why: "signout" });
+    assert(
+      typeof at === "number" && at >= before && at <= said,
+      `the departure says when (${at}, within ${before}..${said})`,
+    );
+    await quiet(stage, "the leaving itself is never relayed");
+    await stage.close();
+  });
+});
+
+Deno.test("REQ-823 (demo-loop cycle dm1, M2) over the composed router's socket: when the customer signs out (POST /api/auth/logout), every demo socket of THAT sign-in closes and the stage hears each go with why signout — her phone (another sign-in) stays — and the dead sign-in can never rejoin", async () => {
+  await withServer(async (call) => {
+    const ana = await signIn(call, "+15125558231");
+    // the same customer on her phone: another sign-in of hers
+    const phone = await signIn(call, "+15125558231");
+    assert(
+      typeof phone.body.sessionId === "string" &&
+        phone.body.sessionId !== ana.body.sessionId,
+      "her phone has its own sign-in",
+    );
+    const hans = await signIn(call, "+15125558232");
+    await call("POST", "/api/admin/bootstrap", { phoneNumber: "+15125558232" });
+    const made = await call("POST", "/api/demo-mode/sessions", {
+      userId: ana.body.userId,
+    }, H(hans.body.sessionId));
+    const stage = open(made.body.id, hans.body.sessionId);
+    await stage.next("the stage's welcome");
+
+    /** a tab of sign-in `token` joins; the stage hears it arrive */
+    const tab = async (token: string, what: string) => {
+      const t = open(made.body.id, token);
+      const c = cidOf(await t.next(`${what}: welcome`));
+      await t.next(`${what}: the stage is here`);
+      assertEquals(await stage.next(`${what}: arrives`), {
+        t: "peer",
+        online: true,
+        cid: c,
+      });
+      return { ...t, c: c! };
+    };
+
+    // two tabs of her laptop's sign-in, and one of her phone's
+    const tab1 = await tab(ana.body.sessionId, "laptop tab 1");
+    const tab2 = await tab(ana.body.sessionId, "laptop tab 2");
+    const mobile = await tab(phone.body.sessionId, "her phone");
+
+    // she signs out on the laptop — DashSidebar's POST; no page of hers said anything
+    assertEquals(
+      (await call(
+        "POST",
+        "/api/auth/logout",
+        undefined,
+        H(ana.body.sessionId),
+      )).status,
+      200,
+    );
+    const gone = new Map<string, unknown>();
+    for (let i = 0; i < 2; i++) {
+      const m = (await stage.next(
+        `a laptop tab goes (${i + 1} of 2)`,
+        3000,
+      )) as ServerMessage & { at?: number };
+      assert(
+        m.t === "peer" && m.online === false && typeof m.cid === "string",
+        `a departure (${JSON.stringify(m)})`,
+      );
+      const { at, ...rest } = m;
+      assert(
+        typeof at === "number" && at > 0,
+        `the departure says when (${at})`,
+      );
+      gone.set(m.cid!, rest);
+    }
+    assertEquals(gone.get(tab1.c), {
+      t: "peer",
+      online: false,
+      cid: tab1.c,
+      why: "signout",
+    });
+    assertEquals(gone.get(tab2.c), {
+      t: "peer",
+      online: false,
+      cid: tab2.c,
+      why: "signout",
+    });
+    await tab1.closed;
+    await tab2.closed;
+
+    // her phone is another sign-in: still in the demo — the next thing the stage hears of her is
+    // the phone's claim, never its departure
+    mobile.send({ t: "claim", at: 4321 });
+    assertEquals(await stage.next("her phone's claim"), {
+      t: "claim",
+      cid: mobile.c,
+      at: 4321,
+    });
+
+    // the laptop's dead sign-in can never rejoin
+    const late = open(made.body.id, ana.body.sessionId);
+    await late.closed;
+    assert(late.failed(), "a signed-out sign-in's socket never opens");
+    assertEquals(mobile.ws.readyState, WebSocket.OPEN, "her phone stays in");
+    await quiet(stage, "nobody arrived, nobody else went");
+    await mobile.close();
+    await stage.close();
   });
 });

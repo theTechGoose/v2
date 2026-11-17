@@ -8,6 +8,10 @@ import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wizard-spec/mod.ts";
 
 @Module({ imports: [UsersModule, CrmModule, PaperworkModule, AnalyticsModule] })
 class TestApp {}
@@ -262,5 +266,48 @@ Deno.test("quotes e2e: GET /analytics/quotes/insight without session is rejected
     const ok = res.ok;
     await drain(res);
     assertEquals(ok, false);
+  });
+});
+
+// REQ-760 (demo-loop cycle 5v2, m14): the verifier's /quotes read "Nothing
+// sent yet — 1 draft ready to send." over Q-002, a draft the assistant had
+// only drafted. Over HTTP through the real module wiring, each draft card
+// says whether its thread is ready to send — the same rule the dashboard's
+// quotes.readyToSend counts with.
+Deno.test("REQ-760 (cycle 5v2, m14) quotes e2e: GET /quotes marks a drafted-only assistant quote readyToSend false and a finished-wizard draft true, agreeing with GET /analytics/dashboard", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port, "+15125550760");
+    const userId = (await new SessionStore().get(sid))!.userId;
+    const quotes = new QuoteStore();
+    const conversations = new AgentConversationStore();
+    const bob = await quotes.create(userId, {
+      summary: "Bathroom tile — Bob Smith",
+      lineItems: [],
+      estimatedTotal: 2_400_00,
+    });
+    await conversations.create({ userId, quoteId: bob.id, currentPhase: "quote" });
+    const ready = await quotes.create(userId, {
+      summary: "Paint the deck",
+      lineItems: [],
+      estimatedTotal: 1_450_00,
+    });
+    const conv = await conversations.create({ userId, quoteId: ready.id, currentPhase: "terms" });
+    await conversations.putWizardState(conv.id, {
+      specId: TERMS_WIZARD_V1.id,
+      activeStepIdx: TERMS_WIZARD_V1.steps.length,
+      answers: [],
+    });
+
+    const cards = await fetch(`http://localhost:${port}/quotes`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json()) as Array<{ id: string; readyToSend?: boolean }>;
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    assertEquals(byId.get(bob.id)?.readyToSend, false);
+    assertEquals(byId.get(ready.id)?.readyToSend, true);
+
+    const stats = await fetch(`http://localhost:${port}/analytics/dashboard`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(stats.quotes.readyToSend, 1);
   });
 });

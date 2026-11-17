@@ -21,7 +21,7 @@ Deno.test({
     assert(customerId, "the CRM answered a customerId");
     const { dueId } = await link.raiseDue({ customerId, amountCents: 9900, memo: "Monster — first month (smoke)" });
     assert(dueId, "the CRM answered a dueId");
-    const { payUrl } = await link.mintPayLink({ customerId, dueId });
+    const { payUrl } = await link.mintPayLink({ customerId, dueId, merchant: ACCOUNT }); // REQ-064/100: the merchant is required
     const u = new URL(payUrl);
     assertEquals(u.origin, new URL(ORIGIN).origin, "the pay link lives on the CRM");
     assertEquals(u.pathname, "/ui/payments/charge", "the pay link is the charge page");

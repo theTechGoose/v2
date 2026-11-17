@@ -113,7 +113,7 @@ describe("REQ-206 missing info (warns, never blocks)", () => {
       amountCents: 0,
     })).toEqual([
       "noBillingName",
-      "noBillingEmail",
+      "noContact", // REQ-567: no email AND no phone
       "noServiceAddress",
       "noLineItems",
       "noAmount",
@@ -145,7 +145,7 @@ describe("REQ-206 bill-to from the customer", () => {
       name: "Ann Lee",
       businessName: "Lee Props",
       email: "ann@x.com",
-      phoneNumber: "+15125550100",
+      phoneNumber: "(512) 555-0100", // REQ-593: in the input's phone mask
       address: "1 Main St",
     });
     expect(billToFromCustomer(undefined)).toEqual({
@@ -287,6 +287,7 @@ describe("REQ-205/206 prefill from the quote's ledger", () => {
       .toEqual({
         quoteId: "q1",
         quoteNumber: "Q-001",
+        quoteAccepted: true,
         customerId: "c1",
         jobName: "Roof",
         amountCents: 60000,

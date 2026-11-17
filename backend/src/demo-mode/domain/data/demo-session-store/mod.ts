@@ -1,7 +1,12 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
-import { SESSION_TTL_MS, WHERE_TTL_MS } from "#demo-mode/protocol.ts";
+import {
+  type Presenter,
+  SESSION_TTL_MS,
+  WHERE_TTL_MS,
+} from "#demo-mode/protocol.ts";
 import type { DemoSession } from "@demo-mode/dto/demo-session.ts";
+import { presentersOf } from "@demo-mode/domain/business/demo-role/mod.ts";
 
 const K = {
   session: (id: string) => ["demo-mode", "session", id] as const,
@@ -15,26 +20,42 @@ const K = {
 
 /**
  * REQ-153 — demo sessions in KV. A demo lives two hours at most (every key expires with it);
- * `end` stamps it and drops the two pointers so `active` says nothing at once.
+ * `end` stamps it and drops the pointers so `active` says nothing at once.
+ * REQ-296 — the two hours count from `createdAt` (`expiresAt`); the hub ends the demo for
+ * everyone at that moment. `DEMO_SESSION_TTL_MS` shortens the life for tests only.
+ * REQ-214 — a demo has a LIST of presenters: `join` adds one (and points them at it), `leave`
+ * takes one off; the list is written with a check, so two joins at once both land.
  */
+/** REQ-296 — a demo's life: SESSION_TTL_MS, or the test-only override */
+export function demoTtlMs(): number {
+  const n = Number(Deno.env.get("DEMO_SESSION_TTL_MS"));
+  return Number.isFinite(n) && n > 0 ? n : SESSION_TTL_MS;
+}
+
 @Injectable()
 export class DemoSessionStore {
+  /** REQ-296 — when a demo reaches its time: createdAt + its life */
+  expiresAt(session: DemoSession): number {
+    return Date.parse(session.createdAt) + demoTtlMs();
+  }
+
   async create(
     targetUserId: string,
-    presenterUserId: string,
+    presenter: Presenter,
   ): Promise<DemoSession> {
     const kv = await getKv();
     const session: DemoSession = {
       id: crypto.randomUUID(),
       targetUserId,
-      presenterUserId,
+      presenterUserId: presenter.userId,
+      presenters: [presenter],
       createdAt: new Date().toISOString(),
     };
     await kv.atomic()
-      .set(K.session(session.id), session, { expireIn: SESSION_TTL_MS })
-      .set(K.active(targetUserId), session.id, { expireIn: SESSION_TTL_MS })
-      .set(K.presenting(presenterUserId), session.id, {
-        expireIn: SESSION_TTL_MS,
+      .set(K.session(session.id), session, { expireIn: demoTtlMs() })
+      .set(K.active(targetUserId), session.id, { expireIn: demoTtlMs() })
+      .set(K.presenting(presenter.userId), session.id, {
+        expireIn: demoTtlMs(),
       })
       .commit();
     return session;
@@ -43,6 +64,54 @@ export class DemoSessionStore {
   async get(id: string): Promise<DemoSession | null> {
     const kv = await getKv();
     return (await kv.get<DemoSession>(K.session(id))).value;
+  }
+
+  /** REQ-214 — another presenter on a live demo (already on it: unchanged); null when it is gone */
+  async join(id: string, presenter: Presenter): Promise<DemoSession | null> {
+    const kv = await getKv();
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const entry = await kv.get<DemoSession>(K.session(id));
+      const session = entry.value;
+      if (!session || session.endedAt) return null;
+      const have = presentersOf(session);
+      if (have.some((p) => p.userId === presenter.userId)) {
+        return { ...session, presenters: have };
+      }
+      const next: DemoSession = {
+        ...session,
+        presenters: [...have, presenter],
+      };
+      const res = await kv.atomic()
+        .check(entry)
+        .set(K.session(id), next, { expireIn: demoTtlMs() })
+        .set(K.presenting(presenter.userId), id, { expireIn: demoTtlMs() })
+        .commit();
+      if (res.ok) return next;
+    }
+    return null;
+  }
+
+  /** REQ-214 — a presenter off a demo; their pointer goes when it names this demo. The demo as it
+   *  stands after (nobody left is the caller's cue to end it); null when it is gone */
+  async leave(id: string, userId: string): Promise<DemoSession | null> {
+    const kv = await getKv();
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const entry = await kv.get<DemoSession>(K.session(id));
+      const session = entry.value;
+      if (!session) return null;
+      const next: DemoSession = {
+        ...session,
+        presenters: presentersOf(session).filter((p) => p.userId !== userId),
+      };
+      const op = kv.atomic()
+        .check(entry)
+        .set(K.session(id), next, { expireIn: demoTtlMs() });
+      if ((await kv.get<string>(K.presenting(userId))).value === id) {
+        op.delete(K.presenting(userId));
+      }
+      if ((await op.commit()).ok) return next;
+    }
+    return null;
   }
 
   private async live(pointer: Deno.KvKey): Promise<DemoSession | null> {
@@ -61,6 +130,44 @@ export class DemoSessionStore {
   /** the demo `userId` is presenting, if one is on */
   presentingBy(userId: string): Promise<DemoSession | null> {
     return this.live(K.presenting(userId));
+  }
+
+  /** REQ-378 (demo-loop cycle 2, m22) — a watch on the demo pointers of these users (`active`: a
+   *  demo shown TO them; `presenting`: one presented BY them). It is live once this resolves, so a
+   *  check made after it misses nothing; `next` resolves when a pointer changes, after `ms`, or
+   *  when `signal` aborts, whichever is first; `stop` ends the watch. */
+  async watchPointers(
+    who: { active?: string[]; presenting?: string[] },
+  ): Promise<
+    { next(ms: number, signal?: AbortSignal): Promise<void>; stop(): void }
+  > {
+    const kv = await getKv();
+    const keys: Deno.KvKey[] = [
+      ...(who.active ?? []).map((u) => K.active(u)),
+      ...(who.presenting ?? []).map((u) => K.presenting(u)),
+    ];
+    const reader = kv.watch(keys).getReader();
+    // the first entry is the pointers as they are now
+    await reader.read();
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      reader.cancel().catch(() => {});
+    };
+    const next = (ms: number, signal?: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        if (signal?.aborted) return resolve();
+        const done = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", done);
+          resolve();
+        };
+        const timer = setTimeout(done, ms);
+        signal?.addEventListener("abort", done);
+        reader.read().then(done, done);
+      });
+    return { next, stop };
   }
 
   /** AMENDMENT — same screen at once: the page `userId`'s own app is on, for the next WHERE_TTL_MS */
@@ -86,14 +193,16 @@ export class DemoSessionStore {
       endedAt: new Date().toISOString(),
     };
     const op = kv.atomic().set(K.session(id), ended, {
-      expireIn: SESSION_TTL_MS,
+      expireIn: demoTtlMs(),
     });
     if ((await kv.get<string>(K.active(session.targetUserId))).value === id) {
       op.delete(K.active(session.targetUserId));
     }
-    if (
-      (await kv.get<string>(K.presenting(session.presenterUserId))).value === id
-    ) op.delete(K.presenting(session.presenterUserId));
+    for (const p of presentersOf(session)) {
+      if ((await kv.get<string>(K.presenting(p.userId))).value === id) {
+        op.delete(K.presenting(p.userId));
+      }
+    }
     await op.commit();
     return ended;
   }

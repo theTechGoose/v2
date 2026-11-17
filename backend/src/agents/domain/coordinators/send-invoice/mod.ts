@@ -99,6 +99,10 @@ export class SendInvoice {
         entityType: "invoice",
         entityId: invoice.id,
         action: "sent",
+        // REQ-566: the activity feed reads "Invoice for $X sent to …"
+        ...(typeof invoice.amount === "number"
+          ? { data: { amountCents: invoice.amount } }
+          : {}),
       });
     }
     try {

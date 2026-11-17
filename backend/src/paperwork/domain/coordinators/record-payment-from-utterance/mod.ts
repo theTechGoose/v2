@@ -95,6 +95,32 @@ export class RecordPaymentFromUtterance {
     return { parsed, disambiguation };
   }
 
+  /**
+   * REQ-583 (demo-loop cycle 4, M2): record a payment the contractor told the
+   * chat about ("Linda paid the deposit $1,425 by Zelle today") on the invoice
+   * the chat already picked — the amount they said (a part payment leaves the
+   * rest owed: ConfirmPayment's ledger decides), how it was paid. The claim
+   * is stamped first, exactly as `run` does, so ConfirmPayment records it,
+   * sends the receipt and flips the invoice.
+   */
+  async recordOn(
+    userId: string,
+    invoiceId: string,
+    payment: { amountCents: number; method: PaymentMethod; reference?: string; payerHint?: string },
+  ): Promise<{ ok: boolean; reason?: string; paymentId?: string }> {
+    await this.invoices.update(invoiceId, userId, {
+      status: "claimed",
+      paymentIntent: {
+        method: payment.method,
+        amount: payment.amountCents,
+        ...(payment.reference ? { reference: payment.reference } : {}),
+        claimedAt: new Date().toISOString(),
+        ...(payment.payerHint ? { claimedBy: payment.payerHint } : {}),
+      },
+    });
+    return await this.confirm.run(userId, invoiceId);
+  }
+
   private async findCandidates(userId: string, parsed: ParsedUtterance): Promise<Invoice[]> {
     const all = await this.invoices.listByUser(userId);
     const open = all.filter((i) => i.status === "sent" || i.status === "viewed" || i.status === "claimed");

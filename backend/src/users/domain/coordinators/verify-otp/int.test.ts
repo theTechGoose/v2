@@ -208,3 +208,90 @@ Deno.test("REQ-211 verify-otp integration: a brand-new user is born with the OTP
   assertEquals((await users.get(plain.userId)).origin, undefined);
   await resetKv();
 });
+
+/** REQ-286 — run `fn` with DENO_DEPLOY set and DENO_DEPLOYMENT_ID unset (the real adapters, off
+ *  Deno Deploy: a self-hosted prod, or the house's PORT+DENO_DEPLOY host e2e lane), then restore. */
+async function withDenoDeployOffDeploy(fn: () => Promise<void>) {
+  const prev = { d: Deno.env.get("DENO_DEPLOY"), id: Deno.env.get("DENO_DEPLOYMENT_ID") };
+  Deno.env.set("DENO_DEPLOY", "1");
+  Deno.env.delete("DENO_DEPLOYMENT_ID");
+  try {
+    await fn();
+  } finally {
+    if (prev.d === undefined) Deno.env.delete("DENO_DEPLOY");
+    else Deno.env.set("DENO_DEPLOY", prev.d);
+    if (prev.id !== undefined) Deno.env.set("DENO_DEPLOYMENT_ID", prev.id);
+  }
+}
+
+Deno.test("REQ-286 test-setup-claims-m1 verify-otp: with DENO_DEPLOY set off Deno Deploy, 000000 is NOT a master code — no user, no session", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, users, flow } = freshFlow();
+  try {
+    await withDenoDeployOffDeploy(async () => {
+      // A stranger's phone with no pending code: the master code must not find-or-create it.
+      await assertRejects(
+        () => flow.run({ phoneNumber: "+15125550777", code: "000000" }),
+        ExpiredCodeError,
+      );
+      assertEquals(await users.findByPhone("+15125550777"), null);
+
+      // An existing owner with a real pending code: 000000 is just a wrong code.
+      await users.create({ phoneNumber: "+15125550778", language: "en" });
+      await otps.put({ phoneNumber: "+15125550778", code: "424242" });
+      await assertRejects(
+        () => flow.run({ phoneNumber: "+15125550778", code: "000000" }),
+        InvalidCodeError,
+      );
+      assertEquals((await otps.get("+15125550778"))?.attempts, 1);
+    });
+  } finally {
+    await resetKv();
+  }
+});
+
+// REQ-590 (demo-loop cycle 4, M33): the EN | ES toggle on /verify picks the account's language —
+// CodeInput sends it with the code, and a NEW account is born in it over the OTP record's.
+Deno.test("REQ-590 verify-otp integration: a new account takes the language picked on /verify over the one send-otp stored", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, users, flow } = freshFlow();
+
+  await otps.put({ phoneNumber: "+15125550590", code: "590590", language: "en" });
+  const result = await flow.run({ phoneNumber: "+15125550590", code: "590590", language: "es" });
+
+  const user = await users.get(result.userId);
+  assertEquals(user.language, "es");
+  assertEquals(result.isNewUser, true);
+
+  await resetKv();
+});
+
+Deno.test("REQ-590 verify-otp integration: on the master-code path too a new account takes the language picked on /verify", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, users, flow } = freshFlow();
+
+  await otps.put({ phoneNumber: "+15125550591", code: "123123", language: "en" });
+  const result = await flow.run({ phoneNumber: "+15125550591", code: "000000", language: "es" });
+
+  const user = await users.get(result.userId);
+  assertEquals(user.language, "es");
+
+  await resetKv();
+});
+
+Deno.test("REQ-590 verify-otp integration: an existing account keeps its language whatever /verify picked", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { otps, users, flow } = freshFlow();
+
+  const existing = await users.create({ phoneNumber: "+15125550592", language: "en" });
+  await otps.put({ phoneNumber: "+15125550592", code: "592592", language: "en" });
+  await flow.run({ phoneNumber: "+15125550592", code: "592592", language: "es" });
+
+  assertEquals((await users.get(existing.id)).language, "en");
+
+  await resetKv();
+});

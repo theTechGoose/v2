@@ -6,7 +6,10 @@ import type {
   NotificationType,
 } from "@communication/dto/notification.ts";
 import { type Lang, t, type Vars } from "@core/i18n/mod.ts";
-import { sentenceCase } from "#quote-flow/format-helpers.ts";
+import {
+  notificationTitle,
+  renderNotifString as renderShared,
+} from "#quote-flow/notification-title.ts";
 
 /**
  * NotifyOnEvent — subscribes to the EventBus on construction and writes a
@@ -40,7 +43,7 @@ export class NotifyOnEvent {
     const l = notificationL10n(event);
     if (!l) return;
     // REQ-022 (NW-31c): the scheduled-invoice nudge is re-emitted by every
-    // /cron/run-nudges sweep (the /invoices page fires one per load) — keep
+    // /cron/run-nudges call and could meet the server sweep (REQ-508) — keep
     // ONE notification per invoice per day.
     if (l.type === "invoice_nudge_due" && event.entityId) {
       const day = (event.data?.dayBucket as string | undefined) ??
@@ -70,6 +73,23 @@ export class NotifyOnEvent {
       entityType: notificationEntityType(event.entityType),
       entityId: event.entityId,
     });
+    // REQ-488 (demo m57): "Didn't get it" closes the claim it answers — the
+    // invoice's open "says they paid" rows are marked read, and the row just
+    // written is the newest, so the topbar chip shows it instead.
+    if (
+      event.entityType === "invoice" && event.action === "claim_rejected" &&
+      event.entityId
+    ) {
+      const open = await this.store.listByUser(event.userId, {
+        unreadOnly: true,
+        limit: 500,
+      });
+      for (const n of open) {
+        if (n.type === "invoice_claimed" && n.entityId === event.entityId) {
+          await this.store.markRead(n.id, event.userId);
+        }
+      }
+    }
   }
 }
 
@@ -81,22 +101,21 @@ export class NotifyOnEvent {
 function notificationEntityType(
   t: DomainEvent["entityType"],
 ): "quote" | "invoice" | "customer" | "conversation" | undefined {
-  if (t === "payment" || t === "message") return undefined;
+  if (t === "payment" || t === "message" || t === "task") return undefined;
   return t;
 }
 
 /**
- * Render a notification template in `lang`. A default `{name}` (the
- * localized "your client" fallback) is injected first so a name-less event
- * still reads correctly in the VIEWER's language, then overridden by any
- * real params. No sentence-casing here — that is a read-path concern so the
- * pure `mapEventToNotification` contract keeps its exact prose.
+ * Render a notification template in `lang`. REQ-496 (demo m36, cycle 3): the
+ * rendering itself (the "your client" `{name}` fallback, REQ-224's
+ * `amountCents` / `method` formatting) lives in the shared
+ * `#quote-flow/notification-title.ts`, so the topbar ticker re-renders a feed
+ * row in the live UI language with exactly the server's words. No
+ * sentence-casing here — that is a read-path concern so the pure
+ * `mapEventToNotification` contract keeps its exact prose.
  */
 function renderNotifString(lang: Lang, key: string, params?: Vars): string {
-  return t(lang, key, {
-    name: t(lang, "notify.fallbackClient"),
-    ...(params ?? {}),
-  });
+  return renderShared((k, v) => t(lang, k, v), key, params, lang);
 }
 
 /**
@@ -110,9 +129,7 @@ export function localizeNotification(
   lang: Lang,
 ): Notification {
   if (!n.titleKey) return n;
-  const title = sentenceCase(
-    renderNotifString(lang, n.titleKey, n.titleParams),
-  );
+  const title = notificationTitle((k, v) => t(lang, k, v), n, lang);
   const body = n.bodyKey
     ? renderNotifString(lang, n.bodyKey, n.bodyParams)
     : n.body;
@@ -161,10 +178,20 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     // a generic sentence. Job-less events keep the original key.
     const jobName = event.data?.jobName as string | undefined;
     if (jobName) {
+      // REQ-589 (demo-loop cycle 4, m15): the per-language names ride along
+      // so the feed names the job in the READER's language.
+      const byLang = event.data?.jobNameByLang as
+        | Record<string, string>
+        | undefined;
+      const perLang: Vars = {};
+      for (const l of ["en", "es"] as const) {
+        const v = byLang?.[l]?.trim();
+        if (v) perLang[`job_${l}`] = v;
+      }
       return {
         type: "quote_accepted",
         titleKey: "notify.quote.acceptedJob",
-        titleParams: { ...(nameParams ?? {}), job: jobName },
+        titleParams: { ...(nameParams ?? {}), job: jobName, ...perLang },
       };
     }
     return {
@@ -198,12 +225,33 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
       bodyParams: reference ? { reference } : undefined,
     };
   }
+  // REQ-488 (demo m57): the contractor answered a claim with "Didn't get
+  // it" — a row of its own, newer than the claim it closes.
+  if (event.entityType === "invoice" && event.action === "claim_rejected") {
+    const method = event.data?.method as string | undefined;
+    return {
+      type: "generic",
+      titleKey: method
+        ? "notify.invoice.claimRejectedVia"
+        : "notify.invoice.claimRejected",
+      titleParams: method ? { ...nameParams, method } : nameParams,
+    };
+  }
   if (event.entityType === "invoice" && event.action === "paid") {
-    const amount = event.data?.amount as string | undefined;
+    // REQ-224: ConfirmPayment sends integer `amountCents`; the money is
+    // formatted per viewer at render time (renderParams). A pre-formatted
+    // string `amount` is still accepted.
+    const amountCents = event.data?.amountCents as number | undefined;
+    const amount = event.data?.amount as string | number | undefined;
+    const money: Vars | undefined = typeof amountCents === "number"
+      ? { amountCents }
+      : amount !== undefined && amount !== ""
+      ? { amount }
+      : undefined;
     return {
       type: "invoice_paid",
-      titleKey: amount ? "notify.invoice.paidAmount" : "notify.invoice.paid",
-      titleParams: amount ? { ...nameParams, amount } : nameParams,
+      titleKey: money ? "notify.invoice.paidAmount" : "notify.invoice.paid",
+      titleParams: money ? { ...nameParams, ...money } : nameParams,
     };
   }
   if (event.entityType === "invoice" && event.action === "overdue") {
@@ -229,10 +277,18 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     (event.action === "change_order_approved" ||
       event.action === "change_order_declined")
   ) {
-    // Customer decided on a change order via the public /co/:id link. The
-    // delta arrives pre-formatted ("+$250.00") from the public controller.
+    // Customer decided on a change order via the public /co/:id link.
+    // REQ-717 (cycle 5, p11): the delta is stored as raw signed cents and
+    // formatted at render time ("+$1,600") by the shared renderer; a legacy
+    // event's pre-formatted `delta` string still passes through.
     const approved = event.action === "change_order_approved";
-    const delta = event.data?.delta as string | undefined;
+    const deltaCents = event.data?.deltaAmountCents;
+    const legacy = event.data?.delta as string | undefined;
+    const delta: Vars | undefined = typeof deltaCents === "number"
+      ? { deltaCents }
+      : legacy
+      ? { delta: legacy }
+      : undefined;
     const description = event.data?.description as string | undefined;
     const base = approved
       ? "notify.invoice.changeOrderApproved"
@@ -243,12 +299,88 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
     return {
       type: "generic",
       titleKey: delta ? withAmount : base,
-      titleParams: delta ? { ...nameParams, delta } : nameParams,
+      titleParams: delta ? { ...nameParams, ...delta } : nameParams,
       bodyText: description
         ? (description.length > 140
           ? `${description.slice(0, 139)}…`
           : description)
         : undefined,
+    };
+  }
+  // REQ-698 (demo-loop cycle 5, m14): the owner sent a change order (the
+  // assistant, a chat edit, the invoice page) — pair 5's CO-002 never showed
+  // in "What we handled today" because no send event existed.
+  if (event.entityType === "invoice" && event.action === "change_order_sent") {
+    const delta = event.data?.delta as string | undefined;
+    const number = (event.data?.number as string | undefined) ?? "";
+    return {
+      type: "generic",
+      titleKey: delta
+        ? "notify.invoice.changeOrderSentAmount"
+        : "notify.invoice.changeOrderSent",
+      titleParams: {
+        ...(nameParams ?? {}),
+        number,
+        ...(delta ? { delta } : {}),
+      },
+    };
+  }
+  // REQ-566 (demo-loop cycle 4, m11): the owner's own work is activity too.
+  // The dashboard's "What we handled today" reads this feed (REQ-299); with
+  // only customer-side events mapped it said "Nothing yet" after the owner
+  // issued an invoice, recorded a payment or a worker finished a job.
+  // `sent` is SendInvoice's first-send event, `issued` every other path's.
+  if (
+    event.entityType === "invoice" &&
+    (event.action === "issued" || event.action === "sent")
+  ) {
+    const amountCents = event.data?.amountCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    return {
+      type: "invoice_sent",
+      titleKey: money ? "notify.invoice.issuedAmount" : "notify.invoice.issued",
+      titleParams: money ? { ...nameParams, amountCents } : nameParams,
+    };
+  }
+  if (event.entityType === "invoice" && event.action === "payment_recorded") {
+    const amountCents = event.data?.amountCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    return {
+      type: "invoice_paid",
+      titleKey: money
+        ? "notify.payment.recordedAmount"
+        : "notify.payment.recorded",
+      titleParams: money ? { ...nameParams, amountCents } : nameParams,
+    };
+  }
+  if (event.entityType === "task" && event.action === "completed") {
+    const task = (event.data?.task as string | undefined) ?? "";
+    const worker = event.data?.worker as string | undefined;
+    return {
+      type: "task_completed",
+      titleKey: worker ? "notify.task.completedBy" : "notify.task.completed",
+      titleParams: worker
+        ? { ...nameParams, task, worker }
+        : { ...nameParams, task },
+    };
+  }
+  // REQ-564 (demo-loop cycle 4, m35): a published revision is a feed row —
+  // "Q-001 Version 2 published to María" — so the ticker and Activity stop
+  // reading the older "Quote sent" after the contractor publishes.
+  if (
+    (event.entityType === "quote" || event.entityType === "invoice") &&
+    event.action === "revised"
+  ) {
+    const number = event.data?.number as string | undefined;
+    const version = event.data?.version as number | undefined;
+    return {
+      type: "generic",
+      titleKey: `notify.${event.entityType}.revised`,
+      titleParams: {
+        ...(nameParams ?? {}),
+        number: number ?? "",
+        version: version ?? "",
+      },
     };
   }
   if (event.entityType === "message" && event.action === "received") {

@@ -9,6 +9,7 @@ import { getSessionId } from "./auth.ts";
 import { ssrBackendGetAuthed } from "./backend-fetch.ts";
 import type { ProfileSnapshot } from "../clients/profile.ts";
 import {
+  dashboardBlockers,
   type OnboardingQuestion,
   unansweredQuestions,
 } from "../../shared/quote-flow/onboarding-questions.ts";
@@ -23,4 +24,13 @@ export async function loadProfileSnapshot(req: Request): Promise<ProfileSnapshot
 export async function openOnboardingQuestions(req: Request): Promise<OnboardingQuestion[] | null> {
   const snapshot = await loadProfileSnapshot(req);
   return snapshot ? unansweredQuestions(snapshot) : null;
+}
+
+/**
+ * REQ-227 — what keeps the dashboard shut: the open questions not deferred by a Skip (none for
+ * staff), or null when the profile could not be read
+ */
+export async function dashboardGateQuestions(req: Request): Promise<OnboardingQuestion[] | null> {
+  const snapshot = await loadProfileSnapshot(req);
+  return snapshot ? dashboardBlockers(snapshot) : null;
 }

@@ -12,7 +12,7 @@ import { relativeTime } from "@core/business/relative-time/mod.ts";
 import type { Lang } from "@core/i18n/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
-import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { requireSession, requireUser, uiLangOf } from "@users/domain/coordinators/require-user/mod.ts";
 
 /**
  * QuotesController — page-aligned read controller for the /quotes UI.
@@ -78,7 +78,7 @@ export class QuotesController {
 
   @Get("analytics/quotes/insight")
   async insightRoute(@Context() ctx: ExecutionContext): Promise<InsightResponse> {
-    const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.insight.run(user.id, (user.language ?? "en") as Lang);
+    const signedIn = await requireSession(ctx, this.sessions, this.users);
+    return await this.insight.run(signedIn.user.id, uiLangOf(signedIn) as Lang); // REQ-631: the reader's language
   }
 }

@@ -86,6 +86,8 @@ describe("UX-36/UX-37 accept billing over the live money loop", () => {
       terms: FIFTY_FIFTY_TERMS,
     });
 
+    // REQ-460: the customer signs only a quote that went out.
+    await s.put(`/quotes/${quoteId}`, { status: "sent" });
     // The one ceremony: the customer accept-signs on /q. Billing is awaited
     // by the endpoint, so the invoices exist by the time 200 lands.
     const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
@@ -143,6 +145,8 @@ describe("UX-36/UX-37 accept billing over the live money loop", () => {
       ],
       terms: FIFTY_FIFTY_TERMS,
     });
+    // REQ-460: the customer signs only a quote that went out.
+    await s.put(`/quotes/${quoteId}`, { status: "sent" });
     const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
       name: CUSTOMER_NAME,
       signature: SIGNATURE_PNG,
@@ -205,6 +209,8 @@ describe("UX-36/UX-37 accept billing over the live money loop", () => {
     expect(confirm.status).toBeLessThan(400);
     expect(confirm.body.ok).toBe(true);
 
+    // REQ-460: the customer signs only a quote that went out.
+    await s.put(`/quotes/${quoteId}`, { status: "sent" });
     // ---- the (only) ceremony, AFTER the deal was fully paid ----
     const accept = await anonymous().post(`/quotes/${quoteId}/accept`, {
       name: CUSTOMER_NAME,

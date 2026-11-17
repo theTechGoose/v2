@@ -2,16 +2,27 @@ import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
+import { localizeDepositTerm } from "#quote-flow/deposit-term.ts"; // REQ-678
+import { localizeDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
 import type { Quote, QuoteTerm } from "@paperwork/dto/quote.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
-import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
+import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
+import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
+import { localizeRecurringTerm } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
+import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import {
+  invoiceLineItemsByLang,
+  invoiceTextByLang,
+} from "#documents/invoice-lang.ts"; // REQ-710
+import { lineItemDescription } from "#quote-flow/quote-translations.ts"; // REQ-710
 import {
   customerLines,
   customerOnDocument,
@@ -22,7 +33,20 @@ import {
   renderWord,
   revisedNote,
 } from "@paperwork/domain/business/doc-render/mod.ts";
-import { fmtVisitDate, groupVisits } from "#quote-flow/visit-groups.ts";
+import {
+  fmtVisitDate,
+  groupVisits,
+  visitPeriodOf,
+} from "#quote-flow/visit-groups.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
+import { isInvoiceIssued } from "#documents/versions.ts";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
+import { payOptionLines } from "@paperwork/domain/business/pay-options/mod.ts"; // REQ-805
+import {
+  drawBrandMark,
+  embedLogo,
+} from "@paperwork/domain/business/pdf-logo/mod.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -60,6 +84,9 @@ export class RenderInvoicePdf {
     private customers: CustomerStore,
     private users: UserStore,
     private identity: BusinessIdentityStore,
+    /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
+    private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
@@ -68,8 +95,8 @@ export class RenderInvoicePdf {
     // customer / contractor / ident depend only on the invoice, so fan them
     // out concurrently with the quote fetch instead of awaiting serially
     // (this is an uncached, customer-facing "Download PDF" endpoint).
-    const [quote, customer, contractor, ident] = winAnsiSafeDeep(
-      await Promise.all([
+    const [[quote, customer, contractor, ident], logo] = await Promise.all([
+      Promise.all([
         invoice.quoteId
           ? this.quotes.get(invoice.quoteId).catch(() =>
             undefined as Quote | undefined
@@ -82,8 +109,10 @@ export class RenderInvoicePdf {
           : Promise.resolve(undefined),
         this.users.get(invoice.userId).catch(() => undefined),
         this.identity.get(invoice.userId).catch(() => null),
-      ]),
-    );
+      ]).then((r) => winAnsiSafeDeep(r)),
+      // REQ-628: the business's own logo heads the bill
+      this.logos.run(invoice.userId),
+    ]);
     const businessName = ident?.businessName ?? ident?.legalName;
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
@@ -117,7 +146,7 @@ export class RenderInvoicePdf {
     const addPageIfNeeded = (need: number) => {
       if (y - need < M) {
         page = pdf.addPage([W, H]);
-        y = H;
+        y = H - M; // REQ-792: a continued page keeps its top margin
       }
     };
 
@@ -128,11 +157,23 @@ export class RenderInvoicePdf {
     page.drawRectangle({ x: 0, y: H - 8, width: W, height: 8, color: PINK });
     y = H - 8;
 
-    // business eyebrow
-    const biz = (businessName ?? contractor?.name ??
-      t(lang, "renderQuotePdf.businessFallback")).toUpperCase();
-    y -= 32;
-    drawCenteredText(page, biz, W, y, bold, 9, PINK_DARK, 0.18);
+    // REQ-628: the business's logo (fit in a fixed box) or its name as a
+    // wordmark — never the house brand.
+    const logoImage = await embedLogo(pdf, logo);
+    const biz = businessName ?? contractor?.name ??
+      t(lang, "renderQuotePdf.businessFallback");
+    y -= 18;
+    y -= drawBrandMark(page, {
+      image: logoImage,
+      name: biz,
+      x: M,
+      top: y,
+      boxW: W - 2 * M,
+      boxH: 56,
+      font: bold,
+      color: TEAL,
+      align: "center",
+    });
 
     // doc tag pill (left) + status (right)
     y -= 32;
@@ -168,76 +209,33 @@ export class RenderInvoicePdf {
 
     // Hero title
     y -= 36;
+    // REQ-710 (cycle 5, M4): a standalone invoice's title and concepts in
+    // the PDF's language while their copies still describe the typed text.
+    const own = invoiceTextByLang(invoice);
     const heroTitle = (quote?.summaryByLang?.[lang] ?? quote?.summary ??
-      invoice.jobName ?? t(lang, "renderQuotePdf.heroFallback"))
+      own.jobNameByLang?.[lang] ?? invoice.jobName ??
+      t(lang, "renderQuotePdf.heroFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 24;
 
-    // REQ-173: a batch invoice — the address is a heading, the visits sit under it
-    const visits = groupVisits(invoice.lineItems);
-    if (visits) {
-      for (const g of visits) {
-        addPageIfNeeded(40);
-        page.drawText(g.address, {
-          x: M,
-          y,
-          size: 10.5,
-          font: bold,
-          color: TEAL,
-        });
-        y -= 8;
-        page.drawLine({
-          start: { x: M, y },
-          end: { x: W - M, y },
-          thickness: 0.5,
-          color: LINE,
-        });
-        y -= 13;
-        for (const v of g.visits) {
-          addPageIfNeeded(24);
-          page.drawText(fmtVisitDate(v.date, lang), {
-            x: M,
-            y,
-            size: 9.5,
-            font: reg,
-            color: MUTED,
-          });
-          page.drawText(v.service, {
-            x: M + 56,
-            y,
-            size: 10,
-            font: reg,
-            color: INK,
-          });
-          const amt = fmtUSD(v.price);
-          page.drawText(amt, {
-            x: W - M - bold.widthOfTextAtSize(amt, 10),
-            y,
-            size: 10,
-            font: bold,
-            color: INK,
-          });
-          y -= 8;
-          page.drawLine({
-            start: { x: M, y },
-            end: { x: W - M, y },
-            thickness: 0.4,
-            color: LINE,
-          });
-          y -= 13;
-        }
-        y -= 6;
-      }
-      y -= 6;
-    }
+    // REQ-173/791: a batch invoice's visits — drawn in the Job details
+    // section below, grouped by address, then date, the amount at the end
+    const visits = groupVisits(invoice.lineItems, visitPeriodOf(invoice));
+    // REQ-792: a standalone invoice's own lines — the site's Job details table
+    const ownLines = !visits && !quote?.lineItems?.length
+      ? invoiceLineItemsByLang(invoice, invoice.lineItems)
+      : [];
 
-    // Standalone description (no quote line items) — render as a paragraph.
-    if (!visits && !quote?.lineItems?.length && invoice.description) {
+    // A standalone invoice with only a description — a paragraph, as on /i.
+    if (
+      !visits && !quote?.lineItems?.length && !ownLines.length &&
+      invoice.description
+    ) {
       y = drawWrappedText(
         page,
-        invoice.description,
+        own.descriptionByLang?.[lang] ?? invoice.description,
         M,
         y,
         W - 2 * M,
@@ -287,10 +285,11 @@ export class RenderInvoicePdf {
       const rows = Math.max(toLines.length, fromLines.length, 1);
       for (let i = 0; i < rows; i++) {
         if (toLines[i]) {
+          // REQ-906: the customer's name is the block's biggest line
           page.drawText(toLines[i], {
             x: M,
             y,
-            size: 9,
+            size: i === 0 ? 11 : 9,
             font: i === 0 ? bold : reg,
             color: i === 0 ? INK : MUTED,
           });
@@ -451,7 +450,8 @@ export class RenderInvoicePdf {
         y -= 13;
         y = drawWrappedText(
           page,
-          invoice.paymentInstructions.trim(),
+          // REQ-710 (cycle 5, M4): the methods' labels in the PDF's language.
+          localizePaymentInstructions(invoice.paymentInstructions, lang).trim(),
           M,
           y,
           W - 2 * M,
@@ -465,11 +465,205 @@ export class RenderInvoicePdf {
       if (rows.length || invoice.paymentInstructions?.trim()) y -= 10;
     }
 
-    const agreementTotal = quote?.estimatedTotal ??
-      (quote?.lineItems ?? []).reduce(
-        (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
-        0,
+    // REQ-805 — how to pay, as the site offers it: every way the business
+    // switched on (its own payment links, "Xpress Pay", by name and URL),
+    // then the invoice's own pay page. Not on a paid or cancelled bill.
+    {
+      const ways = invoice.status === "void" || paid
+        ? []
+        : payOptionLines(ident?.acceptedPaymentMethods, lang);
+      if (ways.length) {
+        addPageIfNeeded(40 + ways.length * 16);
+        page.drawText(t(lang, "printPdf.howToPay").toUpperCase(), {
+          x: M,
+          y,
+          size: 9,
+          font: bold,
+          color: MUTED,
+        });
+        y -= 8;
+        page.drawLine({
+          start: { x: M, y },
+          end: { x: W - M, y },
+          thickness: 0.5,
+          color: LINE,
+        });
+        y -= 15;
+        const valueX = M + 120;
+        for (const w of ways) {
+          const lines = wrap(w.value, reg, 9.5, W - M - valueX);
+          addPageIfNeeded(lines.length * 13 + 4);
+          page.drawText(w.label, {
+            x: M,
+            y,
+            size: 9.5,
+            font: bold,
+            color: INK,
+          });
+          for (const l of lines) {
+            page.drawText(l, {
+              x: valueX,
+              y,
+              size: 9.5,
+              font: reg,
+              color: INK,
+            });
+            y -= 13;
+          }
+          y -= 3;
+        }
+        page.drawText(
+          t(lang, "printPdf.payOnline", { url: `${APP_URL}/i/${invoice.id}` }),
+          { x: M, y, size: 9, font: reg, color: MUTED },
+        );
+        y -= 24;
+      }
+    }
+
+    // REQ-679 (cycle 5, M18): the agreement is the quote plus its approved
+    // change orders, and the schedule is the real installments — the same
+    // figures /i shows.
+    const [quoteCos, installments] = quote
+      ? await Promise.all([
+        this.changeOrders.listByQuote(invoice.userId, quote.id).catch(() => []),
+        this.invoices.listByUser(invoice.userId).then((all) =>
+          all.filter((row) => row.quoteId === quote.id && isInvoiceIssued(row))
+        ).catch(() => []),
+      ])
+      : [[], []];
+    const agreementTotal = quote ? agreedTotalCents(quote, quoteCos) : 0;
+
+    // REQ-791/792 — the site's "01 Job details" section on a bill with no
+    // agreement: a batch's visits under their address (date · service ·
+    // amount, the address's subtotal when there are several), else the
+    // invoice's own description and DESCRIPTION / AMOUNT table.
+    if (!quote?.lineItems?.length && (visits || ownLines.length)) {
+      addPageIfNeeded(60);
+      y = drawSectionHeader(
+        page,
+        y,
+        M,
+        sn(),
+        t(lang, "renderQuotePdf.section.jobDetails"),
+        bold,
+        PINK,
+        TEAL,
       );
+      const rowRule = () => {
+        page.drawLine({
+          start: { x: M, y },
+          end: { x: W - M, y },
+          thickness: 0.4,
+          color: LINE,
+        });
+      };
+      const right = (s: string, size: number, color = INK) =>
+        page.drawText(s, {
+          x: W - M - bold.widthOfTextAtSize(s, size),
+          y,
+          size,
+          font: bold,
+          color,
+        });
+      if (visits) {
+        for (const g of visits) {
+          addPageIfNeeded(48);
+          y -= 4;
+          for (const l of wrap(g.address, bold, 11, W - 2 * M - 90)) {
+            page.drawText(l, { x: M, y, size: 11, font: bold, color: TEAL });
+            y -= 14;
+          }
+          if (visits.length > 1) {
+            y += 14;
+            right(fmtUSD(g.subtotal), 11);
+            y -= 14;
+          }
+          y += 6;
+          rowRule();
+          y -= 16;
+          for (const v of g.visits) {
+            addPageIfNeeded(26);
+            page.drawText(fmtVisitDate(v.date, lang), {
+              x: M,
+              y,
+              size: 10,
+              font: reg,
+              color: MUTED,
+            });
+            page.drawText(v.service, {
+              x: M + 64,
+              y,
+              size: 10.5,
+              font: bold,
+              color: INK,
+            });
+            right(fmtUSD(v.price), 10.5);
+            y -= 9;
+            rowRule();
+            y -= 15;
+          }
+          y -= 8;
+        }
+      } else {
+        const lines = (own.descriptionByLang?.[lang] ?? invoice.description ??
+          "").split(/\n+/).map((l) => l.replace(/^[-•*]\s*/, "").trim())
+          .filter(Boolean);
+        for (const l of lines) {
+          addPageIfNeeded(18);
+          page.drawCircle({ x: M + 4, y: y + 3.5, size: 2.5, color: GREEN });
+          y = drawWrappedText(
+            page,
+            l,
+            M + 16,
+            y,
+            W - 2 * M - 16,
+            reg,
+            10.5,
+            INK,
+            15,
+          );
+        }
+        if (lines.length) y -= 6;
+        const showQty = ownLines.some((li) => (li.quantity ?? 1) > 1);
+        page.drawText(t(lang, "renderQuotePdf.table.description"), {
+          x: M,
+          y,
+          size: 8,
+          font: bold,
+          color: MUTED,
+        });
+        const amountHdr = t(lang, "renderQuotePdf.table.amount");
+        right(amountHdr, 8, MUTED);
+        y -= 6;
+        rowRule();
+        y -= 16;
+        for (const li of ownLines) {
+          const q = li.quantity ?? 1;
+          const text = li.descriptionByLang?.[lang] ?? li.description ?? "";
+          const wrapped = wrap(text || "—", bold, 10.5, W - 2 * M - 150);
+          addPageIfNeeded(wrapped.length * 14 + 12);
+          right(fmtUSD((li.price ?? 0) * q), 10.5);
+          if (showQty) {
+            const qty = `${q} ${li.unit ?? ""}`.trim();
+            page.drawText(qty, {
+              x: W - M - 90 - reg.widthOfTextAtSize(qty, 9),
+              y,
+              size: 9,
+              font: reg,
+              color: MUTED,
+            });
+          }
+          for (const w of wrapped) {
+            page.drawText(w, { x: M, y, size: 10.5, font: bold, color: INK });
+            y -= 14;
+          }
+          y += 5;
+          rowRule();
+          y -= 16;
+        }
+      }
+      y -= 6;
+    }
 
     // Section: Job details (line items) + agreement-value total card.
     if (quote?.lineItems?.length) {
@@ -511,7 +705,8 @@ export class RenderInvoicePdf {
       for (const li of quote.lineItems) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-        page.drawText(li.description, {
+        // REQ-710 (cycle 5, M4): the line in the PDF's language.
+        page.drawText(lineItemDescription(li, lang, quote.lang), {
           x: M,
           y,
           size: 11,
@@ -572,7 +767,13 @@ export class RenderInvoicePdf {
     }
 
     // Section: Payment schedule (derived from the agreement's payment terms).
-    const milestones = computeMilestones(agreementTotal, quote?.terms, lang);
+    const split = computeMilestones(agreementTotal, quote?.terms, lang);
+    const scheduled = installmentSchedule(
+      split.map((m) => m.amount),
+      agreementTotal,
+      [...installments.filter((row) => row.id !== invoice.id), invoice],
+    );
+    const milestones = split.map((m, k) => ({ ...m, amount: scheduled[k] }));
     if (milestones.length > 0) {
       addPageIfNeeded(110);
       y = drawSectionHeader(
@@ -678,8 +879,14 @@ export class RenderInvoicePdf {
     }
 
     // Section: Terms (wizard-captured grid; NO legal clauses, NO signature).
-    if (quote?.terms && quote.terms.length > 0) {
-      const visible = quote.terms.filter((term) => term.stepId !== "customer");
+    // REQ-659 (cycle 5, m53): a relative start the bill has outlived is
+    // dropped, as on the public invoice.
+    const billTerms = invoiceTerms(quote?.terms, {
+      quotedAt: quote?.sentAt ?? quote?.createdAt,
+      issuedAt: invoice.issuedDate ?? invoice.sentAt ?? invoice.createdAt,
+    });
+    if (billTerms.length > 0) {
+      const visible = billTerms.filter((term) => term.stepId !== "customer");
       if (visible.length > 0) {
         addPageIfNeeded(120);
         y = drawSectionHeader(
@@ -805,25 +1012,35 @@ function drawSectionHeader(
   n: string,
   title: string,
   bold: PDFFont,
-  pink: RGB,
+  _pink: RGB,
   teal: RGB,
 ): number {
-  page.drawCircle({ x: m + 11, y: y - 11, size: 11, color: pink });
+  // REQ-792: the site's SectionHeader — a teal numbered badge, the title in
+  // spaced capitals, a hairline across the page under it
+  page.drawCircle({ x: m + 10, y: y - 10, size: 10, color: teal });
+  const nw = bold.widthOfTextAtSize(n, 8);
   page.drawText(n, {
-    x: m + 7,
-    y: y - 14,
-    size: 9,
+    x: m + 10 - nw / 2,
+    y: y - 13,
+    size: 8,
     font: bold,
     color: rgb(1, 1, 1),
   });
-  page.drawText(title, {
+  page.drawText(title.toUpperCase(), {
     x: m + 30,
     y: y - 14,
-    size: 14,
+    size: 10.5,
     font: bold,
     color: teal,
   });
-  return y - 26;
+  const w = page.getWidth();
+  page.drawLine({
+    start: { x: m, y: y - 30 },
+    end: { x: w - m, y: y - 30 },
+    thickness: 0.6,
+    color: rgb(0.88, 0.9, 0.9),
+  });
+  return y - 50;
 }
 
 function drawWrappedText(
@@ -915,8 +1132,21 @@ function termValue(
 }
 
 export function localizeTermValue(value: string, lang: "en" | "es"): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term in the reader's language.
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
+  // REQ-771 (cycle 5v5, M7): the typed deadline — "Before Thanksgiving
+  // (Nov 26, 2026)" / "Antes de Acción de Gracias (26 nov 2026)".
+  const deadline = localizeDeadlineTerm(value, lang, t);
+  if (deadline) return deadline;
+  // REQ-495 (m17): a picked start date (ISO, or a legacy MM/DD/YYYY) prints
+  // in the reader's language — "1 dic 2026" / "Dec 1, 2026".
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang === "en") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, t);
+  if (deposit) return deposit;
   const exactKey: Record<string, string> = {
     "Payment upon completion": "renderQuotePdf.termValue.paymentUponCompletion",
     "Deposit + balance": "renderQuotePdf.termValue.depositPlusBalance",
@@ -932,6 +1162,8 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     "Due Now": "renderQuotePdf.termValue.dueNow",
     // REQ-046/047: the wizard's TBD pick on start date / duration.
     "TBD": "renderQuotePdf.termValue.tbd",
+    // REQ-343: the service-trade wizard's "Half a day" duration.
+    "Half a day": "renderQuotePdf.termValue.halfDay",
   };
   if (exactKey[trimmed]) return t(lang, exactKey[trimmed]);
   return trimmed
@@ -939,7 +1171,14 @@ export function localizeTermValue(value: string, lang: "en" | "es"): string {
     .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    // REQ-343: service-trade durations ("2 hours", "4 hours").
+    .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
 }
 
 function computeMilestones(
@@ -966,7 +1205,7 @@ function computeMilestones(
     full: { label: L.final, when: L.onCompletion },
   };
   const term = termValue(terms, "payment_terms");
-  const dueNow = /\bdue now\b/i.test(term ?? "");
+  const dueNow = isDueNowTermValue(term);
   return computePaymentSplit(term, total).map((p) => ({
     ...roleLabel[p.role],
     ...(dueNow && p.role === "full" ? { when: L.onSigning } : {}),

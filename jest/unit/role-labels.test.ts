@@ -22,12 +22,27 @@ describe("REQ-191 role labels", () => {
 
   test("the /admin page says admin, not super-admin, and its column is Admin, not Super", () => {
     const src = read("front-end/islands/AdminPage.tsx");
-    expect(src).toContain("grant or revoke admin,");
+    // REQ-269: the page's copy lives in the dictionaries (adminPage.*), in both languages
+    const en = dict("lang/en.json");
+    const es = dict("lang/es.json");
+    expect(en["adminPage.lead.users"]).toContain("grant or revoke admin,");
+    expect(es["adminPage.lead.users"]).toContain("da o quita admin,");
     // no string a person reads says super (code comments and the superAdmin flag are internal)
     expect(src).not.toMatch(/"[^"\n]*super[^"\n]*"/i);
     expect(src).not.toMatch(/>[^<{\n]*super[^<{\n]*</i);
+    for (const d of [en, es]) {
+      for (const k of Object.keys(d).filter((k) => k.startsWith("adminPage."))) {
+        expect({ k, v: d[k] }).not.toMatchObject({
+          v: expect.stringMatching(/super/i),
+        });
+      }
+    }
     expect(src).not.toMatch(/>Super<\/th>/);
-    expect(src).toMatch(/<th style="padding:8px 10px">Admin<\/th>/);
+    expect(src).toMatch(
+      /<th style="padding:8px 10px">\{t\("adminPage\.col\.admin"\)\}<\/th>/,
+    );
+    expect(en["adminPage.col.admin"]).toBe("Admin");
+    expect(es["adminPage.col.admin"]).toBe("Admin");
   });
 
   test("English: the Editors page and the invite SMS say editor, never admin", () => {

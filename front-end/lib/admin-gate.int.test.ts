@@ -1,0 +1,331 @@
+import { assert, assertEquals } from "@std/assert";
+import { App } from "fresh";
+import type { State } from "../utils.ts";
+import { handler as adminGate } from "../routes/admin/_middleware.ts";
+import AppShell from "../routes/_app.tsx";
+
+/**
+ * REQ-376 (demo-loop cycle 2, issues m20 + nc-second-demo) — integration: the real /admin
+ * middleware in a Fresh app, the backend answered in process (/me, /admin/whoami,
+ * /demo-mode/active) the way mod.ts publishes it on Deno Deploy. A session that is impersonating
+ * (a demo started in another tab of the same browser) hitting /admin gets an interstitial that
+ * says whom this browser is guiding — never a bare 302 to the customer's /dashboard; the staff's
+ * own session still reaches the console, a plain customer still goes to /dashboard.
+ */
+type Fetch = (req: Request) => Response | Promise<Response>;
+const g = globalThis as { __backendFetch?: Fetch };
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+const customer = {
+  id: "c1",
+  name: "Ana Torres",
+  phoneNumber: "+15125550101",
+  businessName: "Torres Roofing",
+  superAdmin: false,
+  language: "es",
+  createdAt: 0,
+  updatedAt: 0,
+};
+const staff = {
+  id: "s1",
+  name: "Hans",
+  phoneNumber: "+18435550101",
+  superAdmin: true,
+  language: "en",
+  createdAt: 0,
+  updatedAt: 0,
+};
+const demo = {
+  role: "presenter",
+  session: {
+    id: "demo_1",
+    presenterName: "Hans",
+    targetName: "Ana Torres",
+    targetUserId: "c1",
+    presenters: [{ userId: "s1", name: "Hans", color: "#2f6d29" }],
+  },
+  targetPath: null,
+  pid: "p1",
+};
+const noDemo = { role: null, session: null, targetPath: null, pid: null };
+
+type Who = "impersonating" | "staff" | "customer";
+function backend(who: Who, active: unknown, staffLang = "en"): Fetch {
+  return (req) => {
+    const path = new URL(req.url).pathname;
+    const me = who === "staff" ? staff : customer;
+    if (path === "/me") return json(me);
+    if (path === "/admin/whoami") {
+      return json({
+        authenticated: true,
+        user: me,
+        superAdmin: me.superAdmin,
+        impersonating: who === "impersonating",
+        impersonator: who === "impersonating"
+          ? { ...staff, language: staffLang }
+          : null,
+      });
+    }
+    if (path === "/demo-mode/active") return json(active);
+    return json({ name: "NotFound" }, 404);
+  };
+}
+
+async function hitAdmin(fetcher: Fetch, cookie = "pm_session=sess_1") {
+  const prev = g.__backendFetch;
+  g.__backendFetch = fetcher;
+  try {
+    const app = new App<State>()
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request("http://app/admin", { headers: { cookie } }),
+    );
+    return { res, body: await res.text() };
+  } finally {
+    g.__backendFetch = prev;
+  }
+}
+
+Deno.test("REQ-376 /admin while this browser guides a customer: an interstitial naming them, Back to the demo + Return to your account — not a bare 302 to their /dashboard", async () => {
+  const { res, body } = await hitAdmin(backend("impersonating", demo));
+  assertEquals(res.status, 200, "an explanation, not a redirect");
+  assertEquals(res.headers.get("location"), null);
+  assert(!body.includes("ADMIN CONSOLE"), "the console is not served");
+  assert(
+    body.includes("You are guiding Ana Torres in this browser"),
+    `names the customer: ${body.slice(0, 400)}`,
+  );
+  assert(body.includes('data-cy="admin-gate"'));
+  assert(
+    // REQ-829: in the presenter's language (?lang=)
+    /data-cy="admin-gate-back"[^>]*href="\/demo\/stage\?lang=(en|es)"|href="\/demo\/stage\?lang=(en|es)"[^>]*data-cy="admin-gate-back"/
+      .test(body),
+    "Back to the demo goes to the stage, in the presenter's language",
+  );
+  assert(body.includes('data-cy="admin-gate-return"'));
+  assert(body.includes("Return to your account"));
+  assert(
+    body.includes("start another demo"),
+    "says how to start another demo",
+  );
+});
+
+Deno.test("REQ-376 the interstitial speaks the presenter's language (es), not the customer's", async () => {
+  const { body } = await hitAdmin(backend("impersonating", demo, "es"));
+  assert(
+    body.includes("Estás guiando a Ana Torres en este navegador"),
+    body.slice(0, 400),
+  );
+});
+
+Deno.test("REQ-376 an impersonation with no demo: the interstitial offers Return only, no Back to the demo", async () => {
+  const { res, body } = await hitAdmin(backend("impersonating", noDemo));
+  assertEquals(res.status, 200);
+  assert(body.includes('data-cy="admin-gate-return"'));
+  assert(!body.includes('data-cy="admin-gate-back"'));
+});
+
+Deno.test("REQ-376 the staff's own session still reaches the console; a plain customer still goes to /dashboard; no session goes home", async () => {
+  const own = await hitAdmin(backend("staff", noDemo));
+  assertEquals(own.res.status, 200);
+  assertEquals(own.body, "ADMIN CONSOLE");
+
+  const plain = await hitAdmin(backend("customer", noDemo));
+  assertEquals(plain.res.status, 302);
+  assertEquals(plain.res.headers.get("location"), "/dashboard");
+
+  const none = await hitAdmin(backend("customer", noDemo), "");
+  assertEquals(none.res.status, 302);
+  assertEquals(none.res.headers.get("location"), "/");
+});
+
+/**
+ * REQ-855 (demo-loop cycle dm3, issues m5 + rc-17) — while guiding, the gate is where the presenter
+ * changes THEIR language: an EN | ES switch to this same page with ?lang= (demo 3 "could not find
+ * a clickable EN/ES control on /admin while guiding" and fell back to a hand-set cookie). Picking
+ * EN on an es-profile presenter's gate gives an English gate whose Back to the demo carries it.
+ */
+async function hitAdminAt(fetcher: Fetch, path: string) {
+  const prev = g.__backendFetch;
+  g.__backendFetch = fetcher;
+  try {
+    const app = new App<State>()
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request(`http://app${path}`, {
+        headers: { cookie: "pm_session=sess_1" },
+      }),
+    );
+    return { res, body: await res.text() };
+  } finally {
+    g.__backendFetch = prev;
+  }
+}
+
+/** the attributes of the switch's link to `lang`, or null */
+function langLink(body: string, lang: "en" | "es"): string | null {
+  const nav = body.match(
+    /<nav[^>]*data-cy="public-lang-toggle"[^>]*>([\s\S]*?)<\/nav>/,
+  );
+  if (!nav) return null;
+  return nav[1].match(new RegExp(`<a[^>]*hreflang="${lang}"[^>]*>`))?.[0] ??
+    null;
+}
+
+Deno.test("REQ-855 (dm3 m5): the guide gate has an EN | ES switch to this same page with ?lang=", async () => {
+  const { res, body } = await hitAdminAt(
+    backend("impersonating", demo),
+    "/admin",
+  );
+  assertEquals(res.status, 200);
+  const en = langLink(body, "en");
+  const es = langLink(body, "es");
+  assert(en && es, `the gate offers EN and ES: ${body.slice(0, 600)}`);
+  assert(en.includes('href="/admin?lang=en"'), en);
+  assert(es.includes('href="/admin?lang=es"'), es);
+  // the presenter's own language (en) is the current one
+  assert(en.includes('aria-current="true"'), en);
+});
+
+Deno.test("REQ-855 (dm3 rc-17): an es presenter who picks EN on the gate reads it in English, and Back to the demo carries en", async () => {
+  const { body } = await hitAdminAt(
+    backend("impersonating", demo, "es"),
+    "/admin?lang=en",
+  );
+  assert(
+    body.includes("You are guiding Ana Torres in this browser"),
+    body.slice(0, 400),
+  );
+  assert(
+    /data-cy="admin-gate-back"[^>]*href="\/demo\/stage\?lang=en"|href="\/demo\/stage\?lang=en"[^>]*data-cy="admin-gate-back"/
+      .test(body),
+    "Back to the demo carries en",
+  );
+  const es = langLink(body, "es");
+  assert(es?.includes('href="/admin?lang=es"'), String(es));
+  assert(langLink(body, "en")?.includes('aria-current="true"'));
+});
+
+async function hitAdminWith(fetcher: Fetch, path: string, cookie: string) {
+  const prev = g.__backendFetch;
+  g.__backendFetch = fetcher;
+  try {
+    const app = new App<State>()
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request(`http://app${path}`, { headers: { cookie } }),
+    );
+    return { res, body: await res.text() };
+  } finally {
+    g.__backendFetch = prev;
+  }
+}
+
+Deno.test("REQ-863 (dm4 p5): an es-profile presenter whose demo runs in en (pm_demo_lang=en) reads an English gate on a fresh /admin tab, and Back to the demo carries en", async () => {
+  const { res, body } = await hitAdminWith(
+    backend("impersonating", demo, "es"),
+    "/admin",
+    "pm_session=sess_1; pm_demo_lang=en",
+  );
+  assertEquals(res.status, 200);
+  assert(
+    body.includes("You are guiding Ana Torres in this browser"),
+    body.slice(0, 400),
+  );
+  assert(
+    /href="\/demo\/stage\?lang=en"/.test(body),
+    "Back to the demo carries en",
+  );
+});
+
+Deno.test("REQ-863 (dm4 p5): the gate's EN | ES switch records the presenter's pick as the demo's language", async () => {
+  const { res } = await hitAdminWith(
+    backend("impersonating", demo, "en"),
+    "/admin?lang=es",
+    "pm_session=sess_1; pm_demo_lang=en",
+  );
+  const set = res.headers.get("set-cookie") ?? "";
+  assert(/(^|,\s*)pm_demo_lang=es;/.test(set), `Set-Cookie: ${set}`);
+});
+
+/**
+ * REQ-858 (demo-loop cycle dm4, issues m7 + setup-4) — the gate rendered inside the real app
+ * shell loads the app's stylesheets. Fresh dedupes <Head> links by a key that leaves out href, so
+ * the gate's two unkeyed links (dashboard.css, public-lang.css) and _app's unkeyed motion.css
+ * collapsed into public-lang.css alone: the card lost Nunito and the app styling (fleet-0
+ * stdout:85 "document.styleSheets = public-lang.css + 2 inline").
+ */
+Deno.test("REQ-858 (dm4 m7): the guide gate's page links dashboard.css, public-lang.css and the shell's motion.css", async () => {
+  const prev = g.__backendFetch;
+  g.__backendFetch = backend("impersonating", demo);
+  try {
+    const app = new App<State>()
+      // deno-lint-ignore no-explicit-any
+      .appWrapper(AppShell as any)
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request("http://app/admin", {
+        headers: { cookie: "pm_session=sess_1" },
+      }),
+    );
+    const html = await res.text();
+    assertEquals(res.status, 200);
+    assert(html.includes('data-cy="admin-gate"'), html.slice(0, 400));
+    const sheets = [...html.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*>/g)]
+      .map((m) => /href="([^"?]+)/.exec(m[0])?.[1] ?? m[0]);
+    for (const css of ["/dashboard.css", "/public-lang.css", "/motion.css"]) {
+      assert(
+        sheets.some((h) => h.endsWith(css)),
+        `${css} is linked: ${JSON.stringify(sheets)}`,
+      );
+    }
+  } finally {
+    g.__backendFetch = prev;
+  }
+});
+
+/**
+ * REQ-869 (demo-loop cycle dm5, issue p3; re-check 11 of REQ-858) — the gate card's heading is set
+ * in the app's heading font. dashboard.css gives Nunito (`--font-heading`) only through classes
+ * (`.ds-prose h1, .h1`); no rule targets a bare h1, so the gate's class-less
+ * `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3">` inherited the body's Inter
+ * (fleet-r38fa8936-0/stdout:74) even after REQ-858 restored the stylesheet links.
+ */
+Deno.test("REQ-869 (dm5 p3): the guide gate's h1 carries the app's heading font (class h1 or font-family var(--font-heading))", async () => {
+  const prev = g.__backendFetch;
+  g.__backendFetch = backend("impersonating", demo);
+  try {
+    const app = new App<State>()
+      // deno-lint-ignore no-explicit-any
+      .appWrapper(AppShell as any)
+      .use(adminGate)
+      .get("/admin", () => new Response("ADMIN CONSOLE"));
+    const res = await app.handler()(
+      new Request("http://app/admin", {
+        headers: { cookie: "pm_session=sess_1" },
+      }),
+    );
+    const html = await res.text();
+    assertEquals(res.status, 200);
+    const gate = html.slice(html.indexOf('data-cy="admin-gate"'));
+    const h1 = /<h1\b[^>]*>/.exec(gate)?.[0] ?? "";
+    assert(h1, `the gate has an h1: ${gate.slice(0, 400)}`);
+    const cls = /\bclass="([^"]*)"/.exec(h1)?.[1]?.split(/\s+/) ?? [];
+    const style = /\bstyle="([^"]*)"/.exec(h1)?.[1] ?? "";
+    assert(
+      cls.includes("h1") || /font-family:\s*var\(--font-heading\)/.test(style),
+      `the gate h1 uses the heading font (class "h1" or var(--font-heading)): ${h1}`,
+    );
+  } finally {
+    g.__backendFetch = prev;
+  }
+});

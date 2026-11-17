@@ -1,6 +1,7 @@
 /**
  * REQ-054/055 — the plan cards: the /welcome wizard's plan step and the Plan card on /settings
- * render these same cards (name, price, the first three features), styled by /plan-cards.css.
+ * render these same cards (name, price, every feature line — REQ-733: Free's every-plan lines sit
+ * after its first three, so a three-line cut hid them), styled by /plan-cards.css.
  * A card is the pick: each one is a form posting to /plan/pick (REQ-059), whose answer is a
  * redirect — the CRM's pay page in this tab for a paid plan, back to the page for free — so the
  * cards work before any island hydrates and no script has to open anything.
@@ -70,7 +71,7 @@ export function PlanCards(
                 : null}
             </span>
             <ul class="plan-card__features">
-              {p.features.slice(0, 3).map((f) => (
+              {p.features.map((f) => (
                 <li key={f.id}>{lang === "es" ? f.es : f.en}</li>
               ))}
             </ul>

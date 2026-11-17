@@ -5,19 +5,45 @@
  */
 import { Body, Context, Controller, Get, Param, Post, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { FieldTaskStore, FieldWorkerStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
+import { CrewStore, FieldTaskStore, FieldWorkerStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
+import { canActOn } from "@field/domain/business/crews/mod.ts"; // REQ-840
 import { WorkerSessionStore } from "@field/domain/data/worker-session-store/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
 import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
+import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts";
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
-import { addService, canAct, deferTask, findOrCreateTaskType, inActionWindow } from "@field/domain/business/tasks/mod.ts";
+import { addService, deferTask, findOrCreateTaskType, inActionWindow, liveTypes, sameVisit } from "@field/domain/business/tasks/mod.ts";
+import { lastDayOf, onTask } from "@field/domain/business/job-span/mod.ts";
 import { fieldToday, isValidDate, shiftDate } from "@field/domain/business/schedule/mod.ts";
-import { CAP, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
+import { workerLang } from "@field/domain/business/worker-welcome/mod.ts";
+import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { CAP, type Crew, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
 
 type Body_ = Record<string, unknown>;
 const body = (b: unknown): Body_ => (b && typeof b === "object" ? b as Body_ : {});
-const publicWorker = (w: FieldWorker) => ({ id: w.id, name: w.name, role: w.role ?? "worker" });
+/** REQ-840: the worker's crew, when they are in one of the account's */
+async function crewOf(w: FieldWorker, crews: CrewStore): Promise<Crew | null> {
+  const c = w.crewId ? await crews.find(w.crewId) : null;
+  return c && c.userId === w.userId ? c : null;
+}
+
+/**
+ * REQ-285 — what the worker's screen gets: who, the role, and the language the screen opens in (REQ-155's
+ * rule: theirs, else the owner's). REQ-840 — the crew's name; a worker who leads their crew is a foreman.
+ */
+async function publicWorker(w: FieldWorker, users: UserStore, crews: CrewStore) {
+  const owner = w.language ? {} : await users.get(w.userId).catch(() => ({}));
+  const crew = await crewOf(w, crews);
+  const foreman = w.role === "foreman" || (!!crew && crew.foremanId === w.id);
+  return {
+    id: w.id,
+    name: w.name,
+    role: foreman ? "foreman" as const : "worker" as const,
+    language: workerLang(w, owner),
+    ...(crew ? { crewId: crew.id, crewName: crew.name } : {}),
+  };
+}
 
 async function me(ctx: ExecutionContext, sessions: WorkerSessionStore, workers: FieldWorkerStore): Promise<FieldWorker | null> {
   const token = WorkerSessionStore.tokenFrom(ctx.req.header("cookie"));
@@ -32,12 +58,12 @@ async function need(ctx: ExecutionContext, sessions: WorkerSessionStore, workers
   if (!w) throw new FieldError("not logged in", 401);
   return w;
 }
-/** the task a worker may act on now — theirs (anyone's for a foreman), recent, not in the future */
-async function actionable(ctx: ExecutionContext, id: string, sessions: WorkerSessionStore, workers: FieldWorkerStore, tasks: FieldTaskStore): Promise<{ w: FieldWorker; t: FieldTask }> {
+/** the task a worker may act on now — theirs (their crew's for its foreman, anyone's for the account foreman), recent, not in the future */
+async function actionable(ctx: ExecutionContext, id: string, sessions: WorkerSessionStore, workers: FieldWorkerStore, tasks: FieldTaskStore, crews: CrewStore): Promise<{ w: FieldWorker; t: FieldTask }> {
   const w = await need(ctx, sessions, workers);
   const t = await tasks.find(id);
-  if (!t || t.userId !== w.userId || !canAct(w, t)) throw new FieldError("not found", 404);
-  if (!inActionWindow(w, t.date, fieldToday())) throw new FieldError("outside the days you can edit", 409);
+  if (!t || t.userId !== w.userId || !canActOn(w, t, await crewOf(w, crews))) throw new FieldError("not found", 404);
+  if (!inActionWindow(w, t.date, fieldToday(), lastDayOf(t))) throw new FieldError("outside the days you can edit", 409); // REQ-785: a job's last day
   return { w, t };
 }
 
@@ -52,8 +78,10 @@ export class FieldWorkerController {
     private day: FieldDay,
     private views: FieldViews,
     private notices: FieldNotices,
+    private users: UserStore,
+    private activity: FieldActivity,
+    private crews: CrewStore, // REQ-840
   ) {}
-
 
   /** REQ-138: cell + PIN; five misses lock the worker for a minute */
   @Post("login")
@@ -69,7 +97,7 @@ export class FieldWorkerController {
     await this.sessions.clearMisses(w.id);
     const s = await this.sessions.create(w.id, w.userId);
     ctx.header("Set-Cookie", WorkerSessionStore.cookie(s.token));
-    return publicWorker(w);
+    return publicWorker(w, this.users, this.crews);
   }
 
   @Post("logout")
@@ -83,10 +111,10 @@ export class FieldWorkerController {
   @Get("me")
   async whoami(@Context() ctx: ExecutionContext) {
     const w = await me(ctx, this.sessions, this.workers);
-    return w ? publicWorker(w) : null;
+    return w ? publicWorker(w, this.users, this.crews) : null;
   }
 
-  /** REQ-141: only this worker's tasks, no prices; a foreman asking ?all=1 gets every crew, theirs first */
+  /** REQ-141: only this worker's tasks (REQ-785: a job they are on the crew of, on each of its days), no prices; a foreman asking ?all=1 gets every crew, theirs first */
   @Get("tasks")
   async list(@Context() ctx: ExecutionContext, @Query("date") date?: string, @Query("all") all?: string) {
     const w = await need(ctx, this.sessions, this.workers);
@@ -94,10 +122,11 @@ export class FieldWorkerController {
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
     const rows = (await this.day.generate(w.userId, d)).all; // REQ-170: any day materializes on read
     const everyone = all === "1" && w.role === "foreman";
-    const n = await this.views.names(w.userId);
+    const crew = await crewOf(w, this.crews); // REQ-840: a crew's foreman asking for all gets the crew's
+    const n = await this.views.workerNames(w.userId);
     return rows
-      .filter((t) => everyone || t.workerId === w.id)
-      .sort((a, b) => (a.workerId === w.id ? 0 : 1) - (b.workerId === w.id ? 0 : 1))
+      .filter((t) => everyone || onTask(w.id, t) || (all === "1" && canActOn(w, t, crew)))
+      .sort((a, b) => (onTask(w.id, a) ? 0 : 1) - (onTask(w.id, b) ? 0 : 1))
       .map((t) => this.views.workerTask(t, n));
   }
 
@@ -105,7 +134,7 @@ export class FieldWorkerController {
   @Get("task-types")
   async taskTypes(@Context() ctx: ExecutionContext) {
     const w = await need(ctx, this.sessions, this.workers);
-    return (await this.types.listByUser(w.userId)).sort((a, b) => a.name.localeCompare(b.name));
+    return liveTypes(await this.types.listByUser(w.userId)).sort((a, b) => a.name.localeCompare(b.name)); // REQ-839: no archived ones
   }
 
   /** REQ-141: add a service to a visit the worker has that day (a removed one is restored) */
@@ -119,74 +148,79 @@ export class FieldWorkerController {
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
     if (!inActionWindow(w, date, fieldToday())) throw new FieldError("outside the days you can edit", 409);
     const dayTasks = await this.tasks.listByDay(w.userId, date);
-    if (!dayTasks.some((t) => t.subscriptionId === s.id && canAct(w, t))) throw new FieldError("not found", 404);
+    const crew = await crewOf(w, this.crews);
+    if (!dayTasks.some((t) => t.subscriptionId === s.id && canActOn(w, t, crew))) throw new FieldError("not found", 404);
     let taskTypeId = str(b.taskTypeId);
     const types = await this.types.listByUser(w.userId);
     if (!taskTypeId && str(b.taskTypeName)) {
       const r = findOrCreateTaskType(types, str(b.taskTypeName)!, w.userId, newId);
-      if (r.created) await this.types.put(r.type);
+      if (r.created || r.restored) await this.types.put(r.type); // REQ-839
       taskTypeId = r.type.id;
       types.push(r.type);
     }
     if (!taskTypeId || !types.some((x) => x.id === taskTypeId)) throw new FieldError("taskTypeId required");
-    const r = addService({ subscription: s, taskTypeId, date, existing: dayTasks, newId, addedByName: w.name });
+    const r = addService({ subscription: await this.day.effective(s), taskTypeId, date, existing: dayTasks, newId, addedByName: w.name }); // REQ-811: priced from the checklist too
     if (!r.ok) throw new FieldError(r.reason === "invoiced" ? "visit already invoiced" : r.reason, r.reason === "no_visit" ? 404 : 409);
     await this.tasks.put(r.task);
-    const n = await this.views.names(w.userId);
+    const n = await this.views.workerNames(w.userId);
     return ctx.json(this.views.workerTask(r.task, n), r.restored ? 200 : 201);
   }
 
   @Post("tasks/:id/complete")
   async complete(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() raw: unknown) {
-    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks);
+    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks, this.crews);
     if (t.invoiceId) throw new FieldError("already invoiced", 409);
     const b = body(raw);
     if (tooLong(b.note, CAP.note)) throw new FieldError(`note too long (max ${CAP.note})`);
+    const wasComplete = t.status === "complete";
     t.status = "complete";
     t.completedAt = new Date().toISOString();
     if (typeof b.note === "string") t.note = b.note.trim() || undefined;
     await this.tasks.put(t);
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    if (!wasComplete) await this.activity.taskCompleted(t, w.name); // REQ-566
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   @Post("tasks/:id/uncomplete")
   async uncomplete(@Context() ctx: ExecutionContext, @Param("id") id: string) {
-    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks);
+    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks, this.crews);
     if (t.invoiceId) throw new FieldError("already invoiced", 409);
     if (t.status === "complete") {
       t.status = "assigned";
       delete t.completedAt;
       await this.tasks.put(t);
     }
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   /** not done — never invoiced */
   @Post("tasks/:id/skip")
   async skip(@Context() ctx: ExecutionContext, @Param("id") id: string) {
-    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks);
+    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks, this.crews);
     if (t.invoiceId) throw new FieldError("already invoiced", 409);
     t.status = "skipped";
     delete t.completedAt;
     await this.tasks.put(t);
     await this.notices.customerCanceled(w.userId, t); // REQ-171: the customer hears, once
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   @Post("tasks/:id/restore")
   async restore(@Context() ctx: ExecutionContext, @Param("id") id: string) {
-    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks);
+    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks, this.crews);
     if (t.status === "skipped") {
       t.status = "assigned";
       await this.tasks.put(t);
     }
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   /** tomorrow, with a note: the original is marked, a copy holds tomorrow's slot */
   @Post("tasks/:id/defer")
   async defer(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() raw: unknown) {
-    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks);
+    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks, this.crews);
+    // REQ-785: a job of several days is not pushed a day — the office changes its days
+    if (lastDayOf(t) !== t.date) throw new FieldError("a job of several days is not deferred — the office changes its days", 409);
     const visit = (await this.tasks.listByDay(w.userId, t.date)).filter((x) => x.subscriptionId === t.subscriptionId);
     if (t.invoiceId || visit.some((x) => x.invoiceId)) throw new FieldError("visit already invoiced", 409);
     if (t.status === "deferred") throw new FieldError("already deferred", 409);
@@ -198,21 +232,22 @@ export class FieldWorkerController {
     const { copy } = deferTask(t, to, String(b.note ?? "").trim() || undefined, newId);
     await this.tasks.putMany(already ? [t] : [t, copy]); // tomorrow's slot may already exist (a generated round): then it simply absorbs the work
     await this.notices.customerDeferred(w.userId, t, to); // REQ-171: the customer hears the new day, once
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
   /** the note is the visit's — on every task of that visit that is not invoiced */
   @Post("tasks/:id/note")
   async note(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() raw: unknown) {
-    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks);
+    const { w, t } = await actionable(ctx, id, this.sessions, this.workers, this.tasks, this.crews);
     if (t.invoiceId) throw new FieldError("already invoiced", 409);
     const b = body(raw);
     if (tooLong(b.note, CAP.note)) throw new FieldError(`note too long (max ${CAP.note})`);
     const note = String(b.note ?? "").trim() || undefined;
-    const visit = (await this.tasks.listByDay(w.userId, t.date)).filter((x) => x.subscriptionId === t.subscriptionId && !x.invoiceId);
+    // REQ-785: the visit's tasks — a one-off's are its customer's (a job's, its own days'), never every one-off that day
+    const visit = (await this.tasks.listByDay(w.userId, t.date)).filter((x) => sameVisit(t, x) && !x.invoiceId);
     await this.tasks.putMany(visit.map((x) => ({ ...x, note })));
     t.note = note;
-    return this.views.workerTask(t, await this.views.names(w.userId));
+    return this.views.workerTask(t, await this.views.workerNames(w.userId));
   }
 
 }

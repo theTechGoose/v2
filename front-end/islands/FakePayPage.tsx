@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { planClient } from "../clients/profile.ts";
 import { fakeReturnHref } from "../lib/plan-return.ts";
+import { Icon } from "../components/ui/Icon.tsx";
 
 /**
  * FakePayPage (REQ-057) — the one control of the app's stand-in pay page: "Pay with the test
@@ -38,7 +39,7 @@ export default function FakePayPage(
         ? (
           <>
             <p role="status" style="margin:0;font-weight:700;color:var(--brand-green)" data-cy="fake-pay-paid">
-              ✓ {tFor(lang, "payFake.paid")}
+              <Icon name="check" size={16} stroke-width={3} style="vertical-align:-2px" /> {tFor(lang, "payFake.paid")}
             </p>
             <a class="btn btn-primary" href={fakeReturnHref(returnUrl, due)} data-cy="fake-pay-back" style="text-decoration:none">
               {tFor(lang, "payFake.back", { app: returnLabel || tFor(lang, "payFake.theApp") })}

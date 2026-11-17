@@ -208,7 +208,7 @@ describe("REQ-035 NW-55 send dialog — how do you want to send, Keep / Cancel",
 
     cy.get(".quote-review__send-main").should("be.visible").click();
     cy.get("[data-cy=send-option-sms]").click();
-    cy.get("[data-cy=send-keep]").should("contain.text", "Guardar").click();
+    cy.get("[data-cy=send-keep]").should("contain.text", "Enviar").click(); // REQ-308: the send says Send
     cy.get("[data-cy=send-dialog]").should("not.exist");
     cy.get(".chat", { timeout: 20_000 }).should(($chat) => {
       expect($chat.text(), "sent by text after Keep").to.match(/mensaje de texto|texted to/i);

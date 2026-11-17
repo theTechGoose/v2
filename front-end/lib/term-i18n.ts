@@ -7,14 +7,61 @@
  * Quote+Agreement preview (`islands/AsstChat.tsx`) so the contractor's preview
  * always matches what the customer actually receives.
  *
+ * A date term (REQ-495) is formatted per language; otherwise
  * EN is the identity (returns the value unchanged); ES uses an exact-match map
  * for the preset picks, then a word-level fallback for free-text durations.
  */
 import { type Lang, tFor } from "./i18n.ts";
+import {
+  formatTermDate,
+  termDateIso,
+} from "../../shared/quote-flow/format-helpers.ts";
+import { isUponCompletionTerm } from "../../shared/quote-flow/completion-schedule.ts";
+import { localizeDepositTerm } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
+import { localizeRecurringTerm } from "../../shared/quote-flow/recurring-billing.ts";
+import { localizeDeadlineTerm } from "../../shared/quote-flow/deadline-term.ts"; // REQ-771
+
+/** REQ-697 (demo-loop cycle 5, m22): the agreement's payment term in the
+ *  reader's language, with the days the customer has to pay when it bills
+ *  after the job — "Payment upon completion — due within 30 days of the
+ *  invoice". Signing schedules that bill due the account's days to pay after
+ *  it goes out (REQ-411), so the signed agreement says so. Without a known
+ *  window (or for any other term) it is `localizeTermValue`. */
+export function paymentTermValue(
+  value: string,
+  lang: Lang,
+  netDays: number | undefined,
+): string {
+  if (
+    typeof netDays === "number" && Number.isInteger(netDays) &&
+    netDays >= 0 && isUponCompletionTerm(value)
+  ) {
+    return netDays === 0
+      ? tFor(lang, "quoteDoc.termValue.paymentUponCompletionOnReceipt")
+      : tFor(lang, "quoteDoc.termValue.paymentUponCompletionWithin", {
+        n: netDays,
+      });
+  }
+  return localizeTermValue(value, lang);
+}
 
 export function localizeTermValue(value: string, lang: Lang): string {
+  // REQ-699 (demo-loop cycle 5, M20): a recurring term reads in the reader's
+  // language, its last day too — "Mensual · $180/mes · hasta el 30 jun 2027".
+  const recurring = localizeRecurringTerm(value, lang);
+  if (recurring) return recurring;
+  // REQ-771 (cycle 5v5, M7): the typed deadline — "Before Thanksgiving
+  // (Nov 26, 2026)" / "Antes de Acción de Gracias (26 nov 2026)".
+  const deadline = localizeDeadlineTerm(value, lang, tFor);
+  if (deadline) return deadline;
+  // REQ-495 (m17): a picked start date is stored ISO (older quotes carry
+  // MM/DD/YYYY) — read it in the reader's language, in both languages.
+  if (termDateIso(value)) return formatTermDate(value, lang);
   if (lang !== "es") return value;
   const trimmed = (value ?? "").trim();
+  // REQ-678 (c3-m60): the picked deposit — "Depósito 30% + saldo".
+  const deposit = localizeDepositTerm(trimmed, lang, tFor);
+  if (deposit) return deposit;
   const exact: Record<string, string> = {
     "Payment upon completion": "quoteDoc.termValue.paymentUponCompletion",
     "Deposit + balance": "quoteDoc.termValue.depositBalance",
@@ -30,6 +77,8 @@ export function localizeTermValue(value: string, lang: Lang): string {
     "Due Now": "quoteDoc.termValue.dueNow",
     // REQ-046/047: the wizard's TBD pick on start date / duration.
     "TBD": "quoteDoc.termValue.tbd",
+    // REQ-343: the service-trade wizard's "Half a day" duration.
+    "Half a day": "quoteDoc.termValue.halfDay",
   };
   if (exact[trimmed]) return tFor(lang, exact[trimmed]);
   return trimmed
@@ -37,5 +86,12 @@ export function localizeTermValue(value: string, lang: Lang): string {
     .replace(/\byears\b/gi, "años").replace(/\byear\b/gi, "año")
     .replace(/\bmonths\b/gi, "meses").replace(/\bmonth\b/gi, "mes")
     .replace(/\bweeks\b/gi, "semanas").replace(/\bweek\b/gi, "semana")
-    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día");
+    // REQ-343: service-trade durations ("2 hours", "4 hours").
+    .replace(/\bhours\b/gi, "horas").replace(/\bhour\b/gi, "hora")
+    .replace(/\bdays\b/gi, "días").replace(/\bday\b/gi, "día")
+    // REQ-665 (m47): the custom picker's worded two-payment split.
+    .replace(
+      /^(\d+(?:\.\d+)?)% upfront, (\d+(?:\.\d+)?)% on completion$/i,
+      "$1% por adelantado, $2% al terminar",
+    );
 }

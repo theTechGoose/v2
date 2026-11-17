@@ -32,7 +32,9 @@ describe("REQ-022 NW-31c Upcoming invoices — pick and change the send date", (
   it("REQ-022 a new invoice with a 'Send on' date lands in Upcoming, and 'Change date' moves it", () => {
     cy.visit("/invoices?new=1");
     cy.get("[data-cy=new-invoice-modal]", { timeout: 15_000 }).should("be.visible");
-    cy.get("[data-cy=new-invoice-client]").select(1);
+    // REQ-801: the client field is the search-and-pick
+    cy.get("[data-cy=new-invoice-client] [data-cy=search-select-input]").click();
+    cy.get("[data-cy=new-invoice-client] [data-cy=search-select-option]").eq(1).click();
     cy.get("[data-cy=new-invoice-modal] input[inputmode=decimal], [data-cy=new-invoice-amount]").first().type("800");
     cy.get("[data-cy=new-invoice-modal] input[placeholder]").first().then(($el) => {
       if (($el.attr("placeholder") ?? "").match(/faucet|reparación|repair/i)) cy.wrap($el).type(JOB);

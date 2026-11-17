@@ -58,6 +58,32 @@ export interface LLMRequest {
    * a missing brace. The stub ignores it.
    */
   responseFormat?: "json";
+  /**
+   * REQ-368 (demo-loop cycle 1, M32): the chat tools the model may call this
+   * turn — the coordinator's call, from the conversation's phase and its
+   * quote's state. Omitted → every tool (callers that don't gate); [] → none.
+   * A signed quote's terms-phase turn carried lock_quote, and "send him the
+   * deposit invoice" became a re-lock of the signed quote.
+   */
+  tools?: readonly LLMToolName[];
+  /**
+   * REQ-670 (demo-loop cycle 5, p7): stream the reply into this sink as the
+   * model writes it — the chat's SSE turn. The response is the same whole one
+   * either way. Ignored for a JSON-mode call (a one-shot structured answer).
+   */
+  stream?: LLMStreamSink;
+}
+
+/**
+ * REQ-670 (demo-loop cycle 5, p7 — "Assistant replies never stream"): where a
+ * streamed reply goes while the model writes it. `text` gets each piece of the
+ * prose, in order, until the model starts a tool call; then `tool` is told
+ * once, with the tool's name, and no more prose is passed on — a tool turn's
+ * reply is the coordinator's, said from what the tool did.
+ */
+export interface LLMStreamSink {
+  text(delta: string): void;
+  tool?(name: LLMToolName): void;
 }
 
 /**
@@ -66,13 +92,145 @@ export interface LLMRequest {
  * destructive ops). Add new variants as the action surface grows.
  */
 export type LLMAction =
-  | { type: "create_quote"; payload: { summary: string; lineItems: { description: string; amountCents: number }[] } }
+  | {
+    type: "create_quote";
+    payload: {
+      summary: string;
+      /** REQ-337 (demo m6/p15-1): the model's own short job name, when it
+       *  gave one — preferred over the summary-derived fallback. */
+      jobName?: string;
+      lineItems: { description: string; amountCents: number }[];
+      /** REQ-263: the job address the user typed, when they gave one. */
+      serviceAddress?: string;
+      /** REQ-258 (demo M22): a payment split the contractor stated ("half
+       *  deposit" → "50_50") — a payment_terms wizard option id. */
+      paymentTerms?: string;
+      /** REQ-585 (demo-loop cycle 4, M4): the job details of an
+       *  update_job_details the model made in the same turn — folded into
+       *  the create by planToolCalls, never a tool argument of its own. */
+      descriptionByLang?: Partial<Record<"en" | "es", string>>;
+      /** REQ-715 (demo-loop cycle 5, c4-M34): the language the CUSTOMER
+       *  reads, when the user said it ("Ella habla español") — saved on the
+       *  customer the quote is for. */
+      customerLanguage?: "en" | "es";
+    };
+  }
   | { type: "lock_quote"; payload: { quoteId: string } }
-  | { type: "request_terms_transition"; payload: { quoteId: string } };
+  | { type: "request_terms_transition"; payload: { quoteId: string } }
+  /** REQ-238 (demo M27): change an EXISTING job — a change order on its
+   *  invoice, a pending revision on its issued quote, a line on its draft.
+   *  Never a new quote. `deltaAmountCents` is signed (− is a credit). */
+  | {
+    type: "change_order";
+    payload: {
+      customerName?: string;
+      /** REQ-315: an explicit "Q-001" — resolves straight to that quote. */
+      quoteNumber?: string;
+      /** REQ-377: empty when a new total named no work — the coordinator asks. */
+      description: string;
+      deltaAmountCents: number;
+      /** REQ-377 (demo-loop cycle 2, B1): the job's NEW total in cents. When
+       *  set, the delta is that minus the current total, worked out by the
+       *  coordinator — never by the model. */
+      targetTotalCents?: number;
+      /** REQ-661 (demo-loop cycle 5, M15): set in code for a correction
+       *  ("heated floor is $1,200 not 150") — `deltaAmountCents` is the
+       *  line's RIGHT price; a line by that name is repriced, not doubled. */
+      setsLinePrice?: boolean;
+    };
+  }
+  /** REQ-315 (demo-loop cycle 1, M26): change lines that are ALREADY on a
+   *  customer's quote — reprice / reword (`lines`) or take off (`remove`) —
+   *  never append. The coordinator finds the quote (an explicit Q-number
+   *  first), matches each named line, and writes a pending revision on an
+   *  issued quote or edits a draft in place. */
+  | {
+    type: "revise_quote";
+    payload: {
+      customerName?: string;
+      quoteNumber?: string;
+      lines: { match: string; description?: string; amountCents?: number }[];
+      remove: string[];
+    };
+  }
+  /** REQ-462 (demo-loop cycle 3, M26): edit or withdraw an EXISTING change
+   *  order named by its number ("CO-001"). `amountCents` is the order's NEW
+   *  amount, not a difference; the coordinator keeps the order's direction
+   *  unless the contractor said credit / charge. */
+  | {
+    type: "update_change_order";
+    payload: {
+      changeOrderNumber: string;
+      description?: string;
+      amountCents?: number;
+      withdraw?: boolean;
+    };
+  }
+  /** REQ-262 (demo M25): rewrite / translate the bound quote's job details.
+   *  The coordinator applies it to conv.quoteId — never to a model-named id —
+   *  and never to a signed quote. Text per language, bullets newline-joined. */
+  | {
+    type: "update_job_details";
+    payload: { descriptionByLang: Partial<Record<"en" | "es", string>> };
+  }
+  /** REQ-583 (demo-loop cycle 4, M2): send the bound job's invoice NOW — the
+   *  one not sent yet (scheduled / drafted), or (signed, nothing billed) the
+   *  first one. The coordinator picks it and reports what was delivered. */
+  | { type: "send_invoice"; payload: { invoiceNumber?: string } }
+  /** REQ-583: a payment the customer made — amount in cents (converted from
+   *  dollars in code), how, and which invoice; the coordinator matches it
+   *  and records it (ConfirmPayment). */
+  | {
+    type: "record_payment";
+    payload: {
+      amountCents?: number;
+      method?:
+        | "cash"
+        | "check"
+        | "zelle"
+        | "venmo"
+        | "cashapp"
+        | "paypal"
+        | "card"
+        | "ach"
+        | "other";
+      invoiceNumber?: string;
+      which?: "deposit" | "balance";
+      reference?: string;
+    };
+  }
+  /** REQ-585 (demo-loop cycle 4, M4 + M30): change the agreement terms the
+   *  terms wizard asks for — the start, the time to complete, the payment
+   *  terms — in the contractor's own words ("monday nov 23", "next week",
+   *  "2 and a half weeks", "50_50"). The coordinator reads each value against
+   *  today and the bound conversation's wizard, never the model's dates. */
+  | {
+    type: "update_terms";
+    payload: {
+      startDate?: string;
+      duration?: string;
+      paymentTerms?: string;
+      /** REQ-653 (demo-loop cycle 5, m50): a deadline in the contractor's
+       *  words ("before Thanksgiving") — checked against the terms. */
+      finishBy?: string;
+    };
+  };
+
+/** REQ-368: a chat tool's name — one per LLMAction variant. */
+export type LLMToolName = LLMAction["type"];
 
 export interface LLMResponse {
   text: string;
+  /** The model's first tool call (the single-action path). */
   action?: LLMAction;
+  /** REQ-444 (demo-loop cycle 3, M21): EVERY tool call the model made this
+   *  turn, in its order — `action` is the first. "Fix the Spanish and add a
+   *  plumbing permit line $450" is update_job_details AND change_order; the
+   *  second used to be dropped silently. */
+  actions?: LLMAction[];
+  /** REQ-444: tool calls whose arguments didn't parse — never run, so the
+   *  reply must not pass them for done. */
+  dropped?: LLMToolName[];
 }
 
 export interface LLMClient {

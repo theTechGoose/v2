@@ -1,6 +1,6 @@
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
-import { openOnboardingQuestions } from "../../lib/onboarding-gate.ts";
+import { dashboardGateQuestions } from "../../lib/onboarding-gate.ts";
 
 /** The dashboard's gate.
  *
@@ -10,18 +10,22 @@ import { openOnboardingQuestions } from "../../lib/onboarding-gate.ts";
  *    is answered; Skip only puts a question off, so the dashboard — the app's
  *    front door after a code — brings the wizard back. A profile that cannot
  *    be read lets the person through: two pages that cannot load would loop.
+ *  - REQ-227: a question put off by its step's Skip (a "deferred" stamp) does
+ *    not keep the dashboard shut — the setup checklist asks for it, and the
+ *    next code brings the wizard back. Staff (super admins) are never sent
+ *    through the customer wizard.
  *  - Otherwise → populate ctx.state.user and continue.
  *
  *  The other app pages (the assistant, quotes, settings …) stay reachable: the
- *  wizard's own side trips (the pay page, the sample quote) and "Skip setup
- *  for now" land there.
+ *  wizard's own side trips (the pay page, the sample quote) land there.
+ *  REQ-504: "Skip setup for now" defers every open question, so it lands here.
  */
 export const handler = define.middleware(async (ctx) => {
   const user = await loadUser(ctx.req);
   if (!user) {
     return new Response(null, { status: 302, headers: { Location: "/" } });
   }
-  const open = await openOnboardingQuestions(ctx.req);
+  const open = await dashboardGateQuestions(ctx.req);
   if (open && open.length > 0) {
     return new Response(null, { status: 302, headers: { Location: "/welcome" } });
   }

@@ -91,6 +91,17 @@ export class FileStore {
     return unchunk(pages);
   }
 
+  /** REQ-252 — the file's first page only (≤ 60KiB): enough to sniff what the bytes are
+   *  without reading a whole upload. Empty for an empty file. */
+  async readHead(id: string): Promise<Uint8Array> {
+    const meta = await this.getMeta(id);
+    if (meta.pageCount === 0) return new Uint8Array();
+    const kv = await getKv();
+    const r = await kv.get<Uint8Array>([PAGE_PREFIX, id, 0]);
+    if (!r.value) throw new Error(`file ${id} page 0 missing`);
+    return r.value;
+  }
+
   async readOwnedBytes(id: string, userId: string): Promise<Uint8Array> {
     await this.getOwnedMeta(id, userId);
     return await this.readBytes(id);

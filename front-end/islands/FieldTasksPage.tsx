@@ -13,10 +13,15 @@
  * hand (customer search box, service, price, worker, address, day) · REQ-165
  * "Add service" on a card · REQ-166 a worker picker on the card.
  *
+ * REQ-785 (demo-loop dv1-d11) — a job of several days: "Add task" takes a last
+ * day and more workers; the job is ONE card on each of its days ("Day 2 of 3"),
+ * "Edit dates" changes its days and crew, and one check marks it done.
+ *
  * Ported from a2z/web/tareas.html (demo driver dropped).
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  type CrewView,
   fieldClient,
   type FieldWorker,
   type GenerateResult,
@@ -27,15 +32,32 @@ import { clientsClient } from "../clients/clients.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { daySummary } from "../lib/field-task-summary.ts";
 import {
+  crewChoices,
+  endDateToSend,
+  jobDayOf,
+  jobDays,
+  jobRange,
+  jobSpanProblem,
+} from "../lib/field-job.ts";
+import { groupTasks, workerZoneLabel } from "../lib/field-task-groups.ts";
+import {
+  addedNotice,
+  addTaskProblem,
+  addTaskServerProblem,
+  centsOf,
   customerOptions,
   fmtDay,
   fmtMoneyExact,
+  serviceHint,
   shiftIso,
   todayIso,
 } from "../lib/field.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import SearchSelect from "./SearchSelect.tsx";
+import { Icon } from "../components/ui/Icon.tsx";
+import type { FieldTasksSeed } from "../lib/field-ssr.ts";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -81,13 +103,6 @@ async function loadAllCustomers(): Promise<Customer[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** "120" / "120.50" → cents, or null when it is not a price */
-function centsOf(raw: string): number | null {
-  const n = Number(raw);
-  if (raw.trim() === "" || !Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
-
 const isOpen = (x: TaskView) =>
   x.status !== "skipped" && x.status !== "deferred";
 
@@ -101,17 +116,81 @@ interface AddForm {
   workerId: string;
   address: string;
   date: string;
+  /** REQ-785 — the last day ("" = one day) and more workers */
+  endDate: string;
+  crewIds: string[];
+}
+
+/** REQ-785 — the open "Edit dates" form of one card */
+interface DatesForm {
+  taskId: string;
+  first: string;
+  last: string;
+  crewIds: string[];
+  err: string | null;
+}
+
+/** REQ-785 — a checkbox list of workers: tick to add one to the job, untick to take them off */
+function CrewPicks(
+  { workers, picked, onChange, cy }: {
+    workers: FieldWorker[];
+    picked: string[];
+    onChange: (ids: string[]) => void;
+    cy: string;
+  },
+) {
+  if (!workers.length) return null;
+  return (
+    <fieldset
+      class="field"
+      data-cy={cy}
+      style="border:0;padding:0;margin:0;min-width:0"
+    >
+      <legend style="padding:0;margin-bottom:4px">{t("field.tk.crew")}</legend>
+      <span style="display:flex;gap:12px;flex-wrap:wrap">
+        {workers.map((w) => (
+          <label
+            key={w.id}
+            style="display:inline-flex;align-items:center;gap:6px;font-weight:600;min-height:32px"
+          >
+            <input
+              type="checkbox"
+              data-cy={`${cy}-pick`}
+              value={w.id}
+              checked={picked.includes(w.id)}
+              onChange={(e) => {
+                const on = (e.currentTarget as HTMLInputElement).checked;
+                onChange(
+                  on
+                    ? [...picked.filter((id) => id !== w.id), w.id]
+                    : picked.filter((id) => id !== w.id),
+                );
+              }}
+            />
+            {w.name}
+          </label>
+        ))}
+      </span>
+    </fieldset>
+  );
 }
 
 const INPUT =
   "padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:13px";
 
-export default function FieldTasksPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the day read by the route on the SSR side; used when it is the browser's day too */
+export default function FieldTasksPage(
+  { seed }: { seed?: FieldTasksSeed | null } = {},
+) {
   const lang = langSignal.value;
   const [date, setDate] = useState<string>(() => todayIso());
-  const [tasks, setTasks] = useState<TaskView[]>([]);
-  const [skipped, setSkipped] = useState<GenerateResult["skipped"]>([]);
-  const [loading, setLoading] = useState(true);
+  // the server's day can differ from the browser's: then the seed is not this page's day
+  const [day] = useState(() => seed && seed.date === date ? seed : null);
+  const [tasks, setTasks] = useState<TaskView[]>(day?.tasks ?? []);
+  const [skipped, setSkipped] = useState<GenerateResult["skipped"]>(
+    day?.skipped ?? [],
+  );
+  const [loading, setLoading] = useState(!day);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,15 +198,25 @@ export default function FieldTasksPage() {
   const [noteDraft, setNoteDraft] = useState<Drafts>({});
   const [saving, setSaving] = useState<string | null>(null);
   // REQ-164..166 — what the forms pick from
-  const [workers, setWorkers] = useState<FieldWorker[]>([]);
+  const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
+  // REQ-521 — the empty-roster hint waits for the real list, never flashes on load
+  const [workersLoaded, setWorkersLoaded] = useState(!!seed?.workers);
+  /** REQ-841/842 — the crews, for "Move all to…" */
+  const [crews, setCrews] = useState<CrewView[]>([]);
   const [types, setTypes] = useState<TaskType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [add, setAdd] = useState<AddForm | null>(null);
   const [addErr, setAddErr] = useState<string | null>(null);
+  // REQ-283 — the field the last Save found missing, marked aria-invalid
+  const [addBad, setAddBad] = useState<
+    "customer" | "type" | "price" | "worker" | "end" | null
+  >(null);
   const [service, setService] = useState<
     { taskId: string; typeName: string; price: string } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // REQ-785 — the card whose days (and crew) are being edited
+  const [dates, setDates] = useState<DatesForm | null>(null);
   const lastPick = useRef<string | null>(null);
 
   async function load(d: string) {
@@ -148,14 +237,25 @@ export default function FieldTasksPage() {
     }
   }
 
+  // REQ-730 — the seeded day is already on screen: skip only that first read
+  const seededDay = useRef(day?.date ?? null);
   useEffect(() => {
+    if (seededDay.current === date) {
+      seededDay.current = null;
+      return;
+    }
     load(date);
   }, [date]);
 
   useEffect(() => {
     let alive = true;
-    fieldClient.workers().then((w) => alive && setWorkers(w)).catch(() => {});
+    fieldClient.workers().then((w) => {
+      if (!alive) return;
+      setWorkers(w);
+      setWorkersLoaded(true);
+    }).catch(() => {});
     fieldClient.taskTypes().then((x) => alive && setTypes(x)).catch(() => {});
+    fieldClient.crews().then((c) => alive && setCrews(c)).catch(() => {});
     loadAllCustomers().then((c) => alive && setCustomers(c)).catch(() => {});
     return () => {
       alive = false;
@@ -168,6 +268,7 @@ export default function FieldTasksPage() {
     setSkipped([]);
     setPriceDraft({});
     setNoteDraft({});
+    setDates(null);
     setDate(d);
   }
 
@@ -228,6 +329,7 @@ export default function FieldTasksPage() {
   // REQ-164 — the one-off form
   function openAdd() {
     setAddErr(null);
+    setAddBad(null);
     lastPick.current = null;
     setAdd({
       customerId: "",
@@ -236,6 +338,8 @@ export default function FieldTasksPage() {
       workerId: "",
       address: "",
       date,
+      endDate: "",
+      crewIds: [],
     });
   }
 
@@ -243,12 +347,28 @@ export default function FieldTasksPage() {
     e.preventDefault();
     if (!add) return;
     const cents = centsOf(add.price);
-    if (!add.customerId || !add.typeName.trim() || cents === null) {
-      setAddErr(t("field.common.error"));
+    const problem = addTaskProblem(add);
+    if (problem || cents === null) {
+      setAddBad(problem?.field ?? "price");
+      // REQ-415 — the missing-service line names the account's own services
+      const need = serviceHint(types, "need");
+      setAddErr(
+        problem?.key === "field.tk.needType"
+          ? t(need.key, need.vars)
+          : t(problem?.key ?? "field.tk.badPrice"),
+      );
+      return;
+    }
+    // REQ-785 — the last day: never before the first, at most 31 days
+    const span = jobSpanProblem(add.date, add.endDate);
+    if (span) {
+      setAddBad("end");
+      setAddErr(t(span.key, "vars" in span ? span.vars : undefined));
       return;
     }
     setBusy(true);
     setAddErr(null);
+    setAddBad(null);
     try {
       const made = await fieldClient.createTask({
         customerId: add.customerId,
@@ -257,8 +377,21 @@ export default function FieldTasksPage() {
         priceCents: cents,
         workerId: add.workerId || undefined,
         address: add.address.trim() || undefined,
+        endDate: endDateToSend(add.date, add.endDate), // REQ-785
+        crewIds: add.crewIds,
       });
       if (made.date === date) setTasks((rows) => [...rows, made]);
+      // REQ-340 (demo M37): the server put the task's address on a customer
+      // who had none — mirror it so the next pick prefills it without a reload
+      if (made.address) {
+        setCustomers((rows) =>
+          rows.map((c) =>
+            c.id === made.customerId && !c.address?.trim()
+              ? { ...c, address: made.address }
+              : c
+          )
+        );
+      }
       if (!types.some((x) => x.id === made.taskTypeId)) {
         setTypes((x) => [...x, {
           id: made.taskTypeId,
@@ -267,8 +400,45 @@ export default function FieldTasksPage() {
           createdAt: "",
         }]);
       }
-      setFlash(t("field.tk.added"));
+      // REQ-526 (demo m50) — a task on another day moves the list to that day
+      // (go() clears the flash, so the flash is set after it) and names the day
+      const notice = addedNotice(made.date, date, lang);
+      if (notice.goTo) go(notice.goTo);
+      setFlash(t(notice.key, notice.vars));
       setAdd(null);
+    } catch (err) {
+      const msg = errMsg(err);
+      const bad = addTaskServerProblem(msg);
+      setAddBad(bad?.field ?? null);
+      setAddErr(bad ? t(bad.key) : msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // REQ-283 — the typed name is not a customer yet: add it (with the typed address) and pick it
+  async function createCustomer(name: string) {
+    setBusy(true);
+    setAddErr(null);
+    try {
+      const address = add?.address.trim() || undefined;
+      const made = await clientsClient.create({ name, address });
+      const c: Customer = {
+        id: made.id,
+        name: made.name ?? name,
+        address: made.address ?? address,
+      };
+      setCustomers((rows) =>
+        [...rows.filter((x) => x.id !== c.id), c].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+      lastPick.current = c.id;
+      setAdd((f) =>
+        f && { ...f, customerId: c.id, address: f.address || c.address || "" }
+      );
+      if (addBad === "customer") setAddBad(null);
+      setFlash(t("field.tk.customerAdded", { name: c.name }));
     } catch (err) {
       setAddErr(errMsg(err));
     } finally {
@@ -306,6 +476,56 @@ export default function FieldTasksPage() {
     }
   }
 
+  // REQ-785 — "Edit dates": a one-off's first and last day, and its other workers
+  function openDates(x: TaskView) {
+    setService(null);
+    setConfirmDelete(null);
+    setDates({
+      taskId: x.id,
+      first: x.date,
+      last: x.endDate ?? "",
+      crewIds: x.crewIds ?? [],
+      err: null,
+    });
+  }
+
+  async function saveDates(task: TaskView) {
+    if (!dates || dates.taskId !== task.id) return;
+    const problem = !ISO.test(dates.first)
+      ? { key: "field.tk.badEnd" }
+      : jobSpanProblem(dates.first, dates.last);
+    if (problem) {
+      setDates((f) =>
+        f && {
+          ...f,
+          err: t(problem.key, "vars" in problem ? problem.vars : undefined),
+        }
+      );
+      return;
+    }
+    setSaving(task.id);
+    setError(null);
+    try {
+      const next = await fieldClient.updateTask(task.id, {
+        date: dates.first,
+        endDate: endDateToSend(dates.first, dates.last) ?? null,
+        crewIds: dates.crewIds.filter((id) => id !== task.workerId),
+      });
+      setDates(null);
+      // the job may have left the day on screen, or still cover it: read the day again
+      await load(date);
+      setFlash(t("field.tk.datesSaved", { range: jobRange(next, lang) }));
+    } catch (e) {
+      const inv = invoiceIdOf(e);
+      if (inv) {
+        setDates(null);
+        replace({ ...task, invoiceId: inv });
+      } else setDates((f) => f && { ...f, err: errMsg(e) });
+    } finally {
+      setSaving(null);
+    }
+  }
+
   function commitPrice(task: TaskView) {
     const raw = priceDraft[task.id];
     if (raw === undefined) return;
@@ -330,6 +550,31 @@ export default function FieldTasksPage() {
     save(task, { adminNote: raw });
   }
 
+  /** REQ-842 — a group's whole open day to another crew or worker; `to` is "crew:<id>" | "worker:<id>" */
+  async function moveAll(lead: TaskView, to: string) {
+    const [kind, id] = to.split(":");
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fieldClient.reassignDay({
+        date,
+        ...(lead.crewId
+          ? { fromCrewId: lead.crewId }
+          : { fromWorkerId: lead.workerId }),
+        ...(kind === "crew" ? { toCrewId: id } : { toWorkerId: id }),
+      });
+      const name = kind === "crew"
+        ? crews.find((c) => c.id === id)?.name ?? ""
+        : workers.find((w) => w.id === id)?.name ?? "";
+      setFlash(t("field.tk.movedAll", { n: r.moved, name }));
+      await load(date);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const onEnter = (fn: () => void) => (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -338,17 +583,12 @@ export default function FieldTasksPage() {
     }
   };
 
-  const done = tasks.filter((x) => x.status === "complete").length;
-  const open = tasks.filter(isOpen).length;
+  // REQ-284 — "To do" counts the open tasks; "Assigned" stays a per-task status
+  const { done, toDo, notDone, counted } = daySummary(tasks);
 
-  // group by worker · zone, in first-seen order
-  const groups = new Map<string, TaskView[]>();
-  for (const x of tasks) {
-    const k = `${x.workerName} · ${x.regionName}`;
-    const g = groups.get(k);
-    if (g) g.push(x);
-    else groups.set(k, [x]);
-  }
+  // REQ-365 — group by worker + zone id, in first-seen order; a one-off with no zone
+  // is titled with the worker alone
+  const groups = groupTasks(tasks);
 
   // the worker's note belongs to the visit — show it once per subscription+day
   const seenNote = new Set<string>();
@@ -369,6 +609,10 @@ export default function FieldTasksPage() {
     }
     return <span class="chip">{t("field.tk.assigned")}</span>;
   }
+
+  // REQ-415 (demo p11) — the Service example is the account's own task types, else neutral
+  const typePhHint = serviceHint(types, "ph");
+  const typePh = t(typePhHint.key, typePhHint.vars);
 
   const typeList = (
     <datalist id="tk-types">
@@ -392,6 +636,9 @@ export default function FieldTasksPage() {
       .join(" ");
     const asking = confirmDelete === x.id;
     const adding = service?.taskId === x.id;
+    // REQ-785 — a job of several days: which of its days this is, and its form
+    const span = jobDayOf(x, date);
+    const editing = dates?.taskId === x.id ? dates : null;
     return (
       <div
         class={cls}
@@ -401,6 +648,7 @@ export default function FieldTasksPage() {
         data-status={x.status}
         data-worker={x.workerId}
         data-oneoff={x.oneOff ? "true" : undefined}
+        data-end={x.endDate}
         style={isOpen(x) ? undefined : "opacity:.55"}
       >
         {/* REQ-159 — the office marks the task done, or re-opens it; inert once invoiced */}
@@ -457,12 +705,38 @@ export default function FieldTasksPage() {
                 </span>
               </>
             )}
+            {/* REQ-785 — one job on each of its days: "Day 2 of 3 · Nov 16 – Nov 18" */}
+            {span && (
+              <>
+                {" "}
+                <span
+                  class="chip chip--amber"
+                  data-cy="tk-span"
+                  data-n={span.n}
+                  data-of={span.of}
+                >
+                  {t("field.tk.jobDay", { n: span.n, total: span.of })} ·{" "}
+                  {jobRange(x, lang)}
+                </span>
+              </>
+            )}
           </div>
           <div class="task__client">{x.customerName}</div>
           {x.address && <div class="task__addr">{x.address}</div>}
           <div class="hint">
-            {x.workerName} · {x.regionName}
+            {workerZoneLabel(x)}
           </div>
+          {!!x.crewNames?.length && (
+            <div class="hint" data-cy="tk-crew">
+              {t("field.tk.crewLine", { names: x.crewNames.join(", ") })}
+            </div>
+          )}
+          {/* REQ-842 — this crew/worker stands in for someone marked out */}
+          {x.coverForName && (
+            <div class="chip chip--amber" data-cy="tk-cover-for">
+              {t("field.tk.coverFor", { name: x.coverForName })}
+            </div>
+          )}
           {showNote && (
             <div class="task__note">
               💬 <b>{t("field.tk.note")}:</b> {x.note}
@@ -513,7 +787,10 @@ export default function FieldTasksPage() {
             {locked && (
               <a
                 class="chip chip--amber"
-                href="/invoices"
+                /* REQ-626: the chip opens THE invoice, not the list */
+                href={x.invoiceId
+                  ? `/invoices?open=${encodeURIComponent(x.invoiceId)}`
+                  : "/invoices"}
                 style="text-decoration:none"
               >
                 {t("field.tk.invoiced")}
@@ -546,7 +823,7 @@ export default function FieldTasksPage() {
                 ))}
               </select>
             </label>
-            {!adding && !asking && (
+            {!adding && !asking && !editing && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
@@ -554,13 +831,26 @@ export default function FieldTasksPage() {
                 disabled={locked || saving === x.id}
                 onClick={() => {
                   setConfirmDelete(null);
+                  setDates(null);
                   setService({ taskId: x.id, typeName: "", price: "" });
                 }}
               >
                 <I d={ICN.plus} size={12} /> {t("field.tk.addService")}
               </button>
             )}
-            {!adding && !asking && (
+            {/* REQ-785 — a one-off's days (one, or a job of several) and its other workers */}
+            {!adding && !asking && !editing && x.oneOff && (
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                data-cy="tk-edit-dates"
+                disabled={locked || saving === x.id}
+                onClick={() => openDates(x)}
+              >
+                <I d={ICN.cal} size={12} /> {t("field.tk.editDates")}
+              </button>
+            )}
+            {!adding && !asking && !editing && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
@@ -569,6 +859,7 @@ export default function FieldTasksPage() {
                 style="color:#a83b3b"
                 onClick={() => {
                   setService(null);
+                  setDates(null);
                   setConfirmDelete(x.id);
                 }}
               >
@@ -580,7 +871,11 @@ export default function FieldTasksPage() {
                 data-cy="tk-delete-ask"
                 style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"
               >
-                <span style="font-size:13px">{t("field.tk.deleteAsk")}</span>
+                <span style="font-size:13px">
+                  {span
+                    ? t("field.tk.deleteJobAsk", { n: span.of })
+                    : t("field.tk.deleteAsk")}
+                </span>
                 <button
                   type="button"
                   class="btn btn--danger btn--sm"
@@ -601,6 +896,96 @@ export default function FieldTasksPage() {
               </span>
             )}
           </div>
+          {editing && (
+            <form
+              data-cy="tk-dates-form"
+              noValidate
+              style="display:flex;flex-direction:column;gap:8px;margin-top:8px"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveDates(x);
+              }}
+            >
+              <span style="font-size:13px;font-weight:700">
+                {t("field.tk.datesTitle")}
+              </span>
+              <span style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <label style="font-size:12px;color:var(--fg-muted);display:flex;flex-direction:column;gap:4px">
+                  {t("field.tk.firstDay")}
+                  <input
+                    type="date"
+                    data-cy="tk-dates-start"
+                    value={editing.first}
+                    required
+                    style={INPUT}
+                    onChange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      setDates((f) => f && { ...f, first: v, err: null });
+                    }}
+                  />
+                </label>
+                <label style="font-size:12px;color:var(--fg-muted);display:flex;flex-direction:column;gap:4px">
+                  {t("field.tk.lastDay")}
+                  <input
+                    type="date"
+                    data-cy="tk-dates-end"
+                    value={editing.last}
+                    min={editing.first}
+                    aria-invalid={!!editing.err || undefined}
+                    style={INPUT}
+                    onChange={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      setDates((f) => f && { ...f, last: v, err: null });
+                    }}
+                  />
+                </label>
+                <span class="hint" data-cy="tk-dates-span">
+                  {jobDays({ date: editing.first, endDate: editing.last }) > 1
+                    ? t("field.tk.spanDays", {
+                      n: jobDays({
+                        date: editing.first,
+                        endDate: editing.last,
+                      }),
+                      range: jobRange(
+                        { date: editing.first, endDate: editing.last },
+                        lang,
+                      ),
+                    })
+                    : t("field.tk.lastDayHint")}
+                </span>
+              </span>
+              <CrewPicks
+                cy="tk-dates-crew"
+                workers={crewChoices(workers, x.workerId)}
+                picked={editing.crewIds}
+                onChange={(ids) =>
+                  setDates((f) => f && { ...f, crewIds: ids, err: null })}
+              />
+              {editing.err && (
+                <div class="alert" style="margin:0" role="alert">
+                  {editing.err}
+                </div>
+              )}
+              <span style="display:flex;gap:8px;align-items:center">
+                <button
+                  type="submit"
+                  class="btn btn--green btn--sm"
+                  data-cy="tk-dates-save"
+                  disabled={saving === x.id}
+                >
+                  {t("field.common.save")}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  data-cy="tk-dates-cancel"
+                  onClick={() => setDates(null)}
+                >
+                  {t("field.common.cancel")}
+                </button>
+              </span>
+            </form>
+          )}
           {adding && service && (
             <form
               data-cy="tk-service-form"
@@ -614,7 +999,7 @@ export default function FieldTasksPage() {
                 type="text"
                 list="tk-types"
                 data-cy="tk-service-type"
-                placeholder={t("field.tk.typePh")}
+                placeholder={typePh}
                 aria-label={t("field.tk.type")}
                 value={service.typeName}
                 required
@@ -671,24 +1056,35 @@ export default function FieldTasksPage() {
   return (
     <>
       <FieldHead
-        eyebrow={t("field.tk.eyebrow", { done, n: open })}
+        eyebrow={t("field.tk.eyebrow", { done, n: counted })}
         title={t("field.tk.title")}
         sub={t("field.tk.sub")}
       >
-        <label class="field" style="min-width:0">
-          {t("field.tk.date")}
+        {
+          /* REQ-611 — a group, not a <label>: a label names its FIRST labelable
+            descendant, which made the prev chevron read "Day 2026-11-12 Today" */
+        }
+        <div
+          class="field"
+          style="min-width:0"
+          role="group"
+          aria-labelledby="tk-date-label"
+        >
+          <label id="tk-date-label" for="tk-date">{t("field.tk.date")}</label>
           <span style="display:flex;gap:4px;align-items:center">
             <button
               type="button"
               class="btn btn--ghost btn--sm"
               data-cy="tk-prev"
-              title="−1"
+              aria-label={t("field.tk.prevDay")}
+              title={t("field.tk.prevDay")}
               onClick={() => go(shiftIso(date, -1))}
             >
-              ◀
+              <Icon name="chevron-left" size={14} />
             </button>
             <input
               type="date"
+              id="tk-date"
               data-cy="tk-date"
               value={date}
               onChange={(e) => go((e.currentTarget as HTMLInputElement).value)}
@@ -697,10 +1093,11 @@ export default function FieldTasksPage() {
               type="button"
               class="btn btn--ghost btn--sm"
               data-cy="tk-next"
-              title="+1"
+              aria-label={t("field.tk.nextDay")}
+              title={t("field.tk.nextDay")}
               onClick={() => go(shiftIso(date, 1))}
             >
-              ▶
+              <Icon name="chevron-right" size={14} />
             </button>
             <button
               type="button"
@@ -710,7 +1107,7 @@ export default function FieldTasksPage() {
               {t("field.common.today")}
             </button>
           </span>
-        </label>
+        </div>
         {/* REQ-164 — the page's one primary action */}
         <button
           type="button"
@@ -730,6 +1127,9 @@ export default function FieldTasksPage() {
           class="panel"
           data-cy="tk-add-form"
           style="margin-bottom:14px"
+          // REQ-521 (demo m54) — the Customer box is a hidden input the browser never checks, so its
+          // own bubble landed on Service; addTaskProblem decides instead: customer → service → price
+          noValidate
           onSubmit={submitAdd}
         >
           <h3 class="panel__title">
@@ -745,6 +1145,9 @@ export default function FieldTasksPage() {
                   options={customerOptions(customers)}
                   value={add.customerId}
                   placeholder={t("field.tk.pickCustomer")}
+                  invalid={addBad === "customer"}
+                  onCreate={createCustomer}
+                  createLabel={(n) => t("field.tk.addCustomer", { name: n })}
                   onSelect={(o) => {
                     const previous = customers.find((c) =>
                       c.id === lastPick.current
@@ -779,7 +1182,8 @@ export default function FieldTasksPage() {
                 type="text"
                 list="tk-types"
                 data-cy="tk-add-type"
-                placeholder={t("field.tk.typePh")}
+                placeholder={typePh}
+                aria-invalid={addBad === "type" || undefined}
                 value={add.typeName}
                 required
                 onInput={(e) => {
@@ -796,6 +1200,7 @@ export default function FieldTasksPage() {
                 step="0.01"
                 inputMode="decimal"
                 data-cy="tk-add-price"
+                aria-invalid={addBad === "price" || undefined}
                 value={add.price}
                 required
                 onInput={(e) => {
@@ -810,10 +1215,18 @@ export default function FieldTasksPage() {
               <span>{t("field.tk.worker")}</span>
               <select
                 data-cy="tk-add-worker"
+                aria-invalid={addBad === "worker" || undefined}
                 value={add.workerId}
                 onChange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;
-                  setAdd((f) => f && { ...f, workerId: v });
+                  // REQ-785 — the job's worker is not also on its crew
+                  setAdd((f) =>
+                    f && {
+                      ...f,
+                      workerId: v,
+                      crewIds: f.crewIds.filter((id) => id !== v),
+                    }
+                  );
                 }}
               >
                 <option value="">{t("field.tk.pickWorker")}</option>
@@ -821,6 +1234,17 @@ export default function FieldTasksPage() {
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
+              {
+                /* REQ-521 (demo m54) — no workers yet: say so, and the way to add one */
+              }
+              {workersLoaded && workers.length === 0 && (
+                <span class="hint" data-cy="tk-add-no-workers">
+                  {t("field.tk.noWorkers")}{" "}
+                  <a class="link" href="/field/workers">
+                    {t("field.tk.addWorkerLink")}
+                  </a>
+                </span>
+              )}
             </label>
             <label class="field">
               <span>{t("field.tk.address")}</span>
@@ -835,7 +1259,7 @@ export default function FieldTasksPage() {
               />
             </label>
             <label class="field">
-              <span>{t("field.tk.date")}</span>
+              <span>{t("field.tk.firstDay")}</span>
               <input
                 type="date"
                 data-cy="tk-add-date"
@@ -847,6 +1271,42 @@ export default function FieldTasksPage() {
                 }}
               />
             </label>
+            {/* REQ-785 — a job of several days: its last day (blank = one day) */}
+            <label class="field">
+              <span>{t("field.tk.lastDay")}</span>
+              <input
+                type="date"
+                data-cy="tk-add-end"
+                value={add.endDate}
+                min={add.date}
+                aria-invalid={addBad === "end" || undefined}
+                onChange={(e) => {
+                  const v = (e.currentTarget as HTMLInputElement).value;
+                  setAdd((f) => f && { ...f, endDate: v });
+                  if (addBad === "end") setAddBad(null);
+                }}
+              />
+              <span class="hint" data-cy="tk-add-span">
+                {jobDays({ date: add.date, endDate: add.endDate }) > 1
+                  ? t("field.tk.spanDays", {
+                    n: jobDays({ date: add.date, endDate: add.endDate }),
+                    range: jobRange(
+                      { date: add.date, endDate: add.endDate },
+                      lang,
+                    ),
+                  })
+                  : t("field.tk.lastDayHint")}
+              </span>
+            </label>
+          </div>
+          {/* REQ-785 — "assign workers": more workers on the job, besides its worker */}
+          <div class="row">
+            <CrewPicks
+              cy="tk-add-crew"
+              workers={crewChoices(workers, add.workerId)}
+              picked={add.crewIds}
+              onChange={(ids) => setAdd((f) => f && { ...f, crewIds: ids })}
+            />
           </div>
           {addErr && (
             <div class="alert" style="margin:0 0 10px" role="alert">
@@ -877,18 +1337,22 @@ export default function FieldTasksPage() {
       <div class="workload" data-cy="tk-summary" style="align-items:center">
         <span class="hint" style="font-weight:700">{fmtDay(date, lang)}</span>
         <span class="chip chip--green">{t("field.tk.done")} {done}</span>
-        <span class="chip">
-          {t("field.tk.assigned")} {Math.max(0, open - done)}
-        </span>
-        {tasks.length - open > 0 && (
+        <span class="chip">{t("field.tk.toDo")} {toDo}</span>
+        {notDone > 0 && (
           <span class="chip chip--muted">
-            {t("field.tk.skipped")} {tasks.length - open}
+            {t("field.tk.skipped")} {notDone}
           </span>
         )}
       </div>
 
       {flash && (
-        <div class="chip chip--green" style="margin-bottom:12px">{flash}</div>
+        <div
+          class="chip chip--green"
+          data-cy="tk-flash"
+          style="margin-bottom:12px"
+        >
+          {flash}
+        </div>
       )}
       {error && (
         <div class="alert" style="margin:0 0 12px" role="alert">{error}</div>
@@ -912,7 +1376,15 @@ export default function FieldTasksPage() {
                 style="cursor:default"
               >
                 <span class="rsub__name">{s.customerName}</span>
-                <span class="rsub__addr">{s.address}</span>
+                <span class="rsub__addr">
+                  {s.address}
+                  {/* REQ-841 — which services no crew on the zone does */}
+                  {!!s.taskTypeNames?.length && (
+                    <span data-cy="tk-unstaffed-types">
+                      {` · ${s.taskTypeNames.join(", ")}`}
+                    </span>
+                  )}
+                </span>
                 <a
                   class="chip chip--pink"
                   href="/field/assignments"
@@ -933,19 +1405,59 @@ export default function FieldTasksPage() {
         <div class="panel hint">{t("field.tk.none")}</div>
       )}
 
-      {[...groups.entries()].map(([k, rows]) => (
-        <div class="panel" key={k}>
-          <h3 class="panel__title">
-            <I d={ICN.hardhat} size={16} /> {k}{" "}
-            <span class="count">
-              {rows.filter((r) => r.status === "complete").length}/{rows.filter(
-                isOpen,
-              ).length}
-            </span>
-          </h3>
-          <div class="tasks">{rows.map(card)}</div>
-        </div>
-      ))}
+      {groups.map(({ key, title, rows }) => {
+        const lead = rows[0];
+        const open = rows.filter(isOpen);
+        return (
+          <div class="panel" key={key} data-cy="tk-group">
+            <h3
+              class="panel__title"
+              style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"
+            >
+              <I d={ICN.hardhat} size={16} /> {title}{" "}
+              {/* REQ-841 — the crew this group goes out as */}
+              {lead.crewName && (
+                <span class="chip" data-cy="tk-group-crew">
+                  {lead.crewName}
+                </span>
+              )}
+              <span class="count">
+                {rows.filter((r) => r.status === "complete").length}/{open
+                  .length}
+              </span>
+            </h3>
+            {/* REQ-842 — the whole day's work of this worker/crew, moved at once (outside the title: the title is the group's name) */}
+            {open.length > 0 && workersLoaded && (
+              <div style="display:flex;justify-content:flex-end;margin:-6px 0 8px">
+                <select
+                  data-cy="tk-move-all"
+                  aria-label={t("field.tk.moveAll")}
+                  disabled={busy}
+                  value=""
+                  style={INPUT}
+                  onChange={(e) => {
+                    const v = (e.currentTarget as HTMLSelectElement).value;
+                    if (v) moveAll(lead, v);
+                  }}
+                >
+                  <option value="">{t("field.tk.moveAll")}</option>
+                  {crews.filter((c) => c.id !== lead.crewId).map((c) => (
+                    <option key={c.id} value={`crew:${c.id}`}>
+                      {t("field.crew.select")}: {c.name}
+                    </option>
+                  ))}
+                  {workers.filter((w) => w.id !== lead.workerId).map((w) => (
+                    <option key={w.id} value={`worker:${w.id}`}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div class="tasks">{rows.map(card)}</div>
+          </div>
+        );
+      })}
     </>
   );
 }

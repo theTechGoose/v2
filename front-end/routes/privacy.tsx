@@ -7,5 +7,7 @@ import { publicPageHandler } from "../lib/public-page.ts";
 export const handler = publicPageHandler;
 
 export default define.page<typeof handler>(function LegalRoute(ctx) {
-  return <LegalPage id="privacy" lang={ctx.data.lang} />;
+  return (
+    <LegalPage id="privacy" lang={ctx.data.lang} signedIn={ctx.data.signedIn} />
+  );
 });

@@ -110,17 +110,20 @@ describe("P-48 ES plural agreement for overdue days", () => {
 });
 
 describe("P-61 win-rate template has a separator between the two fragments", () => {
-  it("P-61 es 'wonLost' + 'needMore' does not butt 'perdidas' against 'faltan'", () => {
-    // The FE concatenates quotesRate.wonLost ("… {lost} perdidas") with
-    // quotesRate.needMore ("faltan {n} más …"); today that renders
-    // "…0 perdidasfaltan 4 más…". A separator must sit between them.
-    const run = es["quotesRate.wonLost"] + es["quotesRate.needMore"];
-    expect(run).not.toMatch(/perdidasfaltan/i);
+  // REQ-350 retired the concatenated quotesRate.wonLost template: the counts
+  // are now separate one/other keys joined with " · " in QuotesSections.
+  it("P-61 es the won/lost/need-more pieces carry no glued separator", () => {
+    for (const k of ["quotesKpi.lost.other", "quotesRate.needMore.other"]) {
+      expect(es[k]).not.toMatch(/^\s|\s$|·\s*$/);
+    }
+    expect(`${es["quotesKpi.lost.other"]} · ${es["quotesKpi.needMore.other"]}`)
+      .not.toMatch(/perdidasfaltan/i);
   });
 
-  it("P-61 en 'wonLost' + 'needMore' does not butt 'lost' against 'need'", () => {
-    const run = en["quotesRate.wonLost"] + en["quotesRate.needMore"];
-    expect(run).not.toMatch(/lostneed/i);
+  it("P-61 en the won/lost/need-more pieces carry no glued separator", () => {
+    for (const k of ["quotesKpi.lost.other", "quotesRate.needMore.other"]) {
+      expect(en[k]).not.toMatch(/^\s|\s$|·\s*$/);
+    }
   });
 });
 
@@ -135,7 +138,8 @@ describe("P-46 EN customers-surface: one term, sentence case", () => {
     "clientsHero.emptyTitleEm", // "first client"
     "asstChat.customerStep.pickTitle",
     "asstChat.customerStep.newCustomer",
-    "quoteCard.back.viewAsClient", // "View as client"
+    "quoteCard.back.viewAsClient", // "View as customer"
+    "quotesPage.open.viewAsClient", // REQ-350: same action, same noun
   ];
 
   it("P-46 the customers surface does not mix 'client' and 'customer'", () => {
@@ -155,6 +159,87 @@ describe("P-46 EN customers-surface: one term, sentence case", () => {
     expect(en["asstChat.customerStep.pickTitle"]).not.toMatch(
       /Pick a Customer/,
     );
+  });
+});
+
+describe("REQ-595 P-46 one term for job length (cycle 4, p4-p2a)", () => {
+  // The wizard step label, the pick line it prefixes, the chat preview rows
+  // and the quote document all name the same thing.
+  const JOB_LENGTH_KEYS = [
+    "termsWizard.wraps.label", // step label + "<label>: <value>" pick line
+    "asstChat.preview.termLabel.timeToComplete",
+    "asstChat.preview.termLabel.wraps",
+    "quoteDoc.termLabel.wraps",
+  ];
+
+  it.each(["en", "es"])(
+    "REQ-595 P-46 %s uses one term for job length across wizard, preview and document",
+    (lang) => {
+      const dict = lang === "en" ? en : es;
+      for (const k of JOB_LENGTH_KEYS) expect(typeof dict[k]).toBe("string");
+      const terms = new Set(JOB_LENGTH_KEYS.map((k) => dict[k].trim()));
+      // Red at ad104a19 (es): {"Tiempo para completar","Tiempo de entrega"}.
+      expect([...terms]).toHaveLength(1);
+    },
+  );
+
+  it("REQ-595 P-46 es job length is 'Duración del trabajo' (matches the PDF's DURACIÓN)", () => {
+    expect(es["termsWizard.wraps.label"]).toBe("Duración del trabajo");
+  });
+});
+
+describe("REQ-745 P-46 one wording for the powered-by credit (cycle 5, p18-9b)", () => {
+  // Every "Powered by DocuMonster" line a customer or contractor sees: the
+  // quote document, the invoice document, the site footer, the receipt PDF
+  // and the older public-doc keys.
+  const POWERED_BY_KEYS = [
+    "quoteDoc.poweredBy",
+    "public.doc.poweredByInvoice",
+    "siteFooter.poweredBy",
+    "receiptPdf.poweredBy",
+    "publicInvoice.poweredBy",
+    "publicQuote.poweredBy",
+  ];
+  const OPENER = { en: /^powered by /i, es: /^con la tecnología de /i };
+
+  it.each(["en", "es"] as const)(
+    "REQ-745 P-46 %s opens every powered-by line with the same words",
+    (lang) => {
+      const dict = lang === "en" ? en : es;
+      for (const k of POWERED_BY_KEYS) {
+        expect(typeof dict[k]).toBe("string");
+        // Red at 2444608a (es): quoteDoc.poweredBy "Hecho con DocuMonster · Acuerdo".
+        // The key rides along so a failure names the drifting key.
+        expect(OPENER[lang].test(dict[k]) ? k : `${k}: ${dict[k]}`).toBe(k);
+      }
+    },
+  );
+
+  it("REQ-745 p18-9b the es quote document credit matches the invoice's", () => {
+    expect(es["quoteDoc.poweredBy"]).toBe(
+      "Con la tecnología de DocuMonster · Acuerdo",
+    );
+  });
+});
+
+describe("REQ-595 natural Spanish copy (cycle 4, p4-p2e)", () => {
+  it("REQ-595 the lock prompts say the quote is confirmed, not 'fijada'", () => {
+    for (const k of ["lockQuote.cta.lockedPrompt", "lockQuote.cta.lockedPromptKnown"]) {
+      expect(es[k]).not.toMatch(/fijada/i);
+      expect(es[k]).toMatch(/^¡Listo, cotización confirmada!/);
+    }
+    expect(es["lockQuote.cta.lockedPromptKnown"]).toContain("{name}");
+  });
+
+  it("REQ-595 the payments hero has no calque 'ventana de compensación'", () => {
+    expect(es["paymentsPage.hero.freshSub"]).not.toMatch(/ventana de compensación/i);
+    expect(es["paymentsPage.hero.freshSub"]).toContain(
+      "Cada método tarda distinto en acreditarse",
+    );
+  });
+
+  it("REQ-595 the top-clients card is titled 'Tus mejores clientes'", () => {
+    expect(es["topClients.title"]).toBe("Tus mejores clientes");
   });
 });
 
@@ -239,11 +324,11 @@ describe("REQ-014 NW-54 the clause list is headed 'Terms and Conditions' on web 
   // p62: rename "fine print, in plain english" to "Terms and Conditions".
   it("REQ-014 NW-54 web heading key exists in both dictionaries", () => {
     expect(en["quoteDoc.termsAndConditions"]).toBe("Terms and Conditions");
-    expect(es["quoteDoc.termsAndConditions"]).toBe("Términos y Condiciones");
+    expect(es["quoteDoc.termsAndConditions"]).toBe("Términos y condiciones"); // REQ-350 sentence case
   });
   it("REQ-014 NW-54 the PDF section heading says the same thing", () => {
     expect(en["renderQuotePdf.section.finePrint"]).toBe("Terms and Conditions");
-    expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y Condiciones");
+    expect(es["renderQuotePdf.section.finePrint"]).toBe("Términos y condiciones"); // REQ-350
   });
 });
 
@@ -334,20 +419,22 @@ describe("REQ-035 NW-55 agreement presentation copy", () => {
   // p63: "Cancelation (either side can cancel with 7-day notice; work
   // completed will be paid for)" — the clause said only the first half.
   it("REQ-035 the termination clause ends with the paid-for-work sentence — web and PDF twins, both dictionaries", () => {
-    expect(en["quoteDoc.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(en["quoteDoc.clause.termination.body"]).toMatch(/Work completed before cancellation will be paid for\.$/);
     expect(es["quoteDoc.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
-    expect(en["renderQuotePdf.clause.termination.body"]).toMatch(/Work completed before cancelation will be paid for\.$/);
+    expect(en["renderQuotePdf.clause.termination.body"]).toMatch(/Work completed before cancellation will be paid for\.$/);
     expect(es["renderQuotePdf.clause.termination.body"]).toMatch(/El trabajo realizado antes de la cancelación se pagará\.$/);
   });
   it("REQ-035 the Cancelation term row and the send dialog copy exist in both dictionaries", () => {
-    expect(en["quoteDoc.termLabel.cancellation"]).toBe("Cancelation");
+    expect(en["quoteDoc.termLabel.cancellation"]).toBe("Cancellation");
     expect(es["quoteDoc.termLabel.cancellation"]).toBe("Cancelación");
     expect(en["quoteDoc.termValue.cancellation"]).toBe("7 days' notice");
     expect(es["quoteDoc.termValue.cancellation"]).toBe("Aviso de 7 días");
-    expect(en["asstChat.send.howTitle"]).toBe("How do you want to send to customer?");
-    expect(es["asstChat.send.howTitle"]).toBe("¿Cómo quieres enviárselo al cliente?");
-    expect(en["asstChat.send.keep"]).toBe("Keep");
-    expect(es["asstChat.send.keep"]).toBe("Guardar");
+    // REQ-402 (demo m5, cycle 2): the title names the customer.
+    expect(en["asstChat.send.howTitle"]).toBe("How do you want to send this to {name}?");
+    expect(es["asstChat.send.howTitle"]).toBe("¿Cómo quieres enviárselo a {name}?");
+    // REQ-308 (demo M3): the button IS the send, so it says so.
+    expect(en["asstChat.send.keep"]).toBe("Send");
+    expect(es["asstChat.send.keep"]).toBe("Enviar");
     expect(en["asstChat.send.cancel"]).toBe("Cancel");
     expect(es["asstChat.send.cancel"]).toBe("Cancelar");
   });

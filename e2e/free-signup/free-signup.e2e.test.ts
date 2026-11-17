@@ -311,10 +311,11 @@ Deno.test("REQ-120: no button on /landing2 changes onboarding — Registrarme on
       "Monster Free is a card to pick",
     );
     // Monster Free picked here: stored without a card ask, the wizard goes on to the state — the
-    // six questions still open, counted alone (REQ-121: a question answered is not asked again)
+    // fifth of the ten, the count carried over the pick's reload (REQ-253, demo issue
+    // onboarding-dashboard-settings-p1: it read "Step 1 of 6"; REQ-121: no answered question again)
     await page.locator("[data-cy='plan-pick-free']").click();
     await expect.see("Which state");
-    await expect.see("Step 1 of 6");
+    await expect.see("Step 5 of 10");
     expect(!page.url().includes("/pay/"), `never a pay page (${page.url()})`);
     const free = await planOnRecord(http, page);
     expect(

@@ -2,12 +2,14 @@ import { asset, Head } from "fresh/runtime";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { LANDING_DICT } from "../lib/landing-dict.ts";
 import SiteFooter from "./SiteFooter.tsx";
+import DocTitle from "./DocTitle.tsx";
 import {
   type LegalBlock,
   legalDocFor,
   type LegalDocId,
   legalPathFor,
 } from "../../shared/legal/terms.ts";
+import { absoluteUrl } from "../../shared/quote-flow/site-meta.ts";
 
 /**
  * REQ-066 — one legal document on its own page, under the SAME header the
@@ -27,7 +29,12 @@ import {
  * rendered whole, so a request with the language is the whole toggle.
  */
 export default function LegalPage(
-  { id, lang }: { id: LegalDocId; lang: Lang },
+  { id, lang, signedIn = false }: {
+    id: LegalDocId;
+    lang: Lang;
+    /** REQ-510: a signed-in visitor gets "Back to app" → /dashboard, not Log in */
+    signedIn?: boolean;
+  },
 ) {
   const doc = legalDocFor(lang, id);
   const site = LANDING_DICT[lang];
@@ -35,9 +42,17 @@ export default function LegalPage(
   return (
     <>
       <Head>
-        <title>
-          {doc.title} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${legalDocFor(l, id).title} · ${tFor(l, "brand.name")}`}
+        />
+        {
+          /* REQ-218: the document answers at three URLs (bare, ?lang=en,
+            ?lang=es); this names the one that is the page, so a crawler does
+            not have to pick among duplicates. */
+        }
+        <link rel="canonical" href={absoluteUrl(path)} />
         <link rel="stylesheet" href={asset("/landing.css")} key="css-landing" />
         <link rel="stylesheet" href={asset("/legal.css")} key="css-legal" />
       </Head>
@@ -49,7 +64,9 @@ export default function LegalPage(
             <img src="/logo-monster.png" alt="DocuMonster" />
             <span>
               {site.brand1}
-              <em style="font-style:normal;color:var(--brand-green)">{site.brand2}</em>
+              <em style="font-style:normal;color:var(--brand-green)">
+                {site.brand2}
+              </em>
             </span>
           </a>
           <div class="lang-toggle" role="group" aria-label="Language">
@@ -79,7 +96,13 @@ export default function LegalPage(
             <a href="/#how-it-works">{site["nav.how"]}</a>
             <a href="/#pricing">{site["nav.pricing"]}</a>
           </nav>
-          <a href="/login" class="btn btn-outline">{site["nav.login"]}</a>
+          {signedIn
+            ? (
+              <a href="/dashboard" class="btn btn-outline">
+                {site["nav.backToApp"]}
+              </a>
+            )
+            : <a href="/login" class="btn btn-outline">{site["nav.login"]}</a>}
         </div>
       </div>
 

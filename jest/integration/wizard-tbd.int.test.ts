@@ -68,7 +68,8 @@ describe("REQ-046/047 terms wizard — TBD on start date and duration", () => {
 
   it("REQ-047 the wraps step offers a non-custom 'tbd' option labelled TBD, before 'Custom'", () => {
     const ids = wrapsOptions.map((o) => o.id);
-    expect(ids).toEqual(["1_day", "2_3_days", "1_week", "2_weeks", "job_completed", "tbd", "custom"]);
+    // REQ-343: "job_completed" left the quote wizard's duration step.
+    expect(ids).toEqual(["1_day", "2_3_days", "1_week", "2_weeks", "tbd", "custom"]);
     const tbd = wrapsOptions.find((o) => o.id === "tbd") as { label: string; isCustom?: boolean };
     expect(tbd.label).toBe("TBD");
     expect(tbd.isCustom).toBeFalsy();

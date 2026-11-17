@@ -77,6 +77,30 @@ Deno.test("business-address e2e: PUT then GET returns the saved address", async 
   });
 });
 
+Deno.test("REQ-420 (demo m28): PUT with a whole one-line address in street stores street/city/state/ZIP split", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    // The exact body the /welcome address step sends when the owner types the
+    // full address into the Street box (state from the earlier state step).
+    const saved = await fetch(`http://localhost:${port}/profile/address`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ state: "TX", street: "1200 E Cesar Chavez St, Austin, TX 78702" }),
+    }).then((r) => r.json());
+    assertEquals(
+      [saved.street, saved.city, saved.state, saved.postal],
+      ["1200 E Cesar Chavez St", "Austin", "TX", "78702"],
+    );
+    const got = await fetch(`http://localhost:${port}/profile/address`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(
+      [got.street, got.city, got.state, got.postal],
+      ["1200 E Cesar Chavez St", "Austin", "TX", "78702"],
+    );
+  });
+});
+
 Deno.test("business-address e2e: PUT merges instead of overwriting", async () => {
   await withServer(async (port) => {
     const sid = await login(port);

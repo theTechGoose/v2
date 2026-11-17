@@ -1,13 +1,13 @@
 /** REQ-135 — the one set of rules a customers page is cut by: query, status, order, page, totals. */
 import { assertEquals } from "#std/assert";
 import type { CustomerCard } from "@crm/dto/customer.ts";
-import { CLIENTS_PAGE_SIZE, CLIENTS_PAGE_SIZE_MAX, clientsPage, countByStatus, loopPicks, matchesQuery, pageOf, sortByName, summarize } from "./mod.ts";
+import { CLIENTS_FILTERS, CLIENTS_PAGE_SIZE, CLIENTS_PAGE_SIZE_MAX, clientsPage, countByStatus, LOOP_MIN_QUIET_DAYS, loopPicks, matchesQuery, pageOf, sortByName, summarize } from "./mod.ts";
 
 function card(over: Partial<CustomerCard>): CustomerCard {
   return {
     id: crypto.randomUUID(), userId: "u", name: "Zed", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
-    lastWhen: null, lastWhenRel: "", lastTone: "cold", balanceCents: 0, balanceSub: "", activeJobs: 0, jobsSub: "",
-    status: "regular", temp: 0, daysSinceContact: 0, revenue12moCents: 0, ...over,
+    lastWhen: null, lastTone: "cold", balanceCents: 0, balanceSub: "", activeJobs: 0, jobsSub: "none",
+    status: "regular", temp: 0, daysSinceContact: 0, revenue12moCents: 0, documents: [], ...over,
   };
 }
 
@@ -31,6 +31,20 @@ Deno.test("REQ-135 clients-page — matchesQuery: name, business, email, phone d
   for (const q of ["bob", "9999"]) assertEquals(matchesQuery(c, q), false, q);
 });
 
+Deno.test("REQ-279 (demo M32) clients-page — matchesQuery is accent-blind both ways: 'maria' finds 'María José Peña', 'María' finds 'Maria'", () => {
+  const maria = card({ name: "María José Peña", businessName: "Peña Jardinería", address: "12 Calle Ñandú", notes: "llamar después" });
+  for (const q of ["maria", "MARIA JOSE", "jose pena", "pena jardineria", "calle nandu", "despues", "María", "  maría   josé "]) assertEquals(matchesQuery(maria, q), true, q);
+  const plain = card({ name: "Maria Jose Pena" });
+  for (const q of ["María", "maría josé peña", "PEÑA"]) assertEquals(matchesQuery(plain, q), true, q);
+  assertEquals(matchesQuery(maria, "mario"), false, "still a real filter");
+});
+
+Deno.test("REQ-519 (demo cycle 3, M33) clients-page — matchesQuery matches word by word: 'maria pena' finds 'María José Peña' (middle name skipped)", () => {
+  const maria = card({ name: "María José Peña", businessName: "Peña Jardinería" });
+  for (const q of ["maria pena", "pena maria", "María Peña", "maria jardineria"]) assertEquals(matchesQuery(maria, q), true, q);
+  for (const q of ["maria smith", "maria pena zzz"]) assertEquals(matchesQuery(maria, q), false, q);
+});
+
 Deno.test("REQ-135 clients-page — sortByName is by name, case-insensitive, then by createdAt", () => {
   const a = card({ name: "alpha", createdAt: "2026-02-01T00:00:00Z" });
   const b = card({ name: "Alpha", createdAt: "2026-01-01T00:00:00Z" });
@@ -44,15 +58,15 @@ Deno.test("REQ-135 clients-page — countByStatus, summarize and loopPicks read 
     card({ status: "owes", balanceCents: 12_000, daysSinceContact: 90 }), card({ status: "owes", balanceCents: 3_000, daysSinceContact: 10 }),
     card({ status: "cold" }), card({ status: "regular" }),
   ];
-  assertEquals(countByStatus(cards), { all: 7, active: 1, lead: 2, owes: 2, regular: 1, cold: 1 });
+  assertEquals(countByStatus(cards), { all: 7, new: 0, active: 1, lead: 2, owes: 2, regular: 1, cold: 1 });
   assertEquals(summarize(cards), { totalClients: 7, activeJobs: 1, owedCents: 15_000, quietCount: 1 });
   assertEquals(loopPicks(cards).map((c) => c.daysSinceContact), [90, 40, 10], "leads and owes, longest quiet first, three at most");
 });
 
 Deno.test("REQ-135 clients-page — clientsPage composes: q narrows the counts, status cuts the page, totals stay the roster's", () => {
   const cards = [
-    ...Array.from({ length: 26 }, (_, i) => card({ name: `Lead ${String(i).padStart(2, "0")}`, status: "lead" })),
-    card({ name: "Owes Olga", status: "owes", balanceCents: 500 }),
+    ...Array.from({ length: 26 }, (_, i) => card({ name: `Lead ${String(i).padStart(2, "0")}`, status: "lead", daysSinceContact: 10 })),
+    card({ name: "Owes Olga", status: "owes", balanceCents: 500, daysSinceContact: 10 }),
   ];
   const all = clientsPage(cards, { page: 2 });
   assertEquals([all.items.length, all.total, all.totalPages, all.summary.totalClients], [2, 27, 2, 27]);
@@ -61,4 +75,52 @@ Deno.test("REQ-135 clients-page — clientsPage composes: q narrows the counts, 
   const q = clientsPage(cards, { q: "olga", status: "all" });
   assertEquals([q.items.length, q.total, q.counts.all, q.counts.owes, q.summary.totalClients], [1, 1, 1, 1, 27]);
   assertEquals(q.loop.length, 3, "the loop is the roster's, never the query's");
+});
+
+Deno.test("REQ-271 clients-page — a new customer has its own chip: counted, filterable, never a regular", () => {
+  const cards = [card({ status: "new" }), card({ status: "new" }), card({ status: "regular" })];
+  assertEquals(CLIENTS_FILTERS.includes("new"), true);
+  assertEquals(countByStatus(cards).new, 2);
+  assertEquals(countByStatus(cards).regular, 1);
+  assertEquals(clientsPage(cards, { status: "new" }).total, 2);
+});
+
+Deno.test("REQ-364 (demo p15-16, cycle 1) clients-page — a lead made today is not in the loop", () => {
+  const justAdded = card({ name: "Guy Added Two Minutes Ago", status: "lead", daysSinceContact: 0 });
+  assertEquals(loopPicks([justAdded]), [], "a lead added minutes ago is not a check-in");
+  assertEquals(clientsPage([justAdded]).loop, [], "the only customer, just made: the loop is empty (the page shows loopBar.empty)");
+});
+
+Deno.test("REQ-364 (demo p15-16, cycle 1) clients-page — the loop takes only leads and owes quiet for LOOP_MIN_QUIET_DAYS or more", () => {
+  assertEquals(LOOP_MIN_QUIET_DAYS, 3);
+  const cards = [
+    card({ name: "lead-0", status: "lead", daysSinceContact: 0 }), card({ name: "lead-2", status: "lead", daysSinceContact: 2 }),
+    card({ name: "lead-3", status: "lead", daysSinceContact: 3 }),
+    card({ name: "owes-0", status: "owes", balanceCents: 900, daysSinceContact: 0 }), card({ name: "owes-1", status: "owes", balanceCents: 900, daysSinceContact: 1 }),
+    card({ name: "owes-7", status: "owes", balanceCents: 900, daysSinceContact: 7 }),
+    card({ name: "cold-90", status: "cold", daysSinceContact: 90 }),
+  ];
+  assertEquals(loopPicks(cards).map((c) => c.name), ["owes-7", "lead-3"], "an invoice sent today is not chased, a lead from yesterday is not nagged");
+});
+
+Deno.test("REQ-320 (demo m15, cycle 1) clients-page — a signed job in flight counts even when its customer owes: summarize sums activeJobs > 0, the 'active' chip counts and lists the same cards", () => {
+  // accept bills INV-001 as `sent` at once, so a freshly signed customer owes → status "owes", never "active"
+  const signedAndOwing = card({ name: "Ana Pérez", status: "owes", balanceCents: 28_000, activeJobs: 1 });
+  const twoJobs = card({ name: "Beto", status: "active", activeJobs: 2 });
+  const lead = card({ name: "Carla", status: "lead" });
+  const cards = [signedAndOwing, twoJobs, lead];
+  assertEquals(summarize(cards).activeJobs, 2, "signed + sent invoice → 1 signed job in flight (plus Beto's)");
+  assertEquals(countByStatus(cards).active, 2, "the Active jobs chip counts customers with a job in flight");
+  assertEquals(countByStatus(cards).owes, 1, "and the owes chip still holds her");
+  const active = clientsPage(cards, { status: "active" });
+  assertEquals(active.items.map((c) => c.name), ["Ana Pérez", "Beto"], "the chip lists the cards it counts");
+  assertEquals(active.total, active.counts.active, "count and list agree");
+  assertEquals(clientsPage(cards, { status: "owes" }).items.map((c) => c.name), ["Ana Pérez"]);
+});
+
+Deno.test("REQ-696 (cycle 5, M5) clients-page — the owed total counts open receivables no card carries (an invoice billed to a typed name, written before REQ-696)", () => {
+  const cards = [card({ balanceCents: 100_00 })];
+  assertEquals(summarize(cards).owedCents, 100_00);
+  assertEquals(summarize(cards, 200_00).owedCents, 300_00);
+  assertEquals(clientsPage(cards, {}, 200_00).summary.owedCents, 300_00);
 });

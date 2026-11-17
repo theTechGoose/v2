@@ -157,6 +157,18 @@
   color: var(--fg);
   background: #fff;
 }
+/* REQ-735 (demo c5 p6) — the read-only "share link + PIN" text box (workers,
+   editors): drawn like the form fields, not the UA's monospace inset box */
+.share-text {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: #fff;
+}
 /* REQ-155 — a select is drawn shorter than an input of the same padding; match the inputs beside it */
 .field select {
   min-height: 47px;
@@ -167,6 +179,16 @@
   outline: 0;
   border-color: var(--brand-green);
   box-shadow: var(--shadow-focus);
+}
+/* REQ-421 — a refused box's message, right under it (the red border is REQ-283's aria-invalid rule) */
+.field-error {
+  color: #a83b3b;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+/* REQ-632 — a required field left empty says so on its border too, not only in the line below it */
+.field input[aria-invalid="true"] {
+  border-color: #a83b3b;
 }
 .row {
   display: flex;
@@ -278,6 +300,9 @@
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  /* REQ-734 (cycle 5, m69; as REQ-618): the dim covers the whole window, the box keeps
+     clear of the demo pill's band (0 with no demo) */
+  padding-bottom: calc(20px + var(--demo-pill-h, 0px));
 }
 .modal {
   background: #fff;
@@ -289,7 +314,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px - var(--demo-pill-h, 0px));
   overflow: auto;
 }
 .modal h2 {
@@ -298,11 +323,31 @@
   font-weight: 800;
   color: var(--fg);
 }
+/* REQ-788: the title row — the title left, the Overhead chip in the upper right */
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal__head .days {
+  margin: 0;
+}
 .modal__foot {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin-top: 6px;
+  /* REQ-734 (cycle 5, m69): a tall form scrolls under the buttons — they stay pinned to the
+     bottom of the box, edge to edge over the box's own padding, on an opaque ground */
+  position: sticky;
+  bottom: -24px; /* the box's bottom padding: sticky stops at the content edge, so reach
+  past it and cover the strip scrolled fields would show through */
+  z-index: 1;
+  background: #fff;
+  margin: 6px -26px -24px;
+  padding: 12px 26px 24px;
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 -10px 14px -12px rgba(20,72,82,.28);
 }
 .btn--cancel {
   padding: 10px 16px;
@@ -442,6 +487,12 @@
 .sub__items div {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+/* REQ-529: a long value (the worker card's no-zone link) wraps flush right, never into the label */
+.sub__items div > :last-child:not(:first-child) {
+  text-align: right;
 }
 .sub__foot {
   display: flex;
@@ -680,6 +731,52 @@
   font-size: 13px;
   color: var(--fg-muted);
 }
+/* REQ-810: a draft's line leaves on its ×; the draft leaves the batch from its quiet footer button */
+.inv__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+.inv__x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.inv__x:hover,
+.inv__x:focus-visible {
+  border-color: #a83b3b;
+  color: #a83b3b;
+}
+.inv__x:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.inv__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.inv__remove {
+  border-color: #a83b3b;
+  color: #a83b3b;
+}
+.inv__ask {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
 
 @media (max-width: 1000px) {
   .alay {
@@ -729,6 +826,11 @@
 .chip--muted {
   background: #eee;
   color: #666;
+}
+/* REQ-840: a picked toggle chip (crew members / services) */
+.chip--on {
+  background: var(--brand-green);
+  color: #fff;
 }
 
 /* REQ-041: the map stays put while the zone list scrolls; per-row move; workload line */
@@ -787,6 +889,27 @@
   flex-wrap: wrap;
   max-width: calc(7 * 36px + 6 * 6px);
 }
+/* REQ-787 — the annual month view: title, week header, blanks before day 1 */
+.month-view__title {
+  display: block;
+  font-weight: 800;
+  margin-top: 4px;
+}
+.days.month-view__dow {
+  margin-bottom: 0;
+}
+.days .dow {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+.days .day.day--blank {
+  visibility: hidden;
+  cursor: default;
+}
 .days .day input {
   position: absolute;
   opacity: 0;
@@ -797,4 +920,19 @@
   background: var(--brand-teal);
   color: #fff;
   border-color: var(--brand-teal);
+}
+
+/* REQ-283 — a form field whose check failed */
+.field input[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+.field select[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+/* REQ-788: a weekday chip sized by its text ("Overhead · $25.00") */
+.days .day.day--wide {
+  width: auto;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
 }

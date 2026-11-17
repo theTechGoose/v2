@@ -1,0 +1,15 @@
+/* REQ-294 / REQ-825 — the 404/500 page (routes/_error.tsx) links no app
+   stylesheet, so anything in <body> beside its div — the demo pill, styled
+   inline with PILL_FONT — had no webfont to draw with. REQ-294 only set the
+   body to the same stack, which loaded nothing: without Inter the stack fell to
+   system-ui / sans-serif, which the demo's headless box resolves to a monospace
+   face, while the stage (demo-stage.css) loads Inter. This file loads Inter the
+   same way the stage and dashboard.css do, and the stack ends on concrete sans
+   faces (Arial, Helvetica) before the generic. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Arial, Helvetica,
+    sans-serif;
+}

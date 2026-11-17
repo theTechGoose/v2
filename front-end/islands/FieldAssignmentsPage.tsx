@@ -1,5 +1,8 @@
 /**
  * REQ-143 — /field/assignments. Subscriptions grouped into zones, one worker per zone.
+ * REQ-841 — a zone is staffed by CREWS too: each service on a visit goes to the first
+ * crew on the zone that does it (a crew marked "covers every zone" counts on all);
+ * the zone's worker stays the fallback for a service no crew does.
  *
  * Left: a Leaflet map (OSM tiles, loaded from the CDN at runtime — the page works
  * without it) with one circle marker per active subscription, coloured by zone.
@@ -12,21 +15,19 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  type CrewView,
   fieldClient,
   type FieldWorker,
+  type MapCenter,
   type RegionView,
   type SubscriptionView,
 } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
+import { assignmentsMapView, US_MAP_VIEW } from "../lib/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, t } from "../lib/i18n.ts";
-import {
-  isReplicaFrame,
-  onReplicaView,
-  onViewRequest,
-  reportView,
-} from "../lib/demo-mode/replica.ts";
+import type { FieldAssignmentsSeed } from "../lib/field-ssr.ts";
 
 // ---- Leaflet, typed just as far as this page uses it ----
 type LatLng = [number, number];
@@ -40,14 +41,9 @@ interface LLayerGroup extends LLayer {
 }
 interface LMap {
   setView(center: LatLng, zoom: number, opts?: { animate?: boolean }): LMap;
-  getCenter(): { lat: number; lng: number };
-  getZoom(): number;
-  on(event: string, fn: () => void): LMap;
   fitBounds(bounds: LatLng[], opts?: { padding?: [number, number] }): LMap;
   remove(): void;
   invalidateSize(): void;
-  containerPointToLatLng(p: [number, number]): { lat: number; lng: number };
-  latLngToContainerPoint(ll: LatLng): { x: number; y: number };
 }
 interface Leaflet {
   map(el: HTMLElement, opts?: { scrollWheelZoom?: boolean }): LMap;
@@ -133,11 +129,15 @@ interface Drag {
   from: string;
 }
 
-export default function FieldAssignmentsPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the zones + crew read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldAssignmentsPage(
+  { seed }: { seed?: FieldAssignmentsSeed | null } = {},
+) {
   const _lang = langSignal.value;
-  const [regions, setRegions] = useState<RegionView[]>([]);
-  const [workers, setWorkers] = useState<FieldWorker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [regions, setRegions] = useState<RegionView[]>(seed?.regions ?? []);
+  const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
+  const [crews, setCrews] = useState<CrewView[]>(seed?.crews ?? []); // REQ-841
+  const [loading, setLoading] = useState(!seed);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState("");
   const [filter, setFilter] = useState("");
@@ -145,25 +145,25 @@ export default function FieldAssignmentsPage() {
   const [dragging, setDragging] = useState<Drag | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [mapFailed, setMapFailed] = useState(false);
+  /** REQ-288 — the business's own place, for a map with no subscriptions on it */
+  const [center, setCenter] = useState<MapCenter | null>(null);
 
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LMap | null>(null);
   const layerRef = useRef<LLayerGroup | null>(null);
   const leafletRef = useRef<Leaflet | null>(null);
-  /** REQ-187 — demo mode: the customer's map reports its centre/zoom; the replica frame's map takes
-   *  them (and keeps them over its own fit). `mirrorRef` is the subscription, disposed with the map. */
-  const mirrorRef = useRef<(() => void) | null>(null);
-  const lastMapRef = useRef<{ c: [number, number]; z: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
   async function load() {
     try {
-      const [r, w] = await Promise.all([
+      const [r, w, c] = await Promise.all([
         fieldClient.regions(),
         fieldClient.workers(),
+        fieldClient.crews().catch(() => [] as CrewView[]),
       ]);
       setRegions(r);
       setWorkers(w);
+      setCrews(c);
       setError(null);
     } catch (e) {
       setError(errMsg(e));
@@ -173,7 +173,10 @@ export default function FieldAssignmentsPage() {
   }
 
   useEffect(() => {
-    load();
+    if (!seed) load(); // REQ-730 — seeded on the server: no client fetch on mount
+    fieldClient.mapCenter().then(setCenter).catch(
+      () => {/* the US view stands */},
+    );
   }, []);
 
   // Leaflet: create the map once the CDN script is in; the zone list never waits for it.
@@ -186,32 +189,17 @@ export default function FieldAssignmentsPage() {
         return;
       }
       leafletRef.current = L;
-      const map = L.map(mapEl.current, { scrollWheelZoom: false }).setView([
-        33.69,
-        -78.93,
-      ], 11);
+      // REQ-288 — the whole US until the subscriptions or the business's place are known
+      const map = L.map(mapEl.current, { scrollWheelZoom: false }).setView(
+        [US_MAP_VIEW.lat, US_MAP_VIEW.lng],
+        US_MAP_VIEW.zoom,
+      );
       L.tileLayer(OSM_TILES, { attribution: OSM_ATTR, maxZoom: 18 }).addTo(map);
       mapRef.current = map;
-      if (isReplicaFrame()) {
-        mirrorRef.current = onReplicaView((v) => {
-          if (!v.map) return;
-          lastMapRef.current = v.map;
-          map.setView(v.map.c, v.map.z, { animate: false });
-        });
-      } else {
-        const report = () => {
-          const c = map.getCenter();
-          reportView({ map: { c: [c.lat, c.lng], z: map.getZoom() } });
-        };
-        map.on("moveend", report);
-        mirrorRef.current = onViewRequest(report);
-      }
       setMapReady(true);
     });
     return () => {
       cancelled = true;
-      mirrorRef.current?.();
-      mirrorRef.current = null;
       layerRef.current?.remove();
       layerRef.current = null;
       mapRef.current?.remove();
@@ -279,11 +267,10 @@ export default function FieldAssignmentsPage() {
       }
     }
     map.invalidateSize();
-    if (pts.length) map.fitBounds(pts, { padding: [30, 30] });
-    // REQ-187 — in the replica frame the customer's view rules over this fit
-    const mirrored = lastMapRef.current;
-    if (mirrored) map.setView(mirrored.c, mirrored.z, { animate: false });
-  }, [regions, mapReady]);
+    const view = assignmentsMapView(pts, center);
+    if ("fit" in view) map.fitBounds(view.fit, { padding: [30, 30] });
+    else map.setView(view.center, view.zoom, { animate: false });
+  }, [regions, mapReady, center]);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -313,8 +300,23 @@ export default function FieldAssignmentsPage() {
       setFlash(t("field.asg.regrouped", { n: r.regions }));
     });
 
+  /** REQ-841 — the zone's crews, toggled one at a time */
+  const toggleCrew = (r: RegionView, crewId: string) => {
+    const cur = r.crewIds ?? [];
+    const next = cur.includes(crewId)
+      ? cur.filter((x) => x !== crewId)
+      : [...cur, crewId];
+    return run(() => fieldClient.staffRegionCrews(r.id, next));
+  };
+  /** REQ-841 — a staffed crew with nobody in it staffs nothing */
+  const staffedCrews = crews.filter((c) => c.members.length > 0);
+  const townCrew = staffedCrews.some((c) => c.coversAll);
+  const isStaffed = (r: RegionView) =>
+    !!r.workerId || townCrew ||
+    (r.crewIds ?? []).some((id) => staffedCrews.some((c) => c.id === id));
+
   const unstaffed =
-    regions.filter((r) => !r.workerId && r.subscriptions.length).length;
+    regions.filter((r) => !isStaffed(r) && r.subscriptions.length).length;
   const visible = regions.filter((r) => !filter || r.workerId === filter);
 
   function onDrop(e: DragEvent, region: RegionView) {
@@ -433,8 +435,39 @@ export default function FieldAssignmentsPage() {
         </div>
       )}
       {unstaffed > 0 && (
-        <div class="alert" style="margin:0 0 10px">
-          {t("field.asg.unstaffedCount", { n: unstaffed })}
+        <div
+          class="alert"
+          style="margin:0 0 10px"
+          data-cy="asg-unstaffed-count"
+        >
+          {t(
+            crews.length
+              ? "field.asg.unstaffedCrews"
+              : "field.asg.unstaffedCount",
+            { n: unstaffed },
+          )}
+        </div>
+      )}
+
+      {crews.length > 0 && (
+        <div class="workload" data-cy="asg-crew-load">
+          {crews.map((c) => {
+            const z = c.coversAll
+              ? regions.length
+              : regions.filter((r) => (r.crewIds ?? []).includes(c.id)).length;
+            return (
+              <span
+                class="chip"
+                key={c.id}
+                style={`background:${c.color}22;color:${c.color}`}
+              >
+                <b>{c.name}</b> {t("field.asg.crewLoad", { zones: z })}
+              </span>
+            );
+          })}
+          <a class="hint" href="/field/workers" data-cy="asg-manage-crews">
+            {t("field.asg.manageCrews")}
+          </a>
         </div>
       )}
 
@@ -500,10 +533,48 @@ export default function FieldAssignmentsPage() {
                   ))}
                 </select>
               </div>
-              {!r.workerId && (
+              {/* REQ-841 — the crews on this zone, as toggles */}
+              {crews.length > 0 && (
+                <div
+                  class="region__crews"
+                  data-cy="asg-region-crews"
+                  style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px"
+                >
+                  <span class="hint">{t("field.asg.crews")}</span>
+                  {crews.map((c) => {
+                    const on = (r.crewIds ?? []).includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        class="chip"
+                        title={c.coversAll
+                          ? t("field.crew.coversAll")
+                          : undefined}
+                        style={`cursor:pointer;display:inline-flex;align-items:center;gap:4px;${
+                          on || c.coversAll
+                            ? `background:${c.color}22;color:${c.color}`
+                            : "opacity:.7"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          data-cy="asg-region-crew"
+                          data-id={c.id}
+                          checked={on || c.coversAll === true}
+                          disabled={busy || c.coversAll === true}
+                          onChange={() => toggleCrew(r, c.id)}
+                        />
+                        {c.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {!isStaffed(r) && (
                 <div
                   class="hint"
                   style="margin:-4px 0 8px;color:var(--pink-700)"
+                  data-cy="asg-region-unstaffed"
                 >
                   {t("field.asg.unstaffed")}
                 </div>

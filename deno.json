@@ -29,7 +29,8 @@
     },
     "test:int:live": "cd jest && npm run test:integration",
     "test:e2e:cypress": "cd cypress && npm run run",
-    "wipe": "cd backend && deno task wipe"
+    "wipe": "cd backend && deno task wipe",
+    "ops": "deno run -A scripts/ops.ts"
   },
   "compilerOptions": {
     "experimentalDecorators": true,

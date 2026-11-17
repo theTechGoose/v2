@@ -90,20 +90,25 @@ describe("REQ-044 every SSR page family carries the footer phone link", () => {
   });
 
   describe("public customer documents", () => {
-    it("REQ-044 /q/:id (agreement) → footer phone + address", async () => {
+    // REQ-509 (demo-loop cycle 3, m24) supersedes REQ-044 here: the contractor's
+    // documents end with the `document` footer — no DocuMonster phone or address
+    // under the contractor's own contact block (jest/integration/doc-footer.int.test.ts).
+    it("REQ-044/REQ-509 /q/:id (agreement) → no DocuMonster phone, no old number", async () => {
       const s = await contractor("+15125550941");
       const id = await seedQuote(s);
       const r = await page(`/q/${id}`);
       expect(r.status).toBe(200);
-      expectFooterContact(r.html);
+      expect(phoneLinks(r.html)).toEqual([]);
+      expect(r.html).not.toContain(ADDRESS);
       expectNoOldNumber(r.html);
     });
-    it("REQ-044 /i/:id (invoice) → footer phone + address", async () => {
+    it("REQ-044/REQ-509 /i/:id (invoice) → no DocuMonster phone, no old number", async () => {
       const s = await contractor("+15125550941");
       const id = await seedInvoice(s);
       const r = await page(`/i/${id}`);
       expect(r.status).toBe(200);
-      expectFooterContact(r.html);
+      expect(phoneLinks(r.html)).toEqual([]);
+      expect(r.html).not.toContain(ADDRESS);
       expectNoOldNumber(r.html);
     });
   });

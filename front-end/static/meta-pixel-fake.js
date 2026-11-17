@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-var no-window no-inner-declarations -- a plain ES5 browser script served as-is (REQ-080)
 /* REQ-080 — the fake Meta Pixel loader. Served in place of Meta's fbevents.js
  * whenever DENO_DEPLOY is unset (REQ-318: the gate, a dev box, a pin run on
  * fakes). The page's snippet has already defined the `fbq` stub with its

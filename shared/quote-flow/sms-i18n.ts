@@ -155,17 +155,20 @@ const ACCEPTED_SUBJECT_JOB: Record<SmsLang, string> = {
   en: "{name} approved your quote for {job} 🎉",
   es: "¡{name} aprobó tu cotización de {job}! 🎉",
 };
+// REQ-746 (cycle 5, c1-p15-18): the accept IS the signature (quote + contract
+// merge) and it bills — so the owner is told it's signed, never "send the
+// agreement".
 const ACCEPTED_SMS: Record<SmsLang, string> = {
-  en: "{name} just approved your quote. Next step: send the agreement or " +
-    "invoice → {url}",
-  es: "{name} acaba de aprobar tu cotización. Siguiente paso: envía el " +
-    "contrato o la factura → {url}",
+  en: "{name} just approved and signed your quote — it's now your " +
+    "agreement. See it and its invoice → {url}",
+  es: "{name} acaba de aprobar y firmar tu cotización — ya es tu acuerdo. " +
+    "Míralo con su factura → {url}",
 };
 const ACCEPTED_SMS_JOB: Record<SmsLang, string> = {
-  en: "{name} just approved your quote for {job}. Next step: send the " +
-    "agreement or invoice → {url}",
-  es: "{name} acaba de aprobar tu cotización de {job}. Siguiente paso: " +
-    "envía el contrato o la factura → {url}",
+  en: "{name} just approved and signed your quote for {job} — it's now " +
+    "your agreement. See it and its invoice → {url}",
+  es: "{name} acaba de aprobar y firmar tu cotización de {job} — ya es tu " +
+    "acuerdo. Míralo con su factura → {url}",
 };
 
 /** P-50/P-27 — the job name in the CONTRACTOR's language, or undefined. */

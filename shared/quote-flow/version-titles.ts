@@ -71,3 +71,21 @@ export function disambiguateTitle(
   seen.add(unique.toLowerCase());
   return unique;
 }
+
+// ── REQ-446 (demo-loop cycle 3, m13): the three versions' roles ────────────
+// "three near-identical options" — the model's versions now play distinct
+// roles (concise / standard / detailed) and each card says which it is.
+
+/** What one version of the job is: the fewest lines, one line per item, or
+ *  every specific the contractor gave. */
+export type VersionStyle = "concise" | "standard" | "detailed";
+
+const STYLE_LABELS: Record<Lang, Record<VersionStyle, string>> = {
+  en: { concise: "Concise", standard: "Standard", detailed: "Detailed" },
+  es: { concise: "Breve", standard: "Estándar", detailed: "Detallada" },
+};
+
+/** The localized label a picker card shows for its version. */
+export function versionStyleLabel(style: VersionStyle, lang: Lang): string {
+  return (STYLE_LABELS[lang] ?? STYLE_LABELS.en)[style];
+}

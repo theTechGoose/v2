@@ -10,6 +10,7 @@ import { ReferenceStore } from "@profile/domain/data/reference-store/mod.ts";
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
 import { computeInitials } from "@profile/domain/business/initials/mod.ts";
+import { legacyNetDays } from "@profile/domain/business/legacy-net-days/mod.ts";
 import {
   projectPublicBusinessIdentity,
   type PublicBusinessIdentity,
@@ -87,7 +88,7 @@ export class LoadProfile {
   async load(userId: string): Promise<ProfileSnapshot> {
     const [
       user,
-      identity,
+      storedIdentity,
       address,
       insurance,
       tax,
@@ -106,6 +107,12 @@ export class LoadProfile {
       this.choosePlan.current(userId), // REQ-061: as the CRM's billing says it stands
       this.numbering.accountNumber(userId), // REQ-198
     ]);
+    // REQ-622 (demo cycle 4, p4-p6c): a payment-term day count the retired Contract defaults card
+    // stored moves into invoiceNetDays — the one setting the invoice form reads — when unset.
+    const migratedNetDays = legacyNetDays(storedIdentity, contractDefaults);
+    const identity = migratedNetDays != null
+      ? await this.identity.upsert(userId, { invoiceNetDays: migratedNetDays })
+      : storedIdentity;
     const suggestedState = address?.state
       ? undefined
       : stateFromPhone(user.phoneNumber);

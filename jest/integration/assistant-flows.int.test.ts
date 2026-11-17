@@ -52,7 +52,7 @@ describe("P-20 starter-chip routing (server side)", () => {
     // Ready harness for when/if chip intents ever route server-side.
     const s: ApiSession = await contractor("+15125553010");
     const labels = [
-      "Sé mi precio, redáctalo.",
+      "Ya tengo el precio, redáctalo.",
       "Conozco el trabajo, ayúdame a ponerle precio.",
       "Solo dame una cotización rápida.",
       "Trabajo terminado, necesito facturar.",

@@ -3,6 +3,7 @@ import { UsersModule } from "@users/mod-root.ts";
 import { CrmModule } from "@crm/mod-root.ts";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
 
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { ComputeDashboardStats } from "@analytics/domain/coordinators/compute-dashboard-stats/mod.ts";
 import { ListActiveJobs } from "@analytics/domain/coordinators/list-active-jobs/mod.ts";
 import { GlobalSearch } from "@analytics/domain/coordinators/global-search/mod.ts";
@@ -35,6 +36,10 @@ import { QuotesController } from "@analytics/entrypoints/quotes-controller/mod.t
     QuotesController,
   ],
   injectables: [
+    // REQ-698 (demo-loop cycle 5, m14): the dashboard's "ready to send" count
+    // reads each draft's thread (terms wizard) — the same stateless KV store
+    // AgentsModule registers.
+    AgentConversationStore,
     ComputeDashboardStats,
     ListActiveJobs,
     GlobalSearch,

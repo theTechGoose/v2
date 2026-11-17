@@ -30,7 +30,7 @@ const DURATION_OPTIONS = [
   "2–3 days",
   "1 week",
   "2 weeks",
-  "Job completed",
+  // REQ-343: no "Job completed" on a quote's duration step.
   "TBD",
   "Custom",
 ];
@@ -237,7 +237,7 @@ Deno.test("REQ-047: TBD is offered on 'How long will the job take?' and lands on
     expect.eq(
       options.join(" | "),
       DURATION_OPTIONS.join(" | "),
-      "TBD sits between 'Job completed' and 'Custom'",
+      "TBD sits just before 'Custom' (no 'Job completed', REQ-343)",
     );
     await pick(page, /^\s*TBD\s*$/);
     await expect.see("Time to complete: TBD", { timeout: 20_000 });

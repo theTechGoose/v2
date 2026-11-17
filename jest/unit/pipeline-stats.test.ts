@@ -47,7 +47,7 @@
  *     // "onboarding-sample") contribute to NOTHING.
  *
  *   export function formatMoneyCompact(cents: number): string;
- *     // ≥ $1,000 may compact ("$1.4k"); BELOW $1k always the full amount
+ *     // ≥ $1,000 may compact (1_420_000¢ → "$14.2k"); BELOW $1k always the full amount
  *     // ("$850", never "$0.8k"); sub-dollar rounds to "$0" (never "$0.01").
  *
  *   export function dueDateLine(
@@ -253,8 +253,17 @@ describe("P-36 money formatting, integer-cents aggregation, due line, pluralizat
     expect(formatMoneyCompact(0)).toBe("$0");
   });
 
-  it("P-36 formatMoneyCompact may compact at ≥ $1k ($1.4k)", () => {
-    expect(formatMoneyCompact(1_420_000)).toBe("$1.4k");
+  it("P-36 / REQ-694 formatMoneyCompact compacts at ≥ $1k ($14,200 → $14.2k)", () => {
+    // 1_420_000¢ is $14,200 — the old "$1.4k" expectation was off by 10×.
+    expect(formatMoneyCompact(1_420_000)).toBe("$14.2k");
+  });
+
+  it("REQ-694 formatMoneyCompact is not off by 10× (cycle 5, M16: $18,750 showed as '$1.9k')", () => {
+    expect(formatMoneyCompact(1_875_000)).toBe("$18.8k");
+    expect(formatMoneyCompact(100_000)).toBe("$1k");
+    expect(formatMoneyCompact(150_000)).toBe("$1.5k");
+    expect(formatMoneyCompact(1_000_000)).toBe("$10k");
+    expect(formatMoneyCompact(12_345_600)).toBe("$123.5k");
   });
 
   it("P-36 aggregation stays in INTEGER cents — no float drift from 1-cent inputs", () => {

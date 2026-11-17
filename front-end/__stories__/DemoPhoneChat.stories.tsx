@@ -99,7 +99,7 @@ const SCRIPT_ES: Bubble[] = [
     side: "left",
     kind: "bubble",
     cls: "them",
-    text: "Perfecto. Va la cotización — rango típico $10.800–$12.400.",
+    text: "Perfecto. Va la cotización — rango típico $10,800–$12,400.",
   },
   {
     side: "left",

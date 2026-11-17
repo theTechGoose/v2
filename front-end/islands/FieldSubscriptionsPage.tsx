@@ -7,8 +7,10 @@
  * REQ-152 — the customer field is the SearchSelect (REQ-136): type to narrow,
  * pick; the pick fills the address (REQ-144); retyping un-picks.
  */
+import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  type ChecklistView,
   fieldClient,
   type SubscriptionInput,
   type SubscriptionItemInput,
@@ -23,14 +25,24 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   customerOptions,
   fmtMoneyExact,
+  ownItems,
+  perVisitCents,
   prefillAddress,
   todayIso,
 } from "../lib/field.ts";
+import {
+  overheadCentsFor,
+  type OverheadSetting,
+  overheadSetting,
+  overheadText,
+} from "../../shared/field/overhead.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
+import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
 
-/** the cadence <select>'s values: an interval in weeks, or monthly */
-type CadenceChoice = "1" | "2" | "3" | "4" | "monthly";
+/** the cadence <select>'s values: an interval in weeks, monthly, or (REQ-787) annual */
+type CadenceChoice = "1" | "2" | "3" | "4" | "monthly" | "annual";
 
 interface Customer {
   id: string;
@@ -59,8 +71,13 @@ interface Form {
   cadence: CadenceChoice;
   startDate: string;
   days: number[];
-  /** REQ-157 — monthly: the picked days of the month */
+  /** REQ-157 — monthly: the picked days of the month (REQ-787: annual's days in its month) */
   daysOfMonth: number[];
+  /** REQ-787 — annual: the month, 1–12 */
+  month: number;
+  /** REQ-811 — the checklist referenced ("" = none); its rows are included on every visit */
+  checklistId: string;
+  /** the visit's OWN rows (REQ-811: extras beside the checklist, or everything when there is none) */
   items: Item[];
   /** the combobox query */
   q: string;
@@ -74,6 +91,8 @@ interface Form {
   price: string;
   /** REQ-174: days to pay, as typed (prefilled from Settings) */
   netDays: string;
+  /** REQ-788: every visit bills the overhead cost set in Settings */
+  overhead: boolean;
   err: string | null;
   saving: boolean;
 }
@@ -94,6 +113,36 @@ function monthDayOf(iso: string): number {
 }
 const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
+/** REQ-787 — the month of a date (1–12), today's when it is not one */
+function monthOf(iso: string): number {
+  const m = Number(iso.slice(5, 7));
+  return Number.isInteger(m) && m >= 1 && m <= 12
+    ? m
+    : new Date().getMonth() + 1;
+}
+/** REQ-787 — the year an annual visit in `month` first falls: the first visit's year, or the next one when that month is already behind it */
+function annualYear(startIso: string, month: number): number {
+  const y = Number(startIso.slice(0, 4));
+  const year = Number.isInteger(y) && y > 1900 ? y : new Date().getFullYear();
+  return month >= monthOf(startIso) ? year : year + 1;
+}
+/** days in a month (1–12) of a year */
+const daysIn = (year: number, month: number) =>
+  new Date(Date.UTC(year, month, 0)).getUTCDate();
+/** weekday (0 = Sunday) of a date in a year/month */
+const weekdayAt = (year: number, month: number, day: number) =>
+  new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+const monthName = (lang: "en" | "es", month: number, year?: number) => {
+  const name = new Intl.DateTimeFormat(lang === "es" ? "es-US" : "en-US", {
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(2000, month - 1, 1)));
+  const cap = name.charAt(0).toUpperCase() + name.slice(1);
+  if (year === undefined) return cap;
+  return lang === "es" ? `${cap} de ${year}` : `${cap} ${year}`;
+};
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+
 function weekdayOf(iso: string): number {
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime()) ? new Date().getDay() : d.getDay();
@@ -109,6 +158,8 @@ function blankForm(defaultNetDays = 30): Form {
     startDate,
     days: [weekdayOf(startDate)],
     daysOfMonth: [monthDayOf(startDate)],
+    month: monthOf(startDate),
+    checklistId: "",
     items: [],
     q: "",
     searchOn: false,
@@ -117,6 +168,7 @@ function blankForm(defaultNetDays = 30): Form {
     picked: null,
     price: "",
     netDays: String(defaultNetDays),
+    overhead: false,
     err: null,
     saving: false,
   };
@@ -124,22 +176,29 @@ function blankForm(defaultNetDays = 30): Form {
 
 function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
   const startDate = (s.startDate ?? s.createdAt).slice(0, 10);
-  const cadence: CadenceChoice = s.cadence === "monthly" ? "monthly" : (String(
-    s.intervalWeeks ?? (s.cadence === "biweekly" ? 2 : 1),
-  ) as CadenceChoice);
+  const cadence: CadenceChoice =
+    s.cadence === "monthly" || s.cadence === "annual" ? s.cadence : (String(
+      s.intervalWeeks ?? (s.cadence === "biweekly" ? 2 : 1),
+    ) as CadenceChoice);
   return {
     ...blankForm(defaultNetDays),
     editId: s.id,
     netDays: String(s.netDays ?? defaultNetDays),
+    overhead: s.overhead === true,
     customerId: s.customerId,
     address: s.address,
-    cadence: ["1", "2", "3", "4", "monthly"].includes(cadence) ? cadence : "1",
+    cadence: ["1", "2", "3", "4", "monthly", "annual"].includes(cadence)
+      ? cadence
+      : "1",
     startDate,
     days: s.days?.length ? s.days : [weekdayOf(startDate)],
     daysOfMonth: s.daysOfMonth?.length
       ? s.daysOfMonth
       : [monthDayOf(startDate)],
-    items: s.items.map((i) => ({
+    month: s.month ?? monthOf(startDate),
+    checklistId: s.checklistId ?? "",
+    // REQ-811: the checklist's rows stay the checklist's — only the visit's own are edited here
+    items: ownItems(s).map((i) => ({
       id: i.taskTypeId,
       name: i.taskTypeName,
       priceCents: i.priceCents,
@@ -180,16 +239,28 @@ async function loadAllCustomers(): Promise<Customer[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export default function FieldSubscriptionsPage() {
+/** REQ-730 (demo c2-p13-p) — `seed`: the cards read by the route on the SSR side; the first HTML carries them, not "Loading…" */
+export default function FieldSubscriptionsPage(
+  { seed }: { seed?: FieldSubscriptionsSeed | null } = {},
+) {
   const lang = langSignal.value;
-  const [subs, setSubs] = useState<SubscriptionView[] | null>(null);
+  const [subs, setSubs] = useState<SubscriptionView[] | null>(
+    seed?.subs ?? null,
+  );
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  /** REQ-811 — the account's checklists, for the form's Checklist select */
+  const [checklists, setChecklists] = useState<ChecklistView[]>([]);
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
   const lastPick = useRef<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   // REQ-174: the account's default days to pay, from Settings
   const [defaultNetDays, setDefaultNetDays] = useState(30);
+  // REQ-788: the account's overhead per visit, from Settings — flat cents or a percent of the services
+  const [overhead, setOverhead] = useState<OverheadSetting>({
+    mode: "flat",
+    cents: 0,
+  });
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** the card with a request in flight, and the message its last one failed with */
@@ -214,22 +285,31 @@ export default function FieldSubscriptionsPage() {
 
   useEffect(() => {
     let alive = true;
-    fieldClient.subscriptions().then((list) => {
-      if (!alive) return;
-      setSubs(list);
-    }).catch((err: unknown) => {
-      if (!alive) return;
-      setLoadErr(errMsg(err));
-      setSubs([]);
-    });
+    // REQ-730 — seeded on the server: the list is already here
+    if (!seed) {
+      fieldClient.subscriptions().then((list) => {
+        if (!alive) return;
+        setSubs(list);
+      }).catch((err: unknown) => {
+        if (!alive) return;
+        setLoadErr(errMsg(err));
+        setSubs([]);
+      });
+    }
     loadAllCustomers().then((list) => {
       if (alive) setCustomers(list);
     }).catch(() => {
       // the picker stays empty; the modal's error line reports the save failure
     });
+    fieldClient.checklists().then((list) => {
+      if (alive) setChecklists(list);
+    }).catch(() => {
+      // REQ-811: the select offers "None" only; the rows below still work
+    });
     profileClient.get().then((snap) => {
       const n = snap.identity?.invoiceNetDays;
       if (alive && typeof n === "number") setDefaultNetDays(n);
+      if (alive) setOverhead(overheadSetting(snap.identity));
     }).catch(() => {
       // 30 stays the default
     });
@@ -354,7 +434,9 @@ export default function FieldSubscriptionsPage() {
       if (form.options.length) pick(Math.max(form.active, 0));
       else priceRef.current?.focus();
     } else if (e.key === "Escape") {
-      e.stopPropagation();
+      // REQ-732: only an Escape that shuts the open search stops here; otherwise it
+      // reaches the dialog's Backdrop and closes Nueva suscripción
+      if (form.searchOn || form.options.length) e.stopPropagation();
       searchSeq.current++;
       patch({ searchOn: false, options: [], active: -1 });
     }
@@ -378,6 +460,16 @@ export default function FieldSubscriptionsPage() {
         ? f.daysOfMonth.filter((x) => x !== d)
         : [...f.daysOfMonth, d].sort((a, b) => a - b);
       return { ...f, daysOfMonth };
+    });
+  }
+
+  /** REQ-787 — the annual month; picks past its last day are dropped */
+  function onMonth(month: number) {
+    setForm((f) => {
+      if (!f) return f;
+      const last = daysIn(annualYear(f.startDate, month), month);
+      const kept = f.daysOfMonth.filter((d) => d <= last);
+      return { ...f, month, daysOfMonth: kept.length ? kept : [last] };
     });
   }
 
@@ -415,12 +507,13 @@ export default function FieldSubscriptionsPage() {
       setForm({ ...f, err: t("field.subs.addressPh") });
       return;
     }
-    if (!f.items.length) {
-      setForm({ ...f, err: t("field.subs.noItems") });
+    if (!f.items.length && !f.checklistId) { // REQ-811: a checklist stands in for the rows
+      setForm({ ...f, err: t("field.subs.noItemsOrChecklist") });
       return;
     }
+    const annual = f.cadence === "annual"; // REQ-787
     const monthly = f.cadence === "monthly";
-    if (monthly ? !f.daysOfMonth.length : !f.days.length) {
+    if (monthly || annual ? !f.daysOfMonth.length : !f.days.length) {
       setForm({ ...f, err: t("field.subs.daysHint") });
       return;
     }
@@ -441,8 +534,20 @@ export default function FieldSubscriptionsPage() {
     const n = Number(f.cadence);
     const schedule: Pick<
       SubscriptionInput,
-      "cadence" | "intervalWeeks" | "days" | "daysOfMonth" | "startDate"
-    > = monthly
+      | "cadence"
+      | "intervalWeeks"
+      | "days"
+      | "daysOfMonth"
+      | "month"
+      | "startDate"
+    > = annual
+      ? {
+        cadence: "annual",
+        startDate: f.startDate,
+        month: f.month,
+        daysOfMonth: f.daysOfMonth,
+      }
+      : monthly
       ? {
         cadence: "monthly",
         startDate: f.startDate,
@@ -461,7 +566,9 @@ export default function FieldSubscriptionsPage() {
           address: f.address.trim(),
           ...schedule,
           items,
+          checklistId: f.checklistId || null, // REQ-811: null clears it
           netDays,
+          overhead: f.overhead,
         });
       } else {
         await fieldClient.createSubscription({
@@ -469,7 +576,9 @@ export default function FieldSubscriptionsPage() {
           address: f.address.trim(),
           ...schedule,
           items,
+          ...(f.checklistId ? { checklistId: f.checklistId } : {}), // REQ-811
           netDays,
+          overhead: f.overhead,
         });
       }
       close();
@@ -595,14 +704,75 @@ export default function FieldSubscriptionsPage() {
                   >
                     <I d={ICN.pin} size={12} /> <span>{s.address}</span>
                   </div>
+                  {/* REQ-811: the checklist this visit references — its own line, so the name and zone keep theirs */}
+                  {s.checklistName && (
+                    <div
+                      class="sub__addr"
+                      data-cy="subs-card-checklist"
+                      style="display:flex;align-items:center;gap:6px"
+                    >
+                      <I d={ICN.list} size={12} />{" "}
+                      <span>
+                        {t("field.subs.checklist")}: <b>{s.checklistName}</b>
+                      </span>
+                    </div>
+                  )}
                   <div class="sub__items">
                     {s.items.map((it) => (
-                      <div key={it.taskTypeId}>
-                        <span>{it.taskTypeName}</span>
+                      <div
+                        key={it.taskTypeId}
+                        data-cy={it.fromChecklist
+                          ? "subs-item-from-checklist"
+                          : "subs-card-item"}
+                      >
+                        <span>
+                          {it.taskTypeName}
+                          {/* REQ-811: a row the checklist contributes, not one of the visit's own */}
+                          {it.fromChecklist && (
+                            <span
+                              class="chip chip--muted"
+                              style="margin-left:6px;font-size:11px"
+                            >
+                              {t("field.subs.fromChecklist")}
+                            </span>
+                          )}
+                        </span>
                         <b>{fmtMoneyExact(it.priceCents)}</b>
                       </div>
                     ))}
+                    {/* REQ-788: the overhead, when the toggle is on */}
+                    {s.overhead && (
+                      <div data-cy="subs-card-overhead">
+                        <span>{t("field.subs.overheadLabel")}</span>
+                        <b>
+                          {fmtMoneyExact(
+                            overheadCentsFor(overhead, perVisitCents(s)),
+                          )}
+                          {overhead.mode === "percent"
+                            ? ` · ${overheadText(overhead)}`
+                            : ""}
+                        </b>
+                      </div>
+                    )}
                   </div>
+                  {
+                    /* REQ-699 (demo-loop cycle 5, M20): a subscription a
+                      signed quote made says so — "From Q-001 · Monthly ·
+                      $180/mo" — and opens that quote */
+                  }
+                  {s.quoteId && (
+                    <a
+                      class="hint"
+                      data-cy="subs-from-quote"
+                      href={`/quotes?open=${s.quoteId}`}
+                      style="display:block;text-decoration:none"
+                    >
+                      {t("field.subs.fromQuote", {
+                        quote: s.quoteNumber ?? "",
+                      })}
+                      {s.billing ? ` · ${s.billing[lang]}` : ""}
+                    </a>
+                  )}
                   {cardErr?.id === s.id && (
                     <p class="alert" style="margin:0">{cardErr.msg}</p>
                   )}
@@ -692,16 +862,34 @@ export default function FieldSubscriptionsPage() {
         )}
 
       {form && (
-        <div
+        <Backdrop
           class="modal-bg"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) close();
-          }}
+          onClose={() => close()}
         >
           <form class="modal" onSubmit={submit} data-cy="subs-form">
-            <h2>
-              {form.editId ? t("field.subs.editTitle") : t("field.subs.new")}
-            </h2>
+            {/* REQ-788: the title, and the Overhead toggle in the upper right — a weekday chip */}
+            <div class="modal__head">
+              <h2>
+                {form.editId ? t("field.subs.editTitle") : t("field.subs.new")}
+              </h2>
+              <div class="days">
+                <label
+                  class={`day day--wide${form.overhead ? " on" : ""}`}
+                  data-cy="subs-overhead"
+                  title={overheadCentsFor(overhead, 100) > 0
+                    ? ""
+                    : t("field.subs.overheadHint")}
+                >
+                  <input
+                    type="checkbox"
+                    name="overhead"
+                    checked={form.overhead}
+                    onChange={() => patch({ overhead: !form.overhead })}
+                  />
+                  {t("field.subs.overhead", { amount: overheadText(overhead) })}
+                </label>
+              </div>
+            </div>
 
             <div class="field">
               <span>{t("field.subs.client")}</span>
@@ -747,7 +935,7 @@ export default function FieldSubscriptionsPage() {
               </div>
               <span class="hint">
                 {t("field.subs.manageCustomers")}{" "}
-                <a href="/customers">{t("nav.customers")}</a>
+                <a class="link" href="/customers">{t("nav.customers")}</a>
               </span>
             </div>
 
@@ -792,6 +980,7 @@ export default function FieldSubscriptionsPage() {
                     <option value="4">{t("field.subs.every4")}</option>
                   )}
                   <option value="monthly">{t("field.subs.monthly")}</option>
+                  <option value="annual">{t("field.subs.annual")}</option>
                 </select>
               </label>
               <label class="field">
@@ -804,6 +993,17 @@ export default function FieldSubscriptionsPage() {
                   onChange={(e) =>
                     onStartDate((e.currentTarget as HTMLInputElement).value)}
                 />
+                {
+                  /* REQ-713 (cycle 5, m27): the native date input draws the
+                    BROWSER locale (11/12/2026 in an en-US browser), so the
+                    picked day is also spelled out in the page language —
+                    the REQ-587 companion from the payment form. */
+                }
+                {form.startDate && (
+                  <span class="hint" data-cy="subs-start-text">
+                    {formatLongDate(form.startDate, lang)}
+                  </span>
+                )}
               </label>
             </div>
 
@@ -830,7 +1030,7 @@ export default function FieldSubscriptionsPage() {
               </label>
             </div>
 
-            {form.cadence !== "monthly" && (
+            {form.cadence !== "monthly" && form.cadence !== "annual" && (
               <div class="field" data-cy="subs-days">
                 {t("field.subs.days")}
                 <div class="days">
@@ -888,8 +1088,106 @@ export default function FieldSubscriptionsPage() {
               </div>
             )}
 
+            {form.cadence === "annual" && (() => {
+              // REQ-787 — pick the month, then the day(s) on that month's calendar
+              const year = annualYear(form.startDate, form.month);
+              const n = daysIn(year, form.month);
+              const lead = DAY_ORDER.indexOf(weekdayAt(year, form.month, 1));
+              return (
+                <>
+                  <div class="row">
+                    <label class="field">
+                      {t("field.subs.month")}
+                      <select
+                        name="month"
+                        data-cy="subs-month"
+                        value={String(form.month)}
+                        onChange={(e) =>
+                          onMonth(
+                            Number(
+                              (e.currentTarget as HTMLSelectElement).value,
+                            ),
+                          )}
+                      >
+                        {MONTHS.map((m) => (
+                          <option value={String(m)} key={m}>
+                            {monthName(lang, m)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div class="field" data-cy="subs-month-view">
+                    <span class="month-view__title" data-cy="subs-month-title">
+                      {monthName(lang, form.month, year)}
+                    </span>
+                    <div class="days dom month-view__dow" aria-hidden="true">
+                      {DAY_ORDER.map((d) => (
+                        <span class="dow" key={d} data-cy="subs-dow">
+                          {DAY_LETTERS[lang][d]}
+                        </span>
+                      ))}
+                    </div>
+                    <div class="days dom">
+                      {Array.from(
+                        { length: lead },
+                        (_, i) => <span class="day day--blank" key={`b${i}`} />,
+                      )}
+                      {MONTH_DAYS.slice(0, n).map((d) => {
+                        const on = form.daysOfMonth.includes(d);
+                        return (
+                          <label
+                            class={`day${on ? " on" : ""}`}
+                            key={d}
+                            data-cy="subs-dom-day"
+                            data-dom={d}
+                            data-weekday={weekdayAt(year, form.month, d)}
+                          >
+                            <input
+                              type="checkbox"
+                              name="daysOfMonth"
+                              value={d}
+                              checked={on}
+                              onChange={() => toggleMonthDay(d)}
+                            />
+                            {d}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <span class="hint">{t("field.subs.annualHint")}</span>
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* REQ-811: a checklist stands in for the rows — pick one and add only the extras below */}
+            <label class="field">
+              {t("field.subs.checklist")}
+              <select
+                data-cy="subs-checklist"
+                value={form.checklistId}
+                onChange={(e) =>
+                  patch({
+                    checklistId: (e.currentTarget as HTMLSelectElement).value,
+                  })}
+              >
+                <option value="">{t("field.subs.checklistNone")}</option>
+                {checklists.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <span class="hint">
+                <a href="/field/checklists" data-cy="subs-manage-checklists">
+                  {t("field.subs.manageChecklists")}
+                </a>
+              </span>
+            </label>
+
             <div class="field">
-              {t("field.subs.taskTypes")}
+              {form.checklistId
+                ? t("field.subs.extraTypes")
+                : t("field.subs.taskTypes")}
               <div class="items">
                 {form.items.map((it, i) => (
                   <div
@@ -1025,7 +1323,11 @@ export default function FieldSubscriptionsPage() {
                   <I d={ICN.plus} size={14} sw={2.5} />
                 </button>
               </div>
-              <span class="hint">{t("field.subs.noItems")}</span>
+              <span class="hint" data-cy="subs-items-hint">
+                {form.checklistId
+                  ? t("field.subs.checklistHint")
+                  : t("field.subs.noItems")}
+              </span>
             </div>
 
             {form.err && <p class="alert" data-cy="subs-error">{form.err}</p>}
@@ -1048,7 +1350,7 @@ export default function FieldSubscriptionsPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Backdrop>
       )}
     </>
   );

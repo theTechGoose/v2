@@ -152,7 +152,7 @@ Deno.test("REQ-199: Settings shows the account number and the next numbers; a st
     });
     expect.eq(
       await text(page, "[data-cy='settings-numbering-lock-invoice']"),
-      "Locked — INV-5000 was already issued",
+      "Locked — INV-5000 is already in use",
       "the invoice row carries the lock note",
     );
     expect(

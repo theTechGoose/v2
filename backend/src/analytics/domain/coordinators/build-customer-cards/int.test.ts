@@ -1,5 +1,8 @@
 import { assert, assertEquals, assertGreater } from "#std/assert";
 import { BuildCustomerCards } from "./mod.ts";
+import { t } from "@core/i18n/mod.ts";
+import { balanceSubLabel } from "#quote-flow/balance-sub.ts";
+import type { CustomerCard } from "@crm/dto/customer.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -96,20 +99,96 @@ Deno.test("status: lead when only draft/sent quotes", async () => {
   });
 });
 
-Deno.test("status: regular when 12mo revenue > 0 and no active job", async () => {
+Deno.test("status: regular when 12mo revenue > 0 and no active job (REQ-562: two completed jobs)", async () => {
   await withKv(async () => {
     const { customers, invoices, flow } = fresh();
     const c = await customers.create("u-1", { name: "Acme" });
-    await invoices.create("u-1", {
-      quoteId: "k",
-      customerId: c.id,
-      dueDate: "2026-03-15",
-      status: "paid",
-      amount: 500,
-      paidAt: isoOffset(40),
-    });
+    for (const quoteId of ["k", "k2"]) {
+      await invoices.create("u-1", {
+        quoteId,
+        customerId: c.id,
+        dueDate: "2026-03-15",
+        status: "paid",
+        amount: 500,
+        paidAt: isoOffset(40),
+      });
+    }
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.status, "regular");
+  });
+});
+
+Deno.test("REQ-562 (cycle 4, M38) a signed job whose deposit is paid and balance scheduled is 1 active job — not accepted − paid = 0", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Linda Park" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "accepted",
+    });
+    await quotes.update(q.id, "u-1", { acceptedAt: isoOffset(1) });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "paid",
+      amount: 1_425_00,
+      paidAt: isoOffset(0),
+    });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-05-28",
+      status: "scheduled",
+      amount: 1_425_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.activeJobs, 1);
+    assertEquals(card.status, "active");
+    assertEquals(card.balanceCents, 0, "a scheduled balance is not owed yet");
+  });
+});
+
+Deno.test("REQ-562 (cycle 4, m21) one fully paid job is completed but not yet regular; a void invoice doesn't keep a paid job open", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Linda Park" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "accepted",
+    });
+    await quotes.update(q.id, "u-1", { acceptedAt: isoOffset(3) });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "paid",
+      amount: 2_850_00,
+      paidAt: isoOffset(1),
+    });
+    await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-04-28",
+      status: "void",
+      amount: 2_850_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.activeJobs, 0);
+    assertEquals(card.status === "regular", false, `one job is not a regular: ${card.status}`);
+  });
+});
+
+Deno.test("REQ-271 status: a customer just added, with no quote and no invoice, is new — not regular", async () => {
+  await withKv(async () => {
+    const { customers, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Ana Pérez" });
+    const [card] = await flow.run("u-1", new Date(new Date(c.createdAt).getTime() + 60_000));
+    assertEquals(card.status, "new");
   });
 });
 
@@ -327,5 +406,239 @@ Deno.test("REQ-204 balanceSub: an overdue invoice reads 'INV-5000 · overdue' (i
     const [card] = await flow.run("u-1", NOW_FIXED);
     assertEquals(card.balanceSub, "INV-001 · overdue");
     assert(!card.balanceSub.includes(inv.id.slice(0, 8)), "no id slice");
+  });
+});
+
+// REQ-350 (demo-loop cycle 1, m9): the balance sub-line is localized — a
+// Spanish account read "$600 pendiente · owes." because the backend returned
+// English literals into the es story template. Reconciled with REQ-367 on
+// demo-fixes: the card carries the line as data (balanceSubParts) and the
+// reader words it in its live language with the shared balanceSubLabel.
+Deno.test("REQ-350 balanceSub in Spanish: an overdue invoice reads 'INV-001 · vencida'", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "pending",
+      amount: 500_00,
+    });
+    const [cardRaw] = await flow.run("u-1", NOW_FIXED);
+    const card = { ...cardRaw, balanceSub: say(cardRaw, "es") };
+    assertEquals(card.balanceSub, "INV-001 · vencida");
+  });
+});
+
+// REQ-350, amended by REQ-397 (demo-loop cycle 2, M14): a SENT invoice is an
+// open receivable, so it now names itself ("INV-001 · vencida") instead of
+// falling through to the generic owes line; that line still never says the
+// English "owes" in either language.
+Deno.test("REQ-350 balanceSub in Spanish: an owed balance never says 'owes'; a sent overdue invoice names itself (REQ-397)", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "sent",
+      amount: 600_00,
+    });
+    const [esRaw] = await flow.run("u-1", NOW_FIXED);
+    const es = { ...esRaw, balanceSub: say(esRaw, "es") };
+    assertEquals(es.balanceCents, 600_00);
+    assertEquals(es.balanceSub, "INV-001 · vencida");
+    assertEquals(
+      balanceSubLabel({ kind: "owes" }, "es", t),
+      "esperando el pago",
+    );
+    assertEquals(
+      balanceSubLabel({ kind: "owes" }, "en", t),
+      "awaiting payment",
+    );
+  });
+});
+
+Deno.test("REQ-350 balanceSub: 'due in 1 day' is singular in both languages", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    const due = new Date(NOW_FIXED.getTime() + 86_400_000).toISOString()
+      .slice(0, 10);
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: due,
+      status: "pending",
+      amount: 100_00,
+    });
+    const [esRaw] = await flow.run("u-1", NOW_FIXED);
+    const es = { ...esRaw, balanceSub: say(esRaw, "es") };
+    const [enRaw] = await flow.run("u-1", NOW_FIXED);
+    const en = { ...enRaw, balanceSub: say(enRaw, "en") };
+    assert(/^INV-001 · vence (en 1 día|hoy)$/.test(es.balanceSub), es.balanceSub);
+    assert(/^INV-001 · due (in 1 day|today)$/.test(en.balanceSub), en.balanceSub);
+  });
+});
+
+Deno.test("REQ-350 balanceSub in Spanish: a credit reads '$500 a favor', not 'on file'", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "credit",
+      amount: 500_00,
+    });
+    const [cardRaw] = await flow.run("u-1", NOW_FIXED);
+    const card = { ...cardRaw, balanceSub: say(cardRaw, "es") };
+    assertEquals(card.balanceCents, -500_00);
+    assertEquals(card.balanceSub, "$500 a favor");
+  });
+});
+
+/** REQ-350 + REQ-367: the card's balance line worded in `lang` from its parts. */
+function say(card: CustomerCard, lang: "en" | "es"): string {
+  assert(card.balanceSubParts, "the card carries the balance line as data");
+  return balanceSubLabel(card.balanceSubParts, lang, t);
+}
+
+Deno.test("REQ-367 + REQ-350 the card's balance line does not depend on the viewer's language: parts + an English base", async () => {
+  await withKv(async () => {
+    const { customers, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Acme" });
+    await invoices.create("u-1", {
+      quoteId: "k",
+      customerId: c.id,
+      dueDate: "2026-04-01",
+      status: "pending",
+      amount: 500_00,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.balanceSubParts, { kind: "overdue", ref: "INV-001" });
+    assertEquals(card.balanceSub, "INV-001 · overdue");
+  });
+});
+
+/**
+ * REQ-323 (demo-loop cycle 1, m20): the card carries the customer's C-number and
+ * its documents (quotes → /quotes?open=, invoices → /i/) with their stored numbers.
+ */
+Deno.test("REQ-323 the card carries number and documents: a sent quote and a pending invoice, linked", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, flow } = fresh();
+    const c = await customers.create("u-1", { name: "Lead" });
+    const q = await quotes.create("u-1", {
+      customerId: c.id,
+      summary: "Deck",
+      lineItems: [],
+      status: "sent",
+      estimatedTotal: 950_000,
+    });
+    const inv = await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: c.id,
+      dueDate: "2026-05-01",
+      status: "pending",
+      amount: 400_000,
+    });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.number, "C-001");
+    assertEquals(card.documents.length, 2);
+    const quoteRow = card.documents.find((d) => d.kind === "quote");
+    const invRow = card.documents.find((d) => d.kind === "invoice");
+    assertEquals(quoteRow, {
+      kind: "quote",
+      id: q.id,
+      number: q.number!,
+      state: "sent",
+      amountCents: 950_000,
+      url: `/quotes?open=${q.id}`,
+      updatedAt: quoteRow!.updatedAt,
+    });
+    assert(q.number?.startsWith("Q-"), `quote number ${q.number}`);
+    assertEquals(invRow, {
+      kind: "invoice",
+      id: inv.id,
+      number: inv.number!,
+      state: "sent",
+      amountCents: 400_000,
+      url: `/i/${inv.id}`,
+      updatedAt: invRow!.updatedAt,
+    });
+    assert(inv.number?.startsWith("INV-"), `invoice number ${inv.number}`);
+  });
+});
+
+Deno.test("REQ-323 a customer with nothing on the books has an empty documents list", async () => {
+  await withKv(async () => {
+    const { customers, flow } = fresh();
+    await customers.create("u-1", { name: "Blank" });
+    const [card] = await flow.run("u-1", NOW_FIXED);
+    assertEquals(card.documents, []);
+  });
+});
+
+/**
+ * REQ-565 (demo-loop cycle 4, m33): the customer's card lists the change
+ * orders made on her quote, and the quote at its agreed total.
+ */
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
+
+Deno.test("REQ-565 m33 the card lists the customer's change orders and the quote at quote + approved change orders", async () => {
+  await withKv(async () => {
+    const { customers, quotes, invoices, views } = fresh();
+    const changeOrders = new ChangeOrderStore();
+    const flow = new BuildCustomerCards(
+      customers,
+      quotes,
+      invoices,
+      views,
+      changeOrders,
+    );
+    const maria = await customers.create("u-1", { name: "Maria Lopez" });
+    const other = await customers.create("u-1", { name: "Dave Roof" });
+    const q = await quotes.create("u-1", {
+      customerId: maria.id,
+      summary: "Bathroom",
+      lineItems: [],
+      estimatedTotal: 705_000,
+      status: "accepted",
+    });
+    const inv = await invoices.create("u-1", {
+      quoteId: q.id,
+      customerId: maria.id,
+      dueDate: "2026-12-01",
+      status: "sent",
+      amount: 705_000,
+    });
+    const co1 = await changeOrders.create("u-1", inv.id, {
+      description: "Glass door",
+      deltaAmountCents: 120_000,
+      quoteId: q.id,
+      customerId: maria.id,
+    });
+    await changeOrders.decide(co1.id, "approved");
+    // a legacy row without customerId still belongs to Maria through its invoice
+    await changeOrders.create("u-1", inv.id, {
+      description: "Towel bar",
+      deltaAmountCents: 15_000,
+    });
+    const cards = await flow.run("u-1", NOW_FIXED);
+    const card = cards.find((c) => c.id === maria.id)!;
+    const cos = card.documents.filter((d) => d.kind === "change_order");
+    assertEquals(cos.map((d) => [d.number, d.state, d.amountCents]).sort(), [
+      ["CO-001", "approved", 120_000],
+      ["CO-002", "pending", 15_000],
+    ]);
+    assertEquals(cos[0].url.startsWith("/co/"), true);
+    const quoteRow = card.documents.find((d) => d.kind === "quote")!;
+    assertEquals(quoteRow.amountCents, 825_000);
+    const daves = cards.find((c) => c.id === other.id)!;
+    assertEquals(daves.documents, []);
   });
 });

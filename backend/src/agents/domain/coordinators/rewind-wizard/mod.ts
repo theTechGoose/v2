@@ -5,6 +5,7 @@ import { getWizardSpec, TERMS_WIZARD_V1 } from "@agents/domain/business/terms-wi
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 import type { WizardState } from "@agents/dto/wizard.ts";
+import { isPricePick } from "#quote-flow/price-pick.ts"; // REQ-688
 
 export interface RewindWizardInput {
   userId: string;
@@ -162,12 +163,18 @@ export class RewindWizard {
     if (wasComplete) {
       const lastWizardAt = findLastIndex(msgs, (m) => m.kind === "wizard");
       for (const m of msgs.slice(lastWizardAt + 1)) {
-        if (isWizardPick(m) || isSendCta(m)) removed.push(m.id);
+        if ((isWizardPick(m) && !isPricePick(m)) || isSendCta(m)) {
+          removed.push(m.id);
+        }
       }
     } else {
       const lastWizardAt = findLastIndex(msgs, (m) => m.kind === "wizard");
       if (lastWizardAt >= 0) removed.push(msgs[lastWizardAt].id);
-      const lastPickAt = findLastIndex(msgs, isWizardPick);
+      // REQ-688: the price line is no wizard step — never popped here.
+      const lastPickAt = findLastIndex(
+        msgs,
+        (m) => isWizardPick(m) && !isPricePick(m),
+      );
       if (lastPickAt >= 0) removed.push(msgs[lastPickAt].id);
     }
     await this.messages.deleteByIds(conversationId, removed);

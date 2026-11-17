@@ -10,11 +10,15 @@ import { parseUpdateUser } from "@users/dto/user.ts";
 import {
   readSessionId,
   requireOwner,
+  requireSession,
   requireUser,
   UnauthorizedError,
 } from "@users/domain/coordinators/require-user/mod.ts";
 import { AccountAdmins } from "@users/domain/coordinators/account-admins/mod.ts"; // REQ-146
-import { buildSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
+import { splitActingPatch } from "@users/domain/business/account-admins/mod.ts"; // REQ-624
+import type { User } from "@users/dto/user.ts";
+import { buildSessionCookie, clearSessionCookie } from "@users/domain/business/session-cookie/mod.ts";
+import { TransferAccount, TransferError } from "@users/domain/coordinators/transfer-account/mod.ts"; // REQ-220
 import { ChoosePlan } from "@users/domain/coordinators/choose-plan/mod.ts";
 import { CrmCustomerSync } from "@users/domain/coordinators/crm-customer-sync/mod.ts";
 import { CrmLeadCapture } from "@users/domain/coordinators/crm-lead-capture/mod.ts";
@@ -24,6 +28,16 @@ import {
 } from "@users/domain/data/payments-link/mod.ts";
 import { parseChoosePlan } from "@users/dto/plan.ts";
 import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
+import { isDeferrable, skipSetupDeferrals } from "#quote-flow/onboarding-questions.ts"; // REQ-227, REQ-504
+import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts"; // REQ-504
+
+/** REQ-227 — only a wizard question with a Skip can be deferred: anything else is a 400 */
+class NotDeferrable extends Error {
+  readonly status = 400;
+  constructor(question: unknown) {
+    super(`not a deferrable onboarding question: ${String(question)}`);
+  }
+}
 
 /**
  * /me — endpoints that act on the currently-authenticated User.
@@ -45,6 +59,10 @@ export class MeController {
     private leads: CrmLeadCapture,
     /** REQ-146 — the accounts a session can act in, and the switch between them */
     private accountAdmins: AccountAdmins,
+    /** REQ-220 — "Transfer account": a new number takes the account */
+    private transfer: TransferAccount,
+    /** REQ-504 — the open questions "Skip setup for now" defers, read off the profile */
+    private profile: LoadProfile,
   ) {}
 
   /** REQ-146 — the person's own account first, then every account they administer */
@@ -181,18 +199,35 @@ export class MeController {
     return { ms };
   }
 
+  /**
+   * GET /me — the account (the owner's user while acting) and, REQ-624, when the session acts for
+   * someone else's account, `actor`: the person signed in — `{ id, name, needsName, email? }`, her
+   * name never the owner's. Every "Hi {name}" reads `actor.name` over `name`.
+   */
   @Get()
   async me(@Context() ctx: ExecutionContext) {
-    return await requireUser(ctx, this.sessions, this.users);
+    const { user, actor } = await requireSession(ctx, this.sessions, this.users);
+    return await withActor(this.accountAdmins, user, actor);
   }
 
+  /**
+   * PUT /me — name, email, language. While acting, all three are the PERSON's own and are written
+   * to HER record (REQ-624 name/email, REQ-631 language); the owner's record is never touched.
+   * Replies with the /me view (`actor.language` is hers).
+   */
   @Put()
   async update(@Context() ctx: ExecutionContext, @Body() body: unknown) {
-    const user = await requireUser(ctx, this.sessions, this.users);
+    const { user, actor } = await requireSession(ctx, this.sessions, this.users);
     const patch = parseUpdateUser(body);
-    const updated = await this.users.update(user.id, patch);
-    await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
-    return updated;
+    if (!actor) {
+      const updated = await this.users.update(user.id, patch);
+      await this.leads.enqueueSync(user.id); // REQ-058/099 — the name and email reach the CRM customer, after this reply
+      return updated;
+    }
+    const split = splitActingPatch(patch);
+    const me = Object.keys(split.actor).length ? await this.users.update(actor.id, split.actor) : actor;
+    const account = Object.keys(split.account).length ? await this.users.update(user.id, split.account) : user;
+    return await withActor(this.accountAdmins, account, me);
   }
 
   /**
@@ -203,11 +238,20 @@ export class MeController {
    * the wizard, the dashboard and a verified code look at the questions
    * still open on the profile, never at this stamp — onboarding happens
    * until every question is answered.
+   *
+   * REQ-504 (demo M37, cycle 3): `{ skipped: true, deferAll: true }` — the wizard's "Skip setup
+   * for now" — also stamps every open deferrable question deferred (REQ-227), so the dashboard
+   * lets the person in and its setup checklist asks for the rest. The name is never deferred.
    */
   @Post("onboarded")
   async onboarded(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const skipped = Boolean((body as { skipped?: unknown } | null)?.skipped);
+    const b = body as { skipped?: unknown; deferAll?: unknown } | null;
+    const skipped = Boolean(b?.skipped);
+    if (skipped && b?.deferAll === true) {
+      const open = skipSetupDeferrals(await this.profile.load(user.id));
+      if (open.length > 0) await this.users.deferOnboarding(user.id, open);
+    }
     const marked = await this.users.markOnboarded(user.id, skipped);
     await this.leads.enqueueSync(user.id); // REQ-058/099 — onboarding done: the CRM customer reads what it entered, after this reply
     await this.leads.enqueueSignupNotice(
@@ -215,6 +259,20 @@ export class MeController {
       skipped ? "skipped setup" : "completed onboarding",
     ); // REQ-112 — the team hears it, with everything collected
     return marked;
+  }
+
+  /**
+   * POST /me/onboarding/deferred { question } — REQ-227: the wizard step's Skip. Stamps the
+   * question deferred, so the dashboard's gate lets the person through once every open question
+   * is; the next code still asks it again (REQ-091). The name cannot be deferred; anything that
+   * is not one of the wizard's questions is a 400.
+   */
+  @Post("onboarding/deferred")
+  async deferOnboarding(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const question = (body as { question?: unknown } | null)?.question;
+    if (!isDeferrable(question)) throw new NotDeferrable(question);
+    return await this.users.deferOnboarding(user.id, question);
   }
 
   @Delete()
@@ -256,6 +314,26 @@ export class MeController {
   }
 
   /**
+   * POST /me/transfer — REQ-220 (+ AMENDMENT: no code): `{ phoneNumber }`, the new owner's
+   * number. Moves the account onto that number at once (same id, every record), frees the old
+   * number, drops the owner's own sessions and clears this browser's cookie. Owner only.
+   *   - 200 { ok:true, phoneNumber }
+   *   - 400 bad_phone · 409 same_number | phone_taken
+   */
+  @Post("transfer")
+  async transferAccount(@Context() ctx: ExecutionContext, @Body() body: unknown) {
+    const user = await requireOwner(ctx, this.sessions, this.users);
+    try {
+      const moved = await this.transfer.run(user, (body as { phoneNumber?: unknown } | null)?.phoneNumber);
+      await this.leads.enqueueSync(user.id); // REQ-058/099 — the CRM customer reads the new phone, after this reply
+      ctx.header("Set-Cookie", clearSessionCookie());
+      return { ok: true, phoneNumber: moved.phoneNumber };
+    } catch (err) {
+      return transferRefusal(err);
+    }
+  }
+
+  /**
    * POST /me/reset-by-phone — OWNER TOOL. Wipe a user (resolved by phone) and
    * 100% of their data WITHOUT a session, so `deno task wipe` can reset a test
    * account (e.g. the owner's own number) and re-run first-sign-in onboarding
@@ -291,6 +369,22 @@ export class MeController {
     const res = await this.wipeCoord.run(user.id);
     return { ...res, phone, userId: user.id };
   }
+}
+
+/** REQ-624 — the account as /me answers it, with the acting person when there is one (a plain
+ *  function: an undecorated method on a Danet controller breaks its router) */
+async function withActor(admins: AccountAdmins, user: User, actor: User | null) {
+  if (!actor) return user;
+  return { ...user, actor: await admins.actorView(actor, user.id, user) };
+}
+
+/** REQ-220 — a refused transfer as `{ ok:false, error }` under its status; anything else is rethrown */
+function transferRefusal(err: unknown): Response {
+  if (!(err instanceof TransferError)) throw err;
+  return new Response(JSON.stringify({ ok: false, error: err.error }), {
+    status: err.status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 /** Normalize a US phone to the stored E.164 form, or "" if unusable. */

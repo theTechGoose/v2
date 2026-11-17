@@ -1,6 +1,17 @@
 import { page } from "fresh";
 import { define } from "../utils.ts";
+import type { Lang } from "./lang.ts";
 import { resolvePageLang } from "./page-lang.ts";
+import { loadUser } from "./auth.ts";
+import { readSessionCookie } from "./api.ts";
+
+/** The response headers that persist an explicit ?lang= pick to pm_lang —
+ *  none when the URL named no language (REQ-122; REQ-414 /login, /verify). */
+export function pickedLangHeaders(picked: Lang | null): Record<string, string> {
+  return picked
+    ? { "set-cookie": `pm_lang=${picked};path=/;max-age=31536000;samesite=lax` }
+    : {};
+}
 
 /**
  * REQ-066/122 — the one GET handler the public pages share: the four legal
@@ -12,18 +23,18 @@ import { resolvePageLang } from "./page-lang.ts";
  * use (REQ-043 amendment). It is recorded on ctx.state.lang so the app shell
  * labels <html> with the language the page actually paints (REQ-122), and
  * handed to the page as { lang }.
+ *
+ * REQ-510 (demo cycle 3, m35) — and whether the visitor is signed in, so the
+ * legal pages' header offers "Back to app" instead of "Log in" to a signed-in
+ * contractor. Cookie-gated: a visitor with no pm_session costs no /me lookup.
  */
 export const publicPageHandler = define.handlers({
-  GET(ctx) {
+  async GET(ctx) {
     const { lang, picked } = resolvePageLang(ctx.req);
     ctx.state.lang = lang;
-    return page({ lang }, {
-      headers: picked
-        ? {
-          "set-cookie":
-            `pm_lang=${picked};path=/;max-age=31536000;samesite=lax`,
-        }
-        : {},
-    });
+    const signedIn = readSessionCookie(ctx.req.headers.get("cookie"))
+      ? Boolean(await loadUser(ctx.req))
+      : false;
+    return page({ lang, signedIn }, { headers: pickedLangHeaders(picked) });
   },
 });

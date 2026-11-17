@@ -15,14 +15,10 @@ import {
 } from "@users/domain/coordinators/verify-otp/mod.ts";
 import { normalizeEmail } from "#quote-flow/normalize-email.ts";
 import type { Language, User } from "@users/dto/user.ts";
+import { acceptsMasterCode } from "@users/domain/business/master-otp/mod.ts";
 
 const MAX_ATTEMPTS = 5;
 
-/** The same universal dev/CI bypass as the phone flow: off Deno Deploy, the
- *  master code logs in (finding or creating the account) without a record. */
-const DEV_MASTER_CODE = "000000";
-const IS_PROD = typeof Deno !== "undefined" &&
-  Deno.env.get("DENO_DEPLOYMENT_ID") !== undefined;
 
 interface VerifyEmailOtpInput {
   email: string;
@@ -39,7 +35,7 @@ interface VerifyEmailOtpResult {
  * account that carries the address, mint a session. Mirrors VerifyOtp:
  *
  *   1. Normalize the address; a closed account on it → ClosedAccountError.
- *   2. Dev master code off Deno Deploy → find-or-create, no record needed.
+ *   2. Dev master code on the fakes (REQ-286) → find-or-create, no record needed.
  *   3. Otherwise the record under `email:<address>`: missing → expired, too
  *      many attempts → rate-limited, mismatch → attempt++ and invalid.
  *   4. Match: clear the record; find the account or create it (the email,
@@ -61,7 +57,8 @@ export class VerifyEmailOtp {
     if (existing?.deletedAt) throw new ClosedAccountError();
 
     const key = emailOtpKey(email);
-    if (!IS_PROD && input.code === DEV_MASTER_CODE) {
+    // The same universal dev/CI bypass as the phone flow — only on the fakes (REQ-286).
+    if (acceptsMasterCode(input.code)) {
       const otpLang = existing
         ? undefined
         : (await this.otps.get(key))?.language;

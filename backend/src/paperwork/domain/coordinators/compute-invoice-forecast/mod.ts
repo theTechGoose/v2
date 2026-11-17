@@ -3,6 +3,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
+import { docNumberOf } from "#documents/numbering.ts";
 
 export interface ForecastEntry {
   /** ISO date when funds are *expected* to land (best-effort estimate). */
@@ -20,12 +21,13 @@ export interface ForecastEntry {
 }
 
 export interface ForecastResult {
-  /** Total expected to land within the 7-day forward window from `now`. */
+  /** Total expected to land this calendar week: today through Sunday
+   *  (REQ-484). */
   thisWeekCents: number;
-  /** Detail entries within the 7-day window. Sorted by expectedLandDate. */
+  /** Detail entries within this week. Sorted by expectedLandDate. */
   thisWeek: ForecastEntry[];
-  /** Total expected in the *next* 7-day window. Used as fallback copy
-   *  when the current week is quiet. */
+  /** Total expected next week — the Monday–Sunday after this one. Used as
+   *  fallback copy when the current week is quiet. */
   nextWeekCents: number;
   /** Aggregated overdue / at-risk callout: any sent invoices whose
    *  dueDate is in the past and which haven't been claimed yet. */
@@ -41,9 +43,9 @@ export interface ForecastResult {
  * the forecast hero on /invoices.
  *
  * Bucketing rules (roadmap §J):
- *   - status=`paid`     → expectedLandDate = paidAt (already landed; we
- *                         exclude from "this week" but it's recorded
- *                         here as a `paid` source for tests).
+ *   - status=`paid`     → expectedLandDate = paidAt (already landed:
+ *                         `forecastEntryFor` records it as a `paid` source,
+ *                         but `run` never counts it as money to come).
  *   - status=`claimed`  → expectedLandDate = claimedAt + settlement window
  *                         (ACH +2d / check +5d / Venmo/Zelle/Cash +0d /
  *                         other +3d).
@@ -65,9 +67,16 @@ export class ComputeInvoiceForecast {
 
   async run(userId: string, now: Date = new Date()): Promise<ForecastResult> {
     const all = await this.invoices.listByUser(userId);
-    const thisWeekStart = now;
-    const thisWeekEnd = addDays(now, 7);
-    const nextWeekEnd = addDays(now, 14);
+    // REQ-243: windows are whole days (land dates are days). Comparing the
+    // land day's noon against the current instant dropped a same-day claim
+    // made in the afternoon out of "this week" — and the hero read "All
+    // clear" over it.
+    // REQ-484 (demo m12): "this week" is the calendar week — today through
+    // Sunday — and "next week" is the Monday–Sunday after it. The old rolling
+    // today..today+7 window was 8 days and called next Thursday "this week".
+    const today = isoDay(now);
+    const thisWeekEnd = isoDay(addDays(now, daysUntilSunday(now)));
+    const nextWeekEnd = isoDay(addDays(now, daysUntilSunday(now) + 7));
 
     const thisWeek: ForecastEntry[] = [];
     const nextWeek: ForecastEntry[] = [];
@@ -91,7 +100,7 @@ export class ComputeInvoiceForecast {
         inv.quoteId,
         jobNameCache,
       );
-      const labelBase = customer ?? job ?? "Invoice";
+      const labelBase = forecastLabelBase(customer, inv, job);
 
       // At-risk pass: sent/viewed + past-due + no intent.
       if (
@@ -112,11 +121,12 @@ export class ComputeInvoiceForecast {
       }
 
       const entry = forecastEntryFor(inv, labelBase);
-      if (!entry) continue;
-      const ts = new Date(`${entry.expectedLandDate}T12:00:00Z`).getTime();
-      if (ts >= thisWeekStart.getTime() && ts <= thisWeekEnd.getTime()) {
+      // REQ-243: a paid invoice has landed — it is not money still expected.
+      if (!entry || entry.source === "paid") continue;
+      const day = entry.expectedLandDate;
+      if (day >= today && day <= thisWeekEnd) {
         thisWeek.push(entry);
-      } else if (ts > thisWeekEnd.getTime() && ts <= nextWeekEnd.getTime()) {
+      } else if (day > thisWeekEnd && day <= nextWeekEnd) {
         nextWeek.push(entry);
       }
     }
@@ -155,6 +165,32 @@ export function settlementOffsetDays(method: PaymentMethod): number {
     default:
       return 3;
   }
+}
+
+/**
+ * REQ-696 (demo-loop cycle 5, M22) — the name an entry is shown under: the
+ * customer, else the typed bill-to (its name, then business), else the job
+ * (the quote's, the invoice's own, or its name in any language), else the
+ * invoice's own number. Never an English literal: the old `"Invoice"`
+ * fallback read "jue: Invoice $200" on the Spanish hero.
+ */
+export function forecastLabelBase(
+  customer: string | undefined,
+  inv: Pick<Invoice, "billTo" | "jobName" | "number" | "id"> & {
+    jobNameByLang?: Record<string, string>;
+  },
+  job: string | undefined,
+): string {
+  const pick = (...xs: Array<string | undefined>) =>
+    xs.map((x) => x?.trim()).find((x) => !!x);
+  return pick(
+    customer,
+    inv.billTo?.name,
+    inv.billTo?.businessName,
+    job,
+    inv.jobName,
+    ...Object.values(inv.jobNameByLang ?? {}),
+  ) ?? docNumberOf(inv);
 }
 
 export function forecastEntryFor(
@@ -218,6 +254,17 @@ function methodLabel(m: PaymentMethod): string {
     case "other":
       return "other";
   }
+}
+
+/** YYYY-MM-DD (UTC) — the same form as every expectedLandDate. */
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Days from `d` to the Sunday that closes its (Monday–Sunday) week; 0 on
+ *  a Sunday. UTC, like isoDay. */
+function daysUntilSunday(d: Date): number {
+  return (7 - d.getUTCDay()) % 7;
 }
 
 function addDays(d: Date, days: number): Date {

@@ -69,3 +69,11 @@ Deno.test("REQ-030 NW-25 isFictionalUsNumber: a real exchange, a 555-6xxx line a
 Deno.test("REQ-030 NW-25 normalizePhone (login path) still normalizes a 555-01XX number — the guard lives on the send path", () => {
   assertEquals(normalizePhone("(512) 555-0123"), "+15125550123");
 });
+
+// REQ-569 (demo-loop cycle 4, m46): the fictional-number rule is ONE
+// predicate in shared/, so the send dialog and the SMS guard can't drift.
+Deno.test("REQ-569 m46 isFictionalUsNumber is the shared/quote-flow/sms-number.ts predicate", async () => {
+  const backend = await import("./mod.ts");
+  const shared = await import("#quote-flow/sms-number.ts");
+  assertEquals(backend.isFictionalUsNumber, shared.isFictionalUsNumber);
+});

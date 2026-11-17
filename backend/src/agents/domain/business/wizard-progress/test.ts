@@ -132,3 +132,29 @@ Deno.test("applyAnswer: throws when wizard is already complete", () => {
     "wizard already complete",
   );
 });
+
+// REQ-678 (demo-loop cycle 5, c3-m60): "Deposit + balance" carries the picked
+// amount as its value — the state keeps it so a rewind shows the same pick.
+Deno.test("REQ-678 c3-m60 applyAnswer: the deposit option keeps its picked amount", () => {
+  let s = freshState(spec);
+  for (const step of spec.steps) {
+    if (step.id === "payment_terms") break;
+    s = applyAnswer(spec, s, {
+      stepId: step.id,
+      optionId: step.options.find((o) => !o.isCustom)!.id,
+    });
+  }
+  const next = applyAnswer(spec, s, {
+    stepId: "payment_terms",
+    optionId: "deposit_bal",
+    customValue: "Deposit 30% + balance",
+  });
+  assertEquals(next.answers.at(-1)?.customValue, "Deposit 30% + balance");
+  // a preset with no amount picker still drops a stray value
+  const plain = applyAnswer(spec, s, {
+    stepId: "payment_terms",
+    optionId: "50_50",
+    customValue: "whatever",
+  });
+  assertEquals(plain.answers.at(-1)?.customValue, undefined);
+});

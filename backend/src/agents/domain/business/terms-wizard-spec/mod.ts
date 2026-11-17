@@ -1,172 +1,43 @@
-import type { WizardOption, WizardSpec } from "@agents/dto/wizard.ts";
+import type {
+  WizardOption,
+  WizardSpec,
+  WizardStep,
+} from "@agents/dto/wizard.ts";
 import { t } from "@core/i18n/mod.ts";
+import {
+  INVOICE_WIZARD_V1 as SHARED_INVOICE_WIZARD_V1,
+  TERMS_WIZARD_SERVICE_V1 as SHARED_TERMS_WIZARD_SERVICE_V1,
+  TERMS_WIZARD_V1 as SHARED_TERMS_WIZARD_V1,
+} from "#quote-flow/wizard-terms.ts";
+import type { TradeKind } from "#quote-flow/trade-fit.ts";
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-411
+import { depositBalanceSubVars } from "#payment-split"; // REQ-491
 
 /**
- * 5-step terms wizard. Surfaced by the agent in phase 2 (terms).
- * Each step's option `id` lines up with what eventually lands on the
- * quote's `terms` (the agreement half of the Quote + Agreement doc).
- *
- * The previous 10-step wizard collected `config`, `termination`,
- * `dispute`, `governing_state`, and `state_notices` interactively.
- * Those choices are now baked into the agreement templates as static
- * boilerplate (7-day termination, small-claims dispute path, governing
- * law tied to the work-performed state, plus a fuller boilerplate clause
- * set rendered in the public quote page + PDF).
+ * The quote's terms wizard (5 steps) and the invoice wizard (REQ-024). The
+ * step/option catalog lives in the shared module (REQ-347) so the in-app
+ * preview resolves a pick's English term with the same labels the backend
+ * persists; this module types it as the agents' WizardSpec.
  *
  * The spec is a constant — there's intentionally no DB-driven
- * flexibility yet. If marketing wants to tweak copy, edit this file.
+ * flexibility yet. If marketing wants to tweak copy, edit the shared file.
  */
-export const TERMS_WIZARD_V1: WizardSpec = {
-  id: "terms-v1",
-  steps: [
-    {
-      id: "customer",
-      label: "termsWizard.customer.label",
-      question: "termsWizard.customer.question",
-      options: [
-        { id: "use_active", label: "termsWizard.customer.useActive" },
-        { id: "pick_existing", label: "termsWizard.customer.pickExisting" },
-        {
-          id: "create_new",
-          label: "termsWizard.customer.createNew",
-          isCustom: true,
-        },
-      ],
-    },
-    {
-      id: "start_date",
-      label: "termsWizard.startDate.label",
-      question: "termsWizard.startDate.question",
-      options: [
-        { id: "asap", label: "termsWizard.startDate.asap" },
-        { id: "next_week", label: "termsWizard.startDate.nextWeek" },
-        { id: "next_month", label: "termsWizard.startDate.nextMonth" },
-        // REQ-046: "add TBD to when does the job start" — a one-tap pick that
-        // lands "TBD" on the agreement's Start row.
-        { id: "tbd", label: "termsWizard.startDate.tbd" },
-        // NW-23 (REQ-009): "Job completed" is NOT a start date — the client
-        // asked for Right away / Next week / Next month / Pick a date. The
-        // duration (wraps) step keeps its own job_completed option.
-        { id: "custom", label: "termsWizard.startDate.custom", isCustom: true },
-      ],
-    },
-    {
-      id: "wraps",
-      label: "termsWizard.wraps.label",
-      question: "termsWizard.wraps.question",
-      options: [
-        { id: "1_day", label: "termsWizard.wraps.oneDay" },
-        { id: "2_3_days", label: "termsWizard.wraps.twoThreeDays" },
-        { id: "1_week", label: "termsWizard.wraps.oneWeek" },
-        { id: "2_weeks", label: "termsWizard.wraps.twoWeeks" },
-        {
-          id: "job_completed",
-          label: "termsWizard.wraps.jobCompleted",
-        },
-        // REQ-047: "… and how long will the job take" — the stored "TBD"
-        // prints bare on every reader (no "Estimated" wrapper).
-        { id: "tbd", label: "termsWizard.wraps.tbd" },
-        { id: "custom", label: "termsWizard.wraps.custom", isCustom: true },
-      ],
-    },
-    {
-      id: "payment_terms",
-      label: "termsWizard.paymentTerms.label",
-      question: "termsWizard.paymentTerms.question",
-      options: [
-        {
-          // Roadmap p.6: invoice-style terms — the full amount is due the
-          // moment the customer signs (pairs with "Job Completed" above).
-          id: "due_now",
-          label: "termsWizard.paymentTerms.dueNow.label",
-          sub: "termsWizard.paymentTerms.dueNow.sub",
-        },
-        {
-          id: "net_15",
-          label: "termsWizard.paymentTerms.net15.label",
-          sub: "termsWizard.paymentTerms.net15.sub",
-        },
-        {
-          id: "50_50",
-          label: "termsWizard.paymentTerms.fiftyFifty.label",
-          sub: "termsWizard.paymentTerms.fiftyFifty.sub",
-        },
-        {
-          id: "30_30_40",
-          label: "termsWizard.paymentTerms.thirtyThirtyForty.label",
-          sub: "termsWizard.paymentTerms.thirtyThirtyForty.sub",
-        },
-        {
-          id: "deposit_bal",
-          label: "termsWizard.paymentTerms.depositBalance.label",
-          sub: "termsWizard.paymentTerms.depositBalance.sub",
-        },
-        {
-          id: "custom",
-          label: "termsWizard.paymentTerms.custom.label",
-          sub: "termsWizard.paymentTerms.custom.sub",
-          isCustom: true,
-        },
-      ],
-    },
-    {
-      id: "warranty",
-      label: "termsWizard.warranty.label",
-      question: "termsWizard.warranty.question",
-      options: [
-        { id: "none", label: "termsWizard.warranty.none" },
-        { id: "6_months", label: "termsWizard.warranty.sixMonths" },
-        { id: "12_months", label: "termsWizard.warranty.twelveMonths" },
-        { id: "24_months", label: "termsWizard.warranty.twentyFourMonths" },
-        {
-          id: "custom_months",
-          label: "termsWizard.warranty.custom",
-          isCustom: true,
-        },
-      ],
-    },
-  ],
-};
+export const TERMS_WIZARD_V1: WizardSpec = SHARED_TERMS_WIZARD_V1;
 
-/** One shared step by id — the invoice wizard reuses the quote wizard's
- *  step OBJECTS so every option, label and custom-value rule stays identical. */
-function sharedStep(id: string) {
-  const step = TERMS_WIZARD_V1.steps.find((s) => s.id === id);
-  if (!step) throw new Error(`terms wizard has no step "${id}"`);
-  return step;
-}
+/** REQ-024 (NW-13 / NW-18): the invoice wizard — customer → completion date
+ *  → payment → warranty (the shared module documents the why). */
+export const INVOICE_WIZARD_V1: WizardSpec = SHARED_INVOICE_WIZARD_V1;
 
-/**
- * REQ-024 (NW-13 / NW-18): "Job done, need to invoice" without an accepted
- * quote runs the SAME wizard as a quote — minus start date and duration,
- * plus the completion date ("skip how long it took, but ask for the
- * completion date"). The answers land on the agreement row the invoice is
- * derived from, so /i/:id shows the terms and the job details.
- */
-export const INVOICE_WIZARD_V1: WizardSpec = {
-  id: "invoice-v1",
-  steps: [
-    sharedStep("customer"),
-    {
-      id: "completion_date",
-      label: "termsWizard.completionDate.label",
-      question: "termsWizard.completionDate.question",
-      options: [
-        { id: "today", label: "termsWizard.completionDate.today" },
-        { id: "yesterday", label: "termsWizard.completionDate.yesterday" },
-        { id: "last_week", label: "termsWizard.completionDate.lastWeek" },
-        { id: "custom", label: "termsWizard.completionDate.custom", isCustom: true },
-      ],
-    },
-    sharedStep("payment_terms"),
-    sharedStep("warranty"),
-  ],
-};
+/** REQ-343 (demo-loop cycle 1, p3 + p6): the quote wizard for a SERVICE
+ *  trade — hours presets, no warranty step (the shared module documents it). */
+export const TERMS_WIZARD_SERVICE_V1: WizardSpec =
+  SHARED_TERMS_WIZARD_SERVICE_V1;
 
 /** Every wizard this module knows, by id. */
 export const WIZARD_SPECS: Record<string, WizardSpec> = {
   [TERMS_WIZARD_V1.id]: TERMS_WIZARD_V1,
   [INVOICE_WIZARD_V1.id]: INVOICE_WIZARD_V1,
+  [TERMS_WIZARD_SERVICE_V1.id]: TERMS_WIZARD_SERVICE_V1,
 };
 
 /** Fetch a spec by id — the quote wizard ("terms-v1") or the invoice
@@ -177,9 +48,15 @@ export function getWizardSpec(specId: string): WizardSpec {
   throw new Error(`unknown wizard spec: ${specId}`);
 }
 
-/** The wizard for a document kind (REQ-024). */
-export function wizardSpecFor(docKind: "quote" | "invoice" | undefined): WizardSpec {
-  return docKind === "invoice" ? INVOICE_WIZARD_V1 : TERMS_WIZARD_V1;
+/** The wizard for a document kind (REQ-024) and the business's trade
+ *  (REQ-343): a service trade's quote gets hours and no warranty step. The
+ *  invoice wizard ignores the trade. */
+export function wizardSpecFor(
+  docKind: "quote" | "invoice" | undefined,
+  tradeKind: TradeKind = "project",
+): WizardSpec {
+  if (docKind === "invoice") return INVOICE_WIZARD_V1;
+  return tradeKind === "service" ? TERMS_WIZARD_SERVICE_V1 : TERMS_WIZARD_V1;
 }
 
 /**
@@ -188,13 +65,49 @@ export function wizardSpecFor(docKind: "quote" | "invoice" | undefined): WizardS
  * labels (+ sublabels) into `lang` at emission time. The step `question` and
  * `label` resolve with a plain `t(lang, step.question)` / `t(lang, step.label)`.
  */
+/**
+ * REQ-331 (demo m7 / m44): the customer step's question when the thread
+ * already carries a customer — "use them, or pick another?" instead of
+ * "Is this for a business or a person?" (which the demo read as the
+ * assistant forgetting a customer it had just been told about). Every
+ * other step, and the customer step with nobody bound, keeps its own key.
+ */
+export function stepQuestionKey(
+  step: Pick<WizardStep, "id" | "question">,
+  hasBoundCustomer: boolean,
+): string {
+  if (step.id === "customer" && hasBoundCustomer) {
+    return "termsWizard.customer.questionKnown";
+  }
+  return step.question;
+}
+
+/** REQ-411 (demo-loop cycle 2, m35): `vars` fill the sub-lines — `{n}` is
+ *  the account's days to pay ("Billed when the job is done · the customer
+ *  then has {n} days to pay", REQ-483), so the wizard never contradicts
+ *  Settings.
+ *  REQ-491 (demo-loop cycle 3, m60): `{pct}` names the "Deposit + balance"
+ *  share, and with the quote's `totalCents` the option switches to its
+ *  `subAmounts` line ("20% upfront, rest when done · $90 / $360"). */
 export function localizeOptions(
   options: WizardOption[],
   lang: "en" | "es",
+  vars: { n: number; totalCents?: number } = { n: accountNetDays(undefined) },
 ): WizardOption[] {
-  return options.map((o) => ({
-    ...o,
-    label: t(lang, o.label),
-    ...(o.sub ? { sub: t(lang, o.sub) } : {}),
-  }));
+  const split = depositBalanceSubVars(vars.totalCents);
+  const subVars: Record<string, string | number> = { n: vars.n, ...split };
+  return options.map(({ subAmounts, ...o }) => {
+    const subKey = subAmounts && split.deposit ? subAmounts : o.sub;
+    return {
+      ...o,
+      label: t(lang, o.label),
+      ...(subKey ? { sub: t(lang, subKey, subVars) } : {}),
+      // REQ-589 (cycle 4, M15): the keys ride along, so the island
+      // re-renders the option after an EN/ES switch.
+      i18n: {
+        label: o.label,
+        ...(subKey ? { sub: { key: subKey, vars: subVars } } : {}),
+      },
+    };
+  });
 }

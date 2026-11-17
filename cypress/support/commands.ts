@@ -293,7 +293,10 @@ Cypress.Commands.add("apiCreateInvoice", (body: Record<string, unknown>) => {
 Cypress.Commands.add("apiClaimPayment", (invoiceId, body) => {
   return cy.request({
     method: "POST",
-    url: `/api/invoices/${invoiceId}/claim-payment`,
+    // REQ-479: cy.request carries the signed-in owner's cookie, and the
+    // owner's own session cannot file a claim — this helper plays the
+    // customer, so it uses the in-person override.
+    url: `/api/invoices/${invoiceId}/claim-payment?as=customer&confirm=1`,
     body,
     failOnStatusCode: false,
   });

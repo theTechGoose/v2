@@ -1,11 +1,26 @@
 import { Injectable } from "#danet/core";
 import { t } from "@core/i18n/mod.ts";
+import {
+  type ChatI18nRef,
+  type ChatI18nVar,
+  renderChatI18n,
+} from "#quote-flow/chat-i18n.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { AgentMessageStore } from "@agents/domain/data/agent-message-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
+import { shortDate } from "#documents/linked-view.ts";
+import {
+  recurringFromTerms,
+  recurringTermText,
+} from "#quote-flow/recurring-billing.ts"; // REQ-699
+import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
+import {
+  type QuoteSignedEvent,
+  QuoteSignedPort,
+} from "@paperwork/domain/coordinators/quote-signed-port/mod.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 
@@ -47,7 +62,136 @@ export class AcceptQuote {
     private quotes: QuoteStore,
     private users: UserStore,
     private bus: EventBus,
-  ) {}
+    // REQ-563: optional so the hand-built coordinator (its own tests) runs
+    // without them; the app injects both and registers on the port.
+    private invoices?: InvoiceStore,
+    port?: QuoteSignedPort,
+  ) {
+    port?.register((e) => this.recordSigned(e));
+  }
+
+  /**
+   * REQ-563 (demo-loop cycle 4, m3): the customer signed on the public /q
+   * page. Every thread of the owner's bound to that quote gets ONE system
+   * divider naming who signed, the quote number and the invoice the
+   * signature billed — "Linda Perez signed Q-001 · deposit INV-001 $1,425.00
+   * sent" — in the owner's language, and the row carries the invoice (so the
+   * list's chip and the header both read "Signed · Invoiced"), the unread
+   * badge and the preview. The quote itself is already accepted and billed by
+   * the public route; this only tells the chat. A replay is a no-op.
+   */
+  async recordSigned(e: QuoteSignedEvent): Promise<AgentMessage[]> {
+    const quote = await this.quotes.getOwned(e.quoteId, e.userId);
+    const convs = (await this.conversations.listByUser(e.userId, {
+      limit: 1000,
+    })).filter((c) => c.quoteId === quote.id);
+    if (convs.length === 0) return [];
+    const me = await this.users.get(e.userId).catch(() => null);
+    const lang = me?.language === "es" ? "es" : "en";
+    const invoice = e.invoiceId && this.invoices
+      ? await this.invoices.getOwned(e.invoiceId, e.userId).catch(() => null)
+      : null;
+    // REQ-697 (demo-loop cycle 5, m22): "Payment upon completion" sends
+    // nothing at signing — it schedules the bill and the owner is reminded to
+    // send it. The line says which invoice, the reminder day and the due day.
+    const scheduled = !invoice && e.scheduledInvoiceId && this.invoices
+      ? await this.invoices.getOwned(e.scheduledInvoiceId, e.userId).catch(
+        () => null,
+      )
+      : null;
+    const billed = invoice ?? scheduled;
+    // REQ-699 (demo-loop cycle 5, M20): a recurring quote bills no invoice at
+    // signing — the divider says what Field → Subscriptions bills instead,
+    // only when the signature did make that subscription.
+    const recurring = !invoice && e.subscriptionId
+      ? recurringFromTerms(quote.terms)
+      : null;
+    // REQ-712 (cycle 5, m7): the divider and the preview store their key
+    // and vars (REQ-589's ChatI18nRef) so the island words them in the live
+    // language; the text worded now is only the fallback. (The dates and the
+    // recurring billing are worded in the language of the moment.)
+    const vars: Record<string, ChatI18nVar> = {
+      name: quote.acceptedName?.trim() || { key: "acceptQuote.signed.someone" },
+      quote: quote.number?.trim() || { key: "acceptQuote.signed.theQuote" },
+      invoice: billed?.number ?? "",
+      amount: fmtUSD(billed?.amount),
+      date: shortDate(scheduled?.scheduledFor, lang),
+      due: shortDate(scheduled?.dueDate, lang),
+      billing: recurring ? recurringTermText(recurring, lang) : "",
+    };
+    const key = scheduled?.scheduledFor
+      ? "acceptQuote.signed.scheduled"
+      : !invoice
+      ? recurring ? "acceptQuote.signed.recurring" : "acceptQuote.signed.plain"
+      : (invoice.installmentTotal ?? 1) > 1
+      ? "acceptQuote.signed.deposit"
+      : "acceptQuote.signed.invoice";
+    const i18n: ChatI18nRef = { key, vars };
+    const tr = (
+      l: "en" | "es",
+      k: string,
+      v?: Record<string, string | number>,
+    ) => t(l, k, v);
+    const label = renderChatI18n(i18n, lang, tr);
+    const previewI18n: ChatI18nRef = {
+      key: "acceptQuote.signed.preview",
+      vars: { label: i18n },
+    };
+    const out: AgentMessage[] = [];
+    for (const conv of convs) {
+      const prior = await this.messages.listByConversation(conv.id);
+      if (
+        prior.some((m) =>
+          m.kind === "phase_divider" && m.payload?.signed === true &&
+          m.payload?.quoteId === quote.id
+        )
+      ) continue;
+      out.push(
+        await this.messages.append({
+          conversationId: conv.id,
+          role: "system",
+          kind: "phase_divider",
+          content: label,
+          payload: {
+            phase: 4,
+            label,
+            i18n,
+            quoteId: quote.id,
+            signed: true,
+            ...(invoice
+              ? { invoiceId: invoice.id, invoiceStatus: invoice.status }
+              : {}),
+            // REQ-758 (cycle 5v2, m20): the scheduled bill's status too, so
+            // the header's divider fallback reads "Signed · Invoice
+            // scheduled" like the list.
+            ...(scheduled
+              ? {
+                scheduledInvoiceId: scheduled.id,
+                invoiceStatus: scheduled.status,
+              }
+              : {}),
+          },
+        }),
+      );
+      await this.conversations.update(conv.id, {
+        hasUnreadEvent: true,
+        quoteStatus: "accepted",
+        preview: renderChatI18n(previewI18n, lang, tr),
+        previewI18n,
+        // REQ-758 (demo-loop cycle 5v2, m20): bind the bill the signature
+        // made — sent OR scheduled. Binding only a sent one left a scheduled
+        // completion invoice off the thread, so the list (ListConversations)
+        // and the header (LoadConversation), which read conv.invoiceId's
+        // row, both said "Quote accepted" while /invoices said "Scheduled";
+        // and "send the invoice" in the chat then sends THIS bill instead of
+        // drafting a second one.
+        ...(billed
+          ? { invoiceId: billed.id, invoiceStatus: billed.status }
+          : {}),
+      });
+    }
+    return out;
+  }
 
   async run(input: AcceptQuoteInput): Promise<AcceptQuoteResult> {
     const conv = await this.conversations.get(input.conversationId);
@@ -111,4 +255,15 @@ export class AcceptQuote {
 
     return { conversation: updatedConv, newMessages: [note, cta] };
   }
+}
+
+/** "$1,425.00" from integer cents (the signed confirmation's format). */
+function fmtUSD(cents: number | undefined): string {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "";
+  return `$${
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
 }

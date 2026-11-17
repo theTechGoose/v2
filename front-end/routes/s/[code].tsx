@@ -9,6 +9,10 @@
 import { define } from "../../utils.ts";
 import { ssrBackendGet } from "../../lib/backend-fetch.ts";
 import { tFor } from "../../lib/i18n.ts";
+import {
+  resolveShareTarget,
+  withSendLang,
+} from "../../../shared/quote-flow/share-link.ts";
 
 interface ShortLinkResolution {
   kind: "quote" | "invoice";
@@ -24,9 +28,13 @@ export const handler = define.handlers({
     if (!r.ok || !r.data) {
       return new Response(tFor("en", "shortlink.notFound"), { status: 404 });
     }
+    // REQ-342 (M13): the link's ?lang= (the send language) rides onto the
+    // document, so a cookie-less customer opens it in the language it was
+    // sent in.
+    const lang = new URL(ctx.req.url).searchParams.get("lang");
     const path = r.data.kind === "quote"
-      ? `/q/${r.data.id}`
-      : `/i/${r.data.id}`;
+      ? resolveShareTarget({ id: r.data.id }, lang)
+      : withSendLang(`/i/${r.data.id}`, lang);
     return new Response(null, { status: 302, headers: { location: path } });
   },
 });

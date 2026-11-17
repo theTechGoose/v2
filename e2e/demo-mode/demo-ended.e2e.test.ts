@@ -1,0 +1,438 @@
+/**
+ * REQ-235 — the end of a demo is said on both sides and stays; End asks first (the 20-agent
+ * demo's issue demo-lifecycle-m2). Two browsers: Hans (a super admin) opens a demo for Ana from
+ * /admin and lands on the stage; Ana's app joins on its own; both connect.
+ *
+ *   1. Ana clicks End: it asks "End the demo with Hans?" (REQ-649, m64 — never "End for
+ *      everyone?", which is the stage's question) and nothing has ended; Keep going puts End
+ *      back; asked and left alone the question STAYS (REQ-300: no 4 s self-cancel) and the pill
+ *      does not move; a click outside the pill puts End back — the demo still on.
+ *   2. Ana ends it (End, Yes): her pill turns at once — before the server answers — into "You
+ *      ended the demo"; Hans's stage lands on /admin, which says "Ana Torres ended the demo" with
+ *      the address bare; seconds later both are still there; dismissed, a reload does not repeat it.
+ *   3. Again, Hans ends it from his stage (End, Yes): the stage says "The demo ended" at once;
+ *      /admin says "You ended the demo"; Ana's screen says "Hans ended the demo" and keeps saying
+ *      it until she dismisses it.
+ */
+import { story, type StoryTools } from "#shots";
+import { pillUp } from "../_shared/demo-pill.ts";
+
+const JSON_HEADERS = { "content-type": "application/json" };
+const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** the demo agents looked every 10–20 s; the old chip lived 0.8–1.5 s. A notice that is still
+ *  there this long after is one a person reads. */
+const LASTING_MS = 5_000;
+
+async function verify(http: StoryTools["http"], phone: string) {
+  const r = await http("/api/auth/verify", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ phoneNumber: phone, code: "000000" }),
+  });
+  let body = await r.json();
+  let cookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+  if (body.recoverable === true) {
+    const f = await http("/api/auth/start-fresh", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ token: body.recoveryToken }),
+    });
+    body = await f.json();
+    cookie = (f.headers.get("set-cookie") ?? "").split(";")[0];
+  }
+  if (!cookie) {
+    throw new Error(`sign-in: no session cookie (${JSON.stringify(body)})`);
+  }
+  return { body, cookie, auth: { ...JSON_HEADERS, cookie } };
+}
+
+async function setName(
+  http: StoryTools["http"],
+  auth: Record<string, string>,
+  name: string,
+) {
+  await (await http("/api/me", {
+    method: "PUT",
+    headers: auth,
+    body: JSON.stringify({ language: "en", name }),
+  })).body?.cancel();
+}
+
+// deno-lint-ignore no-explicit-any
+async function useCookie(ctx: any, baseUrl: string, cookie: string) {
+  const [name, value] = cookie.split("=");
+  const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
+  await ctx.clearCookies();
+  await ctx.addCookies([...hosts].flatMap((domain) => [
+    { name, value, domain, path: "/" },
+    { name: "pm_lang", value: "en", domain, path: "/" },
+  ]));
+}
+
+Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside, puts it back (never a clock) and the demo goes on; the customer's End says 'You ended the demo' at once on her screen and 'Ana Torres ended the demo' on /admin, both lasting; the staff's End says 'You ended the demo' on /admin and 'Hans ended the demo' on hers until she dismisses it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const userPhone = `+1512${digits()}`;
+    const adminPhone = `+1843${digits()}`;
+    const user = await verify(http, userPhone);
+    await setName(http, user.auth, "Ana Torres");
+    const admin = await verify(http, adminPhone);
+    await setName(http, admin.auth, "Hans");
+    const boot = await http("/api/admin/bootstrap", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ phoneNumber: adminPhone }),
+    });
+    expect.eq(boot.status, 200, "Hans is a super admin");
+    await boot.body?.cancel();
+
+    const browser = page.context().browser();
+    if (!browser) throw new Error("no browser behind the story page");
+    const userCtx = await browser.newContext({
+      viewport: { width: 420, height: 800 },
+    });
+    try {
+      const userPage = await userCtx.newPage();
+      await useCookie(userCtx, baseUrl, user.cookie);
+      await userPage.goto(`${baseUrl}/dashboard`);
+      await useCookie(page.context(), baseUrl, admin.cookie);
+
+      /** is Ana's demo still on, by the server */
+      const live = async () => {
+        const r = await http("/api/demo-mode/active", { headers: user.auth });
+        return (await r.json()).session !== null;
+      };
+      /** Hans clicks Demo on Ana's row and lands on the stage; Ana's app joins; both connect */
+      const openDemo = async () => {
+        await page.goto(`${baseUrl}/admin`);
+        await page.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
+        await page.locator("[data-cy='adm-search']").click();
+        await page.locator("[data-cy='adm-demo']").first().waitFor({
+          timeout: 15_000,
+        });
+        await page.locator("[data-cy='adm-demo']").first().click();
+        await page.waitForURL((u) => u.pathname === "/demo/stage", {
+          timeout: 20_000,
+        });
+        // a page that saw a demo end stops asking for a new one (M11, its own issue): reload
+        await userPage.reload();
+        // REQ-232's plain words: the staff's pill says Live, the customer's Connected
+        await page.locator("[data-cy='demo-status']").filter({
+          hasText: /^\s*(Live|Connected)\s*$/,
+        }).waitFor({ timeout: 20_000 });
+        // REQ-545 — the customer's pill whole (it folds to a tab over page content)
+        await pillUp(userPage, { live: true });
+        await userPage.locator("[data-cy='demo-status']").filter({
+          hasText: /^\s*(Live|Connected)\s*$/,
+        }).waitFor({ timeout: 20_000 });
+      };
+      const textOf = async (pg: typeof page, cy: string) =>
+        (await pg.locator(`[data-cy='${cy}']`).innerText()).trim();
+
+      await openDemo();
+
+      // 1. End asks first: nothing has ended. Keep going puts End back
+      await userPage.locator("[data-cy='demo-end']").click();
+      await userPage.locator("[data-cy='demo-end-ask']").waitFor({
+        timeout: 2_000,
+      });
+      // REQ-649 (demo-loop cycle 5, m64) — the customer is asked about ending it with the guide
+      const viewerAsk = await textOf(userPage, "demo-end-ask");
+      expect(
+        viewerAsk.includes("End the demo with Hans?"),
+        `the first click asks: End the demo with Hans? (got "${viewerAsk}")`,
+      );
+      expect(
+        !/everyone/i.test(viewerAsk),
+        "REQ-649: the customer is never asked 'End for everyone?'",
+      );
+      expect.eq(
+        await userPage.locator("[data-cy='demo-end']").count(),
+        0,
+        "End has turned into the question",
+      );
+      expect(await live(), "asking ended nothing: the demo is still on");
+      await userPage.locator("[data-cy='demo-end-cancel']").click();
+      await userPage.locator("[data-cy='demo-end']").waitFor({
+        timeout: 2_000,
+      });
+      expect(await live(), "Keep going: the demo is still on");
+      // REQ-300 — asked and left alone: the question stays, and the pill stays where it was
+      await userPage.locator("[data-cy='demo-end']").click();
+      await userPage.locator("[data-cy='demo-end-ask']").waitFor({
+        timeout: 2_000,
+      });
+      const pillBox = async () =>
+        await userPage.locator("[data-cy='demo-end-ask']").evaluate((el) => {
+          const r = el.closest("[data-demo-overlay]")!.firstElementChild!
+            .getBoundingClientRect();
+          return { left: Math.round(r.left), top: Math.round(r.top) };
+        });
+      const before = await pillBox();
+      await userPage.waitForTimeout(6_500);
+      expect.eq(
+        await userPage.locator("[data-cy='demo-end-ask']").count(),
+        1,
+        "left alone 6.5 s, the question is still up (no 4 s self-cancel)",
+      );
+      const after = await pillBox();
+      expect.eq(
+        `${after.left},${after.top}`,
+        `${before.left},${before.top}`,
+        "the pill did not move while the question was up",
+      );
+      expect(await live(), "unanswered: the demo is still on");
+      // a click outside the pill is Keep going
+      await userPage.mouse.click(5, 5);
+      await userPage.locator("[data-cy='demo-end']").waitFor({
+        timeout: 2_000,
+      });
+      expect(await live(), "clicked outside: the demo is still on");
+      await page.locator("[data-cy='demo-status']").filter({
+        hasText: /^\s*Live\s*$/,
+      }).waitFor({ timeout: 5_000 });
+
+      // 2. Ana ends it: her pill turns into the notice AT ONCE — the server's answer held back
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      await userPage.route("**/api/demo-mode/sessions/*/end", async (route) => {
+        await held;
+        await route.continue();
+      }, { times: 1 });
+      // REQ-898 AMENDMENT (dm8, p4) — at 420 px the welcome page's whole-pill spots each graze a
+      // link (1 px of the brand link at the top, 9 px of the footer's phone number), so after Keep
+      // going the pill folds to its edge tab (REQ-545): brought out again, as a person would
+      await pillUp(userPage, { live: true });
+      await userPage.locator("[data-cy='demo-end']").click();
+      // REQ-895 (dm6, m6) — sample the stage every ~50 ms from her Yes until the hop to /admin
+      type Frame = {
+        now: number;
+        status: string | null;
+        outline: string | null;
+        dismiss: boolean;
+        text: string;
+        cut: boolean;
+        clipped: boolean;
+        chips: number;
+      };
+      const sampled = (async () => {
+        const out: Frame[] = [];
+        const until = Date.now() + 20_000;
+        while (
+          Date.now() < until && new URL(page.url()).pathname !== "/admin"
+        ) {
+          const f = await page.evaluate((): Frame | null => {
+            const status = document.querySelector("[data-cy='demo-status']");
+            const frame = document.querySelector("[data-cy='demo-frame']");
+            const g = document.querySelector<HTMLElement>(
+              "[data-cy='demo-pill-ghost']",
+            );
+            const txt = g?.querySelector<HTMLElement>(
+              "[data-cy='demo-pill-ghost-text']",
+            );
+            if (!status && !g) return null;
+            return {
+              now: Date.now(),
+              status: status?.textContent?.trim() ?? null,
+              outline: frame?.parentElement
+                ? getComputedStyle(frame.parentElement).outlineStyle
+                : null,
+              dismiss: !!g?.querySelector(
+                "[data-cy='demo-pill-ghost-dismiss']",
+              ),
+              text: (txt?.textContent ?? "").trim(),
+              cut: !!txt && txt.scrollWidth > txt.clientWidth + 1,
+              clipped: g?.hasAttribute("data-clipped") ?? false,
+              chips: g?.querySelectorAll(
+                "[data-cy='demo-pill-ghost-status'],[data-cy='demo-pill-ghost-end']",
+              ).length ?? 0,
+            };
+          }).catch(() => null);
+          if (f) out.push(f);
+          await sleep(50);
+        }
+        return out;
+      })();
+      await userPage.locator("[data-cy='demo-end-confirm']").click();
+      await userPage.locator("[data-cy='demo-ended']").waitFor({
+        timeout: 1_000,
+      });
+      expect(
+        (await textOf(userPage, "demo-ended")).includes("You ended the demo"),
+        "REQ-179: the customer's own End says so at once, before the server answers",
+      );
+      // REQ-294 (demo m21): on the 420 px customer's screen the notice is whole — no "Demo mode"
+      // title, nothing cut to an ellipsis
+      const notice = await userPage.locator("[data-cy='demo-ended']").evaluate((
+        el,
+      ) => ({
+        text: (el as HTMLElement).innerText.replace(/\s+/g, " ").trim(),
+        clipped: [el, ...el.querySelectorAll("span")]
+          .filter((n) => n.scrollWidth > n.clientWidth + 1)
+          .map((n) => (n.textContent ?? "").trim()),
+        font: getComputedStyle(el).fontFamily,
+      }));
+      expect(
+        !notice.text.includes("Demo mode"),
+        `the phone notice drops the title — "${notice.text}"`,
+      );
+      expect.eq(
+        notice.clipped.join(" | "),
+        "",
+        "nothing in the phone notice is cut",
+      );
+      expect(
+        /Inter/.test(notice.font),
+        `the notice is in the app's font — "${notice.font}"`,
+      );
+      expect.eq(
+        await userPage.locator("[data-cy='demo-pill']").count(),
+        0,
+        "the pill is gone; the notice stands in its place",
+      );
+      release();
+      // REQ-895 (dm6, m6) — the stage's last frames, sampled from her Yes to the hop: whenever the
+      // ghost showed her notice it was whole (text + ×, no status chip, no End, nothing cut), and
+      // no frame whose status read "The demo ended" had the dashed off-frame outline
+      const frames = await sampled;
+      const noticed = frames.filter((f) => f.dismiss);
+      const ended = frames.filter((f) => f.status === "The demo ended");
+      const runs: string[] = [];
+      for (const f of frames) {
+        const key = `${
+          f.now % 100000
+        } ${f.status} ×=${f.dismiss} chips=${f.chips} outline=${f.outline} text=${f.text}`;
+        const prev = runs[runs.length - 1];
+        if (!prev || prev.slice(6) !== key.slice(6)) runs.push(key);
+      }
+      const seen = runs.join(" || ");
+      expect(
+        noticed.length > 0,
+        `m6: the stage's ghost showed her notice (×) at least once ${seen}`,
+      );
+      expect(
+        noticed.every((f) =>
+          f.text === "You ended the demo" && !f.cut && !f.clipped &&
+          f.chips === 0
+        ),
+        `m6: every notice ghost was whole, with no chip ${seen}`,
+      );
+      expect(
+        ended.length > 0,
+        `m6: the stage said "The demo ended" at least once ${seen}`,
+      );
+      expect(
+        ended.every((f) => f.outline === "none"),
+        `m6: no off-frame outline on the ended frames ${seen}`,
+      );
+      // Hans's stage hands him his own account back, and /admin says who ended it
+      await page.waitForURL((u) => u.pathname === "/admin", {
+        timeout: 20_000,
+      });
+      await page.locator("[data-cy='demo-ended']").waitFor({ timeout: 15_000 });
+      expect(
+        (await textOf(page, "demo-ended")).includes(
+          "Ana Torres ended the demo",
+        ),
+        "/admin says the customer ended it, by name",
+      );
+      // read once: the ended parameters are gone from the address (REQ-829/855 — the
+      // presenter's ?lang= stays)
+      expect.eq(
+        ["demo", "by", "name"].filter((k) =>
+          new URL(page.url()).searchParams.has(k)
+        ).join(","),
+        "",
+        `read once: the address carries no ended parameter (${page.url()})`,
+      );
+      await page.locator("[data-cy='adm-q']").waitFor({ timeout: 15_000 });
+      // REQ-894 (dm6, p11) — the search the demo was started from is still in the box
+      expect.eq(
+        await page.locator("[data-cy='adm-q']").inputValue(),
+        userPhone.slice(2),
+        "p11: /admin's search box still holds the query after the demo ended",
+      );
+      await page.locator("[data-cy='adm-demo']").first().waitFor({
+        timeout: 15_000,
+      });
+      await sleep(LASTING_MS);
+      expect(
+        (await textOf(userPage, "demo-ended")).includes("You ended the demo"),
+        `the customer's notice is still there ${LASTING_MS / 1000} s later`,
+      );
+      expect(
+        (await textOf(page, "demo-ended")).includes(
+          "Ana Torres ended the demo",
+        ),
+        `/admin's notice is still there ${LASTING_MS / 1000} s later`,
+      );
+      // the frames: /admin's notice (a stamped action), and the customer's screen beside it.
+      // REQ-379 (M28): the notice lets a pointer through to the page; its × is what takes one
+      await page.locator("[data-cy='demo-ended-dismiss']").hover();
+      await userPage.screenshot({ path: `${folder}/customer-you-ended.png` });
+      expect(!(await live()), "the demo is over on the server");
+      await page.locator("[data-cy='demo-ended-dismiss']").click();
+      await page.locator("[data-cy='demo-ended']").waitFor({
+        state: "hidden",
+        timeout: 2_000,
+      });
+      await page.reload();
+      await page.locator("[data-cy='adm-q']").waitFor({ timeout: 15_000 });
+      await sleep(1_000);
+      expect.eq(
+        await page.locator("[data-cy='demo-ended']").count(),
+        0,
+        "dismissed, a reload does not say it again",
+      );
+
+      // 3. again — Hans ends it from his stage
+      await openDemo();
+      await page.locator("[data-cy='demo-end']").click();
+      await page.locator("[data-cy='demo-end-ask']").waitFor({
+        timeout: 2_000,
+      });
+      expect(
+        (await textOf(page, "demo-end-ask")).includes("End for everyone?"),
+        "the stage asks too",
+      );
+      await page.locator("[data-cy='demo-end-confirm']").click();
+      await page.locator("[data-cy='demo-status']").filter({
+        hasText: "The demo ended",
+      }).waitFor({ timeout: 1_000 });
+      await userPage.locator("[data-cy='demo-ended']").waitFor({
+        timeout: 15_000,
+      });
+      expect(
+        (await textOf(userPage, "demo-ended")).includes("Hans ended the demo"),
+        "the customer's screen names the presenter who ended it",
+      );
+      await page.waitForURL((u) => u.pathname === "/admin", {
+        timeout: 20_000,
+      });
+      await page.locator("[data-cy='demo-ended']").waitFor({ timeout: 15_000 });
+      expect(
+        (await textOf(page, "demo-ended")).includes("You ended the demo"),
+        "/admin says this presenter ended it",
+      );
+      await sleep(LASTING_MS);
+      expect(
+        (await textOf(userPage, "demo-ended")).includes("Hans ended the demo"),
+        `the customer's notice is still there ${LASTING_MS / 1000} s later`,
+      );
+      expect(
+        (await textOf(page, "demo-ended")).includes("You ended the demo"),
+        `/admin's notice is still there ${LASTING_MS / 1000} s later`,
+      );
+      await page.locator("[data-cy='demo-ended-dismiss']").hover();
+      await userPage.screenshot({ path: `${folder}/customer-hans-ended.png` });
+      await userPage.locator("[data-cy='demo-ended-dismiss']").click();
+      await userPage.locator("[data-cy='demo-ended']").waitFor({
+        state: "hidden",
+        timeout: 2_000,
+      });
+      expect(!(await live()), "the demo is over on the server");
+    } finally {
+      await userCtx.close();
+    }
+  }));

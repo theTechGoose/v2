@@ -22,7 +22,7 @@ export interface AssistantBackView {
   previewOpen: boolean;
   /** Terminal invoice-saved card open — nothing above it is undoable. */
   invoiceResultOpen: boolean;
-  /** stepIdx of the ACTIVE wizard step (last message), else null. */
+  /** stepIdx of the ACTIVE wizard step (activeWizardStepIdx), else null. */
   activeWizardStepIdx: number | null;
   /** Depth of the snapshot stack. */
   viewStackDepth: number;
@@ -82,14 +82,31 @@ export function firstOpenReviewCta(
   return null;
 }
 
-/** stepIdx when the LAST message is an active wizard step, else null. */
+/** stepIdx of the active wizard step: the LAST wizard card, when nothing but
+ *  a chat turn typed on it came after it — REQ-392: the compact "Tell the
+ *  assistant…" box sits on every wizard question, and its question + the
+ *  reply land under the card without answering it. A pick (a text carrying
+ *  `wizardStepId`), a CTA or any card after it ends the step: null. */
 export function activeWizardStepIdx(
   messages: readonly AssistantMessageLike[],
 ): number | null {
-  const last = messages[messages.length - 1];
-  if (last?.kind !== "wizard") return null;
-  const idx = (last.payload as { stepIdx?: number } | undefined)?.stepIdx;
-  return typeof idx === "number" ? idx : null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.kind === "wizard") {
+      const idx = (m.payload as { stepIdx?: number } | undefined)?.stepIdx;
+      return typeof idx === "number" ? idx : null;
+    }
+    if (!isChatAside(m)) return null;
+  }
+  return null;
+}
+
+/** A chat message (text / voice / photo) that is not a wizard pick. */
+function isChatAside(m: AssistantMessageLike): boolean {
+  if (m.kind !== "text" && m.kind !== "voice" && m.kind !== "image") {
+    return false;
+  }
+  return !(m.payload as { wizardStepId?: unknown } | undefined)?.wizardStepId;
 }
 
 /** Sentinel step cursor for "the wizard is complete" (review/send stage). */
@@ -130,4 +147,40 @@ export function backViewFromMessages(
     activeWizardStepIdx: activeWizardStepIdx(messages),
     ...flags,
   };
+}
+
+// ── REQ-676 (demo-loop cycle 5, c1-M9): the review's X is a pure close ──
+// It used to rewind the wizard (dropping the last term answer). Now it
+// only hides the review; the send CTA then renders as a "Ready to send"
+// banner whose Review button reopens it.
+
+/** What a `toPhase: "send"` continue_cta renders as in the thread. */
+export type SendCtaView = "preview" | "reopen" | "hidden" | "done";
+
+export function sendCtaView(s: {
+  /** Sent / settled (REQ-244). */
+  reviewed: boolean;
+  /** The review card is open on this CTA. */
+  previewing: boolean;
+  /** The contractor closed this CTA's review with its X. */
+  closedByUser: boolean;
+}): SendCtaView {
+  if (s.previewing) return "preview";
+  if (s.reviewed) return "done";
+  // Never closed → it auto-opens; the banner would be redundant.
+  return s.closedByUser ? "reopen" : "hidden";
+}
+
+/**
+ * A history snapshot that renders nothing: the wizard is complete, no
+ * panel is open and the review was not closed by the user (a closed
+ * review shows its reopen banner, so it IS a visible state). Restoring a
+ * dead end rewinds one question instead.
+ */
+export function isDeadEndSnapshot(s: {
+  wizardStepIdx: number | null;
+  noPanel: boolean;
+  reviewClosedCtaId?: string | null;
+}): boolean {
+  return s.wizardStepIdx === WIZARD_DONE && s.noPanel && !s.reviewClosedCtaId;
 }

@@ -374,7 +374,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
 
             <div class="wiz__chips">
               <span class="wiz-chip">
-                <span class="wiz-chip__check">✓</span>
+                <span class="wiz-chip__check">
+                  <I d={ICN.check} size={8} sw={4} />
+                </span>
                 <span class="wiz-chip__label">
                   {tFor(lang, "assistantDemo.wiz.chipConfig")}
                 </span>
@@ -384,7 +386,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
                 <I d={ICN.pencil} size={10} sw={2.4} />
               </span>
               <span class="wiz-chip">
-                <span class="wiz-chip__check">✓</span>
+                <span class="wiz-chip__check">
+                  <I d={ICN.check} size={8} sw={4} />
+                </span>
                 <span class="wiz-chip__label">
                   {tFor(lang, "assistantDemo.wiz.chipCustomer")}
                 </span>
@@ -394,7 +398,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
                 <I d={ICN.pencil} size={10} sw={2.4} />
               </span>
               <span class="wiz-chip">
-                <span class="wiz-chip__check">✓</span>
+                <span class="wiz-chip__check">
+                  <I d={ICN.check} size={8} sw={4} />
+                </span>
                 <span class="wiz-chip__label">
                   {tFor(lang, "assistantDemo.wiz.chipStart")}
                 </span>
@@ -404,7 +410,9 @@ export function ChatScroll({ lang = "en" }: { lang?: Lang } = {}) {
                 <I d={ICN.pencil} size={10} sw={2.4} />
               </span>
               <span class="wiz-chip">
-                <span class="wiz-chip__check">✓</span>
+                <span class="wiz-chip__check">
+                  <I d={ICN.check} size={8} sw={4} />
+                </span>
                 <span class="wiz-chip__label">
                   {tFor(lang, "assistantDemo.wiz.chipWraps")}
                 </span>

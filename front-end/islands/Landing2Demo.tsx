@@ -117,7 +117,7 @@ export default function Landing2Demo(
   const viewRef = useRef<HTMLDivElement>(null);
   /** where the last arrow sent the strip, while that scroll still runs — a second click goes on from there, not from midway */
   const aim = useRef<number | null>(null);
-  const aimTimer = useRef<number | undefined>(undefined);
+  const aimTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** the mouse on the strip: where it came down, the scroll it came down at, and whether it has moved past a click's slack */
   const touch = useRef<
     { id: number; x: number; left: number; moved: boolean } | null

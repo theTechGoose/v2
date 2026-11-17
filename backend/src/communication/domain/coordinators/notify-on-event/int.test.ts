@@ -1,5 +1,9 @@
 import { assertEquals } from "#std/assert";
-import { mapEventToNotification, NotifyOnEvent } from "./mod.ts";
+import {
+  localizeNotification,
+  mapEventToNotification,
+  NotifyOnEvent,
+} from "./mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { NotificationStore } from "@communication/domain/data/notification-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
@@ -90,5 +94,77 @@ Deno.test("notify-on-event integration: scoped per userId", async () => {
   assertEquals((await store.listByUser("u-1")).length, 1);
   assertEquals((await store.listByUser("u-2")).length, 1);
   assertEquals((await store.listByUser("u-1"))[0].title, "Quote sent to Acme");
+  await resetKv();
+});
+
+Deno.test("REQ-224 integration: confirm + claim events through the bus → stored rows read as money and a method word", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const bus = new EventBus();
+  const store = new NotificationStore();
+  new NotifyOnEvent(bus, store);
+
+  // The public claim (customer says they paid by Zelle).
+  await bus.emit({
+    userId: "u-1", entityType: "invoice", entityId: "i-1", action: "claimed",
+    data: { method: "zelle", reference: "", customerName: "María Pérez" },
+  });
+  // ConfirmPayment's event: integer cents + the client.
+  await bus.emit({
+    userId: "u-1", entityType: "invoice", entityId: "i-1", action: "paid",
+    data: { amountCents: 45000, method: "zelle", customerName: "María Pérez" },
+  });
+
+  const rows = await store.listByUser("u-1");
+  const paid = rows.find((n) => n.type === "invoice_paid")!;
+  const claimed = rows.find((n) => n.type === "invoice_claimed")!;
+  assertEquals(localizeNotification(paid, "es").title, "María Pérez pagó $450");
+  assertEquals(localizeNotification(paid, "en").title, "María Pérez paid $450");
+  assertEquals(paid.title, "María Pérez paid $450"); // the stored fallback too
+  assertEquals(
+    localizeNotification(claimed, "es").title,
+    "María Pérez dice que pagó por Zelle — confirma que lo recibiste",
+  );
+  assertEquals(
+    localizeNotification(claimed, "en").title,
+    "María Pérez says they paid via Zelle — confirm you got it",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-488 integration: claim → claim_rejected → a newer 'not received' row and the open claim row is marked read", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const bus = new EventBus();
+  const store = new NotificationStore();
+  new NotifyOnEvent(bus, store);
+
+  await bus.emit({
+    userId: "u-1", entityType: "invoice", entityId: "i-1", action: "claimed",
+    data: { method: "zelle", reference: "", customerName: "Maria Lopez" },
+  });
+  // a claim on ANOTHER invoice stays open
+  await bus.emit({
+    userId: "u-1", entityType: "invoice", entityId: "i-2", action: "claimed",
+    data: { method: "cash", reference: "", customerName: "Tom" },
+  });
+  await new Promise((r) => setTimeout(r, 5)); // a strictly newer createdAt
+  await bus.emit({
+    userId: "u-1", entityType: "invoice", entityId: "i-1", action: "claim_rejected",
+    data: { method: "zelle", customerName: "Maria Lopez" },
+  });
+
+  const rows = await store.listByUser("u-1");
+  // newest first: the rejection is what the topbar chip now shows
+  assertEquals(
+    localizeNotification(rows[0], "es").title,
+    "Marcaste el pago de Maria Lopez por Zelle como no recibido",
+  );
+  assertEquals(rows[0].entityType, "invoice");
+  assertEquals(rows[0].entityId, "i-1");
+  const claimI1 = rows.find((n) => n.type === "invoice_claimed" && n.entityId === "i-1")!;
+  const claimI2 = rows.find((n) => n.type === "invoice_claimed" && n.entityId === "i-2")!;
+  assertEquals(claimI1.read, true, "the rejected claim's row is closed");
+  assertEquals(claimI2.read, false, "another invoice's claim stays open");
   await resetKv();
 });

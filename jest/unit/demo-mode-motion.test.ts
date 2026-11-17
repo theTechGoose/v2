@@ -150,14 +150,27 @@ describe("REQ-180 — the overlay and the stage are wired to it", () => {
         /from "\.\.\/\.\.\/shared\/demo-mode\/motion\.ts"/,
       );
       expect(island).toMatch(/moveThrottle/);
+      // REQ-242 (2026-11-11): a move is the viewport fraction plus the mirrored element under it
       expect(island).toMatch(
-        /k: "move",\s*a: pointToFrac\([^)]*\)\),\s*t: performance\.now\(\)/,
+        /k: "move",\s*a: anchorOf\(\{ x, y \}\),\s*t: performance\.now\(\)/,
       );
+      // REQ-371 (demo m10, cycle 2): the overlay's anchoring lives in pointer-anchor.ts (anchorAt)
+      expect(
+        island === overlay
+          ? read("front-end/lib/demo-mode/pointer-anchor.ts")
+          : island,
+      ).toMatch(/const a = pointToFrac\(p, /);
       expect(island).toMatch(/newerMove\(/);
       expect(island).toMatch(/MOVE_GAP_DIRECT_MS : MOVE_GAP_RELAY_MS/);
-      expect(island).toMatch(/useGlide\(\)/);
-      expect(island).toMatch(/glide\.glideTo\(/);
     }
+    // REQ-214 (2026-11-06): the overlay draws one pointer PER PRESENTER through PeerPointer,
+    // which owns that pointer's glide; the stage keeps its own glide for the customer's pointer
+    const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
+    expect(peer).toMatch(/useGlide\(\)/);
+    expect(peer).toMatch(/glide\.glideTo\(/);
+    expect(overlay).toMatch(/<PeerPointer/);
+    expect(stage).toMatch(/useGlide\(\)/);
+    expect(stage).toMatch(/glide\.glideTo\(/);
     expect(glide).toMatch(/glideStep\(/);
     // the drawn position is written frame by frame, never a snap through a CSS transition
     expect(glide).not.toMatch(/transition:transform/);
@@ -165,5 +178,39 @@ describe("REQ-180 — the overlay and the stage are wired to it", () => {
     expect(glide).toMatch(/style\.transform = `translate\(/);
     const pointer = read("front-end/components/demo-mode/DemoPointer.tsx");
     expect(pointer).not.toMatch(/transition:transform/);
+  });
+});
+
+describe("REQ-451 AMENDMENT 2 (demo-loop run 9, p5) — the page moved under his still pointer: the arrow is drawn with its element this frame, never a glide that trails the field through a scroll", () => {
+  const read = (rel: string) =>
+    fs.readFileSync(path.join(__dirname, "../..", rel), "utf8");
+  test("REQ-451 AMENDMENT 2 wiring: a `move` born of a page shift carries `snap`; PeerPointer hands it to the glide; the glide paints at the target at once", () => {
+    const overlay = read("front-end/islands/DemoModeOverlay.tsx");
+    // the overlay's re-placement after a scroll/resize/layout change marks the move as a shift…
+    expect(overlay).toMatch(/place\(pid, a, "move", true\);/);
+    // …and `place` puts `snap: true` on that command only
+    expect(overlay).toMatch(/\.\.\.\(shift \? \{ snap: true \} : \{\}\),/);
+    const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
+    expect(peer).toMatch(/snap\?: boolean;/);
+    expect(peer).toMatch(
+      /glide\.glideTo\(cmd\.at, cmd\.outside, cmd\.rect, cmd\.snap === true\)/,
+    );
+    const glide = read("front-end/lib/demo-mode/use-glide.ts");
+    expect(glide).toMatch(
+      /glideTo\(\s*target: Pt,\s*outside\?: boolean,\s*rect\?: Rect \| null,\s*snap\?: boolean,?\s*\): void;/,
+    );
+    expect(glide).toMatch(/glideTo\(target, out = false, box = null, snap = false\)/);
+    // a snap cancels the glide in flight and paints the target this frame, as a first sight does
+    expect(glide).toMatch(
+      /if \(!shownRef\.current \|\| snap\) \{[\s\S]{0,200}cancelAnimationFrame\(raf\.current\);[\s\S]{0,120}shownRef\.current = target;\s*paint\(target\);\s*return;/,
+    );
+  });
+  test("REQ-451 AMENDMENT 2: a hand's move (the presenter moved) never snaps — only the shift path passes the flag", () => {
+    const overlay = read("front-end/islands/DemoModeOverlay.tsx");
+    const calls = [...overlay.matchAll(/place\([^;]*?"(?:move|click)"[^;]*?\);/g)]
+      .map((m) => m[0]);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    const snapping = calls.filter((c) => /"move", true\)/.test(c));
+    expect(snapping).toHaveLength(1);
   });
 });

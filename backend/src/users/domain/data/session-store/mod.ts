@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
+import { ownSession } from "@users/domain/business/transfer-account/mod.ts";
 
 export interface Session {
   id: string;
@@ -17,6 +18,10 @@ export interface Session {
    *  the admin's OWN user id. `userId` is then the owner's. requireUser
    *  re-checks the admin record on every request, so a removal cuts it. */
   actorId?: string;
+  /** REQ-806: an approved ops view — reads only; requireSession refuses every write */
+  readOnly?: boolean;
+  /** REQ-806: the session is dead after this (an ops view: 30 minutes) */
+  expiresAt?: string;
 }
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1_000; // 30 days
@@ -69,6 +74,29 @@ export class SessionStore {
     return session;
   }
 
+  /**
+   * REQ-806: an approved ops view of `targetUserId` — read-only, gone after `ttlMs`, and carrying
+   * the approving super admin as `impersonatorId` so the act is auditable. No return session: it
+   * is nobody's sign-in.
+   */
+  async createOpsView(
+    input: { targetUserId: string; impersonatorId: string; ttlMs: number },
+  ): Promise<Session> {
+    const kv = await getKv();
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const session: Session = {
+      id,
+      userId: input.targetUserId,
+      createdAt: new Date(now).toISOString(),
+      impersonatorId: input.impersonatorId,
+      readOnly: true,
+      expiresAt: new Date(now + input.ttlMs).toISOString(),
+    };
+    await kv.set(["session", id], session, { expireIn: input.ttlMs });
+    return session;
+  }
+
   /** REQ-146: a session IN `userId`'s account for `actorId`, one of its admins. */
   async createActing(userId: string, actorId: string): Promise<Session> {
     const kv = await getKv();
@@ -84,8 +112,57 @@ export class SessionStore {
     return result.value ?? null;
   }
 
+  /**
+   * REQ-220: drop every session that is `userId` signed in as themselves — an admin's acting
+   * session and an impersonation stay (ownSession). There is no per-user index; the scan is the
+   * same whole-prefix sweep WipeAccount does. Returns how many went.
+   */
+  async deleteOwn(userId: string): Promise<number> {
+    const kv = await getKv();
+    let gone = 0;
+    for await (const entry of kv.list<Session>({ prefix: ["session"] })) {
+      if (entry.value && ownSession(entry.value, userId)) {
+        await kv.delete(entry.key);
+        gone++;
+      }
+    }
+    return gone;
+  }
+
   async delete(sessionId: string): Promise<void> {
     const kv = await getKv();
     await kv.delete(["session", sessionId]);
+  }
+
+  /**
+   * REQ-823 (demo-loop cycle dm1, M2): `fn` runs once when the session's record is gone — a
+   * logout, an account closed or wiped, its TTL — at once if it already is. A KV watch, so it is
+   * live across isolates. Resolves (once the watch is live) to `stop`, which ends the watch.
+   */
+  async whenGone(sessionId: string, fn: () => void): Promise<() => void> {
+    const kv = await getKv();
+    const reader = kv.watch([["session", sessionId]]).getReader();
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      reader.cancel().catch(() => {});
+    };
+    (async () => {
+      try {
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (done || stopped) return;
+          if (value[0]?.versionstamp === null) {
+            stop();
+            fn();
+            return;
+          }
+        }
+      } catch {
+        // the watch ended under it (stopped, or the KV closed)
+      }
+    })();
+    return stop;
   }
 }

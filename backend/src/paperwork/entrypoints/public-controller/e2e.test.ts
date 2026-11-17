@@ -6,6 +6,10 @@ import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { UsersModule } from "@users/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
+import { SessionStore } from "@users/domain/data/session-store/mod.ts";
+import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
+import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 
 @Module({ imports: [UsersModule, PaperworkModule] })
 class TestApp {}
@@ -14,6 +18,18 @@ const PORT = 9089;
 
 async function drain(res: Response) {
   await res.body?.cancel();
+}
+
+/** REQ-460: only a quote put in front of the customer is signed — POST
+ *  /quotes makes a draft (NW-10), so a test sends it the API's way. */
+async function markSent(port: number, sid: string, id: string) {
+  await drain(
+    await fetch(`http://localhost:${port}/quotes/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ status: "sent" }),
+    }),
+  );
 }
 
 async function login(port: number, phone = "+15125551234"): Promise<string> {
@@ -80,6 +96,7 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
         estimatedTotal: 500_00,
       }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
       method: "POST",
@@ -100,7 +117,8 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
     assertEquals(typeof refetched.acceptedAt, "string");
 
     // UX-37 resolved by construction: accepting the quote IS the one
-    // ceremony, and it bills — no payment_terms → one full invoice due today.
+    // ceremony, and it bills — no payment_terms → one full invoice on net-7
+    // (REQ-240, demo M29: never due the day it is signed).
     const invoices = await fetch(`http://localhost:${PORT}/invoices`, {
       headers: { "x-session-id": sid },
     }).then((r) => r.json());
@@ -110,7 +128,10 @@ Deno.test("public e2e: POST /quotes/:id/accept (no session) flips status to acce
     assertEquals(milestone.length, 1);
     assertEquals(milestone[0].amount, 500_00);
     assertEquals(milestone[0].status, "sent");
-    assertEquals(milestone[0].dueDate, new Date().toISOString().slice(0, 10));
+    assertEquals(
+      milestone[0].dueDate,
+      new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10),
+    );
   } finally {
     await server.stop();
     await resetKv();
@@ -162,6 +183,7 @@ Deno.test("public e2e: POST /quotes/:id/decline cannot revoke an already-accepte
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     await drain(
       await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
@@ -309,6 +331,7 @@ Deno.test("public e2e: accept with a TIN stores it masked to the last 4 and neve
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     const out = await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
       method: "POST",
@@ -353,6 +376,7 @@ Deno.test("public e2e: a second accept is a 409 already_accepted, not a silent s
       headers: { "content-type": "application/json", "x-session-id": sid },
       body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
     }).then((r) => r.json());
+    await markSent(PORT, sid, q.id);
 
     await drain(
       await fetch(`http://localhost:${PORT}/quotes/${q.id}/accept`, {
@@ -465,6 +489,7 @@ Deno.test("public e2e: POST /invoices/:id/claim-payment flips status to claimed 
         dueDate: "2026-06-01",
         amount: 100_00,
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -518,6 +543,7 @@ Deno.test("public e2e: claim-payment rejects unknown methods", async () => {
         dueDate: "2026-06-01",
         amount: 100,
         status: "sent",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -558,6 +584,7 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
         dueDate: "2026-06-01",
         amount: 100,
         status: "paid",
+        billTo: { name: "Ann Lee" }, // REQ-550: an issued invoice bills someone
       }),
     }).then((r) => r.json());
 
@@ -571,6 +598,234 @@ Deno.test("public e2e: claim-payment is 409 when invoice already paid", async ()
     );
     assertEquals(res.status, 409);
     await res.body?.cancel();
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-225 (demo M18 / test-setup-claims-m3): the owner previewing their own
+// link, the /welcome sample iframe (owner cookie), and staff behind an
+// impersonation session (demo stage replica) are not the client opening it.
+Deno.test("REQ-225 public e2e: GET /quotes/:id/public by the owner or staff records no open and keeps 'sent'; the anonymous customer does", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [], status: "sent" }),
+    }).then((r) => r.json());
+    const owner = (await new SessionStore().get(sid))!;
+    // the link went out (POST /quotes always lands as a draft)
+    await new QuoteStore().update(q.id, owner.userId, { status: "sent" });
+    const staff = await new SessionStore().createImpersonation({
+      targetUserId: owner.userId,
+      impersonatorId: "staff-super-admin",
+      returnSessionId: "staff-own-session",
+    });
+    const opens = async () =>
+      (await new ViewStore().listByPaperwork("quote", q.id)).length;
+    const get = async (headers: Record<string, string>) => {
+      const res = await fetch(
+        `http://localhost:${PORT}/quotes/${q.id}/public`,
+        { headers },
+      );
+      assertEquals(res.status, 200);
+      return (await res.json()).status as string;
+    };
+
+    // owner via the SDK header, owner via the browser cookie (what the
+    // Fresh /api proxy forwards from /q/:id and the /welcome iframe),
+    // staff's impersonation session (the demo stage replica)
+    assertEquals(await get({ "x-session-id": sid }), "sent");
+    assertEquals(await get({ cookie: `pm_lang=en; pm_session=${sid}` }), "sent");
+    assertEquals(await get({ cookie: `pm_session=${staff.id}` }), "sent");
+    assertEquals(await opens(), 0, "internal views must not record an open");
+
+    // the end customer (no session) is the first real open
+    assertEquals(await get({}), "viewed");
+    assertEquals(await opens(), 1);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// REQ-263 (demo ai-assistant-m2): the quote carries the job's service address
+// and the customer's agreement (/q) receives it.
+Deno.test("REQ-263 public e2e: a quote's serviceAddress is saved, editable, and served on /public", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const headers = { "content-type": "application/json", "x-session-id": sid };
+    const created = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Deep clean",
+        serviceAddress: "412 Oak St Austin",
+        lineItems: [{ description: "x", quantity: 1, unit: "ea", price: 35_000 }],
+      }),
+    }).then((r) => r.json());
+    let pub = await fetch(`http://localhost:${PORT}/quotes/${created.id}/public`)
+      .then((r) => r.json());
+    assertEquals(pub.serviceAddress, "412 Oak St Austin");
+
+    await drain(
+      await fetch(`http://localhost:${PORT}/quotes/${created.id}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ serviceAddress: "412 Oak St, Austin TX 78704" }),
+      }),
+    );
+    pub = await fetch(`http://localhost:${PORT}/quotes/${created.id}/public`)
+      .then((r) => r.json());
+    assertEquals(pub.serviceAddress, "412 Oak St, Austin TX 78704");
+
+    // not a string → refused, nothing stored
+    const bad = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "x", serviceAddress: 412, lineItems: [] }),
+    });
+    assertEquals(bad.ok, false);
+    await drain(bad);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// ── REQ-252 (demo issue M30): a logo on record that is not an image never reaches a customer ──
+
+Deno.test("REQ-252 public e2e: a logo on record that is not an image (left by the old unchecked path) — /public-logo is 404 and the public quote says hasLogo false; a real PNG is served as image/png", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-session-id": sid },
+      body: JSON.stringify({ summary: "Job", lineItems: [] }),
+    }).then((r) => r.json());
+    const upload = async (filename: string, mimeType: string, bytes: Uint8Array) =>
+      (await fetch(`http://localhost:${PORT}/files`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-session-id": sid },
+        body: JSON.stringify({ filename, mimeType, base64: btoa(String.fromCharCode(...bytes)) }),
+      }).then((r) => r.json())) as { id: string; userId: string };
+    // the demo's file: text bytes named factura.pdf — stored straight on the identity, as the old path did
+    const junk = await upload("factura.pdf", "application/pdf", new TextEncoder().encode("Factura 001\n"));
+    await new BusinessIdentityStore().upsert(junk.userId, { businessName: "Ana Roofing", logoFileId: junk.id });
+
+    const logo = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`);
+    await drain(logo);
+    assertEquals(logo.status, 404, "a non-image is never served as the logo");
+    const pub = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(pub.contractor.hasLogo, false, "the page draws no <img> for it");
+
+    const png = await upload(
+      "logo.png",
+      "image/png",
+      Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0)),
+    );
+    await new BusinessIdentityStore().upsert(png.userId, { logoFileId: png.id });
+    const ok = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`);
+    assertEquals(ok.status, 200);
+    assertEquals(ok.headers.get("content-type"), "image/png");
+    await drain(ok);
+    const pub2 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    assertEquals(pub2.contractor.hasLogo, true);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
+
+// ── REQ-613 (demo-loop cycle 4, issue M31): a replaced logo reaches a sent quote at once ──
+
+Deno.test("REQ-613 public e2e: the public quote/invoice carry logoVersion, replacing the logo changes it; ?v=<current> is cached immutably, a bare or stale URL revalidates (no-cache + ETag, 304 on a match)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login(PORT);
+    const headers = { "content-type": "application/json", "x-session-id": sid };
+    const q = await fetch(`http://localhost:${PORT}/quotes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "Job", lineItems: [] }),
+    }).then((r) => r.json());
+    const inv = await fetch(`http://localhost:${PORT}/invoices`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ dueDate: "2026-05-01", amount: 1_000 }),
+    }).then((r) => r.json());
+    const pngB64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const upload = async () =>
+      (await fetch(`http://localhost:${PORT}/files`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ filename: "logo.png", mimeType: "image/png", base64: pngB64 }),
+      }).then((r) => r.json())) as { id: string; userId: string };
+
+    const orange = await upload();
+    await new BusinessIdentityStore().upsert(orange.userId, { businessName: "Ana Roofing", logoFileId: orange.id });
+    const pubQ1 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    const v1 = pubQ1.contractor.logoVersion as string;
+    assert(typeof v1 === "string" && v1.length > 0, "the public quote carries the logo's version");
+    assertEquals(v1.includes(orange.id), false, "the file id never leaks");
+    const pubI1 = await fetch(`http://localhost:${PORT}/invoices/${inv.id}/public`).then((r) => r.json());
+    assertEquals(pubI1.contractor.logoVersion, v1, "the public invoice carries the same version");
+
+    // the versioned URL: a long immutable cache — its bytes can never change under it
+    const versioned = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}?v=${v1}`);
+    assertEquals(versioned.status, 200);
+    await drain(versioned);
+    const vcc = versioned.headers.get("cache-control") ?? "";
+    assert(vcc.includes("immutable") && vcc.includes("max-age=31536000"), `versioned: ${vcc}`);
+
+    // the bare URL (an old page or email): always revalidated, with the version as its ETag
+    const bare = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`);
+    assertEquals(bare.status, 200);
+    await drain(bare);
+    assertEquals(bare.headers.get("cache-control"), "no-cache");
+    const etag = bare.headers.get("etag");
+    assertEquals(etag, `"${v1}"`);
+    const same = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`, {
+      headers: { "if-none-match": etag! },
+    });
+    await drain(same);
+    assertEquals(same.status, 304, "an unchanged logo revalidates to 304");
+
+    // the demo's step: "Reemplazar logo" → blue
+    const blue = await upload();
+    await new BusinessIdentityStore().upsert(blue.userId, { logoFileId: blue.id });
+    const pubQ2 = await fetch(`http://localhost:${PORT}/quotes/${q.id}/public`).then((r) => r.json());
+    const v2 = pubQ2.contractor.logoVersion as string;
+    assert(v2 && v2 !== v1, "a new logo is a new version → the sent quote's <img> URL changes");
+    const after = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}`, {
+      headers: { "if-none-match": etag! },
+    });
+    assertEquals(after.status, 200, "the old ETag no longer matches — the new logo is served");
+    assertEquals(after.headers.get("etag"), `"${v2}"`);
+    await drain(after);
+    // a stale ?v= (an old email) gets the current logo but must not be cached as immutable
+    const stale = await fetch(`http://localhost:${PORT}/public-logo/quote/${q.id}?v=${v1}`);
+    assertEquals(stale.status, 200);
+    await drain(stale);
+    assertEquals(stale.headers.get("cache-control"), "no-cache");
   } finally {
     await server.stop();
     await resetKv();

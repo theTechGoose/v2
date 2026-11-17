@@ -1,5 +1,6 @@
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
+import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
 import {
@@ -39,9 +40,10 @@ export default define.page(async function VerifyInternal(ctx) {
   return (
     <>
       <Head>
-        <title>
-          {tFor(lang, "verifyInternal.h1")} · {tFor(lang, "brand.name")}
-        </title>
+        <DocTitle
+          lang={lang}
+          title={(l) => `${tFor(l, "verifyInternal.h1")} · ${tFor(l, "brand.name")}`}
+        />
         <meta name="robots" content="noindex" />
         <link rel="stylesheet" href={asset("/verify.css")} />
       </Head>

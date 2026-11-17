@@ -3,6 +3,7 @@ import {
   aggregatePipeline,
   isSampleQuote,
 } from "#quote-flow/pipeline-stats.ts";
+import { isUndelivered } from "#quote-flow/delivery.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
@@ -11,6 +12,11 @@ import { PAYMENT_METHODS, type PaymentMethod } from "@paperwork/dto/payment.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Payment } from "@paperwork/dto/payment.ts";
 import { bucketPendingInvoices } from "@paperwork/domain/business/invoice-aging-buckets/mod.ts";
+import { isOpenReceivable } from "@paperwork/domain/business/open-receivable/mod.ts";
+import { completedJobsInYear } from "@analytics/domain/business/signed-jobs/mod.ts";
+import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
+import { readyToSendQuoteIds } from "@agents/domain/coordinators/list-conversations/mod.ts";
+import type { Quote } from "@paperwork/dto/quote.ts";
 import {
   bucketBy12Months,
   lastMonthRevenue,
@@ -40,6 +46,7 @@ export class ComputeDashboardStats {
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
     private payments: PaymentStore,
+    private conversations: AgentConversationStore,
   ) {}
 
   async run(userId: string, now: Date = new Date()): Promise<DashboardStats> {
@@ -62,16 +69,26 @@ export class ComputeDashboardStats {
       draft: realQuotes.filter((q) => q.status === "draft").length,
       sent: realQuotes.filter((q) => q.status === "sent").length,
       accepted: realQuotes.filter((q) => q.status === "accepted").length,
+      // REQ-566 (demo-loop cycle 4, m11): of the drafts, those whose send
+      // reached nobody — the dashboard says "Not delivered", not "ready".
+      undelivered: realQuotes.filter((q) =>
+        q.status === "draft" && isUndelivered(q)
+      ).length,
+      readyToSend: await this.countReadyToSend(
+        userId,
+        realQuotes.filter((q) => q.status === "draft"),
+      ),
     };
 
     const todayIso = now.toISOString().slice(0, 10);
+    // REQ-397 (demo-loop cycle 2, M14): "pending" = open receivables (sent /
+    // viewed / claimed, unpaid) — accept writes "sent", never "pending".
+    const open = invoices.filter(isOpenReceivable);
     const invoiceCounts = {
       total: invoices.length,
-      pending: invoices.filter((i) => i.status === "pending").length,
+      pending: open.length,
       paid: invoices.filter((i) => i.status === "paid").length,
-      overdue:
-        invoices.filter((i) => i.status === "pending" && i.dueDate < todayIso)
-          .length,
+      overdue: open.filter((i) => i.dueDate < todayIso).length,
       agingBuckets: bucketPendingInvoices(invoices, now),
     };
 
@@ -96,6 +113,8 @@ export class ComputeDashboardStats {
         amountCents: i.amount ?? 0,
       }));
 
+    const paidJobs = completedJobsInYear(invoices, now.getUTCFullYear());
+
     return {
       customers: customers.length,
       quotes: quoteCounts,
@@ -105,12 +124,26 @@ export class ComputeDashboardStats {
       awaitingResponse: quoteCounts.sent,
       revenue: {
         ytdCents: ytdRevenue(revenueRows, now),
+        // REQ-698 (demo-loop cycle 5, m14): completed jobs only — a paid
+        // deposit on a $1,450 job read "AVG. PAID JOB $725".
+        paidJobsYtd: paidJobs.count,
+        paidJobsYtdCents: paidJobs.cents,
         lastMonthCents: lastMonthRevenue(revenueRows, now),
         monthOverMonthPct: monthOverMonthPct(revenueRows, now),
         sparkline12mo: bucketBy12Months(revenueRows, now),
       },
       payments: computePaymentStats(payments, invoices, now),
     };
+  }
+
+  /** REQ-698 (demo-loop cycle 5, m14): of the drafts, those the thread
+   *  status calls "Ready to send" — REQ-760: the same `readyToSendQuoteIds`
+   *  the /quotes cards are marked with. */
+  private async countReadyToSend(
+    userId: string,
+    drafts: Quote[],
+  ): Promise<number> {
+    return (await readyToSendQuoteIds(this.conversations, userId, drafts)).size;
   }
 }
 

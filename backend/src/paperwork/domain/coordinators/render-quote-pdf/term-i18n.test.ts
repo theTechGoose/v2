@@ -35,3 +35,37 @@ for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] 
     assertEquals(fn("TBD", "en"), "TBD");
   });
 }
+
+// REQ-495 (demo-loop cycle 3, m17): the wizard's "Pick a date" start term is
+// stored as ISO (older quotes carry MM/DD/YYYY). Both PDFs print it in the
+// reader's language — "1 dic 2026" / "Dec 1, 2026" — never "12/01/2026",
+// which a Spanish reader takes for 12 January.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-495 m17 ${name}: a stored start date (ISO or MM/DD/YYYY) prints day-first in Spanish, 'Dec 1, 2026' in English`, () => {
+    assertEquals(fn("2026-12-01", "es"), "1 dic 2026");
+    assertEquals(fn("12/01/2026", "es"), "1 dic 2026");
+    assertEquals(fn("2026-12-01", "en"), "Dec 1, 2026");
+    assertEquals(fn("12/01/2026", "en"), "Dec 1, 2026");
+    assertEquals(fn("3 weeks", "es"), "3 semanas");
+  });
+}
+
+// REQ-678 (demo-loop cycle 5, c3-m60): the picked deposit prints in the
+// reader's language on both PDFs.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-678 c3-m60 ${name}: 'Deposit 30% + balance' → 'Depósito 30% + saldo' (es), unchanged (en)`, () => {
+    assertEquals(fn("Deposit 30% + balance", "es"), "Depósito 30% + saldo");
+    assertEquals(fn("Deposit $500 + balance", "es"), "Depósito $500 + saldo");
+    assertEquals(fn("Deposit 30% + balance", "en"), "Deposit 30% + balance");
+  });
+}
+
+// REQ-665 (demo-loop cycle 5, m47): the custom payment picker stores a worded
+// split in English ("50% upfront, 50% on completion"); a Spanish PDF words it.
+for (const [name, fn] of [["quote PDF", quotePdf], ["invoice PDF", invoicePdf]] as const) {
+  Deno.test(`REQ-665 ${name}: a worded split localizes to Spanish`, () => {
+    assertEquals(fn("50% upfront, 50% on completion", "es"), "50% por adelantado, 50% al terminar");
+    assertEquals(fn("30% / 40% / 30%", "es"), "30% / 40% / 30%");
+    assertEquals(fn("50% upfront, 50% on completion", "en"), "50% upfront, 50% on completion");
+  });
+}

@@ -1,0 +1,139 @@
+/**
+ * REQ-537 (demo-loop cycle 4, issue m36) — the stage has one exit.
+ *
+ * The presenter's browser on the stage is an impersonation session, so the global impersonation
+ * banner ("Impersonating … · Return to your account") used to sit above the stage next to the
+ * pill's End demo: two exits that, for a lone presenter, do the same thing. The banner is not drawn
+ * on the stage (every other page keeps it); with more than one presenter the stage pill offers
+ * "Leave the demo" as a secondary action (alone, leaving would end the demo — that is End).
+ */
+import { STAGE_PATH } from "./protocol.ts";
+
+/** is the impersonation banner drawn on this page — everywhere but the stage */
+export function impersonationBannerOn(pathname: string): boolean {
+  return pathname.replace(/\/+$/, "") !== STAGE_PATH;
+}
+
+/**
+ * REQ-855 (demo-loop cycle dm3, issue m5) — one notice per page. While this staff presents the demo
+ * the red "Impersonating … Return to your account" bar sat next to the overlay's "Demo mode ·
+ * Guiding {name} · Back to the demo" pill (and on /admin over the REQ-376 guide gate as well): two
+ * vocabularies, two competing exits. The bar is drawn only for an impersonation, never on the stage
+ * (REQ-537), never while this staff presents the demo (the presenter's pill is its notice and
+ * carries the way out), and never over /admin's guide gate — what /admin shows an impersonated
+ * non-super-admin (routes/admin/_middleware.ts), with its own Back to the demo and Return.
+ */
+export function impersonationBarShown(o: {
+  path: string;
+  /** whoami: this session acts as someone */
+  impersonating: boolean;
+  /** whoami: the account it acts as is a super admin (then /admin is the console, not the gate) */
+  superAdmin?: boolean;
+  /** GET /demo-mode/active: this staff presents the demo (role "presenter") */
+  presenting: boolean;
+}): boolean {
+  if (!o.impersonating || o.presenting || !impersonationBannerOn(o.path)) {
+    return false;
+  }
+  return !adminGateShown(o);
+}
+
+/** REQ-855 — does this page show /admin's guide gate (REQ-376): /admin while this browser acts as
+ *  a non-super-admin (routes/admin/_middleware.ts renders it instead of the console). Its card has
+ *  Back to the demo, Return to your account and the EN | ES switch, so neither the red bar nor the
+ *  presenter pill's own exits and switch are drawn beside it. */
+export function adminGateShown(o: {
+  path: string;
+  impersonating: boolean;
+  superAdmin?: boolean;
+}): boolean {
+  const admin = o.path === "/admin" || o.path.startsWith("/admin/");
+  return admin && o.impersonating && o.superAdmin !== true;
+}
+
+/** does the stage pill offer "Leave the demo" next to End — only when others present too */
+export function stageLeaveShown(presenters: number): boolean {
+  return presenters > 1;
+}
+
+/**
+ * REQ-642 (demo-loop cycle 5, m10) — the stage's "Your pointer is off / isn't on {name}'s screen"
+ * badges sat on the frame's top edge, centred on it (translate -50% up): their lower half always
+ * covered the mirrored app's header. They sit in a chrome row ABOVE the frame now: the stage's top
+ * inset leaves room for one badge (STAGE_BADGE_H) with a gap above and below it, and the badge's
+ * top is `stageBadgeTop(frameTop)` — never a vertical translate.
+ */
+export const STAGE_BADGE_H = 26;
+export const STAGE_BADGE_GAP = 8;
+/** the stage's inset above the frame (in the stage's own box, under any banner) */
+export const STAGE_TOP_INSET = STAGE_BADGE_H + 2 * STAGE_BADGE_GAP;
+
+/** a badge's top, in the box the frame's top `frameTop` is measured in: ending a gap above it */
+export function stageBadgeTop(frameTop: number): number {
+  return Math.max(0, frameTop - STAGE_BADGE_GAP - STAGE_BADGE_H);
+}
+
+/**
+ * REQ-650 (demo-loop cycle 5, issue c4-m1) — the stage bar is a product bar. The mirror's counters
+ * (REQ-309) used to show whenever the stage was served from localhost, so every demo run saw
+ * "mirror f477 hb299 …", the bar wrapped and End dropped to a second line. They show only behind
+ * an explicit flag: `?debug=1` in the address, or `localStorage[STAGE_DEBUG_KEY] = "1"` (which
+ * survives the hop from /admin to the stage). `?debug=0` switches a stored flag off for one look.
+ */
+export const STAGE_DEBUG_KEY = "pm_demo_debug";
+export function stageDebugOn(search: string, stored: string | null): boolean {
+  const q = new URLSearchParams(search).get("debug");
+  if (q !== null) return q === "1";
+  return stored === "1";
+}
+
+/**
+ * REQ-650 — the pill height the frame's bottom inset (REQ-228) is taken from. While End asks, the
+ * inset keeps the resting pill's height: the question never moves or resizes the frame (and it
+ * replaces the pill's spans, so the pill itself does not grow). Before anything was measured the
+ * first measure counts.
+ */
+export function stagePillH(
+  prev: number,
+  measured: number,
+  endAsking: boolean,
+): number {
+  return endAsking && prev > 0 ? prev : measured;
+}
+
+/**
+ * REQ-844 (demo-loop cycle dm3, issue p13) — the stage pill offers "End demo" only while the demo
+ * is live. Once it has ended (by you: end() waits for the API, then 800 ms; by the other side:
+ * onEnded waits 1500 ms) the stage stays up until the hop to /admin, and a dimmed End next to
+ * "The demo ended" offered to end a demo that was already over.
+ */
+export function stageEndShown(ended: boolean): boolean {
+  return !ended;
+}
+
+/**
+ * REQ-857 (demo-loop cycle dm4, issue p10) — once the demo has ended, the stage pill keeps only its
+ * title and "The demo ended". Until the hop to /admin (end(): 800 ms after the API answers; onEnded:
+ * 1500 ms) it read "Guiding Maria Lopez | Alex (you) | The demo ended | Maria Lopez's screen,
+ * 1280 × 800": present-tense lines next to a past-tense status. The "Guiding {name}" line, the
+ * presenter chips and the "{name}'s screen" label are drawn only while the demo is live.
+ */
+export function stageLiveDetailsShown(ended: boolean): boolean {
+  return !ended;
+}
+
+/**
+ * REQ-868 (demo-loop cycle dm5, issue p8) — the chrome-row badges above the frame (pointer off,
+ * tab switched, pointer absent) are drawn only while the demo is live. Once it has ended (end():
+ * 800 ms after the API answers; onEnded: 1500 ms) the stage read "Your pointer is off Maria
+ * Lopez's screen" next to "The demo ended" until the hop to /admin. One gate for all three, so they
+ * stay consistent: mirrored, live, the customer on the demo's tab, and not waiting for their app.
+ */
+export function stageBadgesShown(o: {
+  ended: boolean;
+  mirrored: boolean;
+  elsewhere: boolean;
+  waiting: boolean;
+}): boolean {
+  return !o.ended && o.mirrored && !o.elsewhere && !o.waiting;
+}

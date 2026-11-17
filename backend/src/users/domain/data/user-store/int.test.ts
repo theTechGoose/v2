@@ -36,3 +36,15 @@ Deno.test("REQ-113/120 user-store — update takes the name, the email and the l
   const read = await users.get(ana.id);
   assertEquals(["signupPlan" in read, read.superAdmin ?? false, read.onboardedAt], [false, false, undefined]);
 });
+
+// REQ-507 (demo-loop cycle 3, m25) — a non-empty query with no digits used to strip to "" and list
+// every user; it now matches no phone. The blank query still lists everyone.
+Deno.test("REQ-507 m25 user-store — searchByPhone('abc!!') matches nobody; '' still lists everyone; digits still match", async () => {
+  const users = await fresh();
+  const deb = await users.create({ phoneNumber: "+15125550102", name: "Deb Kowalski" });
+  await users.create({ phoneNumber: "+15125550199", name: "Ana" });
+  assertEquals((await users.searchByPhone("abc!!")).length, 0, "abc!!");
+  assertEquals((await users.searchByPhone("!!")).length, 0, "!!");
+  assertEquals((await users.searchByPhone("")).length, 2, "blank lists all");
+  assertEquals((await users.searchByPhone("0102")).map((u) => u.id), [deb.id]);
+});

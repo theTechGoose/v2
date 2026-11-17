@@ -25,6 +25,10 @@ export const NOTIFICATION_TYPES = [
   "invoice_paid",
   "invoice_overdue",
   "invoice_nudge_due",
+  // REQ-566 (demo-loop cycle 4, m11): owner-side events the dashboard's
+  // "What we handled today" shows — an invoice issued, a field job done.
+  "invoice_sent",
+  "task_completed",
   "customer_replied",
   "generic",
 ] as const;
