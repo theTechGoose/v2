@@ -17,6 +17,7 @@ import { TimeclockModule } from "@timeclock/mod-root.ts";
 import { RoofModule } from "@roof/mod-root.ts";
 import { HrModule } from "@hr/mod-root.ts";
 import { HrNotices } from "@hr/domain/coordinators/hr-notices/mod.ts";
+import { CommunicationsModule } from "@communications/mod-root.ts";
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { HrNotices } from "@hr/domain/coordinators/hr-notices/mod.ts";
     TimeclockModule, // REQ-192
     RoofModule, // REQ-856
     HrModule, // REQ-883
+    CommunicationsModule, // REQ-899..901 — the business line: texting, softphone, AI receptionist
   ],
 })
 class AppModule {}
