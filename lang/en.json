@@ -5882,5 +5882,6 @@
   "comms.phone.decline": "Decline",
   "comms.phone.mute": "Mute",
   "comms.phone.unmute": "Unmute",
-  "comms.phone.hangup": "Hang up"
+  "comms.phone.hangup": "Hang up",
+  "comms.err.not_configured": "Your phone line isn't connected to Twilio yet. The account's keys (COMMS_TWILIO_*) have to be set on the server before numbers can be searched or bought."
 }

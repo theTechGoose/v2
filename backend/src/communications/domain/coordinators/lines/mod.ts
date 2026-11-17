@@ -6,11 +6,22 @@
  * closed again so nothing half-made is left behind.
  */
 import { Injectable } from "#danet/core";
-import type { AvailableNumber, BuyNumberInput, PublicLine } from "@communications/dto/mod.ts";
+import type {
+  AvailableNumber,
+  BuyNumberInput,
+  PublicLine,
+} from "@communications/dto/mod.ts";
 import { redactLine } from "@communications/dto/mod.ts";
-import { CommsConfigSource, publicUrl, ROUTES } from "@communications/domain/data/config/mod.ts";
+import {
+  CommsConfigSource,
+  publicUrl,
+  ROUTES,
+} from "@communications/domain/data/config/mod.ts";
 import type { NumberSearch } from "@communications/domain/business/numbers/mod.ts";
-import { type Failure, TwilioClient } from "@communications/domain/data/twilio-client/mod.ts";
+import {
+  type Failure,
+  TwilioClient,
+} from "@communications/domain/data/twilio-client/mod.ts";
 import { LineStore } from "@communications/domain/data/line-store/mod.ts";
 
 export class LineConflictError extends Error {
@@ -26,16 +37,23 @@ export class LineConflictError extends Error {
 export class ProvisioningError extends Error {
   readonly status: number = 502;
   readonly code?: number;
+  /** REQ-917: the upstream reason by itself (`not_configured` when the server has no keys), so the body names it */
+  readonly reason: string;
   constructor(step: string, failure: Failure) {
     super(`${step}: ${failure.reason}`);
     this.name = "ProvisioningError";
+    this.reason = failure.reason;
     if (failure.code !== undefined) this.code = failure.code;
   }
 }
 
 @Injectable()
 export class Lines {
-  constructor(private twilio: TwilioClient, private lines: LineStore, private cfgSource: CommsConfigSource) {}
+  constructor(
+    private twilio: TwilioClient,
+    private lines: LineStore,
+    private cfgSource: CommsConfigSource,
+  ) {}
 
   async search(search: NumberSearch): Promise<AvailableNumber[]> {
     const res = await this.twilio.searchAvailable(search);
@@ -49,7 +67,9 @@ export class Lines {
   }
 
   async buy(userId: string, input: BuyNumberInput): Promise<PublicLine> {
-    if (await this.lines.findActiveByUser(userId)) throw new LineConflictError();
+    if (await this.lines.findActiveByUser(userId)) {
+      throw new LineConflictError();
+    }
     const cfg = this.cfgSource.get();
     const label = `documonster:${userId}`;
 
@@ -58,14 +78,25 @@ export class Lines {
 
     const rollback = async (step: string, failure: Failure): Promise<never> => {
       const closed = await this.twilio.closeSubaccount({ accountSid: sub.sid });
-      if (!closed.ok) console.error(`[communications/lines] rollback could not close ${sub.sid}: ${closed.reason}`);
+      if (!closed.ok) {
+        console.error(
+          `[communications/lines] rollback could not close ${sub.sid}: ${closed.reason}`,
+        );
+      }
       throw new ProvisioningError(step, failure);
     };
 
-    const key = await this.twilio.createApiKey({ accountSid: sub.sid, friendlyName: `${label} softphone` });
+    const key = await this.twilio.createApiKey({
+      accountSid: sub.sid,
+      friendlyName: `${label} softphone`,
+    });
     if (!key.ok) return rollback("api key", key);
 
-    const app = await this.twilio.createTwimlApp({ accountSid: sub.sid, friendlyName: `${label} softphone`, voiceUrl: publicUrl(cfg, ROUTES.voiceOutgoing) });
+    const app = await this.twilio.createTwimlApp({
+      accountSid: sub.sid,
+      friendlyName: `${label} softphone`,
+      voiceUrl: publicUrl(cfg, ROUTES.voiceOutgoing),
+    });
     if (!app.ok) return rollback("twiml app", app);
 
     const number = await this.twilio.buyNumber({
@@ -97,9 +128,14 @@ export class Lines {
     const line = await this.lines.findByUser(userId);
     if (!line) return null;
     if (line.status === "released") return redactLine(line);
-    const freed = await this.twilio.releaseNumber({ accountSid: line.subaccountSid, numberSid: line.numberSid });
+    const freed = await this.twilio.releaseNumber({
+      accountSid: line.subaccountSid,
+      numberSid: line.numberSid,
+    });
     if (!freed.ok) throw new ProvisioningError("release number", freed);
-    const closed = await this.twilio.closeSubaccount({ accountSid: line.subaccountSid });
+    const closed = await this.twilio.closeSubaccount({
+      accountSid: line.subaccountSid,
+    });
     if (!closed.ok) throw new ProvisioningError("close subaccount", closed);
     return redactLine(await this.lines.markReleased(line.id));
   }

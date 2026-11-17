@@ -13,11 +13,26 @@ Deno.test("REQ-903 lines int: buy = subaccount → api key → twiml app → num
     const twilio = new ProvisioningTwilio();
     const s = await stores();
     const lines = new Lines(twilio.asClient(), s.lines, cfg);
-    const line = await lines.buy("u_1", { phoneNumber: "+18435550100", friendlyName: "Shop" });
-    assertEquals(twilio.calls.map((c) => c.op), ["createSubaccount", "createApiKey", "createTwimlApp", "buyNumber"]);
+    const line = await lines.buy("u_1", {
+      phoneNumber: "+18435550100",
+      friendlyName: "Shop",
+    });
+    assertEquals(twilio.calls.map((c) => c.op), [
+      "createSubaccount",
+      "createApiKey",
+      "createTwimlApp",
+      "buyNumber",
+    ]);
     assertEquals(twilio.calls[0].args, { friendlyName: "documonster:u_1" });
-    assertEquals(twilio.calls[1].args, { accountSid: "ACsub1", friendlyName: "documonster:u_1 softphone" });
-    assertEquals(twilio.calls[2].args, { accountSid: "ACsub1", friendlyName: "documonster:u_1 softphone", voiceUrl: "https://api.test/communications/twilio/voice/outgoing" });
+    assertEquals(twilio.calls[1].args, {
+      accountSid: "ACsub1",
+      friendlyName: "documonster:u_1 softphone",
+    });
+    assertEquals(twilio.calls[2].args, {
+      accountSid: "ACsub1",
+      friendlyName: "documonster:u_1 softphone",
+      voiceUrl: "https://api.test/communications/twilio/voice/outgoing",
+    });
     assertEquals(twilio.calls[3].args, {
       accountSid: "ACsub1",
       phoneNumber: "+18435550100",
@@ -33,7 +48,8 @@ Deno.test("REQ-903 lines int: buy = subaccount → api key → twiml app → num
     assertEquals(line.twimlAppSid, "APsub1");
     assertEquals("authTokenSealed" in line, false);
     const kv = await getKv();
-    const raw = (await kv.get<Record<string, string>>(["comms_line", line.id])).value!;
+    const raw = (await kv.get<Record<string, string>>(["comms_line", line.id]))
+      .value!;
     assertStringIncludes(raw.authTokenSealed, "v1.");
     assertEquals(raw.authTokenSealed.includes("sub1-token"), false);
     const key = await secretsKey();
@@ -53,17 +69,42 @@ Deno.test("REQ-903 lines int: a second buy on an active line is a 409; a failed 
     const s = await stores();
     const lines = new Lines(twilio.asClient(), s.lines, cfg);
     await lines.buy("u_1", { phoneNumber: "+18435550100" });
-    await assertRejects(() => lines.buy("u_1", { phoneNumber: "+18435550101" }), LineConflictError);
+    await assertRejects(
+      () => lines.buy("u_1", { phoneNumber: "+18435550101" }),
+      LineConflictError,
+    );
     assertEquals(new LineConflictError().status, 409);
 
     const failing = new ProvisioningTwilio();
-    failing.failBuyWith = { ok: false, reason: "The requested phone number is not available", code: 21422 };
+    failing.failBuyWith = {
+      ok: false,
+      reason: "The requested phone number is not available",
+      code: 21422,
+    };
     const lines2 = new Lines(failing.asClient(), s.lines, cfg);
-    const err = await assertRejects(() => lines2.buy("u_9", { phoneNumber: "+18435550199" }), ProvisioningError);
+    const err = await assertRejects(
+      () => lines2.buy("u_9", { phoneNumber: "+18435550199" }),
+      ProvisioningError,
+    );
     assertEquals(err.status, 502);
     assertStringIncludes(err.message, "not available");
     assertEquals(failing.calls.at(-1)?.op, "closeSubaccount");
     assertEquals(await lines2.get("u_9"), null);
+
+    // REQ-917: no keys on the server → the error names it, so the page can say so
+    const unconfigured = new ProvisioningTwilio();
+    unconfigured.failSearchWith = { ok: false, reason: "not_configured" };
+    const lines3 = new Lines(unconfigured.asClient(), s.lines, cfg);
+    const nc = await assertRejects(
+      () => lines3.search({ areaCode: "843" }),
+      ProvisioningError,
+    );
+    assertEquals(nc.status, 502);
+    assertEquals(nc.reason, "not_configured");
+    assertEquals(
+      JSON.parse(JSON.stringify({ ...nc })).reason,
+      "not_configured",
+    );
   } finally {
     await restore();
   }
@@ -78,8 +119,14 @@ Deno.test("REQ-905 lines int: release gives the number back, closes the subaccou
     const line = await lines.buy("u_1", { phoneNumber: "+18435550100" });
     twilio.calls.length = 0;
     const released = await lines.release("u_1");
-    assertEquals(twilio.calls.map((c) => c.op), ["releaseNumber", "closeSubaccount"]);
-    assertEquals(twilio.calls[0].args, { accountSid: "ACsub1", numberSid: "PNsub1" });
+    assertEquals(twilio.calls.map((c) => c.op), [
+      "releaseNumber",
+      "closeSubaccount",
+    ]);
+    assertEquals(twilio.calls[0].args, {
+      accountSid: "ACsub1",
+      numberSid: "PNsub1",
+    });
     assertEquals(released?.status, "released");
     assertEquals(typeof released?.releasedAt, "string");
     assertEquals(released?.id, line.id);

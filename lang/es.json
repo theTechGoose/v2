@@ -5882,5 +5882,6 @@
   "comms.phone.decline": "Rechazar",
   "comms.phone.mute": "Silenciar",
   "comms.phone.unmute": "Activar sonido",
-  "comms.phone.hangup": "Colgar"
+  "comms.phone.hangup": "Colgar",
+  "comms.err.not_configured": "Tu línea telefónica aún no está conectada a Twilio. Hay que configurar las claves de la cuenta (COMMS_TWILIO_*) en el servidor antes de buscar o comprar números."
 }
