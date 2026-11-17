@@ -42,6 +42,7 @@ import {
   KEYPAD,
   phoneReducer,
   type PhoneState,
+  reasonDetail,
   reasonKey,
   refreshDelayMs,
   VOICE_SDK_URL,
@@ -786,7 +787,13 @@ function Softphone() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const fail = (e: unknown, stage?: "sdk") => {
-      if (!cancelled) dispatch({ type: "failed", reason: reasonKey(e, stage) });
+      if (!cancelled) {
+        dispatch({
+          type: "failed",
+          reason: reasonKey(e, stage),
+          detail: reasonDetail(e, stage),
+        });
+      }
     };
     const schedule = (expiresAt: string) => {
       clearTimeout(timer);
@@ -897,7 +904,8 @@ function Softphone() {
       >
         {s.phase === "error"
           ? t("comms.phone.notRegistered", {
-            reason: t(s.reason ?? "comms.phone.reason.twilio"),
+            reason: t(s.reason ?? "comms.phone.reason.twilio") +
+              (s.detail ? ` (${s.detail})` : ""), // REQ-919
           })
           : t(`comms.phone.phase.${s.phase}`)}
         {s.phase === "error" && (

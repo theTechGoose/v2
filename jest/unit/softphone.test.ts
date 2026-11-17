@@ -10,6 +10,7 @@ import {
   type PhoneEvent,
   phoneReducer,
   type PhoneState,
+  reasonDetail,
   reasonKey,
   refreshDelayMs,
   VOICE_SDK_URL,
@@ -191,5 +192,37 @@ describe("REQ-916 the softphone state machine", () => {
     expect(island).toMatch(
       /import\(\s*\/\* @vite-ignore \*\/\s*VOICE_SDK_URL\s*\)/,
     );
+  });
+
+  test("REQ-919 the SDK is esm.sh's bundled build (the plain one breaks on loglevel), and an unknown error keeps Twilio's code and message", () => {
+    expect(VOICE_SDK_URL).toBe(
+      "https://esm.sh/@twilio/voice-sdk@2.19.0?bundle",
+    );
+    expect(reasonDetail({ code: 31204, message: "Unable to validate token" }))
+      .toBe("31204: Unable to validate token");
+    expect(
+      reasonDetail(
+        new TypeError("Cannot read properties of undefined (reading 'ERROR')"),
+      ),
+    ).toBe("TypeError: Cannot read properties of undefined (reading 'ERROR')");
+    expect(reasonDetail({ status: 503 })).toBe(""); // a known reason needs no detail
+    expect(reasonDetail({ code: 31402 })).toBe("");
+    expect(reasonDetail(undefined)).toBe("");
+    const s = phoneReducer(initialPhone(), {
+      type: "failed",
+      reason: "comms.phone.reason.twilio",
+      detail: "31204: Unable to validate token",
+    });
+    expect(s).toMatchObject({
+      phase: "error",
+      reason: "comms.phone.reason.twilio",
+      detail: "31204: Unable to validate token",
+    });
+    const island = fs.readFileSync(
+      path.resolve(__dirname, "../../front-end/islands/PhonePage.tsx"),
+      "utf8",
+    );
+    expect(island).toContain("reasonDetail(e");
+    expect(island).toContain("s.detail");
   });
 });
