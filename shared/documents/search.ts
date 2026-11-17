@@ -700,6 +700,21 @@ export function groupHits(
     .filter((g) => g.hits.length > 0);
 }
 
+/**
+ * REQ-909 (A2Z, 2026-11-16): an unpaid invoice row's quick action — open
+ * /payments with Record a payment already on that invoice. Nothing for a
+ * draft, a paid or a voided invoice, and nothing for any other type.
+ */
+export function recordPaymentUrl(
+  h: Pick<SearchHit, "type" | "id" | "status">,
+): string | undefined {
+  if (h.type !== "invoice") return undefined;
+  if (h.status === "paid" || h.status === "void" || h.status === "draft") {
+    return undefined;
+  }
+  return `/payments?record=${encodeURIComponent(h.id)}`;
+}
+
 /** The row to open when the contractor presses Enter: the best-ranked one. */
 export function bestHit(hits: readonly SearchHit[]): SearchHit | undefined {
   return hits.length

@@ -5686,5 +5686,12 @@
   "hr.sign.err.signature_required": "Draw your signature and type your name.",
   "hr.sign.pdfLoading": "Loading the document…",
   "hr.sign.pdfFallback": "Open the PDF",
-  "hr.sign.lang": "Español"
+  "hr.sign.lang": "Español",
+  "paymentsPage.record.search": "Type the customer, the invoice number or the job…",
+  "search.recordPayment": "Record payment",
+  "invoicesPage.detail.overheadFlag": "Overhead",
+  "invoicesPage.detail.overheadLine": "Overhead",
+  "invoicesPage.detail.pctOfLines": "% of the lines above",
+  "invoicesPage.detail.pctAdd": "Add as Overhead line",
+  "invoices.savedUnpublished": "Saved. {customer} still sees the published version until you publish the revision."
 }
