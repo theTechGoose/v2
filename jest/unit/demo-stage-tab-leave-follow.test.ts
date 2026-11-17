@@ -1,24 +1,4 @@
 /**
- * REQ-823 — demo-loop cycle dm1, issues m8 ("Stage banner says 'Now showing …'s other tab' after a
- * navigation in the same tab") and M2 ("After the customer logs out with a second tab open, the
- * stage shows 'Live' on the background /quotes tab"). RCA at demo-fixes cbcae62d:
- *
- *   - m8: an address-bar navigation, `page.goto` or the browser's reload button fires no Navigation
- *     API `navigate`, so the leaving page says "closing" (leave-hint.ts). transport.ts `tabLeft`
- *     held the followed browser tab for "navigating" only: with another tab connected the stage
- *     switched to it at once and back when the same tab's next page claimed ~1 s later, and
- *     DemoStage's `followTabs` read A→B→A as a tab switch ("Now showing {name}'s other tab").
- *   - M2: the customer's sign-out (DashSidebar's `pm:logout`, then `location.href = "/"`) went out
- *     as "navigating" (a 5 s "Loading their next page…" for a page that never comes — "/" has no
- *     session, so no overlay), then the stage fell back to her other tab, whose session was dead
- *     too: nothing in demo mode heard the sign-out, and the backend left its sockets open.
- *
- * The fix: a followed browser tab whose page goes closing (or says nothing) while another tab is
- * open is held for SILENT_GRACE_MS — the same tab's next page takes the stage back, a real close
- * falls over after it; followTabs weighs a follow against the tab last ON SHOW (A→B unseen→A is no
- * switch); a page says `signout` as it goes after the sign-out event, the overlay says it and
- * closes its link at once and tells the browser's other tabs; a stage whose followed tab signed
- * out says "{name} signed out" at once and follows no other tab of the dead session.
  */
 import * as fs from "fs";
 import * as path from "path";

@@ -162,7 +162,7 @@ describe("REQ-648 AMENDMENT (run 18, p3): a switch to a tab already open is Catc
     expect(stageStatus({ ...base, switched: true })).toEqual({ key: "live" });
   });
   test("the stage says which wait it is, and dims the tab they left either way", () => {
-    expect(stage).toMatch(/leave: leaveWhy,\s*(?:\/\/[^\n]*\n\s*)*switched: switchedRef\.current,\s*\}\);/);
+    expect(stage).toMatch(/leave: leaveWhy,\s*(?:\/\/[^\n]*\n\s*)*switched: switching,\s*\}\);/ // REVISION (run 19, p1): state);
     expect(stage).toMatch(
       /const loadingNext = live\.key === "loadingNext" \|\|\s*live\.key === "pageGone" \|\|\s*(?:\/\/[^\n]*\n\s*)*\(awaiting && switchedRef\.current\);/,
     );

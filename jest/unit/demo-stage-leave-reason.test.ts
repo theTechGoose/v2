@@ -1,4 +1,6 @@
 /**
+ * REVISION (demo-loop run 19, p1 — REQ-648 AMENDMENT REVISION): stageStatus also takes `switched`
+ * after `leave`; the regex allows the longer tail.
  * REVISION (demo-loop run 18, p3 — REQ-648 AMENDMENT): the dim gate also holds while another of
  * their tabs is awaited (`awaiting && switchedRef.current`); the regex below says so.
  * REQ-896 — demo-loop run 6 (dm6), issues p1 + p7. (p1) Closing the customer's only tab showed
@@ -211,7 +213,7 @@ describe("REQ-896 (dm6, p1 + p7) the stage knows why the customer's page went", 
       /onStatus: \(s, why\) => \{\s*setStatus\(s\);\s*setLeaveWhy\(why\);/,
     );
     expect(stage).toMatch(
-      /stageStatus\(\{[\s\S]{0,300}leave: leaveWhy,[\s\S]{0,200}\}\)/,
+      /stageStatus\(\{[\s\S]{0,300}leave: leaveWhy,[\s\S]{0,400}\}\)/,
     );
     expect(stage).toMatch(
       /live\.key === "pageGone"\s*\?\s*t\("demoMode\.pageGone"\)/,

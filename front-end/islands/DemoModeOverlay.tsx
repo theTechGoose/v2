@@ -2556,8 +2556,17 @@ export default function DemoModeOverlay(
   useLayoutEffect(() => {
     if (!asking) return;
     // REQ-852 (cycle dm3, p4) — first where no control is, then kept in view
+    const dockBefore = { ...dockRef.current };
     placeAsk();
     clampAsk();
+    // REQ-852 AMENDMENT (dm19, p2) — the question's dock moved (out of a right-docked peek at
+    // 1024 px it was first painted at the peek's left, "Yes" off-screen, and glided ~250 ms to
+    // its box): painted at its box, no glide
+    if (
+      dockRef.current.x !== dockBefore.x || dockRef.current.y !== dockBefore.y
+    ) {
+      setNoGlide(true);
+    }
     // the compact form a resize switched to lands a frame later: measured again
     const id = requestAnimationFrame(clampAsk);
     // the stage's ghost follows the move

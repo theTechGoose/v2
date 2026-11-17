@@ -228,11 +228,15 @@ export function stageStatus(o: {
     if (!o.mirrored) return { key: "connecting" };
     return o.leave === "navigating" ? loadingNext() : { key: "pageGone" };
   }
+  const awaitingWord = () =>
+    o.switched ? { key: "catchingUp" as StageStatusKey } : loadingNext();
   if (o.status !== "direct" && o.status !== "relay") {
-    return { key: "connecting" };
+    // REQ-648 AMENDMENT REVISION (dm19, p1) — the link to their NEW tab's page still opening while
+    // their last page is on show: the wait is for that page, never "Connecting…" over it
+    return o.mirrored && o.awaiting ? awaitingWord() : { key: "connecting" };
   }
   if (!o.mirrored) return { key: "connecting" };
-  if (o.awaiting) return o.switched ? { key: "catchingUp" } : loadingNext();
+  if (o.awaiting) return awaitingWord();
   if (o.resyncing) return { key: "catchingUp" };
   if (o.behind > 0) return { key: "behind", n: o.behind };
   return { key: "live" };

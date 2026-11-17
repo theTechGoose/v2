@@ -389,6 +389,10 @@ export function followTabs(): {
   learn(cid: string, key: string): boolean;
   shown(): void;
   unsure(): boolean;
+  /** REQ-648 AMENDMENT REVISION (demo-loop run 19, p1) — the tab followed now had been followed
+   *  before (a switch back to a tab already open): "Catching up…", nothing of theirs loads. A tab
+   *  never followed is a new one: its first page load is "Loading their next page…" */
+  revisit(): boolean;
   /** REQ-645 AMENDMENT 2 (dm8, p2) — every tab of hers is gone: forget which was followed, so the
    *  next one followed (a new tab after her only one closed) is no "other tab" */
   closed(): void;
@@ -401,6 +405,14 @@ export function followTabs(): {
    *  socket followed now has been on show */
   let seenKey: string | undefined;
   let seen = false;
+  /** REQ-648 AMENDMENT REVISION — every tab key followed so far, and whether the one followed
+   *  now was among them before */
+  const known = new Set<string>();
+  let revisited = false;
+  const note = (k: string | undefined) => {
+    revisited = !!k && known.has(k);
+    if (k) known.add(k);
+  };
   return {
     follow(c, k) {
       if (c === cid) return false;
@@ -409,6 +421,7 @@ export function followTabs(): {
       key = k;
       seen = false;
       before = k ? undefined : was;
+      note(k);
       return tabSwitched(was, k);
     },
     learn(c, k) {
@@ -417,8 +430,10 @@ export function followTabs(): {
       if (seen) seenKey = k;
       const was = before;
       before = undefined;
+      note(k);
       return tabSwitched(was, k);
     },
+    revisit: () => revisited,
     shown() {
       seen = true;
       if (key) seenKey = key;
@@ -430,8 +445,35 @@ export function followTabs(): {
       before = undefined;
       seenKey = undefined;
       seen = false;
+      known.clear();
+      revisited = false;
     },
   };
+}
+
+/**
+ * REQ-877 AMENDMENT (demo-loop run 19, m2) — the next ghost drawn, given the one drawn now: the
+ * same one (its object kept: no re-render) when nothing of it changed; the off marker's ghost
+ * keeps its fade KEY while her marker glides along the frame's edge — every move used to remount
+ * it (a new key per spot) and restart its fade, so it blinked ~10 times in a second while he
+ * moved beside the frame. A new fade only when the ghost comes back from nowhere or from his
+ * arrow.
+ */
+export function ghostNext<
+  G extends {
+    at: Pt;
+    outside: boolean;
+    dir?: Dir | null;
+    off?: { key: string } | null;
+  },
+>(was: G | null, g: G): G {
+  if (!was) return g;
+  const still = was.outside === g.outside &&
+    was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
+    was.dir?.hidden === g.dir?.hidden && // REQ-867
+    Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5;
+  if (was.off && g.off) return still ? was : { ...g, off: was.off };
+  return still && was.off?.key === g.off?.key ? was : g;
 }
 
 /** REQ-645 (m36) — the anchors kept per page load: so many of the newest */
@@ -1011,8 +1053,12 @@ export function reportedGhost(
   dir?: Dir | null;
   off?: { key: string } | null;
 } | null {
-  if (!h.a || !r?.p || !sameAnchor(r.a, h.a)) return null;
-  if (h.a.o === 1) return offGhost(r.p, frame);
+  if (!h.a || !r?.p) return null;
+  // REQ-877 AMENDMENT (dm19, m2) — his mouse beside the frame: her marker is where she last
+  // reported it, whichever of his off spots the report was for (every move is a new off anchor;
+  // a report of the one before cleared the ghost until the next one came — a blink per move)
+  if (h.a.o === 1) return r.a?.o === 1 ? offGhost(r.p, frame) : null;
+  if (!sameAnchor(r.a, h.a)) return null;
   // REQ-645 + REQ-642 — out of view on their screen: the ghost is their chevron, where it is
   if (r.d) {
     const { dx, dy } = r.d;

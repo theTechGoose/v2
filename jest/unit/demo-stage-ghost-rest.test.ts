@@ -1,4 +1,6 @@
 /**
+ * REVISION (demo-loop run 19, m2 — REQ-877 AMENDMENT): hold() clears the ghost for every new anchor
+ * but an off one following an off ghost (kept, gliding); the assertion names the new call.
  * REQ-789 — Raphael (hotfix, 2026-11-13): "look at this in demo view — this flickers my cursor
  * and the flicker is in the wrong place."
  *
@@ -62,7 +64,7 @@ describe("REQ-789 wiring: the stage defers the ghost to his rest and drops the w
     const body = slice("const hold = (", 1400);
     expect(body).toContain("holdAtRef.current = performance.now()");
     expect(body).toMatch(/clearGhostWait\(\)/);
-    expect(body).toContain("setGhost(null)");
+    expect(body).toContain("setGhost((was) => a.o === 1 && was?.off ? was : null);"); // REVISION (run 19, m2)
   });
   test("drop() (his mouse left, the demo went, another tab) drops the wait too", () => {
     const body = slice("const drop = () =>", 700);

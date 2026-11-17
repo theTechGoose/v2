@@ -200,6 +200,7 @@ import {
   pointerAbsent,
   printable,
   reanchored,
+  ghostNext,
   reportedGhost,
   reportedTag,
   resendable,
@@ -480,6 +481,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  first snapshot has not come yet (the stage then says which tab it shows) */
   const keptRef = useRef(new Map<string, Held>());
   const switchedRef = useRef(false);
+  /** REQ-648 AMENDMENT REVISION (dm19, p1) — awaiting a tab followed BEFORE ("Catching up…"):
+   *  state, so the word is said in the render after the switch is known (the key may come after
+   *  the socket, `learn`) */
+  const [switching, setSwitching] = useState(false);
+  // the word holds until that tab's screen is on show (awaiting false): the tab note (and the
+  // other resets of switchedRef) come a beat before — "Loading their next page…" showed in between
+  useEffect(() => {
+    if (!awaiting) setSwitching(false);
+  }, [awaiting]);
   /** REQ-645 (m36) — which browser tab of theirs the stage follows (its key, once said); a page
    *  that came in before the tab it is of was known (given its due when it is) */
   const tabsRef = useRef(followTabs());
@@ -636,7 +646,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     deadAtRef.current = null;
     holdAtRef.current = performance.now(); // REQ-789 — the ghost waits for his rest
     clearGhostWait();
-    setGhost(null);
+    // REQ-877 AMENDMENT (dm19, m2) — his mouse moving beside the frame: her off marker glides,
+    // and so does its ghost — kept until her next report moves it (never cleared per move)
+    setGhost((was) => a.o === 1 && was?.off ? was : null);
     setAbsent(false); // REQ-538 — made where he points now: drawn there
     endPending(); // REQ-813 — a move ends their "pointing…"
     ownSetRef.current?.(ownAt(heldNow())); // REQ-642 — his own marker, where he points
@@ -809,15 +821,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       }
       return;
     }
-    setGhost((was) =>
-      was && g && was.outside === g.outside &&
-        was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
-        was.dir?.hidden === g.dir?.hidden && // REQ-867
-        was.off?.key === g.off?.key && // REQ-877 — a new spot: a new fade
-        Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5
-        ? was
-        : g
-    );
+    // REQ-877 AMENDMENT (dm19, m2) — the off marker's ghost glides with her marker (one key);
+    // REQ-867 — the same ghost stays the same object
+    setGhost((was) => ghostNext(was, g));
   };
   const showGhostRef = useRef(showGhost);
   showGhostRef.current = showGhost;
@@ -1126,6 +1132,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
     seekTimerRef.current = null;
     switchedRef.current = true;
+    setSwitching(tabsRef.current.revisit()); // REQ-648 AMENDMENT REVISION (dm19, p1)
   };
   /** REQ-645 (cycle 5 m36) — a page load mirrored afresh: a tab followed again with its page
    *  unchanged gets back the anchor he left on that page load (sent) — when he has pointed at
@@ -1774,6 +1781,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       deadAtRef.current = null;
       keptRef.current.clear();
       switchedRef.current = false;
+      setSwitching(false);
       waitTabRef.current = null;
       if (tabNoteTimerRef.current) clearTimeout(tabNoteTimerRef.current);
       tabNoteTimerRef.current = null;
@@ -1940,8 +1948,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     behind: lagView.behind,
     pageBehind: lagView.page,
     leave: leaveWhy,
-    // REQ-648 AMENDMENT (dm18, p3) — another of their tabs: "Catching up…", nothing loads
-    switched: switchedRef.current,
+    // REQ-648 AMENDMENT (dm18, p3) — another of their tabs: "Catching up…", nothing loads;
+    // REVISION (dm19, p1) — only a tab followed before: a NEW tab's first page loads
+    switched: switching,
   });
   // REQ-648 (c4-m28) — the frame holds the page they left while their next one loads: dimmed, and
   // his pointer is not sent against it (the move throttle, the look-up of his still mouse, a click)
