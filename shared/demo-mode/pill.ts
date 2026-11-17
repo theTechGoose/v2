@@ -600,7 +600,7 @@ export function pillRows(o: {
  * grid is missed — on the English /welcome step 2 at 390 px the 53 px between Continue (600) and
  * "Skip setup for now" (653) held a 43 px pill with 5 px to spare, and no half-step row (610.5,
  * 636, …) fit it, so the pill sat on the hint. Here the page itself is read: `hit(x, y)` says
- * whether a piece of the page is at a point; five columns across the pill's width are walked every
+ * whether a piece of the page is at a point; a few columns across the pill's width are walked every
  * `step` px from home's foot up to `top`, and every run of clear rows tall enough for the pill
  * gives one box, the pill centred in it — nearest home first, at home's left, the right edge,
  * then centred (as `pillRows`). The caller judges each box with `blocked` as it does a row.
@@ -622,7 +622,10 @@ export function pillBands(o: {
   const top = (o.top ?? 0) + margin;
   const w = o.home.width;
   const h = o.home.height;
-  const step = o.step ?? 4;
+  // REQ-866 AMENDMENT 2 — measured on /settings at 390×844: 9 columns every 4 px cost 32–42 ms
+  // a placement (the page's main thread, every measure of the join grace); 5 columns every 8 px
+  // cost 8–10 ms. The caller judges each band with `blocked` anyway
+  const step = o.step ?? 8;
   const lefts = [
     o.home.left,
     o.view.w - margin - w,
@@ -631,8 +634,8 @@ export function pillBands(o: {
   const found: { box: Rect; order: number; dist: number }[] = [];
   let order = 0;
   for (const left of new Set(lefts)) {
-    // a column every 40 px or so across the pill (as `pageUnder` samples), 6 px in from each end
-    const cols = Math.max(5, Math.ceil(w / 40));
+    // a column every 80 px or so across the pill, 6 px in from each end
+    const cols = Math.max(3, Math.ceil(w / 80));
     const xs = Array.from(
       { length: cols },
       (_, i) => left + 6 + ((w - 12) * i) / (cols - 1),

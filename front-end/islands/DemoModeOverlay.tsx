@@ -291,6 +291,8 @@ interface Demo {
 const Z = 2147483000;
 /** the pill and its folded tab: above the page, its dialogs and coach mark */
 const PILL_Z = Z + 3;
+/** REQ-866 AMENDMENT 2 — how long the page's clear bands (`pillBands`) are kept for one layout */
+const PILL_BANDS_CACHE_MS = 300;
 /**
  * REQ-831 (demo-loop cycle dm2, m4) — the presenters' pointers sit above the pill (wave clip at
  * POINTER_Z, arrow at POINTER_Z + 1), as on the stage (ghost at Z, pointer at Z + 1): the pill's
@@ -728,6 +730,10 @@ export default function DemoModeOverlay(
   const [tabAt, setTabAt] = useState({ x: 0, y: 0 });
   /** REQ-830 (demo-loop cycle dm2, p6) — where the pill last was (folded, the mini-pill's spot, the
    *  dock, its whole size): carried to the next page, which draws its first frame from it */
+  /** REQ-866 AMENDMENT 2 (dm12, m1) — the page's clear bands for the whole pill, read lately */
+  const bandsCacheRef = useRef<
+    { key: string; at: number; bands: Rect[] } | null
+  >(null);
   const lastPlaceRef = useRef<PillPlace | null>(null);
   /** REQ-765 (cycle 5v2, p18-3d) — a dialog's dim is up: the pill is softened under it */
   const [underDim, setUnderDim] = useState(false);
@@ -2062,13 +2068,23 @@ export default function DemoModeOverlay(
         // bands the page's blocks leave, read off the page (the 53 px between Continue and "Skip
         // setup for now" on the English /welcome at 390)
         bands: can
-          ? () =>
-            pillBands({
+          ? () => {
+            // read at most every PILL_BANDS_CACHE_MS for one layout (size + scroll): the scan
+            // costs ~10 ms and the join grace measures on every change
+            const key = `${view.w}x${view.h}@${Math.round(globalThis.scrollY || 0)}`;
+            const c = bandsCacheRef.current;
+            if (c && c.key === key && Date.now() - c.at < PILL_BANDS_CACHE_MS) {
+              return c.bands;
+            }
+            const bands = pillBands({
               home: home.box,
               view,
               top: bannerH(),
               hit: (x, y) => textOrControlAt(x, y, backdrop),
-            })
+            });
+            bandsCacheRef.current = { key, at: Date.now(), bands };
+            return bands;
+          }
           : undefined,
         // REQ-897 AMENDMENT (dm7, m3) — the hold is for a spot placed on THIS page: a spot carried
         // from the last page (REQ-830) is judged on arrival, even while the page's own hash scroll
