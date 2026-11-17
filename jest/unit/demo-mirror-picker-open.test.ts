@@ -8,6 +8,7 @@
  *
  * End to end on the fake DOM: the customer's recorder → a JSON round trip → the stage's replayer.
  */
+// REVISION (demo-loop run 16, by hand): the picker words also yield the row to a native dialog's (REQ-827 AMENDMENT).
 import { createRecorder } from "../../front-end/lib/demo-mode/mirror-record";
 import { createReplayer } from "../../front-end/lib/demo-mode/mirror-replay";
 import type { MirrorFrame } from "../../shared/demo-mode/mirror";
@@ -1875,7 +1876,7 @@ describe("REQ-862 AMENDMENT 5 / REQ-878 AMENDMENT 5 (demo-loop run 11, m1 — th
       /onPicker:\s*\(p\) =>\s*setPickerOut\(p && !p\.inside \? p\.text : null\)/,
     );
     expect(stage).toMatch(
-      /pickerOut !== null && tabNote === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
+      /pickerOut !== null && tabNote === null && nativeAsk === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
     );
   });
 });
@@ -1890,12 +1891,12 @@ describe("REQ-862 AMENDMENT 6 / REQ-878 AMENDMENT 6 (demo-loop run 12, m2 + m3) 
   test("m3: the stage draws the picker's words in the chrome row whether or not his mouse is outside the frame, and the pointer-off hint yields to them", () => {
     const src = read("front-end/islands/DemoStage.tsx");
     expect(src).toMatch(
-      /pickerOut !== null && tabNote === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
+      /pickerOut !== null && tabNote === null && nativeAsk === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
     );
     expect(src).not.toMatch(/pickerOut !== null && tabNote === null && !off/);
     expect(src).toMatch(
       // REQ-862 AMENDMENT 7 (dm13, m1) — and after the tab notice
-      /badges && off && pickerOut === null && tabNote === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
+      /badges && off && pickerOut === null && tabNote === null && nativeAsk === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
     );
   });
 });

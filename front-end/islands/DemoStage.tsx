@@ -558,6 +558,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-862 AMENDMENT 5 (demo-loop run 11, m1) — the picker chip's words when the frame has no
    *  spot clear of the page for it (a dense phone form): shown in the chrome row instead */
   const [pickerOut, setPickerOut] = useState<string | null>(null);
+  /** REQ-827 AMENDMENT (demo-loop run 16, m3) — the words of a native confirm()/alert() up on the
+   *  customer's screen (their page is blocked by it), said in the chrome row; null: none */
+  const [nativeAsk, setNativeAsk] = useState<string | null>(null);
   /** REQ-823 (cycle dm1, M2) — the customer signed out in the tab the stage followed: the pill and
    *  the waiting banner say so, until a tab of theirs is followed again */
   const [signedOut, setSignedOut] = useState(false);
@@ -1637,6 +1640,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "leave":
             customerRef.current = null;
             glide.hide();
+            setNativeAsk(null); // REQ-827 AMENDMENT — the page went: no dialog is up on it
             break;
           case "placed":
             // REQ-642 (cycle 5, m10) — where their screen has HIS arrow (a colleague's report is
@@ -1649,6 +1653,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name: ask who they
             // are now, at once (one round trip), not on the next ACTIVE_NAME_REFRESH_MS tick
             pollRef.current?.();
+            break;
+          case "dialog":
+            // REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() blocks their page: its
+            // words in the chrome row until it is answered
+            setNativeAsk(m.text);
             break;
           case "pill": {
             // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
@@ -1671,6 +1680,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         setOff(false);
         setTabNote(null);
         setAbsent(false);
+        setNativeAsk(null);
         customerRef.current = null;
         peersRef.current.clear();
         placedRef.current.clear();
@@ -1960,7 +1970,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // ghost would only say "Connecting…" for a page that is gone; after a navigation, as before
   // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…", pageGone):
   // the ghost would say "{name} is guiding you · End" of a page that is gone
-  const pillShown = look.elsewhere || signedOut ||
+  // REQ-868 AMENDMENT (dm16, p3) — nor under "The demo ended": the ghost of a pill that is gone
+  const pillShown = ended || look.elsewhere || signedOut ||
       (look.waiting && leaveWhy !== "navigating") || live.key === "pageGone"
     ? null
     : pillBox;
@@ -2406,7 +2417,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-862 AMENDMENT 7 (dm13, m1) — and after the tab notice: his mouse resting
                 beside the frame must not hide that her screen is another tab now */
             }
-            {badges && off && pickerOut === null && tabNote === null && (
+            {badges && off && pickerOut === null && tabNote === null && nativeAsk === null && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -2462,7 +2473,30 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 REQ-862 AMENDMENT 6 (dm12, m3) — before the pointer-off hint: his mouse resting
                 beside the frame must not hide what she is doing */
             }
-            {badges && pickerOut !== null && tabNote === null && (
+            {
+              /* REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() is up on their screen:
+                its words here (the page is blocked by it; the picker chip and the pointer-off
+                hint yield the row — this is the news) */
+            }
+            {badges && nativeAsk !== null && tabNote === null && (
+              <div
+                data-cy="demo-native-dialog"
+                role="status"
+                title={nativeAsk}
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:#1f1f1f;color:#fff;font-size:13px;font-weight:600`}
+              >
+                {t("demoMode.nativeDialog", { text: nativeAsk })}
+              </div>
+            )}
+            {badges && pickerOut !== null && tabNote === null && nativeAsk === null && (
               <div
                 data-cy="demo-picker-outside"
                 role="status"

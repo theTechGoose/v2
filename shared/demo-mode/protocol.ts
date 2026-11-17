@@ -129,6 +129,10 @@ export type PeerMessage =
   // REQ-636 (cycle 5, m8) — a stage that just followed a tab asks it for its pill (one sent
   // before the stage followed it was dropped); `t` above: the pill's frame clock (link.now())
   | { k: "askPill" }
+  // REQ-827 AMENDMENT (demo-loop run 16, m3) — a native confirm()/alert() is up on the customer's
+  // screen (its words, cut to DIALOG_TEXT_MAX), or was just answered (null): the stage says so in
+  // its chrome row — the page under it is blocked and nothing else tells the presenter why
+  | { k: "dialog"; text: string | null }
   // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name on this page: the stage
   // asks `active` at once (it names them by it), not on its next ACTIVE_NAME_REFRESH_MS tick
   | { k: "renamed" }
@@ -491,6 +495,9 @@ function parsePlaced(o: Record<string, unknown>): PlacedMessage | null {
   return m;
 }
 
+/** REQ-827 AMENDMENT (dm16, m3) — the most of a native dialog's words carried to the stage */
+export const DIALOG_TEXT_MAX = 400;
+
 export function parsePeerMessage(x: unknown): PeerMessage | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;
@@ -548,6 +555,12 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
       return { k: "askPill" };
     case "renamed":
       return { k: "renamed" };
+    case "dialog":
+      // REQ-827 AMENDMENT (dm16, m3) — the words of a native dialog, cut; null: it closed
+      if (o.text === null) return { k: "dialog", text: null };
+      return typeof o.text === "string"
+        ? { k: "dialog", text: o.text.slice(0, DIALOG_TEXT_MAX) }
+        : null;
     default:
       return null;
   }

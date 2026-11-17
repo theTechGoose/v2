@@ -9,6 +9,7 @@
  *  - the status chip said "Open in another window" in the same chip style as a button, next to
  *    the real "Use this window" button.
  */
+// REVISION (demo-loop run 16, by hand): an ended stage drops the pill ghost too (REQ-868 AMENDMENT).
 import * as fs from "fs";
 import * as path from "path";
 import { ghostWords, pillFaceOffline } from "../../shared/demo-mode/pill.ts";
@@ -63,7 +64,7 @@ describe("REQ-646 (demo-loop cycle 5, m63) — an inactive stage window says onl
     // REQ-646 AMENDMENT (REQ-838, cycle dm2, p4): nor while the customer is signed out
     expect(stage).toMatch(
       // REQ-896 — and while waiting after anything but a navigation
-      /const pillShown =\s*look\.elsewhere \|\| signedOut \|\|[\s\S]{0,160}\? null\s*: pillBox;/,
+      /const pillShown =\s*ended \|\| look\.elsewhere \|\| signedOut \|\|[\s\S]{0,160}\? null\s*: pillBox;/,
     );
   });
 

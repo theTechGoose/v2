@@ -243,11 +243,15 @@ import {
   PAGE_MEDIA_SELECTOR,
   pastBackdrop,
   peekBox,
+  type PeekBox,
   peekHolds,
   peekTimer,
   pillJumps,
   pointerRests,
   hoverClickIsTab,
+  type Approach,
+  approachMoved,
+  peekStays,
   PILL_BAND_GAP,
   PILL_BOX_METRICS,
   PILL_FONT,
@@ -682,9 +686,14 @@ export default function DemoModeOverlay(
    *  last mouse/pen pointer seen (NaN: none yet) */
   const peekTabRef = useRef<Rect | null>(null);
   const pointRef = useRef({ x: NaN, y: NaN });
-  /** REQ-890 AMENDMENT 4 (dm15, m2) — where the pointer was when its resting on the tab opened the
-   *  peek; a click there before it moves is the tab's (`hoverClickIsTab`), never End's */
-  const hoverOpenAtRef = useRef<{ x: number; y: number } | null>(null);
+  /** REQ-890 AMENDMENT 4 (dm15, m2) — where the pointer is since its resting on the tab opened the
+   *  peek; a click there is the tab's (`hoverClickIsTab`), never End's. REQ-890 AMENDMENT 6 (dm16,
+   *  p4 + p5) — the point follows the approach that opened the peek (`approachMoved`), and Keep
+   *  going starts one where the mouse rests (End came back under it) */
+  const approachRef = useRef<Approach | null>(null);
+  /** REQ-890 AMENDMENT 5 (dm16, m1) — the box the peek was last placed at: kept while the pointer
+   *  is on it (`peekStays`) — never a hop out from under the mouse */
+  const peekBoxRef = useRef<Rect | null>(null);
   /** REQ-820 AMENDMENT 3 (dm15, m1) — when the pill last came out whole (`pillJumps`) */
   const wholeSinceRef = useRef(0);
   /** REQ-820 — the frame that turns the tab into the whole pill: no transform glide, so it never
@@ -1851,13 +1860,60 @@ export default function DemoModeOverlay(
    *  — it shows the controls (the details) and never asks to end the demo. After the pointer has
    *  moved on, End is End */
   const endGuard = (e: MouseEvent) => {
+    // REQ-890 AMENDMENT 6 (dm16, p5) — judged by where the approach that opened the peek ended
     if (
-      !hoverClickIsTab(hoverOpenAtRef.current, { x: e.clientX, y: e.clientY })
+      !hoverClickIsTab(approachRef.current?.at ?? null, { x: e.clientX, y: e.clientY })
     ) return false;
-    hoverOpenAtRef.current = null;
+    approachRef.current = null;
     toggleOpen();
     return true;
   };
+  // REQ-890 AMENDMENT 6 (dm16, p4) — Keep going withdrew the question: the pill shrinks back and
+  // End lands under the still mouse ("a second click only asks again"). A click where the mouse
+  // rests, before it has moved on, is not End's — like the tab's click of AMENDMENT 4
+  const wasAskingRef = useRef(false);
+  useEffect(() => {
+    const wasAsking = wasAskingRef.current;
+    wasAskingRef.current = asking;
+    if (wasAsking && !asking && pillRef.current) {
+      approachRef.current = {
+        at: pointRef.current,
+        moved: 0,
+        tab: pillRef.current.getBoundingClientRect(),
+      };
+    }
+  }, [asking]);
+  // REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() blocks the customer's page, and the
+  // stage saw nothing of it ("Live", no sign). While this browser is the customer, both are
+  // wrapped: the words go out on the link before the question blocks the thread (the transport
+  // sends from its own thread), and "closed" (null) once it is answered
+  useEffect(() => {
+    if (demo?.role !== "viewer") return;
+    const native = { confirm: globalThis.confirm, alert: globalThis.alert };
+    const say = (text: string | null) => {
+      linkRef.current?.send({ k: "dialog", text });
+    };
+    globalThis.confirm = (text?: string) => {
+      say(String(text ?? ""));
+      try {
+        return native.confirm.call(globalThis, text);
+      } finally {
+        say(null);
+      }
+    };
+    globalThis.alert = (text?: unknown) => {
+      say(String(text ?? ""));
+      try {
+        native.alert.call(globalThis, text);
+      } finally {
+        say(null);
+      }
+    };
+    return () => {
+      globalThis.confirm = native.confirm;
+      globalThis.alert = native.alert;
+    };
+  }, [demo?.role]);
   /** REQ-890 AMENDMENT 3 (dm14, m2) — the details a PEEK shows: a peek out of the tab opens with
    *  its details closed whatever the remembered choice (REQ-372's carried `open` made a two-row
    *  73 px peek, which sat on "Step 2 of 10" at 390 px); "more" during the peek opens them for
@@ -1866,7 +1922,7 @@ export default function DemoModeOverlay(
   useEffect(() => {
     if (!peek) {
       setPeekOpen(false);
-      hoverOpenAtRef.current = null; // REQ-890 AMENDMENT 4
+      approachRef.current = null; // REQ-890 AMENDMENT 4
     }
   }, [peek]);
   const shownOpen = tucked && peek ? peekOpen : open;
@@ -2041,6 +2097,13 @@ export default function DemoModeOverlay(
       // REQ-835 (dm2, M2) — still kept inside the window (a resize under the question): it moves
       // only when it would be off-screen, so a Yes that fits stays where it was seen
       if (el.querySelector('[data-cy="demo-end-ask"]')) {
+        // REQ-820 AMENDMENT 5 (dm16, m4) — the asking form's size is the last one placed: Keep
+        // going's shrink is then another size (`pillJumps`) and jumps to its box — it glided
+        // 226 px from where the question sat
+        sizedRef.current = {
+          w: Math.ceil(el.getBoundingClientRect().width),
+          h: el.offsetHeight,
+        };
         clampAsk();
         sendPill();
         return;
@@ -2230,7 +2293,17 @@ export default function DemoModeOverlay(
       const peekHome = peekCompactSize
         ? pillHome({ view, size: peekCompactSize }).box
         : home.box;
-      const box = p.tucked
+      // REQ-890 AMENDMENT 5 (dm16, m1) — a peek the pointer is on keeps its box
+      const stays = p.tucked && peekRef.current && peekBoxRef.current &&
+        peekStays({
+          last: peekBoxRef.current,
+          size: { w: peekHome.width, h: peekHome.height },
+          point: pointRef.current,
+          view,
+        });
+      const box: PeekBox = stays
+        ? peekBoxRef.current!
+        : p.tucked
         ? peekBox({
           home: peekHome,
           view,
@@ -2246,8 +2319,11 @@ export default function DemoModeOverlay(
           compact: peekCompactSize
             ? undefined
             : compactSizeRef.current ?? undefined,
+          // REQ-890 AMENDMENT 5 (dm16, m2) — under the pointer that opened it, words or not
+          point: pointRef.current,
         })
         : p.box;
+      peekBoxRef.current = p.tucked ? box : null;
       // REQ-890 — the tab's row holds a control under every x for the whole pill: the compact
       // form is shown (and measured again, a frame later) rather than the pill moving away from
       // the tab or landing on a control. Its size unknown yet: shown as soon as the whole pill
@@ -2463,6 +2539,7 @@ export default function DemoModeOverlay(
     if (!peek) {
       setPeekCompact(false);
       peekForAskRef.current = false;
+      peekBoxRef.current = null; // REQ-890 AMENDMENT 5
     }
   }, [peek]);
   // REQ-849 (demo-loop cycle dm3, p14) — while the pill is out of its tab: where the mouse is, and
@@ -2473,13 +2550,13 @@ export default function DemoModeOverlay(
     const move = (e: PointerEvent) => {
       if (e.pointerType === "touch") return;
       pointRef.current = { x: e.clientX, y: e.clientY };
-      // REQ-890 AMENDMENT 4 (dm15, m2) — moved on from where it opened the peek: End is End again
-      if (
-        hoverOpenAtRef.current &&
-        !hoverClickIsTab(hoverOpenAtRef.current, pointRef.current)
-      ) {
-        hoverOpenAtRef.current = null;
-      }
+      // REQ-890 AMENDMENT 4 (dm15, m2) — moved on from where it opened the peek: End is End again;
+      // AMENDMENT 6 (dm16, p5) — the approach that opened it carries the point while it goes on
+      approachRef.current = approachMoved(
+        approachRef.current,
+        pointRef.current,
+        Date.now(),
+      );
       const el = pillRef.current;
       if (!el) return;
       const pill = el.getBoundingClientRect();
@@ -2965,9 +3042,16 @@ export default function DemoModeOverlay(
               // REQ-820 (demo-loop cycle dm1, m6) — real pointer movement, never a bare mouseenter:
               // a tab re-mounted under a resting pointer gets one from the hover update
               onMouseMove={(e) => {
-                // REQ-890 AMENDMENT 4 (dm15, m2) — a peek the pointer opens by resting here
-                if (!peekRef.current) {
-                  hoverOpenAtRef.current = { x: e.clientX, y: e.clientY };
+                // REQ-890 AMENDMENT 5 (dm16, m2) — the pointer the peek opens under
+                pointRef.current = { x: e.clientX, y: e.clientY };
+                // REQ-890 AMENDMENT 4 (dm15, m2) — a peek the pointer opens by resting here;
+                // AMENDMENT 6 (dm16, p5) — the approach, confined to the tab's box
+                if (!peekRef.current && pillRef.current) {
+                  approachRef.current = {
+                    at: { x: e.clientX, y: e.clientY },
+                    moved: Date.now(),
+                    tab: pillRef.current.getBoundingClientRect(),
+                  };
                 }
                 openPeek();
               }}

@@ -8,6 +8,7 @@
  * anchor, the same row at the opposite edge, then the bottom row; first with no control, else the
  * fewest; REQ-835's in-view clamp last; REQ-300's freeze after.
  */
+// REVISION (demo-loop run 16, by hand): another [asking] effect (Keep going's guard, REQ-890 AMENDMENT 6) sits before the layout effect; it is found by its first line.
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -141,7 +142,7 @@ describe("REQ-852 (demo-loop cycle dm3, p4) — the asking pill is placed where 
 
     test("End's question coming up places the asking box once with askSpot + countControls (through the dialog backdrop), then REQ-835's clamp", () => {
       const effect = o.match(
-        /useLayoutEffect\(\(\) => \{[\s\S]*?\}, \[asking\]\);/,
+        /useLayoutEffect\(\(\) => \{\s*if \(!asking\) return;[\s\S]*?\}, \[asking\]\);/,
       );
       expect(effect).not.toBeNull();
       expect(effect![0]).toMatch(/placeAsk\(\);\s*clampAsk\(\);/);

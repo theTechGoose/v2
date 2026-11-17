@@ -18,6 +18,7 @@
  * replaces the stage's own guess — shows at once (`pillShowsAtOnce`); a tuck alone still waits for
  * its frame (REQ-636).
  */
+// REVISION (demo-loop run 16, by hand): the asking branch records the asking form's size first (REQ-820 AMENDMENT 5).
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -217,7 +218,7 @@ describe("REQ-822 (demo-loop cycle dm1, m1) — the islands are wired", () => {
     const place = between(o, "const place = () => {", "setCompact(narrow());");
     expect(place).toMatch(
       // REQ-835 (dm2, M2) — after keeping the asking pill inside the window
-      /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*(clampAsk\(\);\s*)?sendPill\(\);\s*return;/,
+      /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*(?:\/\/[^\n]*\n\s*)*(?:sizedRef\.current = \{[^}]*\};\s*)?(clampAsk\(\);\s*)?sendPill\(\);\s*return;/,
     );
   });
 

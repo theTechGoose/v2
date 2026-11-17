@@ -331,6 +331,68 @@ export function hoverClickIsTab(
   return Math.hypot(click.x - openedAt.x, click.y - openedAt.y) < tol;
 }
 
+/** REQ-890 AMENDMENT 6 (demo-loop run 16, p5) — pointer moves this close together are one
+ *  motion: the approach that opened the peek goes on through them */
+export const PEEK_APPROACH_GAP_MS = 300;
+/** REQ-890 AMENDMENT 6 — the approach that opened a peek (or Keep going that shrank the asking
+ *  pill under a resting mouse): where the pointer is (`at`, the point End's guard judges a click
+ *  by), when it last moved, and the tab's box the approach is confined to */
+export type Approach = {
+  at: { x: number; y: number };
+  moved: number;
+  tab: Rect;
+};
+/**
+ * REQ-890 AMENDMENT 6 (demo-loop run 16, p5) — the pointer moved while the peek is up. A mouse
+ * reaching the right-edge tab in five 14 px steps opened the peek on its first step; the moves
+ * after it took the pointer past PEEK_HOVER_CLICK_PX of where it opened, so the click at the end
+ * of that same approach asked to end the demo. The approach goes on while the moves are
+ * continuous (less than PEEK_APPROACH_GAP_MS apart) and inside the tab's box: `at` moves with the
+ * pointer. A move after a rest within PEEK_HOVER_CLICK_PX is a tremor (kept); further, or out of
+ * the tab's box, it is a deliberate move — the approach is over (null) and End is End.
+ */
+export function approachMoved(
+  a: Approach | null,
+  point: { x: number; y: number },
+  now: number,
+  tol = PEEK_HOVER_CLICK_PX,
+  gap = PEEK_APPROACH_GAP_MS,
+): Approach | null {
+  if (!a) return null;
+  const inTab = point.x >= a.tab.left &&
+    point.x <= a.tab.left + a.tab.width &&
+    point.y >= a.tab.top && point.y <= a.tab.top + a.tab.height;
+  if (now - a.moved < gap) {
+    return inTab ? { at: { ...point }, moved: now, tab: a.tab } : null;
+  }
+  return hoverClickIsTab(a.at, point, tol) ? a : null;
+}
+
+/**
+ * REQ-890 AMENDMENT 5 (demo-loop run 16, m1) — a peek the pointer is on keeps its box: the
+ * left-docked tab's peek opened under the resting mouse, then the next placement (the row
+ * crowded) took it to the top of the screen, where the pointer on the tab's box held it open for
+ * good. `last` is the box the peek was placed at; it stays while the pointer is on it, the form
+ * is the same size, and the box is inside the window. No last box, another size (the compact
+ * form now), a pointer never seen, a box out of the window: placed again.
+ */
+export function peekStays(o: {
+  last: Rect | null;
+  size: Size;
+  point: { x: number; y: number };
+  view: Size;
+}): boolean {
+  const r = o.last;
+  if (!r) return false;
+  if (r.width !== o.size.w || r.height !== o.size.h) return false;
+  if (Number.isNaN(o.point.x) || Number.isNaN(o.point.y)) return false;
+  if (r.left < 0 || r.top < 0 || r.left + r.width > o.view.w || r.top + r.height > o.view.h) {
+    return false;
+  }
+  return o.point.x >= r.left && o.point.x <= r.left + r.width &&
+    o.point.y >= r.top && o.point.y <= r.top + r.height;
+}
+
 /** REQ-820 AMENDMENT 4 (demo-loop run 15, p4) — a pointer that entered the pill (`over`) holds it
  *  only while its last known point is still over the pill's box (with `slack`): a pill that
  *  shrank or moved away from under a resting pointer (Keep going took the asking pill back to its
@@ -412,6 +474,32 @@ export function tabSpots(home: Rect, view: Size, top = 0): Rect[] {
 
 /** REQ-818 (demo-loop cycle dm1, m5) — the box with the fewest controls under it; a tie keeps the
  *  first (the order asked) */
+/** the tab's row for one form of the pill (`home` is its box): flush with the tab first
+ *  (`peekFlushBox`), then every PILL_TAB.w / 2 along x, nearest the flush spot first. REQ-849 —
+ *  inside the margins (a pill wider than that: at the left margin); at the left edge's margin, or
+ *  the right one's; a tab along the bottom: centred over it */
+function rowSpots(home: Rect, tab: Rect, view: Size): Rect[] {
+  const min = PILL_MARGIN;
+  const max = Math.max(min, view.w - PILL_MARGIN - home.width);
+  const first = peekFlushBox(tab, view, { w: home.width, h: home.height });
+  const top = first.top;
+  const flush = first.left;
+  const at = (x: number): Rect => ({
+    ...home,
+    top,
+    left: Math.max(min, Math.min(Math.round(x), max)),
+  });
+  const xs = [flush];
+  for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
+  xs.push(max);
+  xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
+  return xs.map(at);
+}
+
+const inRect = (r: Rect, p: { x: number; y: number }) =>
+  p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top &&
+  p.y <= r.top + r.height;
+
 function fewest(boxes: Rect[], controls: (r: Rect) => number): Rect {
   let best = boxes[0];
   let n = Infinity;
@@ -489,8 +577,36 @@ export function peekBox(o: {
   texts?: (r: Rect) => number;
   /** REQ-873 — the impersonation banner's height: no row or spot above it */
   top?: number;
+  /** REQ-890 AMENDMENT 5 (dm16, m1 + m2) — the pointer (the one that opened the peek by resting
+   *  on the tab, or that is on the pill): among the tab's row's boxes, one that covers it comes
+   *  before every other — the whole form clear of controls and words, the compact form clear,
+   *  then the fewest — words under it or not. The peek opened a row above the mouse (the row's
+   *  words), and the click meant for "Demo" landed on the page. No box of the row covers it
+   *  (the tab's outer part, in the margin's gap) or no pointer seen (NaN): the search below */
+  point?: { x: number; y: number };
 }): PeekBox {
   const controls = o.controls ?? (() => 0);
+  const point = o.point && Number.isFinite(o.point.x) &&
+      Number.isFinite(o.point.y)
+    ? o.point
+    : null;
+  if (point) {
+    const score = (r: Rect) => controls(r) * 1000 + (o.texts?.(r) ?? 0);
+    const covering = (home: Rect) =>
+      rowSpots(home, o.tab, o.view).filter((r) => inRect(r, point));
+    const whole = covering(o.home);
+    const compact = o.compact
+      ? covering({ ...o.home, width: o.compact.w, height: o.compact.h })
+      : [];
+    const wholeBest = whole.length ? fewest(whole, score) : null;
+    const compactBest = compact.length ? fewest(compact, score) : null;
+    if (wholeBest && score(wholeBest) === 0) return wholeBest;
+    if (compactBest && score(compactBest) === 0) {
+      return { ...compactBest, compact: true };
+    }
+    if (wholeBest) return wholeBest;
+    if (compactBest) return { ...compactBest, compact: true };
+  }
   if (o.texts) {
     const texts = o.texts;
     const clear = run((r) => controls(r) * 1000 + texts(r), false);
@@ -506,26 +622,9 @@ export function peekBox(o: {
     /** the search for one form of the pill (`home` is its box): the tab's row along x, flush with
      *  the tab first; then (`more`) the other rows, nearest first, and the pill's spots */
     function search(home: Rect) {
-      // REQ-849 — inside the margins (a pill wider than that: at the left margin); at the left
-      // edge's margin, or the right one's; a tab along the bottom: centred over it (`peekFlushBox`)
-      const min = PILL_MARGIN;
-      const max = Math.max(min, o.view.w - PILL_MARGIN - home.width);
-      const first = peekFlushBox(o.tab, o.view, {
-        w: home.width,
-        h: home.height,
-      });
-      const top = first.top;
-      const flush = first.left;
-      const at = (x: number): Rect => ({
-        ...home,
-        top,
-        left: Math.max(min, Math.min(Math.round(x), max)),
-      });
-      const xs = [flush];
-      for (let x = min; x < max; x += PILL_TAB.w / 2) xs.push(x);
-      xs.push(max);
-      xs.sort((a, b) => Math.abs(a - flush) - Math.abs(b - flush));
-      const best = fewest(xs.map(at), count);
+      const boxes = rowSpots(home, o.tab, o.view);
+      const top = boxes[0].top;
+      const best = fewest(boxes, count);
       const row = count(best) === 0 ? best : null;
       // REQ-873 — the row is crowded: other rows (between the banner and home's row), nearest
       // first, each along x as above; then the pill's spots
@@ -541,8 +640,8 @@ export function peekBox(o: {
           if (top + k * step <= floor) rows.push(top + k * step);
         }
         for (const t of rows) {
-          for (const x of xs) {
-            const r = { ...at(x), top: t };
+          for (const b of boxes) {
+            const r = { ...b, top: t };
             if (count(r) === 0) return r;
           }
         }

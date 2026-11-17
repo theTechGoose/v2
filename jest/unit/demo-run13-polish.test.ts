@@ -18,6 +18,7 @@
  *       390 px customer on a 1280 px stage): "Maria Lopez cerró sesión Su última pantalla se…".
  *       It is clipped to the window, like the row's other badges.
  */
+// REVISION (demo-loop run 16, by hand): both hints also yield the row to a native dialog's words (REQ-827 AMENDMENT).
 import * as fs from "fs";
 import * as path from "path";
 import { startedText } from "../../shared/demo-mode/restart";
@@ -46,12 +47,12 @@ describe("REQ-862 AMENDMENT 7 (demo-loop run 13, m1): the tab notice shows with 
   });
   test("the pointer-off hint waits for the notice as well as the picker words", () => {
     expect(stage).toMatch(
-      /\{badges && off && pickerOut === null && tabNote === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
+      /\{badges && off && pickerOut === null && tabNote === null && nativeAsk === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
     );
   });
   test("the picker words still wait for the notice only (REQ-862 AMENDMENT 6)", () => {
     expect(stage).toMatch(
-      /\{badges && pickerOut !== null && tabNote === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
+      /\{badges && pickerOut !== null && tabNote === null && nativeAsk === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
     );
   });
 });

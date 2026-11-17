@@ -11,6 +11,7 @@
  * M2: a resize while End asks left the pill where it was at 1280 px (x 611 → 977 on a 390 window):
  * REQ-816's clamp ran only when `asking` flipped and `place()` returned before re-placing.
  */
+// REVISION (demo-loop run 16, by hand): the asking branch records the asking form's size first (REQ-820 AMENDMENT 5).
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -251,10 +252,10 @@ describe("REQ-835 (demo-loop cycle dm2, m2 + M2) — the open End question: one 
         "setCompact(isNarrow());",
       );
       expect(place).toMatch(
-        /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*clampAsk\(\);\s*sendPill\(\);\s*return;/,
+        /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*(?:\/\/[^\n]*\n\s*)*(?:sizedRef\.current = \{[^}]*\};\s*)?clampAsk\(\);\s*sendPill\(\);\s*return;/,
       );
       const effect = o.match(
-        /useLayoutEffect\(\(\) => \{[\s\S]*?\}, \[asking\]\);/,
+        /useLayoutEffect\(\(\) => \{\s*if \(!asking\) return;[\s\S]*?\}, \[asking\]\);/,
       );
       expect(effect).not.toBeNull();
       expect(effect![0]).toMatch(/clampAsk\(\)/);

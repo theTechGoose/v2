@@ -4458,6 +4458,7 @@
   "demoMode.catchingUp": "Poniéndose al día…",
   "demoMode.pickerDate": "Eligiendo una fecha…",
   "demoMode.pickerFile": "El cliente está eligiendo un archivo…",
+  "demoMode.nativeDialog": "Pregunta del navegador en la pantalla del cliente: “{text}”",
   "demoMode.behind": "{n} s de retraso",
   "nav.workOrders": "Órdenes de trabajo",
   "quotes.ledger.title": "Documentos",

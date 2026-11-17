@@ -16,6 +16,7 @@
  *   - p8: the presenter left the stage: the customer's pill said "{name} is guiding you ·
  *     Connecting…" — the link's "waiting" (the socket fine, no stage) fell through to Connecting….
  */
+// REVISION (demo-loop run 16, by hand): an ended stage drops the pill ghost too (REQ-868 AMENDMENT).
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -483,7 +484,7 @@ describe("REQ-838 p4 — the customer signed out: the stage draws nothing of a s
   test("no ghost of their pill (open or tucked): pillShown is null while they are signed out", () => {
     expect(s).toMatch(
       // REQ-896 — and while waiting after anything but a navigation
-      /const pillShown =\s*look\.elsewhere \|\| signedOut \|\|[\s\S]{0,160}\? null\s*: pillBox;/,
+      /const pillShown =\s*ended \|\| look\.elsewhere \|\| signedOut \|\|[\s\S]{0,160}\? null\s*: pillBox;/,
     );
   });
 

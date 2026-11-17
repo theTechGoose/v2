@@ -80,17 +80,19 @@ describe("REQ-890 AMENDMENT 4 (demo-loop run 15, m2): a click where the pointer 
     expect(hoverClickIsTab(null, { x: 334, y: 660 })).toBe(false);
   });
   test("wiring: the tab's mousemove notes where it opened the peek; End asks the host first; the note goes with a move or the peek's end", () => {
-    expect(overlay).toMatch(/const hoverOpenAtRef = useRef<\{ x: number; y: number \} \| null>\(null\);/);
+    // REVISION (demo-loop run 16, by hand): the note is the approach (REQ-890 AMENDMENT 6), kept in
+    // approachRef; the tab's mousemove notes the pointer too (AMENDMENT 5)
+    expect(overlay).toMatch(/const approachRef = useRef<Approach \| null>\(null\);/);
     expect(overlay).toMatch(
-      /onMouseMove=\{\(e\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(!peekRef\.current\) \{\s*hoverOpenAtRef\.current = \{ x: e\.clientX, y: e\.clientY \};\s*\}\s*openPeek\(\);\s*\}\}/,
+      /onMouseMove=\{\(e\) => \{\s*(?:\/\/[^\n]*\n\s*)*pointRef\.current = \{ x: e\.clientX, y: e\.clientY \};\s*(?:\/\/[^\n]*\n\s*)*if \(!peekRef\.current && pillRef\.current\) \{\s*approachRef\.current = \{\s*at: \{ x: e\.clientX, y: e\.clientY \},[\s\S]{0,200}?\};\s*\}\s*openPeek\(\);\s*\}\}/,
     );
     expect(overlay).toMatch(/guard=\{endGuard\}/);
     expect(overlay).toMatch(
-      /const endGuard = \(e: MouseEvent\) => \{\s*if \(\s*!hoverClickIsTab\(hoverOpenAtRef\.current, \{ x: e\.clientX, y: e\.clientY \}\)\s*\) return false;\s*hoverOpenAtRef\.current = null;\s*toggleOpen\(\);\s*return true;\s*\};/,
+      /const endGuard = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(\s*!hoverClickIsTab\(approachRef\.current\?\.at \?\? null, \{ x: e\.clientX, y: e\.clientY \}\)\s*\) return false;\s*approachRef\.current = null;\s*toggleOpen\(\);\s*return true;\s*\};/,
     );
-    expect(overlay).toMatch(/if \(!peek\) \{\s*setPeekOpen\(false\);\s*hoverOpenAtRef\.current = null;[^\n]*\s*\}/);
+    expect(overlay).toMatch(/if \(!peek\) \{\s*setPeekOpen\(false\);\s*approachRef\.current = null;[^\n]*\s*\}/);
     expect(overlay).toMatch(
-      /if \(\s*hoverOpenAtRef\.current &&\s*!hoverClickIsTab\(hoverOpenAtRef\.current, pointRef\.current\)\s*\) \{\s*hoverOpenAtRef\.current = null;\s*\}/,
+      /approachRef\.current = approachMoved\(\s*approachRef\.current,\s*pointRef\.current,\s*Date\.now\(\),?\s*\);/,
     );
     expect(endDemo).toMatch(/guard\?: \(e: MouseEvent\) => boolean;/);
     expect(endDemo).toMatch(

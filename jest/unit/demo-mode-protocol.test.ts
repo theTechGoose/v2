@@ -8,6 +8,7 @@
  * followed path (`shouldFollow`) and the element selectors (`selectorFor`, `parseSelector`,
  * `walkSelector`) are gone; their tests went with them (jest/unit/demo-mode-mirror*.test.ts).
  */
+// REVISION (demo-loop run 16, by hand): the busy row carries which action is pending (REQ-864 AMENDMENT).
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -323,7 +324,7 @@ describe("REQ-179 instant feedback on Demo", () => {
     const admin = read3("front-end/islands/AdminPage.tsx");
     // REQ-269: the labels come from the dictionaries (adminPage.opening / adminPage.demo)
     expect(admin).toMatch(
-      /busyId === u\.id\s*\?\s*t\("adminPage\.opening"\)\s*:\s*t\("adminPage\.demo"\)/,
+      /busy\?\.id === u\.id && busy\.kind === "demo"\s*\?\s*t\("adminPage\.opening"\)\s*:\s*t\("adminPage\.demo"\)/,
     );
     const en3 = JSON.parse(read3("lang/en.json")) as Record<string, string>;
     expect(en3["adminPage.opening"]).toBe("Opening…");

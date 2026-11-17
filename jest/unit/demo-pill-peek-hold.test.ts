@@ -16,6 +16,7 @@
  * question up); the tab opens on real pointer movement (mousemove), a focus or a tap, never on a
  * bare mouseenter; and the frame that turns the tab into the whole pill has no transform glide.
  */
+// REVISION (demo-loop run 16, by hand): the tab's onMouseMove also notes the pointer and the approach (REQ-890 AMENDMENT 5/6).
 import * as fs from "fs";
 import * as path from "path";
 import { peekTimer, PILL_PEEK_MS } from "../../shared/demo-mode/pill.ts";
@@ -99,7 +100,7 @@ describe("REQ-820 — the island's wiring", () => {
       src.indexOf('data-cy="demo-pill-tab"'),
       src.indexOf('data-cy="demo-pill-tab-end"'),
     );
-    expect(tab).toMatch(/onMouseMove=\{\(e\) => \{[\s\S]{0,300}openPeek\(\);\s*\}\}/);
+    expect(tab).toMatch(/onMouseMove=\{\(e\) => \{[\s\S]{0,700}openPeek\(\);\s*\}\}/);
     expect(tab).not.toMatch(/onMouseEnter=/);
     expect(tab).toMatch(/onFocus=\{openPeek\}/);
     expect(tab).toMatch(/onClick=\{openPeek\}/);
