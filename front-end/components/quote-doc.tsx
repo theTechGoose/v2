@@ -271,7 +271,11 @@ export function ErrorCard(
 ) {
   return (
     <>
-      <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
+      <div
+        // REQ-826 AMENDMENT 6 (dm12, m4) — an error page, for the stage's tab notice
+        data-error-page=""
+        style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center"
+      >
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
           {tFor(lang, "quoteDoc.cantOpen")}
         </div>

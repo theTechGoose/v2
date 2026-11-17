@@ -8,12 +8,15 @@
  * the page under it. A pill that does not fold now tries, in order: a clear spot, a clear row,
  * a spot with only text (REQ-781), then REQ-866's fewest-controls fallback.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   PILL_BAND_GAP,
   PILL_MARGIN,
   pillRows,
   pillSpots,
   placePill,
+  pillBands,
 } from "../../shared/demo-mode/pill.ts";
 
 type Rect = { left: number; top: number; width: number; height: number };
@@ -194,5 +197,151 @@ describe("REQ-866 AMENDMENT (demo-loop run 11, m2) — a pill that may not fold 
       controls: controls390,
     });
     expect(blocked390(p.box)).toBe(0);
+  });
+});
+
+describe("REQ-866 AMENDMENT 2 (demo-loop run 12, m1) — the clear bands the page's blocks leave, off the rows' grid: the ENGLISH /welcome step 2 at 390×844 during the join grace", () => {
+  // the page as the probe mapped it (x,y,w,h; * = a control) — the English layout has a
+  // language-hint row the Spanish one does not, and a 43 px compact pill
+  const pieces: { r: Rect; control: boolean; card?: true }[] = [
+    // the card: painted (a background, a shadow), counted by `blocked`, not by `hit` — its
+    // padding under Continue (600–628) is part of the band
+    { r: { left: 20, top: 182, width: 350, height: 446 }, control: false, card: true },
+    { r: { left: 117, top: 28, width: 156, height: 34 }, control: true }, // brand link
+    { r: { left: 331, top: 86, width: 35, height: 25 }, control: true }, // ES
+    { r: { left: 20, top: 143, width: 350, height: 20 }, control: false }, // Step 2 of 10
+    { r: { left: 45, top: 212, width: 300, height: 56 }, control: false }, // h1
+    { r: { left: 45, top: 274, width: 300, height: 43 }, control: false }, // why
+    { r: { left: 45, top: 334, width: 300, height: 56 }, control: true }, // input
+    { r: { left: 45, top: 420, width: 146, height: 20 }, control: false }, // legend
+    { r: { left: 79, top: 457, width: 48, height: 21 }, control: false }, // English
+    { r: { left: 184, top: 457, width: 53, height: 21 }, control: false }, // Spanish
+    { r: { left: 45, top: 487, width: 300, height: 43 }, control: false }, // the hint
+    { r: { left: 45, top: 550, width: 300, height: 50 }, control: true }, // Back Skip Continue
+    { r: { left: 128, top: 653, width: 133, height: 36 }, control: true }, // Skip setup for now
+    { r: { left: 50, top: 715, width: 290, height: 24 }, control: true }, // links
+    { r: { left: 50, top: 747, width: 290, height: 24 }, control: true }, // links
+    { r: { left: 148, top: 779, width: 94, height: 24 }, control: true }, // phone
+    { r: { left: 62, top: 803, width: 265, height: 24 }, control: false }, // address
+  ];
+  const hits = (a: Rect, b: Rect) =>
+    a.left < b.left + b.width && b.left < a.left + a.width &&
+    a.top < b.top + b.height && b.top < a.top + a.height;
+  const at = (x: number, y: number) =>
+    pieces.some((p) =>
+      !p.card &&
+      x >= p.r.left && x < p.r.left + p.r.width && y >= p.r.top &&
+      y < p.r.top + p.r.height
+    );
+  const hint = pieces.find((p) => p.r.top === 487)!.r;
+  const blockedEn = (r: Rect) => pieces.filter((p) => hits(r, p.r)).length;
+  const controlsEn = (r: Rect) =>
+    pieces.filter((p) => p.control && hits(r, p.r)).length;
+  const view390 = { w: 390, h: 844 };
+  const homeEn: Rect = {
+    left: PILL_MARGIN,
+    top: view390.h - PILL_MARGIN - 43,
+    width: 335,
+    height: 43,
+  };
+  const bands = () => pillBands({ home: homeEn, view: view390, hit: at });
+
+  test("the fixture: no pillSpot and no half-step row is clear, while the 53 px band between Continue (600) and 'Skip setup for now' (653) holds the pill over the card's padding alone", () => {
+    expect(
+      pillSpots({ home: homeEn, view: view390 }).every((r) => blockedEn(r) > 0),
+    ).toBe(true);
+    expect(
+      pillRows({ home: homeEn, view: view390 }).every((r) => blockedEn(r) > 0),
+    ).toBe(true);
+    expect(blockedEn({ ...homeEn, top: 605 })).toBe(1);
+    expect(controlsEn({ ...homeEn, top: 605 })).toBe(0);
+  });
+
+  test("pillBands reads the page: a box centred in the Continue/Skip band (605) comes first, the one under the step count (~165) after; each inside its band, nearest home first", () => {
+    const b = bands();
+    expect(b.length).toBeGreaterThanOrEqual(2);
+    expect(b[0].top).toBeCloseTo(605, 0);
+    expect(b[0].left).toBe(homeEn.left);
+    expect(b.some((r) => Math.abs(r.top - 167.5) <= 4)).toBe(true);
+    // the scan's columns can step over a small control (the 35 px ES button between the brand
+    // and the step count, for the right-hand placement): the caller judges each box with
+    // `blocked` — the first band has only the card under it
+    expect(blockedEn(b[0])).toBe(1);
+    expect(controlsEn(b[0])).toBe(0);
+    for (let i = 1; i < b.length; i++) {
+      expect(Math.abs(homeEn.top - b[i].top)).toBeGreaterThanOrEqual(
+        Math.abs(homeEn.top - b[i - 1].top),
+      );
+    }
+  });
+
+  test("the join grace's whole pill on the English step 2: in the Continue/Skip band (the card's padding, the least of the page), never on the hint", () => {
+    const p = placePill({
+      home: homeEn,
+      view: view390,
+      dialog: false,
+      yields: false,
+      blocked: blockedEn,
+      controls: controlsEn,
+      bands,
+    });
+    expect(p.tucked).toBe(false);
+    expect(hits(p.box, hint)).toBe(false);
+    expect(controlsEn(p.box)).toBe(0);
+    expect(p.box.top).toBeGreaterThanOrEqual(600);
+    expect(p.box.top + p.box.height).toBeLessThanOrEqual(653);
+  });
+
+  test("without the bands (the page unread) the Continue/Skip band is never found — the rows' grid misses it; the pill rests on some text instead", () => {
+    const p = placePill({
+      home: homeEn,
+      view: view390,
+      dialog: false,
+      yields: false,
+      blocked: blockedEn,
+      controls: controlsEn,
+    });
+    expect(p.tucked).toBe(false);
+    expect(p.box.top >= 600 && p.box.top + p.box.height <= 653).toBe(false);
+    expect(blockedEn(p.box)).toBeGreaterThan(0);
+  });
+
+  test("the ended notice (floats) takes the band too; a pill that may fold never reads the bands", () => {
+    const f = placePill({
+      home: homeEn,
+      view: view390,
+      dialog: false,
+      floats: true,
+      blocked: blockedEn,
+      controls: controlsEn,
+      bands,
+    });
+    expect(f.tucked).toBe(false);
+    expect(hits(f.box, hint)).toBe(false);
+    expect(f.box.top).toBeGreaterThanOrEqual(600);
+    expect(f.box.top + f.box.height).toBeLessThanOrEqual(653);
+    let read = 0;
+    const y = placePill({
+      home: homeEn,
+      view: view390,
+      dialog: false,
+      blocked: blockedEn,
+      controls: controlsEn,
+      bands: () => {
+        read++;
+        return bands();
+      },
+    });
+    expect(y.tucked).toBe(true);
+    expect(read).toBe(0);
+  });
+
+  test("wiring: the overlay hands placePill the page's bands (text, a control or media as the hit — a painted card alone is not)", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../../front-end/islands/DemoModeOverlay.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/pillBands\(\{\s*home: home\.box,\s*view,\s*top: bannerH\(\),\s*hit: \(x, y\) => textOrControlAt\(x, y, backdrop\),/);
+    expect(src).toMatch(/function textOrControlAt\([\s\S]*?return !!el\.closest\(CONTROL_SELECTOR\) \|\| !!el\.closest\(PAGE_MEDIA_SELECTOR\) \|\|\s*ownText\(el\);/);
   });
 });

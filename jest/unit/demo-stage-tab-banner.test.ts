@@ -298,3 +298,37 @@ describe("REQ-826 AMENDMENT 5 (demo-loop run 11: demo 5 #2, demo 4 #1) — the s
     ).toBe("Factura");
   });
 });
+
+describe("REQ-826 AMENDMENT 6 (demo-loop run 12, m4 + p2) — a dead public QUOTE link is an error page too; a tab notice still up renames itself when the followed tab moves to another page", () => {
+  test("m4: the quote island's error state writes the error heading into the DocTitle (every language) and the tab title; the error card carries data-error-page", () => {
+    const island = read("front-end/islands/PublicQuoteView.tsx");
+    expect(island).toMatch(/import \{ titleAttr \} from "\.\.\/lib\/doc-title\.ts"/);
+    expect(island).toMatch(
+      /if \(s\.phase === "error" && typeof document !== "undefined"\) \{[\s\S]*?for \(const l of \["en", "es"\] as const\) \{\s*el\?\.setAttribute\(titleAttr\(l\), tFor\(l, "quoteDoc\.cantOpen"\)\);/,
+    );
+    const card = read("front-end/components/quote-doc.tsx");
+    expect(card).toMatch(/export function ErrorCard\([\s\S]*?data-error-page=""/);
+  });
+  test("m4: the label the stage gives it — the error heading in the stage's language, never the quote's name", () => {
+    expect(
+      pl().pageLabel(
+        "/q/nonexistent123",
+        trOf(es),
+        "Mmm, no se puede abrir esto",
+        true,
+      ),
+    ).toBe("Mmm, no se puede abrir esto");
+    expect(
+      pl().pageLabel("/q/abc", trOf(es), "Cotización + Acuerdo · Ruiz", false),
+    ).toBe("Cotización + Acuerdo");
+  });
+  test("p2: a snapshot of another page while the tab notice is up renames the notice to that page (the timer runs on; a dismissed notice stays dismissed)", () => {
+    const src = read("front-end/islands/DemoStage.tsx");
+    expect(src).toMatch(
+      /const renoteTab = \(path: string\) => \{\s*if \(!tabNoteTimerRef\.current\) return;\s*setTabNote\(\s*\(n\) =>\s*n === null \|\| n === \(path \|\| "\/"\) \? n : path \|\| "\/",?\s*\);/,
+    );
+    expect(src).toMatch(
+      /setStale\(false\);[^\n]*\n\s*if \(newLoad\) renoteTab\(path\);/,
+    );
+  });
+});

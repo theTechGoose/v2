@@ -749,6 +749,27 @@ export function ghostWait(
   return Math.max(0, rest - since);
 }
 
+/** REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost's fade-in takes this long (PointerGhost's
+ *  pmDemoGhostIn) ... */
+export const GHOST_FADE_MS = 250;
+/** ... and a spot that moves at least this far while it fades starts the fade over, there */
+export const GHOST_FADE_MOVE_PX = 2;
+
+/** REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost fades in WHERE IT SETTLES: a report that
+ *  moves it while the fade is still running (their smooth scroll riding the element 83 px in
+ *  100 ms) restarts the fade at the new spot — a new `key` remounts the fading element — instead
+ *  of fading in on the way and jumping. After the fade a move is a move: the same key, no flash */
+export function ghostFade(
+  f: { x: number; y: number; since: number; key: number },
+  at: Pt,
+  now: number,
+  fade = GHOST_FADE_MS,
+): { x: number; y: number; since: number; key: number } {
+  if (Math.hypot(at.x - f.x, at.y - f.y) < GHOST_FADE_MOVE_PX) return f;
+  const fading = now - f.since < fade;
+  return { x: at.x, y: at.y, since: fading ? now : f.since, key: fading ? f.key + 1 : f.key };
+}
+
 /** where the stage draws the ghost of his arrow, or null: `placed` is where their screen has it
  *  now (on the frame), the page shown is `shownLoad` (REQ-645 — handed back as it came: its way
  *  to an element out of view rides along) */

@@ -23,6 +23,8 @@ import * as path from "path";
 import {
   GHOST_REST_MS,
   ghostWait,
+  GHOST_FADE_MS,
+  ghostFade,
 } from "../../shared/demo-mode/presenter-anchor";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -88,5 +90,30 @@ describe("REQ-789 wiring: the stage defers the ghost to his rest and drops the w
       src.indexOf("return () => {"),
     );
     expect(unmount).toBeGreaterThan(-1);
+  });
+});
+
+describe("REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost fades in where it settles: a spot that moves mid-fade starts the fade over there, never fades in on the way and jumps", () => {
+  const start = { x: 357.1, y: 545.9, since: 1000, key: 0 };
+  test("a report that moves the ghost 77 px while the fade runs: a new key, the fade's clock reset, the new spot", () => {
+    const f = ghostFade(start, { x: 357.1, y: 469.3 }, 1083);
+    expect(f).toEqual({ x: 357.1, y: 469.3, since: 1083, key: 1 });
+    const g = ghostFade(f, { x: 357.1, y: 462.4 }, 1150);
+    expect(g.key).toBe(2);
+    expect(g.since).toBe(1150);
+  });
+  test("after the fade (GHOST_FADE_MS) a move keeps the key: the drawn ghost slides, no flash", () => {
+    const f = ghostFade(start, { x: 357.1, y: 469.3 }, 1000 + GHOST_FADE_MS + 1);
+    expect(f.key).toBe(0);
+    expect(f.since).toBe(1000);
+    expect([f.x, f.y]).toEqual([357.1, 469.3]);
+  });
+  test("a sub-pixel jitter (< 2 px) is not a move, fading or not", () => {
+    expect(ghostFade(start, { x: 358, y: 546.5 }, 1050)).toBe(start);
+  });
+  test("wiring: PointerGhost keeps the fade state in a ref and keys the fading element by it", () => {
+    const ghost = read("front-end/components/demo-mode/PointerGhost.tsx");
+    expect(ghost).toMatch(/fadeRef\.current = ghostFade\(fadeRef\.current, at, performance\.now\(\)\)/);
+    expect(ghost).toMatch(/<div\s+key=\{fadeRef\.current\.key\}\s+data-cy="demo-pointer-ghost"/);
   });
 });

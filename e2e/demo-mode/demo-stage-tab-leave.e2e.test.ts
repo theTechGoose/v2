@@ -926,3 +926,98 @@ Deno.test("REQ-821 AMENDMENT (demo-loop run 11, p2): she signs out mid-demo (POS
       await userCtx.close();
     }
   }));
+
+Deno.test("REQ-826 AMENDMENT 6 (demo-loop run 12, m4): the customer's other tab is a DEAD public QUOTE link (/q/<unknown>) — the notice says '(Mmm, no se puede abrir esto)', never '(Cotización + Acuerdo)'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { banner, said } = await spanishNoticeFor(
+      page,
+      http,
+      baseUrl,
+      "/q/nonexistent123",
+      "Hmm, can't open this",
+      expect,
+    );
+    expect(
+      /\(Mmm, no se puede abrir esto\)/.test(banner),
+      `the notice names the dead quote link by its error heading — got "${banner}"`,
+    );
+    expect(
+      [banner, ...said].every((b) =>
+        !/\((Cotización \+ Acuerdo|Quote \+ Agreement)\)/.test(b)
+      ),
+      `never "(Cotización + Acuerdo)" for a link that opens nothing (${
+        JSON.stringify(said)
+      })`,
+    );
+  }));
+
+Deno.test("REQ-826 AMENDMENT 6 (demo-loop run 12, p2): while the tab notice is still up ('(Clientes)'), the followed tab goes to /terms — the notice renames itself to the Terms within the second, never 'Clientes' over the Terms for seconds", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { userCtx, tab2 } = await twoTabs(
+      page,
+      http,
+      baseUrl,
+      { width: 1000, height: 760 },
+      "/customers",
+      ["/terms"],
+      "es",
+    );
+    try {
+      await tab2.keyboard.press("Shift");
+      await until(
+        "the stage follows tab 2 (640 × 760) again",
+        async () => (await screenOf(page)).includes("640 × 760"),
+      );
+      await until(
+        "the stage says it shows her other tab",
+        async () =>
+          (await page.locator("[data-cy='demo-tab-switched']").count()) === 1,
+        10_000,
+      );
+      const first = (await page.locator("[data-cy='demo-tab-switched']")
+        .innerText() as string).trim();
+      expect(
+        /\(Clientes\)/.test(first),
+        `the notice names /customers first — got "${first}"`,
+      );
+      // within the notice's time she goes on, in that tab, to the Terms
+      await tab2.goto(`${baseUrl}/terms`);
+      await tab2.locator("h1").first().waitFor({ timeout: 15_000 });
+      const t0 = Date.now();
+      const seen: string[] = [];
+      let renamed: number | null = null;
+      while (Date.now() - t0 < 4_000) {
+        const n = await page.locator("[data-cy='demo-tab-switched']").count();
+        const txt = n
+          ? (await page.locator("[data-cy='demo-tab-switched']").innerText() as string)
+            .trim()
+          : "";
+        seen.push(`${Date.now() - t0}:${txt.slice(0, 70)}`);
+        if (n && !/\(Clientes\)/.test(txt) && renamed === null) {
+          renamed = Date.now() - t0;
+        }
+        if (n && /\(Clientes\)/.test(txt) && Date.now() - t0 > 1_500) break;
+        await page.waitForTimeout(100);
+      }
+      expect(
+        renamed !== null && renamed <= 1_500,
+        `p2: the notice renames itself to the Terms within 1.5 s of the new page (${
+          JSON.stringify(seen.slice(0, 12))
+        })`,
+      );
+      expect(
+        !seen.some((s) => Number(s.split(":")[0]) > 1_500 && /Clientes/.test(s)),
+        `never "(Clientes)" over the Terms past 1.5 s (${JSON.stringify(seen.slice(-6))})`,
+      );
+      const now = (await page.locator("[data-cy='demo-tab-switched']").count())
+        ? (await page.locator("[data-cy='demo-tab-switched']").innerText() as string)
+        : "";
+      expect(
+        /\(T[ée]rminos/.test(now) || now === "",
+        `it names the Terms (or has been read) — got "${now}"`,
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));

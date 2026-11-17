@@ -1161,6 +1161,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }, TAB_NOTE_MS);
   };
 
+  /** REQ-826 AMENDMENT 6 (demo-loop run 12, p2) — a tab notice still up names the page the
+   *  followed tab shows NOW: she closed tab 2 ("(Bienvenido)") and went to /terms in tab 1 within
+   *  the second, and the notice kept "(Bienvenido)" over the Terms for seconds. The timer runs
+   *  on; a notice already read (null) stays read */
+  const renoteTab = (path: string) => {
+    if (!tabNoteTimerRef.current) return;
+    setTabNote((n) => n === null || n === (path || "/") ? n : path || "/");
+  };
   /** REQ-242 — a frame of the customer's screen, into the replay */
   const take = (f: MirrorFrame, load: string, seq: number | null = null) => {
     const rep = replayerRef.current;
@@ -1216,6 +1224,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }, ms);
       });
       setStale(false); // REQ-297 — their screen is current again
+      if (newLoad) renoteTab(path); // REQ-826 AMENDMENT 6 (dm12, p2)
       // REQ-391 — and it is the followed tab's: REQ-648 — once it is ON SHOW (pageShown)
       // REQ-370 — the first snapshot starts the wait for its stylesheets (at most STYLE_WAIT_MS)
       if (firstSnapAtRef.current === null) {
@@ -2393,7 +2402,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
                 in the chrome row above the frame, never over the replica */
             }
-            {badges && off && (
+            {badges && off && pickerOut === null && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -2445,9 +2454,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             )}
             {
               /* REQ-862 AMENDMENT 5 (dm11, m1) — the picker chip the frame had no clear spot
-                for: its words in the chrome row (the tab notice, when up, has the row) */
+                for: its words in the chrome row (the tab notice, when up, has the row).
+                REQ-862 AMENDMENT 6 (dm12, m3) — before the pointer-off hint: his mouse resting
+                beside the frame must not hide what she is doing */
             }
-            {badges && pickerOut !== null && tabNote === null && !off && (
+            {badges && pickerOut !== null && tabNote === null && (
               <div
                 data-cy="demo-picker-outside"
                 role="status"

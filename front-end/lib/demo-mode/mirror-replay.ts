@@ -291,6 +291,8 @@ const CHIP_GAP = 8;
 type Rect = { left: number; top: number; width: number; height: number };
 /** REQ-878 — the gap between a control and a chip under or over it */
 const CHIP_UNDER = 4;
+/** REQ-862 AMENDMENT 6 (dm12, m2) — how many bands each way a chip may go from its control */
+const CHIP_BANDS = 2;
 /** REQ-878 — what textBoxes never reads (no text the customer sees) */
 const SKIP_TEXT = new Set([
   "head",
@@ -1096,6 +1098,9 @@ export function createReplayer(
       // the next field's label under that): the nearest clear band — a chip's height plus the gap
       // further each step, below first, then above — at the control's left edge, its right edge,
       // the frame's left margin, its right margin. Away from its control, the chip is named
+      // REQ-862 AMENDMENT 6 (dm12, m2) — only the two nearest bands each way: a chip 150–197 px
+      // under its button sat beside another field two rows down; past two steps the chip is
+      // better out of the frame, its words in the chrome row (REQ-862 AMENDMENT 5)
       const bands: [number, number][] = [];
       const step = h + CHIP_UNDER;
       const bandXs = [
@@ -1104,7 +1109,7 @@ export function createReplayer(
         CHIP_GAP,
         vw ? vw - CHIP_GAP - w : r.left,
       ];
-      for (let k = 1; k <= 8; k++) {
+      for (let k = 1; k <= CHIP_BANDS; k++) {
         for (
           const y of [
             r.top + r.height + CHIP_UNDER + k * step,

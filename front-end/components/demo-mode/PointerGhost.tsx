@@ -40,11 +40,13 @@ import {
   type Rect,
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
+import { useRef } from "preact/hooks";
 import {
   alignTag,
   cueMarkOffset,
   type Dir,
   GHOST_OPACITY,
+  ghostFade,
   OFF_BADGE_PX,
   OFF_FADE_KEYFRAMES,
   OFF_MARK_FADE_MS,
@@ -187,6 +189,15 @@ export default function PointerGhost(
       </div>
     );
   }
+  // REQ-789 AMENDMENT (dm12, p1) — fades in where it settles: a spot that moves mid-fade restarts
+  // the fade there (a new key remounts the element and its animation)
+  const fadeRef = useRef({
+    x: at.x,
+    y: at.y,
+    since: performance.now(),
+    key: 0,
+  });
+  fadeRef.current = ghostFade(fadeRef.current, at, performance.now());
   const cue = dir && cueText ? cueText : null;
   const words = cue ? `${label} · ${cue}` : label;
   const box = outside || cue ? null : rect ?? null;
@@ -213,6 +224,7 @@ export default function PointerGhost(
   const mark = dir ? cueMarkOffset(dir) : null;
   return (
     <div
+      key={fadeRef.current.key}
       data-cy="demo-pointer-ghost"
       data-outside={outside ? "" : undefined}
       data-cue={dir ? "" : undefined}

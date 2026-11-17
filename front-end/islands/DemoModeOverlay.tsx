@@ -262,6 +262,7 @@ import {
   pillRestBox,
   pillStore,
   pillWraps,
+  pillBands,
   placePill,
   recallPillOpen,
   rememberPillOpen,
@@ -495,6 +496,20 @@ function pageUnder(r: Rect, backdrop: Element | null = null): number {
     n += el.closest(HEADING_SELECTOR) ? HEADING_WEIGHT : 1;
   }
   return n;
+}
+
+/** REQ-866 AMENDMENT 2 (dm12, m1) — is text, a control or media at a point (`pillBands`' hit)?
+ *  A painted container alone (a card's padding) is not: a whole pill may rest there when nothing
+ *  is clear, before it rests on text */
+function textOrControlAt(
+  x: number,
+  y: number,
+  backdrop: Element | null = null,
+): boolean {
+  const el = pageAt(x, y, backdrop);
+  if (!el) return false;
+  return !!el.closest(CONTROL_SELECTOR) || !!el.closest(PAGE_MEDIA_SELECTOR) ||
+    ownText(el);
 }
 
 /** REQ-781 (demo-loop cycle dv1, d7) — how many controls of the page (links, buttons, fields:
@@ -2043,6 +2058,18 @@ export default function DemoModeOverlay(
         minimal,
         blocked: can ? (r) => pageUnder(r, backdrop) : () => 0,
         controls: can ? (r) => countControls(r, backdrop) : () => 0,
+        // REQ-866 AMENDMENT 2 (dm12, m1) — a pill that may not fold with no clear row: the clear
+        // bands the page's blocks leave, read off the page (the 53 px between Continue and "Skip
+        // setup for now" on the English /welcome at 390)
+        bands: can
+          ? () =>
+            pillBands({
+              home: home.box,
+              view,
+              top: bannerH(),
+              hit: (x, y) => textOrControlAt(x, y, backdrop),
+            })
+          : undefined,
         // REQ-897 AMENDMENT (dm7, m3) — the hold is for a spot placed on THIS page: a spot carried
         // from the last page (REQ-830) is judged on arrival, even while the page's own hash scroll
         // is still running (it held the chip over /settings' email field for 1.5 s)

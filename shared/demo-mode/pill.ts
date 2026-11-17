@@ -595,6 +595,76 @@ export function pillRows(o: {
 }
 
 /**
+ * REQ-866 AMENDMENT 2 (demo-loop run 12, m1) — the clear bands the page's blocks leave, for a pill
+ * that may not fold: `pillRows` steps by half a pill from home, and a band that is not on that
+ * grid is missed — on the English /welcome step 2 at 390 px the 53 px between Continue (600) and
+ * "Skip setup for now" (653) held a 43 px pill with 5 px to spare, and no half-step row (610.5,
+ * 636, …) fit it, so the pill sat on the hint. Here the page itself is read: `hit(x, y)` says
+ * whether a piece of the page is at a point; five columns across the pill's width are walked every
+ * `step` px from home's foot up to `top`, and every run of clear rows tall enough for the pill
+ * gives one box, the pill centred in it — nearest home first, at home's left, the right edge,
+ * then centred (as `pillRows`). The caller judges each box with `blocked` as it does a row.
+ * `hit` is what a pill may not sit on when a clear spot exists — text, a control, media — not a
+ * painted container: a card's empty padding is a band (the 53 px under Continue is the card's
+ * foot), and `placePill` takes it before any text when nothing is clear.
+ */
+export function pillBands(o: {
+  home: Rect;
+  view: Size;
+  top?: number;
+  margin?: number;
+  /** text, a control or media is at this point (a painted container alone is not) */
+  hit: (x: number, y: number) => boolean;
+  /** how far apart the rows read are (px) */
+  step?: number;
+}): Rect[] {
+  const margin = o.margin ?? PILL_MARGIN;
+  const top = (o.top ?? 0) + margin;
+  const w = o.home.width;
+  const h = o.home.height;
+  const step = o.step ?? 4;
+  const lefts = [
+    o.home.left,
+    o.view.w - margin - w,
+    Math.round((o.view.w - w) / 2),
+  ].map((l) => Math.max(margin, Math.min(l, o.view.w - margin - w)));
+  const found: { box: Rect; order: number; dist: number }[] = [];
+  let order = 0;
+  for (const left of new Set(lefts)) {
+    // a column every 40 px or so across the pill (as `pageUnder` samples), 6 px in from each end
+    const cols = Math.max(5, Math.ceil(w / 40));
+    const xs = Array.from(
+      { length: cols },
+      (_, i) => left + 6 + ((w - 12) * i) / (cols - 1),
+    );
+    // walk up from home's foot; a run of clear rows is a band
+    let runBottom: number | null = null;
+    const band = (bottom: number, topEdge: number) => {
+      const tall = bottom - topEdge;
+      if (tall < h) return;
+      const t = Math.round((topEdge + (tall - h) / 2) * 10) / 10;
+      found.push({
+        box: { ...o.home, left, top: t },
+        order: order++,
+        dist: Math.abs(o.home.top - t),
+      });
+    };
+    for (let y = o.home.top + h; y >= top; y -= step) {
+      const clear = !xs.some((x) => o.hit(x, y));
+      if (clear) {
+        if (runBottom === null) runBottom = y + step;
+      } else if (runBottom !== null) {
+        band(runBottom, y + 1);
+        runBottom = null;
+      }
+    }
+    if (runBottom !== null) band(runBottom, top);
+  }
+  found.sort((a, b) => a.dist - b.dist || a.order - b.order);
+  return found.map((f) => f.box);
+}
+
+/**
  * REQ-545 (demo-loop cycle 4, m2) — where the pill is right now: it yields to the page, folding
  * to a mini-pill (REQ-637) rather than sitting over it; a dialog docks it (`dockPill`).
  * REQ-781 (demo-loop cycle dv1, d7) — Raphael: "the gap reserved for the demo pill ... that's not
@@ -640,6 +710,9 @@ export function placePill(o: {
   /** REQ-897 (cycle dm6, p5) — the page is scrolling: the kept spot stays (what passes under it
    *  is judged once the scroll has settled, PILL_SCROLL_SETTLE_MS after its last event) */
   scrolling?: boolean;
+  /** REQ-866 AMENDMENT 2 (dm12, m1) — the clear bands the page's blocks leave (`pillBands`), read
+   *  only when a pill that may not fold finds no clear row: the first with nothing under it */
+  bands?: () => Rect[];
   /** REQ-890 AMENDMENT 2 — the sizes the peek out of the folded chip could show (the whole pill,
    *  and its compact form once known): among equally clear tab spots, one whose flush peek box
    *  (`peekFlushBox`) covers no control for some size is preferred, so a hover opens the pill
@@ -716,9 +789,16 @@ export function placePill(o: {
   // else the box with the FEWEST controls (tied, the least of the page; then the earlier, home)
   const standing = (spots: Rect[]) => {
     const rows = pillRows(o);
+    // REQ-866 AMENDMENT 2 (dm12, m1) — a clear band off the rows' grid before a row over text;
+    // and with nothing clear, the control-free band or row with the LEAST of the page under it
+    // (a card's empty padding, 1, before the hint's text on the card, 2) — not the first
+    // control-free row blindly, which was the language hint on the English /welcome at 390
+    const bands = o.bands?.() ?? [];
     const free = rows.find((r) => blocked(r) === 0) ??
-      rows.find((r) => controls(r) === 0);
+      bands.find((r) => blocked(r) === 0);
     if (free) return free;
+    const open = [...bands, ...rows].filter((r) => controls(r) === 0);
+    if (open.length) return fewest(open, blocked);
     const all = [...spots, ...rows];
     let best = all[0];
     for (const r of all.slice(1)) {
@@ -748,7 +828,9 @@ export function placePill(o: {
   // page under it before a spot with only text under it: the ended notice sat bottom-right over
   // /admin's footer address ("45…" cut off) while the row above was clear
   if (!folds) {
-    const row = pillRows(o).find((r) => blocked(r) === 0);
+    const row = pillRows(o).find((r) => blocked(r) === 0) ??
+      // REQ-866 AMENDMENT 2 (dm12, m1) — else a clear band the page's blocks leave
+      o.bands?.().find((r) => blocked(r) === 0);
     if (row) return whole(row);
   }
   const clear = spots.find((r) => controls(r) === 0);

@@ -1108,6 +1108,7 @@ describe("REQ-862 AMENDMENT 3 / REQ-878 AMENDMENT 3 (demo-loop run 10: m1, m5) �
         width: w + (name ? name.length * 7.5 + 12 : 0),
         height: 26,
         text,
+        style: c.style,
       };
     };
     return {
@@ -1194,23 +1195,10 @@ describe("REQ-862 AMENDMENT 3 / REQ-878 AMENDMENT 3 (demo-loop run 10: m1, m5) �
       rows,
       { w: 390, h: 844 },
     ).file("logo-btn", "logo-file");
-    for (
-      const k of [
-        "logo-btn",
-        "logo-img",
-        "logo-set",
-        "logo-hint",
-        "lang-label",
-        "lang-select",
-        "overhead-hint",
-        "overhead-input",
-      ] as const
-    ) {
-      expect([k, hits(c, rows[k])]).toEqual([k, false]);
-    }
-    expect(c.left).toBeGreaterThanOrEqual(0);
-    expect(c.left + c.width).toBeLessThanOrEqual(390);
-    // away from its button: it says which control
+    // REQ-862 AMENDMENT 6 (dm12, m2) — the nearest clear band here is the THIRD under the button
+    // (148 px down, beside the field two rows away): past two bands the chip leaves the frame —
+    // hidden here, its words (named) in the stage's chrome row (REQ-862 AMENDMENT 5)
+    expect(c.style).toMatch(/display:none;/);
     expect(c.text).toBe("Customer is choosing a file… · Reemplazar logo");
   });
 
@@ -1887,7 +1875,26 @@ describe("REQ-862 AMENDMENT 5 / REQ-878 AMENDMENT 5 (demo-loop run 11, m1 — th
       /onPicker:\s*\(p\) =>\s*setPickerOut\(p && !p\.inside \? p\.text : null\)/,
     );
     expect(stage).toMatch(
-      /pickerOut !== null && tabNote === null && !off && \(\s*<div\s+data-cy="demo-picker-outside"/,
+      /pickerOut !== null && tabNote === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
+    );
+  });
+});
+
+describe("REQ-862 AMENDMENT 6 / REQ-878 AMENDMENT 6 (demo-loop run 12, m2 + m3) — a chip goes at most two bands from its control (further, the chrome row); the chrome row's picker words come before the pointer-off hint", () => {
+  test("m2: CHIP_BANDS is 2 — the bands tier stops two steps each way, so a chip never sits 150–197 px under its button beside another field", () => {
+    const src = read("front-end/lib/demo-mode/mirror-replay.ts");
+    expect(src).toMatch(/const CHIP_BANDS = 2;/);
+    expect(src).toMatch(/for \(let k = 1; k <= CHIP_BANDS; k\+\+\)/);
+    expect(src).not.toMatch(/k <= 8/);
+  });
+  test("m3: the stage draws the picker's words in the chrome row whether or not his mouse is outside the frame, and the pointer-off hint yields to them", () => {
+    const src = read("front-end/islands/DemoStage.tsx");
+    expect(src).toMatch(
+      /pickerOut !== null && tabNote === null && \(\s*<div\s+data-cy="demo-picker-outside"/,
+    );
+    expect(src).not.toMatch(/pickerOut !== null && tabNote === null && !off/);
+    expect(src).toMatch(
+      /badges && off && pickerOut === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
     );
   });
 });
