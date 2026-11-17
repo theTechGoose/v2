@@ -28,6 +28,22 @@ const PAGES: Record<string, [list: string, item?: string]> = {
   login: ["signIn"],
   verify: ["signIn"],
   welcome: ["welcome"],
+  // REQ-826 AMENDMENT 2 (dm8, m5) — the pages the fallback printed raw ("(Field)", "(Terms)")
+  field: ["field"],
+  worker: ["worker"],
+  terms: ["terms"],
+  privacy: ["privacy"],
+  "refund-policy": ["refundPolicy"],
+  "sms-terms": ["smsTerms"],
+  contracts: ["contracts", "contract"],
+  co: ["contract"],
+  admin: ["admin"],
+  admins: ["admin"],
+  contact: ["contact"],
+  "accounts-manager": ["accounts"],
+  ops: ["ops"],
+  s: ["sign"],
+  demo: ["demo"],
 };
 
 const KEY = "demoMode.page.";

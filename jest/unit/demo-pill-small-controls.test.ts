@@ -12,10 +12,38 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { centresIn } from "../../shared/demo-mode/pill.ts";
+import { centresIn, edgesIn } from "../../shared/demo-mode/pill.ts";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
+
+describe("REQ-898 AMENDMENT (dm8, p4) — a control the box merely touches (its centre outside, no grid point on the sliver) is found too", () => {
+  test("REQ-898 edgesIn: the 'Nuevo cliente' button whose bottom the compact peek pill overlapped by 1.4 px at 390 px", () => {
+    const pill = { left: 12, top: 353.4, width: 276.7, height: 42.6 };
+    const button = { left: 26, top: 312.8, width: 338, height: 42 }; // bottom 354.8
+    expect(edgesIn([button], pill)).toEqual([0]);
+    // a box clear of the pill: not; a box whose centre is in the pill: centresIn has it, not this
+    expect(edgesIn([{ left: 26, top: 300, width: 338, height: 42 }], pill))
+      .toEqual([]);
+    expect(edgesIn([{ left: 20, top: 360, width: 50, height: 20 }], pill))
+      .toEqual([]);
+    // touching edges (no shared area) is not an overlap
+    expect(edgesIn([{ left: 26, top: 311.4, width: 338, height: 42 }], pill))
+      .toEqual([]);
+  });
+
+  test("REQ-898 AMENDMENT wiring: the overlay counts the controls found by their edge too, verified by a hit inside the shared sliver", () => {
+    const overlay = read("front-end/islands/DemoModeOverlay.tsx");
+    expect(overlay).toMatch(
+      /import \{[^}]*\bedgesIn\b[^}]*\} from "\.\.\/\.\.\/shared\/demo-mode\/pill\.ts"/,
+    );
+    const byCentre = overlay.slice(
+      overlay.indexOf("function controlsByCentre("),
+      overlay.indexOf("function pageUnder("),
+    );
+    expect(byCentre).toMatch(/edgesIn\(/);
+  });
+});
 
 describe("REQ-898 — controls smaller than the sampling grid's pitch are found by their centre", () => {
   test("REQ-898 centresIn: the dashboard's money-bar segments under the whole pill; the footer links under the asking pill", () => {

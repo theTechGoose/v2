@@ -139,6 +139,22 @@ export function centresIn(boxes: readonly Rect[], r: Rect): number[] {
   return out;
 }
 
+/** REQ-898 AMENDMENT (dm8, p4) — the boxes that share area with `r` while their centre is outside
+ *  it (`centresIn` has the rest): a control the pill merely touches — the compact peek pill's top
+ *  1.4 px over the "Nuevo cliente" button's bottom at 390 px, no grid point on that sliver */
+export function edgesIn(boxes: readonly Rect[], r: Rect): number[] {
+  const out: number[] = [];
+  boxes.forEach((b, i) => {
+    if (!rectsOverlap(b, r)) return;
+    const cx = b.left + b.width / 2;
+    const cy = b.top + b.height / 2;
+    const centreIn = cx >= r.left && cx < r.left + r.width && cy >= r.top &&
+      cy < r.top + r.height;
+    if (!centreIn) out.push(i);
+  });
+  return out;
+}
+
 /** REQ-295 — do two boxes share any area? */
 export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a.left < b.left + b.width && b.left < a.left + a.width &&

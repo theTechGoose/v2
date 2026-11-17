@@ -236,6 +236,7 @@ import {
   countsAsPage,
   coversView,
   dialogDim,
+  edgesIn,
   HEADING_SELECTOR,
   HEADING_WEIGHT,
   isPublicDocPath,
@@ -457,6 +458,18 @@ function controlsByCentre(r: Rect, backdrop: Element | null): Element[] {
       box.top + box.height / 2,
       backdrop,
     );
+    const c = hit?.el.closest(CONTROL_SELECTOR);
+    if (c && (c === el || el.contains(c))) out.push(el);
+  }
+  // REQ-898 AMENDMENT (dm8, p4) — and the ones the box merely touches: a hit inside the shared
+  // sliver must reach the control
+  for (const i of edgesIn(all.map((c) => c.box), r)) {
+    const { el, box } = all[i];
+    const left = Math.max(box.left, r.left);
+    const right = Math.min(box.left + box.width, r.left + r.width);
+    const top = Math.max(box.top, r.top);
+    const bottom = Math.min(box.top + box.height, r.top + r.height);
+    const hit = hitAt((left + right) / 2, (top + bottom) / 2, backdrop);
     const c = hit?.el.closest(CONTROL_SELECTOR);
     if (c && (c === el || el.contains(c))) out.push(el);
   }

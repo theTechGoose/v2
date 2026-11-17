@@ -156,6 +156,9 @@ export interface DemoLinkOptions {
    *  says "waiting", and no tab of theirs is followed until one is claimed since the sign-out (or
    *  that browser tab signs in again: its next onPeerOnline) */
   onSignedOut?(): void;
+  /** REQ-645 AMENDMENT 2 (dm8, p2) — a stage: the last of the customer's tabs went (nobody left to
+   *  follow); the next tab followed is no "other tab" of hers */
+  onTabsGone?(): void;
 }
 
 export interface DemoLink {
@@ -609,6 +612,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       // page is "between" for SILENT_GRACE_MS (its next page may be coming), then "waiting"
       if (why === "signout") endGrace();
       else startGrace(ms);
+      o.onTabsGone?.(); // REQ-645 AMENDMENT 2 (dm8, p2)
     }
     follow();
     refresh();

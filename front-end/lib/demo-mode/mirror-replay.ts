@@ -666,12 +666,45 @@ export function createReplayer(
     for (const { sel, key, kind } of want) {
       const box = kind ? drawChip(kind) : drawList(sel);
       at.appendChild(box);
-      if (kind) placeChip(box, sel);
-      else place(box, sel);
+      if (kind) {
+        const spot = placeChip(box, sel);
+        // REQ-878 AMENDMENT (dm8, m3) — a chip that is not beside its control (past the row's
+        // hint, 370 px from "Subir logo") names it, so the presenter knows what the customer has
+        // open; placed again with its longer text
+        const name = spot && !besideControl(spot, sel.getBoundingClientRect())
+          ? controlName(sel)
+          : "";
+        if (name) {
+          box.textContent = `${pickerText(kind)} · ${name}`;
+          placeChip(box, sel);
+        }
+      } else place(box, sel);
       drawnLists.push({ box, key });
     }
   }
 
+  /** REQ-878 AMENDMENT (dm8, m3) — what the customer's control is called: its aria-label, else
+   *  its text ("Subir logo"), at most 40 characters */
+  function controlName(e: Element): string {
+    const t = (e.getAttribute("aria-label") || e.textContent || "").trim()
+      .replace(/\s+/g, " ");
+    return t.length > 40 ? `${t.slice(0, 39)}…` : t;
+  }
+  /** REQ-878 AMENDMENT (dm8, m3) — is the chip at `c` beside its control `r`: on it, at its left
+   *  or right edge (CHIP_GAP) in its row, or right under / over it within its width */
+  function besideControl(
+    c: { left: number; top: number; w: number; h: number },
+    r: { left: number; top: number; width: number; height: number },
+  ): boolean {
+    const sameRow = c.top < r.top + r.height && r.top < c.top + c.h;
+    const nearX = c.left <= r.left + r.width + CHIP_GAP + 1 &&
+      c.left + c.w >= r.left - CHIP_GAP - 1;
+    if (sameRow && nearX) return true;
+    const overlapX = c.left < r.left + r.width && r.left < c.left + c.w;
+    const under = Math.abs(c.top - (r.top + r.height)) <= CHIP_UNDER + 1;
+    const over = Math.abs(c.top + c.h - r.top) <= CHIP_UNDER + 1;
+    return overlapX && (under || over);
+  }
   /** REQ-827 — the chip's words, in the presenter's language when the stage gives them */
   function pickerText(kind: PickerKind): string {
     try {
@@ -759,7 +792,10 @@ export function createReplayer(
   /** REQ-638 — the list right under its select, or above it when it would run off the bottom */
   function place(box: Element, sel: Element) {
     const r = sel.getBoundingClientRect();
-    const base = box.getAttribute("style") ?? "";
+    const base = (box.getAttribute("style") ?? "").replace(
+      /left:[^;]*;top:[^;]*;$/,
+      "",
+    );
     let top = r.top + r.height;
     try {
       const h = box.getBoundingClientRect().height;
@@ -831,7 +867,10 @@ export function createReplayer(
    *  REQ-878 — every spot is checked against the frame's text (textBoxes): the first that covers
    *  none wins — on the control, right of it, left of it, past the text beside it in its row
    *  (SettingsPage's hint), then under it, then over it; REQ-862's rule only when none is free. */
-  function placeChip(box: Element, sel: Element) {
+  function placeChip(
+    box: Element,
+    sel: Element,
+  ): { left: number; top: number; w: number; h: number } | null {
     const r = sel.getBoundingClientRect();
     const base = box.getAttribute("style") ?? "";
     let w = 0, h = 0;
@@ -852,6 +891,7 @@ export function createReplayer(
     const right = r.left + r.width + CHIP_GAP;
     const leftOf = r.left - CHIP_GAP - w;
     const mid = r.top + (r.height - h) / 2;
+    const onControl = sel.localName.toLowerCase() !== "input";
     let free: [number, number] | null = null;
     try {
       const texts = textBoxes(sel);
@@ -861,7 +901,10 @@ export function createReplayer(
           t.top < y + h
         );
       const spots: [number, number][] = [];
-      if (w <= r.width) spots.push([r.left + (r.width - w) / 2, mid]);
+      // REQ-862 AMENDMENT (dm8, m1) — never on an input: the chip hid the date field's value
+      if (onControl && w <= r.width) {
+        spots.push([r.left + (r.width - w) / 2, mid]);
+      }
       spots.push([right, mid], [leftOf, mid]);
       const band = texts.filter((t) =>
         t.top < mid + h && mid < t.top + t.height
@@ -894,7 +937,7 @@ export function createReplayer(
     let left: number, top: number;
     if (free) [left, top] = free;
     else {
-      if (w <= r.width) left = r.left + (r.width - w) / 2;
+      if (onControl && w <= r.width) left = r.left + (r.width - w) / 2;
       else if (fits(right)) left = right;
       else if (fits(leftOf)) left = leftOf;
       else left = r.left + (r.width - w) / 2;
@@ -903,6 +946,7 @@ export function createReplayer(
     if (vw) left = Math.max(0, Math.min(left, vw - w));
     if (vh) top = Math.max(0, Math.min(top, vh - h));
     box.setAttribute("style", base + `left:${left}px;top:${top}px;`);
+    return { left, top, w, h };
   }
 
   /** REQ-547 — the still rule into the frame (again: a snapshot replaced the page, an op its head) */

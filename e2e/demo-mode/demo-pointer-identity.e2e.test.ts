@@ -593,3 +593,58 @@ Deno.test("REQ-645 (demo cycle 5 M2, page change): a desktop customer — he poi
       await d.userCtx.close();
     }
   }));
+
+Deno.test("REQ-539 AMENDMENT 2 / REQ-451 (dm8 m4): the customer narrows her window under his still mouse — his arrow stays on what he pointed at, never pinned to the frame's edge", (t) =>
+  story(t, async (tools) => {
+    const { page, expect } = tools;
+    const view = { width: 1280, height: 800 };
+    const d = await demoOn(tools, view, "/customers");
+    const { userPage } = d;
+    try {
+      // a fixed card at the left of her wide page: it stays at (40,300) when the window narrows
+      await userPage.evaluate(() => {
+        const b = document.createElement("button");
+        b.setAttribute("data-cy", "e2e-card");
+        b.textContent = "Mailing address";
+        b.style.cssText =
+          "position:fixed;left:40px;top:300px;width:260px;height:64px;font-size:18px;z-index:20";
+        document.body.appendChild(b);
+      });
+      await pointAt(page, view.width, "[data-cy='e2e-card']");
+      await until(
+        "her screen has his arrow on the card",
+        async () => (await arrowOf(userPage))?.under === "e2e-card",
+        10_000,
+      );
+      const before = await restingArrow(userPage, "his arrow on the card");
+      // her window narrows to a phone: the fitted frame shrinks out from under his still mouse
+      // (Chromium fires a trusted pointerover on the stage for that — no move of his)
+      await userPage.setViewportSize({ width: 390, height: 844 });
+      // the arrow's spot is judged against the card's box, not by what is topmost under it: for
+      // ~400 ms after the narrowing the app's own sidebar drawer slides out across the card
+      const card = await userPage.evaluate(() => {
+        const r = document.querySelector("[data-cy='e2e-card']")!
+          .getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      });
+      const t0 = Date.now();
+      while (Date.now() - t0 < 3_000) {
+        const a = await arrowOf(userPage);
+        const onCard = a && a.x >= card.left && a.x <= card.right &&
+          a.y >= card.top && a.y <= card.bottom;
+        if (a && (!onCard || a.outside)) {
+          throw new Error(
+            `REQ-451: his arrow left the card after her resize ${
+              JSON.stringify(a)
+            } (before ${JSON.stringify(before)}; card ${JSON.stringify(card)})`,
+          );
+        }
+        await sleep(150);
+      }
+      const after = await arrowOf(userPage);
+      expect.eq(after?.under, "e2e-card", "his arrow is still on the card");
+      expect.eq(after?.outside, false, "and not marked off her screen");
+    } finally {
+      await d.userCtx.close();
+    }
+  }));

@@ -40,6 +40,17 @@ describe("REQ-826 (demo-loop cycle dm2, p10) pageLabel: the banner names the pag
     expect(L("/assistant")).toBe("Assistant");
     expect(L("/")).toBe("Home");
     expect(L("")).toBe("Home");
+    // REQ-826 AMENDMENT 2 (dm8, m5) — the pages the fallback printed raw: "(Field)", "(Terms)"
+    expect(L("/field/workers")).toBe("Field");
+    expect(L("/worker")).toBe("Worker view");
+    expect(L("/terms")).toBe("Terms of service");
+    expect(L("/privacy")).toBe("Privacy policy");
+    expect(L("/refund-policy")).toBe("Refund policy");
+    expect(L("/sms-terms")).toBe("SMS terms");
+    expect(L("/contracts")).toBe("Contracts");
+    expect(L("/co/abc")).toBe("Contract");
+    expect(L("/admin")).toBe("Admin");
+    expect(L("/contact")).toBe("Contact");
   });
   test("the same pages in es", () => {
     const L = (p: string) => pl().pageLabel(p, trOf(es));
@@ -49,6 +60,10 @@ describe("REQ-826 (demo-loop cycle dm2, p10) pageLabel: the banner names the pag
     expect(L("/i/x1")).toBe("Factura");
     expect(L("/dashboard")).toBe("Panel");
     expect(L("/settings")).toBe("Configuración");
+    // REQ-826 AMENDMENT 2 (dm8, m5)
+    expect(L("/field/workers")).toBe("Campo");
+    expect(L("/terms")).toBe("Términos de servicio");
+    expect(L("/worker")).toBe("Vista de trabajador");
   });
   test("an unknown page falls back to its first path segment, readable — never an ID", () => {
     const L = (p: string) => pl().pageLabel(p, trOf(en));
@@ -87,6 +102,24 @@ describe("REQ-826 (demo-loop cycle dm2, p10) pageLabel: the banner names the pag
       "/verify",
       "/welcome",
       "/0123456789abcdef",
+      // REQ-826 AMENDMENT 2 (dm8, m5)
+      "/field",
+      "/field/workers",
+      "/worker",
+      "/terms",
+      "/privacy",
+      "/refund-policy",
+      "/sms-terms",
+      "/contracts",
+      "/contracts/1",
+      "/co/1",
+      "/admin",
+      "/admins",
+      "/contact",
+      "/accounts-manager",
+      "/ops",
+      "/s/abc",
+      "/demo/stage",
     ];
     for (const p of paths) {
       const k = pl().pageLabelKey(p);

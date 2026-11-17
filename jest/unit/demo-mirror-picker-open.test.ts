@@ -142,8 +142,9 @@ describe("REQ-827 (cycle dm2, s1) — an open date picker is shown on the stage"
     expect(c).not.toBeNull();
     expect(c!.kind).toBe("date");
     expect(c!.text).toBe("Choosing a date…");
-    // REQ-862: centred on the 160×30 input (no layout: the chip is estimated 140×26)
-    expect(c!.style).toMatch(/left:20px;top:22px;/);
+    // REQ-862 AMENDMENT (dm8, m1): beside the 160×30 input at (10,20), right edge + 8 — never ON
+    // an input (no layout: the chip is estimated 140×26)
+    expect(c!.style).toMatch(/left:178px;top:22px;/);
     expect(c!.style).toMatch(/pointer-events:\s*none/);
     expect(c!.el.getAttribute("aria-hidden")).toBe("true");
     // never a select's list
@@ -275,8 +276,9 @@ describe("REQ-827 (cycle dm2, s1) — an open file chooser is shown on the stage
     const c = chip(stage);
     expect(c?.kind).toBe("file");
     expect(c?.text).toBe("Customer is choosing a file…");
-    // REQ-862: centred on the 250×30 input (the chip estimated 230×26)
-    expect(c!.style).toMatch(/left:20px;top:202px;/);
+    // REQ-862 AMENDMENT (dm8, m1): beside the 250×30 input at (10,200), right edge + 8 (the chip
+    // estimated 230×26) — never on it
+    expect(c!.style).toMatch(/left:268px;top:202px;/);
   });
 
   test("a hidden file input opened from its label: the chip sits by the label (the nearest box; REQ-862: beside it, in its row)", () => {
@@ -408,14 +410,15 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     a.left < b.left + b.width && b.left < a.right &&
     a.top < b.top + b.height && b.top < a.bottom;
 
-  test("a date chip that fits sits on the date input itself, centred — never under it on the next line", () => {
+  test("a date chip that fits sits BESIDE the date input (REQ-862 AMENDMENT, dm8 m1: never on an input — it hides the value) — never under it on the next line", () => {
     const { doc, by, stage, sync } = setup();
     doc.fire("mousedown", by("when"));
     sync();
     const c = chip(stage)!;
     const b = box(c);
-    const r = by("when").rect; // 10,20 160×30
-    expect(c.style).toMatch(/left:20px;top:22px;/);
+    const r = by("when").rect; // 10,20 160×30 — the chip at its right edge + 8, in its row
+    expect(c.style).toMatch(/left:178px;top:22px;/);
+    expect(overlaps(b, { ...r })).toBe(false);
     expect(b.top).toBeGreaterThanOrEqual(r.top);
     expect(b.bottom).toBeLessThanOrEqual(r.top + r.height);
     expect(c.style).not.toMatch(/margin:4px/);
@@ -646,7 +649,7 @@ describe("REQ-878 (cycle dm5, p2) — the file chip by a sibling upload button c
       expect(c?.kind).toBe("file");
       const left = Number(/left:(-?[\d.]+)px/.exec(c.style)![1]);
       const top = Number(/top:(-?[\d.]+)px/.exec(c.style)![1]);
-      return { left, top, width: CHIP_W, height: 26 };
+      return { left, top, width: CHIP_W, height: 26, text: c.text ?? "" };
     };
     return { open };
   }
@@ -668,6 +671,19 @@ describe("REQ-878 (cycle dm5, p2) — the file chip by a sibling upload button c
     expect(c.top + 13).toBeCloseTo(407 + 43 / 2, 0);
     expect(c.left).toBeGreaterThanOrEqual(271);
     expect(c.left + CHIP_W).toBeLessThanOrEqual(1236);
+    // REQ-878 AMENDMENT (dm8, m3) — past the hint, 370 px from its button, the chip names it
+    expect(c.text).toBe("Customer is choosing a file… · Subir logo");
+  });
+
+  test("REQ-878 AMENDMENT (dm8, m3): a chip right beside its control carries no name", () => {
+    const rows = {
+      "logo-row": { left: 271, top: 407, width: 965, height: 43 },
+      "logo-btn": { left: 271, top: 407, width: 108, height: 43 },
+      "settings-logo-hint": { left: 700, top: 421, width: 300, height: 15 },
+    };
+    const c = settings(rows).open("logo-btn", "settings-logo-file");
+    expect(c.left).toBe(271 + 108 + 8);
+    expect(c.text).toBe("Customer is choosing a file…");
   });
 
   test("certificate: a narrow card row whose hint runs to the frame's edge — the chip covers neither 'Subir certificado' nor the hint nor the text to its left", () => {

@@ -389,6 +389,9 @@ export function followTabs(): {
   learn(cid: string, key: string): boolean;
   shown(): void;
   unsure(): boolean;
+  /** REQ-645 AMENDMENT 2 (dm8, p2) — every tab of hers is gone: forget which was followed, so the
+   *  next one followed (a new tab after her only one closed) is no "other tab" */
+  closed(): void;
 } {
   let cid: string | undefined;
   let key: string | undefined;
@@ -421,6 +424,13 @@ export function followTabs(): {
       if (key) seenKey = key;
     },
     unsure: () => !key && !!before,
+    closed() {
+      cid = undefined;
+      key = undefined;
+      before = undefined;
+      seenKey = undefined;
+      seen = false;
+    },
   };
 }
 

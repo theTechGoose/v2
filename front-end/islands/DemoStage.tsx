@@ -490,7 +490,6 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const hintRef = useRef<Pt | null>(null);
   /** REQ-539 AMENDMENT — has he moved (or pressed) on this stage since it opened? Before that a
    *  `pointerover` (Chromium's, at load, under a still mouse) is where the mouse was, not a move */
-  const movedRef = useRef(false);
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
   const [ghost, setGhost] = useState<
@@ -1558,6 +1557,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // REQ-817 (cycle dm1, m3) — their next page (after saving a name, say): ask who they are
         pollRef.current?.();
       },
+      // REQ-645 AMENDMENT 2 (dm8, p2) — every tab of hers is gone: the next tab followed is hers,
+      // not "the other" one (her only tab closed and a new one opened said "other tab" for 5 s)
+      onTabsGone: () => {
+        tabsRef.current.closed();
+      },
       onPeerTab: (cid, tab) => {
         // REQ-645 (cycle 5 m36) — the followed socket says which browser tab it is only now: another
         // tab — his anchor kept and dropped (otherTab); then what waited for it — its page, when it
@@ -1743,7 +1747,6 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       tabNoteTimerRef.current = null;
       setTabNote(null);
       setSignedOut(false); // REQ-823 — the next demo starts unsaid
-      movedRef.current = false; // REQ-539 AMENDMENT — the next demo's stage opens unmoved
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1762,8 +1765,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const at = (e: PointerEvent) => {
       // REQ-539 AMENDMENT — the pointerover Chromium fires at load under a still mouse is not a
       // move of his: nothing of his on her screen until he moves (or presses) on the stage
-      if (!pointerCounts(e.type, movedRef.current)) return;
-      if (e.type !== "pointerover") movedRef.current = true;
+      if (!pointerCounts(e.type)) return;
       const p = { x: e.clientX, y: e.clientY };
       seedRef.current = null; // REQ-451 — a real event says where the mouse is
       hintRef.current = null;
