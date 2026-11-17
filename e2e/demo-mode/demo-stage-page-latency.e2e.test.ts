@@ -130,6 +130,9 @@ type Page = any;
 /** on /admin: find the customer and click Demo; the page lands on the stage */
 async function openDemo(pg: Page, baseUrl: string, userPhone: string) {
   await pg.goto(`${baseUrl}/admin`);
+  // REQ-650 — the stage's dev chip (the page figure this story reads) shows only with
+  // ?debug=1 or pm_demo_debug; set for this origin before the stage opens
+  await pg.evaluate(() => localStorage.setItem("pm_demo_debug", "1"));
   await pg.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
   await pg.locator("[data-cy='adm-search']").click();
   await pg.locator("[data-cy='adm-demo']").first().waitFor({

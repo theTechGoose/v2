@@ -32,14 +32,16 @@ const between = (src: string, from: string, to: string) => {
   return s.slice(0, s.indexOf(to));
 };
 
-describe("REQ-636 (demo-loop cycle 5, m8) — the ghost waiting for a new page is not tucked", () => {
-  test("a follow switch drops the old page's tuck (the new page decides it)", () => {
+// REQ-854 (demo-loop cycle dm3, p6) AMENDMENT — since REQ-830 the new page starts folded as the
+// old one was: the guess keeps the tuck, and the new page's own face replaces it at once (GUESSED)
+describe("REQ-636 (demo-loop cycle 5, m8) / REQ-854 AMENDMENT — the ghost waiting for a new page keeps the old page's fold", () => {
+  test("a follow switch keeps the old page's tuck (the new page's own face decides it at once)", () => {
     const w = pillFaceAwaiting({
       status: "live",
       tucked: true,
       text: "Alex is guiding you",
     });
-    expect(w.tucked).toBeUndefined();
+    expect(w.tucked).toBe(true);
     expect(w.status).toBe("connecting");
     expect(w.text).toBe("Alex is guiding you");
   });

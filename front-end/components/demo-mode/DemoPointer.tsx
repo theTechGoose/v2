@@ -57,6 +57,7 @@ import {
   useState,
 } from "preact/hooks";
 import {
+  idleKey,
   pointerLook,
   type Pt,
   type Rect,
@@ -65,15 +66,20 @@ import {
   tagPlacement,
 } from "../../../shared/demo-mode/motion.ts";
 import {
+  cueMarkOffset,
+  type Dir,
   DRIFT_OPACITY,
   initialOf,
   OFF_BADGE_PX,
+  OFF_FADE_KEYFRAMES,
   OFF_MARK_FADE_MS,
   OFF_MARK_OPACITY,
   OFF_MARK_PX,
   OFF_MARK_SHOW_MS,
   offBadge,
+  offEdge,
   offMark,
+  type TagPlace,
 } from "../../../shared/demo-mode/presenter-anchor.ts";
 
 export interface Wave {
@@ -125,6 +131,10 @@ export const CONTROL_SELECTOR =
 /** REQ-633 (demo m2, cycle 5) — what the tag must not hide besides a control: a text block */
 export const TEXT_SELECTOR =
   "h1,h2,h3,h4,h5,h6,p,li,td,th,dt,dd,caption,figcaption,blockquote,pre,code,legend";
+
+/** REQ-837 (demo dm2 m3c) — a sidebar or nav: its labels are never a spot for the tag, not even
+ *  the label of the link the arrow is on ("Add a w[A]ker") */
+export const NAV_SELECTOR = "nav,aside,[role=navigation]";
 
 /** REQ-633 — does `el` show text at (x, y)? Its own text nodes' boxes when the browser lays them
  *  out (a Range), else the element: a text block, or one holding text directly */
@@ -192,7 +202,9 @@ function contentAt(
       tip.y >= r.top && tip.y <= r.top + r.height;
     if (!holdsTip) return 2;
   }
-  return textAt(doc, el, x, y) ? 1 : 0;
+  if (!textAt(doc, el, x, y)) return 0;
+  // REQ-837 (demo dm2 m3c) — text in a sidebar/nav weighs as a control: the tag goes elsewhere
+  return el.closest(NAV_SELECTOR) ? 2 : 1;
 }
 
 /** the tag box's sample points: a 3 × 3 grid, inset 2 px */
@@ -221,10 +233,86 @@ export function coverage(doc: Document, r: Rect, tip: Pt): number {
   return n;
 }
 
+/** REQ-848 (demo dm3 m4 + p9) — `coverage` of a tag at stage px `r` (arrow at `tip`) over the
+ *  REPLAY the stage shows in a frame fitted at `fit`: each point mapped to the replay's px
+ *  ((x - fit.left) / fit.s) and hit-tested in its own document. On the stage `coverage(document)`
+ *  is blind there — the transparent click-capture layer sits over the pointer-events:none iframe,
+ *  so every spot scored 0 and the first (tail) slot won, over the customer's text */
+export function frameCoverage(
+  doc: Document | null | undefined,
+  fit: { left: number; top: number; s: number },
+  r: Rect,
+  tip: Pt,
+): number {
+  if (!doc || !(fit.s > 0)) return 0;
+  const map = (p: Pt): Pt => ({
+    x: (p.x - fit.left) / fit.s,
+    y: (p.y - fit.top) / fit.s,
+  });
+  const t = map(tip);
+  const drawn = drawnBoxes(doc);
+  let n = 0;
+  for (const p of samples(r)) {
+    const m = map(p);
+    const c = Math.max(contentAt(doc, m.x, m.y, t), drawnAt(drawn, m, t));
+    n += c === 2 ? 3 : c;
+  }
+  return n;
+}
+
+/** REQ-872 (demo dm5 p12) — the replay's own drawn boxes: an open select's list
+ *  ([data-mirror-listbox], REQ-638) with its rows, and the picker chip ([data-mirror-picker],
+ *  REQ-827). They are pointer-events:none (anchorAt must never land on them), so hit-testing sees
+ *  through them to the dialog under them; coverage reads their boxes instead */
+interface Drawn {
+  r: Rect;
+  kind: "list" | "row" | "chip";
+}
+const DRAWN_SELECTOR =
+  "[data-mirror-listbox],[data-mirror-listbox] [role=option],[data-mirror-picker]";
+function drawnBoxes(doc: Document): Drawn[] {
+  if (typeof doc.querySelectorAll !== "function") return [];
+  const out: Drawn[] = [];
+  try {
+    for (const el of Array.from(doc.querySelectorAll(DRAWN_SELECTOR))) {
+      const b = el.getBoundingClientRect();
+      if (!(b.width > 0 && b.height > 0)) continue;
+      const kind = el.hasAttribute("data-mirror-picker")
+        ? "chip"
+        : el.hasAttribute("data-mirror-listbox")
+        ? "list"
+        : "row";
+      out.push({
+        r: { left: b.left, top: b.top, width: b.width, height: b.height },
+        kind,
+      });
+    }
+  } catch {
+    return out;
+  }
+  return out;
+}
+const inside = (r: Rect, p: Pt) =>
+  p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top &&
+  p.y <= r.top + r.height;
+/** REQ-872 — what of the drawn boxes is at `p`: 2 for the chip or a list row other than the one
+ *  `tip` is on, 1 for the row the arrow is on (its label) or the list's padding, else 0 */
+function drawnAt(drawn: Drawn[], p: Pt, tip: Pt): 0 | 1 | 2 {
+  let c: 0 | 1 | 2 = 0;
+  for (const d of drawn) {
+    if (!inside(d.r, p)) continue;
+    if (d.kind === "list") c = Math.max(c, 1) as 1 | 2;
+    else if (d.kind === "chip" || !inside(d.r, tip)) return 2;
+    else c = Math.max(c, 1) as 1 | 2;
+  }
+  return c;
+}
+
 /** REQ-437 + REQ-543 — place the tag element for an arrow drawn at `tip`: its MEASURED size (the
  *  estimate only while it has none), outside `rect`, next to the arrow, off the controls `covers`
  *  finds, inside `box`; left/top relative to the tip (the pointer box is translated to it) and
- *  the side on `data-tag-side` */
+ *  the side on `data-tag-side`. REQ-837 — returns that placement (relative to the tip, with the
+ *  size used), which the customer's overlay reports to the stage */
 export function placeTag(
   el: HTMLElement,
   tip: Pt,
@@ -232,7 +320,7 @@ export function placeTag(
   rect: Rect | null,
   fallback: { w: number; h: number },
   covers?: (r: Rect) => boolean | number,
-): void {
+): TagPlace {
   const tag = {
     w: el.offsetWidth || fallback.w,
     h: el.offsetHeight || fallback.h,
@@ -241,6 +329,7 @@ export function placeTag(
   el.style.left = `${at.x - tip.x}px`;
   el.style.top = `${at.y - tip.y}px`;
   el.setAttribute("data-tag-side", at.side);
+  return { side: at.side, x: at.x - tip.x, y: at.y - tip.y, ...tag };
 }
 
 /** REQ-374 + REQ-761 — the arrow: a white halo under a colour-filled body with a dark outline,
@@ -302,6 +391,9 @@ export default function DemoPointer(
     z,
     attach,
     bounds,
+    onTag,
+    covers,
+    restTagOpacity,
   }: {
     pointer: Pt | null;
     outside?: boolean;
@@ -309,7 +401,7 @@ export default function DemoPointer(
     off?: boolean;
     /** REQ-645 — the element pointed at is out of view: the marker against the edge of `box`
      *  (where it can be seen), with the way to it in words (`text`; none: the marker alone) */
-    cue?: { box: Bounds; text: string } | null;
+    cue?: { box: Bounds; text: string; dir?: Dir } | null;
     /** REQ-645 — the element moved away since he pointed: the arrow and its tag faded */
     faded?: boolean;
     /** REQ-645 — his pointer is being found again: these words, no arrow */
@@ -325,8 +417,29 @@ export default function DemoPointer(
     /** the glide's ref callback; `onPaint` gets every DRAWN position of the arrow */
     attach(el: HTMLDivElement | null, onPaint?: (p: Pt) => void): void;
     bounds?: Bounds;
+    /** REQ-837 (demo dm2 m3) — where the tag went whenever that changes (null: no tag drawn) */
+    onTag?: (t: TagPlace | null) => void;
+    /** REQ-848 (demo dm3 m4 + p9) — how much a tag at `r` would hide (default: `coverage` of
+     *  this document; the stage hit-tests its replay instead, `frameCoverage`) */
+    covers?: (r: Rect, tip: Pt) => boolean | number;
+    /** REQ-848 (demo dm3 p9) — this instance's resting tag opacity (default REQ-633's opaque) */
+    restTagOpacity?: number;
   },
 ) {
+  /** REQ-837 — the latest `onTag` (the painter is made once) and the last placement it was told */
+  const tagSink = useRef(onTag);
+  tagSink.current = onTag;
+  const told = useRef("");
+  const tell = (t: TagPlace | null) => {
+    const key = t
+      ? `${t.side}:${Math.round(t.x)}:${Math.round(t.y)}:${Math.round(t.w)}:${
+        Math.round(t.h)
+      }`
+      : "";
+    if (key === told.current) return;
+    told.current = key;
+    tagSink.current?.(t);
+  };
   /** the tag rests (fades, never out) a while after the pointer was last placed */
   const [idle, setIdle] = useState(false);
   useEffect(() => {
@@ -334,33 +447,41 @@ export default function DemoPointer(
     setIdle(false);
     const tag = setTimeout(() => setIdle(true), TAG_IDLE_MS);
     return () => clearTimeout(tag);
-    // REQ-374 — every placement is a new object (a move, a re-anchor after a scroll, an edge
-    // toggle), so the tag comes back fully on any of them, not only on a new x/y
-  }, [pointer, outside]);
-  const look = pointerLook(idle);
+    // REQ-374 — a move, a re-anchor after a scroll, an edge toggle: the tag comes back fully.
+    // REQ-850 (dm3 p10) — keyed on the spot, not the object: a re-send of the same spot (her
+    // resting pointer sent again on a resize) leaves a resting tag at rest
+  }, [idleKey(pointer, outside)]);
+  const look = pointerLook(idle, restTagOpacity);
 
   /** what the painter places the tag in, as of the latest render */
   const live = useRef<
-    { bounds?: Bounds; rect: Rect | null; fallback: { w: number; h: number } }
+    {
+      bounds?: Bounds;
+      rect: Rect | null;
+      fallback: { w: number; h: number };
+      covers?: (r: Rect, tip: Pt) => boolean | number;
+    }
   >({ rect: null, fallback: estimate(name) });
   const tagRef = useRef<HTMLSpanElement | null>(null);
   const drawn = useRef<Pt | null>(null);
   const paintTag = useCallback((p: Pt) => {
     drawn.current = p;
     const el = tagRef.current;
-    if (!el) return;
+    if (!el) return tell(null);
     const l = live.current;
     // REQ-543 + REQ-633 — off the other controls and the text of the page under it, anchored
     // or not (the tag and arrow are pointer-events:none, so the hit-test sees through them)
+    // REQ-848 (demo dm3) — the caller's hit-test when it has one (the stage: its replay)
     const doc = globalThis.document;
-    placeTag(
+    const own = l.covers;
+    tell(placeTag(
       el,
       p,
       l.bounds ?? windowBox(),
       l.rect,
       l.fallback,
-      doc ? (r) => coverage(doc, r, p) : undefined,
-    );
+      own ? (r) => own(r, p) : doc ? (r) => coverage(doc, r, p) : undefined,
+    ));
   }, []);
   const ref = useCallback(
     (el: HTMLDivElement | null) => attach(el, el ? paintTag : undefined),
@@ -381,18 +502,20 @@ export default function DemoPointer(
   const tagRect = outside || cue || pending !== undefined && pending !== null
     ? null
     : rect ?? null;
-  live.current = { bounds: tagBox, rect: tagRect, fallback };
+  live.current = { bounds: tagBox, rect: tagRect, fallback, covers };
   const place = pointer
     ? tagPlacement(pointer, tagBox ?? windowBox(), fallback, tagRect)
     : null;
-  const mark = pointer && (off || cue)
-    ? offMark(pointer, cue?.box ?? bounds ?? windowBox())
+  // REQ-815 (demo dm1 p4) — the cue's chevron from the way to the element alone
+  // (`cueMarkOffset`), as the stage's ghost draws it from the report; off the screen: `offMark`
+  const mark = pointer && cue
+    ? cueMarkOffset(cue.dir ?? offEdge(pointer, cue.box))
+    : pointer && off
+    ? offMark(pointer, bounds ?? windowBox())
     : null;
   const badge = pointer && off
     ? offBadge(pointer, bounds ?? windowBox())
     : null;
-  /** REQ-635 — shown for OFF_MARK_SHOW_MS, then faded out over OFF_MARK_FADE_MS */
-  const showFor = OFF_MARK_SHOW_MS / (OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS);
   /** a new spot remounts the marker (its fade starts again); the same spot re-sent does not */
   const markKey = pointer
     ? `${Math.round(pointer.x)},${Math.round(pointer.y)}`
@@ -434,9 +557,7 @@ export default function DemoPointer(
   return (
     <>
       <style>
-        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}@keyframes pmDemoPend{from{opacity:.35}to{opacity:1}}@keyframes pmDemoOffFade{0%{opacity:${OFF_MARK_OPACITY}}${
-          Math.round(showFor * 100)
-        }%{opacity:${OFF_MARK_OPACITY}}100%{opacity:0}}`}
+        {`@keyframes pmDemoWave{0%{transform:translate(-50%,-50%) scale(.15);opacity:.95}100%{transform:translate(-50%,-50%) scale(1);opacity:0}}@keyframes pmDemoClickDot{0%{opacity:.95}60%{opacity:.8}100%{opacity:0}}@keyframes pmDemoPend{from{opacity:.35}to{opacity:1}}${OFF_FADE_KEYFRAMES}`}
       </style>
       {waves.length > 0 && (
         // REQ-546 (demo m14, cycle 4) — the waves are clipped to `bounds` (the stage's fitted

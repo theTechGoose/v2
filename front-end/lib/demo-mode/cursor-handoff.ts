@@ -23,6 +23,21 @@ export const CURSOR_KEY = "pm:demo-cursor";
 /** a hand-off older than this is not where the mouse is any more */
 export const CURSOR_HANDOFF_MS = 30_000;
 
+/** REQ-539 AMENDMENT (2026-11-16) — does a pointer event on the stage say he MOVED? Chromium fires a
+ *  trusted `pointerover` at the mouse's spot some 40 ms after a page loads under a still mouse
+ *  (measured: headless shell 1208); that is where the mouse already was — a hint, like /admin's
+ *  hand-off — not a move of his. A `pointerover` counts once a `pointermove` / `pointerdown` has
+ *  been seen on this page (the frame appearing under his cursor after a fit); those always count */
+/** REQ-539 AMENDMENT 2 (demo-loop run 8, m4) — which pointer events on the stage are a move of
+ *  his: `pointermove` and `pointerdown`. Never `pointerover` (nor `pointerenter` / `mouseover`):
+ *  Chromium fires those, trusted, under a STILL mouse — ~40 ms after a page loads (REQ-539
+ *  AMENDMENT), and whenever the element under the mouse changes (the customer narrowed her window
+ *  and the fitted frame shrank out from under his cursor: his arrow left "Mailing address" for the
+ *  frame's edge). A real move always brings a `pointermove`. */
+export function pointerCounts(type: string): boolean {
+  return type === "pointermove" || type === "pointerdown";
+}
+
 /** REQ-539 — the page that handed the mouse over: /admin (the Demo click) or the stage itself */
 export type CursorFrom = "admin" | "stage";
 /** REQ-539 — a hand-off, with the page that made it */

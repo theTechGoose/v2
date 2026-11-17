@@ -59,6 +59,25 @@
  * browser's shared clock) or its last input claim — so a background tab that merely booted (or
  * emulates focus) later never outranks the page the customer moved to. A stage that joins gets
  * each tab's last claim with its `peer` (the hub keeps them) and ranks the roster at once.
+ *
+ * REQ-823 (demo-loop cycle dm1, m8 + M2) — amends REQ-436: the followed browser tab whose page went
+ * CLOSING or said nothing while another of the customer's tabs is open is held too, for
+ * SILENT_GRACE_MS — an address-bar navigation, `page.goto` or the browser's reload button fires no
+ * `navigate` and says "closing", and its next page (the same key) takes the stage back without the
+ * other tab ever being offered, synced or named; a real close falls over once the grace is up. A
+ * tab that went because the customer SIGNED OUT (`signout`) is held with no timer: the stage says
+ * "waiting" at once (never "between"), hears it (`onSignedOut`), and follows no other tab of the
+ * dead session — only a tab claimed since the sign-out, or a page of that browser tab signed in
+ * again.
+ *
+ * REQ-838 (demo-loop cycle dm2, m5 + p8) — amends REQ-391 (m21) and REQ-823: the last tab whose
+ * page went CLOSING is held as well — "between" for SILENT_GRACE_MS (an address-bar navigation,
+ * `page.goto` or the reload button says "closing", and the stage flashed "Waiting for {name}'s
+ * app…" until the next page joined); a real close says "waiting" once the grace is up. Only a
+ * sign-out is "waiting" at once. And the customer's link says "waiting" — no stage there, which
+ * its pill now says as "{name} stepped away" — only once it can know: never before its welcome,
+ * nor for JOIN_GRACE_MS after it while no stage is heard (the stages in other hubs answer its
+ * arrival through KV a moment later); until then it is still "connecting".
  */
 import {
   type ClientMessage,
@@ -74,6 +93,11 @@ import {
 
 /** REQ-648 — after its welcome a link asks the deploy's time again this long after it (ms) */
 export const TIME_AGAIN_MS = [1_500, 5_000, 15_000];
+/** REQ-838 (demo-loop cycle dm2, p8) — the customer's link that has heard no stage this long
+ *  after its welcome says "waiting" (nobody there: the pill's "{name} stepped away"); before that
+ *  it is still "connecting" — the welcome lists this hub's stages, the other hubs answer its
+ *  arrival through KV a moment later */
+export const JOIN_GRACE_MS = 2_000;
 
 export type LinkStatus =
   | "connecting"
@@ -107,7 +131,9 @@ export interface DemoLinkOptions {
    *  performance.timeOrigin) — what a load or focus claim says. Default: when the link was made */
   loadedAt?: number;
   onPeer(m: PeerMessage, from: PeerFrom): void;
-  onStatus(s: LinkStatus): void;
+  /** REQ-896 (dm6, p1 + p7) — `leave`: why the followed tab's last page went (closing,
+   *  navigating, signout, or nothing said: undefined), while no tab of hers has come since */
+  onStatus(s: LinkStatus, leave?: LeaveWhy): void;
   /** the other side arrived (or was there on welcome); REQ-232 — on the customer's side also: a
    *  stage asks this tab for its whole view (it follows this tab now); on a stage: it follows
    *  another of the customer's tabs — `cid` names it (REQ-292: the stage starts its mirror over
@@ -123,8 +149,16 @@ export interface DemoLinkOptions {
   /** REQ-235 — `pid`: the presenter who ended it (none when the viewer did) */
   onEnded(by: Role, reason?: "declined" | "expired", pid?: string): void;
   /** REQ-648 — a stage: the page of the followed tab went (not closing) — `at`: when it said so,
-   *  on the deploy's clock (this link's `now()` when it said nothing); `why`: what it said */
+   *  on the deploy's clock (this link's `now()` when it said nothing); `why`: what it said.
+   *  REQ-823 — nor after a sign-out: no page of that sign-in comes next */
   onPageGone?(at: number, why?: LeaveWhy): void;
+  /** REQ-823 (cycle dm1, M2) — a stage: the customer signed out in the tab it follows — the link
+   *  says "waiting", and no tab of theirs is followed until one is claimed since the sign-out (or
+   *  that browser tab signs in again: its next onPeerOnline) */
+  onSignedOut?(): void;
+  /** REQ-645 AMENDMENT 2 (dm8, p2) — a stage: the last of the customer's tabs went (nobody left to
+   *  follow); the next tab followed is no "other tab" of hers */
+  onTabsGone?(): void;
 }
 
 export interface DemoLink {
@@ -183,13 +217,16 @@ interface Tab {
   i?: boolean;
 }
 
-/** REQ-436 — a browser tab whose followed page went navigating: the stage holds on to it */
+/** REQ-436 — a browser tab whose followed page went navigating: the stage holds on to it.
+ *  REQ-823 — or went closing / said nothing while another tab is open (the shorter grace); or
+ *  signed out (`signout`: no timer — held until a tab is claimed since, or its key comes back) */
 interface Held {
-  key: string;
+  key?: string;
   at: number;
   f?: boolean;
   i?: boolean;
-  timer: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout>;
+  signout?: boolean;
 }
 
 export function connectDemo(o: DemoLinkOptions): DemoLink {
@@ -217,6 +254,14 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   /** REQ-232 — the other side's last socket went a moment ago: still "live" until the grace ends */
   let lingering = false;
   let grace: ReturnType<typeof setTimeout> | undefined;
+  /** REQ-896 — a presenter: why the followed (or last) tab's page went; undefined once a tab of
+   *  hers is here again */
+  let lastLeave: LeaveWhy | undefined;
+  /** REQ-838 (p8) — this socket has not heard who is there yet (not welcomed, or welcomed less
+   *  than JOIN_GRACE_MS ago with nobody heard: the customer's side a stage, the stage a tab —
+   *  REQ-838 AMENDMENT, dm9 p4) */
+  let joining = true;
+  let joinTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let ended = false;
   let replaced = false;
@@ -230,7 +275,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   const setStatus = (s: LinkStatus) => {
     if (status === s) return;
     status = s;
-    o.onStatus(s);
+    o.onStatus(s, lastLeave);
   };
   const wsSend = (m: ClientMessage) => {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
@@ -253,7 +298,12 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (replaced) return setStatus("replaced");
     if (closed) return setStatus("closed");
     if (ws?.readyState !== WebSocket.OPEN) return setStatus("connecting");
-    if (!online()) return setStatus("waiting");
+    // REQ-838 (p8) — the customer's link that has not heard who is there yet is still connecting;
+    // REQ-838 AMENDMENT (dm9, p4) — the stage's too: its roster lands a message after the welcome,
+    // and "Waiting for her app" flashed over a customer who was there all along
+    if (!online()) return setStatus(joining ? "connecting" : "waiting");
+    // REQ-823 (M2) — the customer signed out: nothing of theirs is coming — waiting, not between
+    if (o.role === "presenter" && held?.signout) return setStatus("waiting");
     // REQ-391 — a stage whose customer's page went: never "live" over it while the next may come
     if (o.role === "presenter" && (tabs.size === 0 || held)) {
       return setStatus("between");
@@ -273,6 +323,19 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       lingering = false;
       refresh();
     }, ms);
+  };
+  /** REQ-838 (p8) — the customer's side: welcomed — the other hubs' stages may still answer for
+   *  JOIN_GRACE_MS; a stage heard (endJoin) or the grace over, and it knows who is there */
+  const startJoin = () => {
+    clearTimeout(joinTimer);
+    joinTimer = setTimeout(() => {
+      joining = false;
+      refresh();
+    }, JOIN_GRACE_MS);
+  };
+  const endJoin = () => {
+    joining = false;
+    clearTimeout(joinTimer);
   };
 
   const teardown = (key: string) => {
@@ -433,6 +496,27 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     clearTimeout(held.timer);
     held = null;
   };
+  /** REQ-436 — keep following the browser tab of the followed page that went (`t`), "between", for
+   *  `ms` — the page that went takes its connection and its pointer along. REQ-823 — `ms` null:
+   *  it signed out — held until a tab is claimed since (or its key comes back), no timer */
+  const hold = (cid: string, t: Tab | undefined, ms: number | null) => {
+    teardown(cid);
+    o.onPeer({ k: "leave" }, { role: "viewer", cid });
+    release();
+    held = {
+      ...(t?.key ? { key: t.key } : {}),
+      at: t?.at ?? 0,
+      f: t?.f,
+      i: t?.i,
+      ...(ms === null ? { signout: true } : {
+        timer: setTimeout(() => {
+          held = null;
+          follow();
+          refresh();
+        }, ms),
+      }),
+    };
+  };
   /** REQ-436 — a page of browser tab `key` is here: it takes over what the tab's earlier page had
    *  (its claim; the stage, when the tab was held) */
   const inherit = (
@@ -460,6 +544,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     i?: boolean,
   ) => {
     if (gone.has(cid)) return;
+    lastLeave = undefined; // REQ-896 — a tab of hers is here: nothing left behind
     let t = tabs.get(cid);
     if (!t) tabs.set(cid, t = { at: 0, n: ++arrivals });
     if (at >= t.at && (at > 0 || key)) {
@@ -480,48 +565,54 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       if (late) o.onPeerTab?.(cid, key);
     }
     endGrace();
+    endJoin(); // REQ-838 AMENDMENT (dm9, p4) — a tab heard: this stage knows who is there
     follow();
     refresh();
   };
   /** REQ-391 — `why`: what its page said as it went. The last tab gone: closing — nobody to wait
    *  for (waiting at once, m21); navigating — its next page comes (the full grace, M4); nothing
-   *  said — a short grace */
+   *  said — a short grace. REQ-823 — signout: nobody to wait for either (waiting at once).
+   *  REQ-838 (cycle dm2, m5) — closing gets the short grace too: the address bar, page.goto and
+   *  the reload button say "closing" and their next page comes; only signout waits at once */
   const tabLeft = (cid: string, why?: LeaveWhy, at?: number) => {
     gone.add(cid);
     if (gone.size > 200) gone.delete(gone.values().next().value!);
     const t = tabs.get(cid);
     if (!tabs.delete(cid)) return;
+    // REQ-896 (dm6, p1 + p7) — why the page went rides with every status from here: the stage
+    // words a closed tab's hold "One moment…", a navigation's "Loading their next page…", and
+    // draws no ghost of a pill whose page closed
+    if (cid === followed || tabs.size === 0) lastLeave = why;
     // REQ-648 — the followed page went and a next one may come: the stage times the change
-    if (cid === followed && why !== "closing") {
+    // (REQ-823 — not after a sign-out: no page of that sign-in comes next)
+    if (cid === followed && why !== "closing" && why !== "signout") {
       o.onPageGone?.(at ?? Date.now() + skew, why);
     }
-    if (cid === followed && t?.key) {
+    if (cid === followed && why === "signout") {
+      // REQ-823 (M2) — the customer signed out in the tab the stage follows: the browser's other
+      // tabs are the same dead session — none is followed until a tab is claimed since (her
+      // phone, used) or this browser tab signs in again (a page with its key); the stage says so
+      hold(cid, t, null);
+      o.onSignedOut?.();
+    } else if (cid === followed && t?.key) {
       // REQ-436 — a page of the same browser tab is already here: it is the stage's now
       const next = [...tabs.values()].find((u) => u.key === t.key);
       if (next) inherit(next, t.key, t.at, t.f, t.i);
-      else if (why === "navigating") {
-        // its next page is coming: keep following this browser tab, "between", for the grace —
-        // the page that went takes its connection and its pointer along
-        teardown(cid);
-        o.onPeer({ k: "leave" }, { role: "viewer", cid });
-        release();
-        held = {
-          key: t.key,
-          at: t.at,
-          f: t.f,
-          i: t.i,
-          timer: setTimeout(() => {
-            held = null;
-            follow();
-            refresh();
-          }, PRESENCE_GRACE_MS),
-        };
-      }
+      // its next page is coming: keep following this browser tab for the grace
+      else if (why === "navigating") hold(cid, t, PRESENCE_GRACE_MS);
+      // REQ-823 (m8) — closing, or nothing said, while another tab is open: an address-bar
+      // navigation or the reload button says "closing" too — its next page (the same key) may
+      // come within SILENT_GRACE_MS; the other tab is followed only after it. REQ-838 (dm2, m5)
+      // — with no other tab open too: held, never "waiting" at once
+      else hold(cid, t, SILENT_GRACE_MS);
     }
     if (tabs.size === 0) {
       const ms = why === "navigating" ? PRESENCE_GRACE_MS : SILENT_GRACE_MS;
-      if (why === "closing") endGrace();
+      // REQ-838 (dm2, m5) — only a sign-out is nobody to wait for ("waiting" at once): a closing
+      // page is "between" for SILENT_GRACE_MS (its next page may be coming), then "waiting"
+      if (why === "signout") endGrace();
       else startGrace(ms);
+      o.onTabsGone?.(); // REQ-645 AMENDMENT 2 (dm8, p2)
     }
     follow();
     refresh();
@@ -577,8 +668,10 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     }
     if (hasPid(pid) !== had) o.onPresence?.(pid, !had);
     if (o.role !== "viewer") return;
-    if (online) endGrace();
-    else if (stages.size === 0) startGrace();
+    if (online) {
+      endGrace();
+      endJoin(); // REQ-838 (p8) — a stage heard: this link knows who is there
+    } else if (stages.size === 0) startGrace();
     refresh();
     if (online && fresh) {
       reclaim();
@@ -637,6 +730,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
         case "welcome":
           // who is here comes next, one `peer` each (REQ-232); this tab says again it is in use
           reclaim();
+          // REQ-838 (p8) — and the other hubs' stages answer a moment later: still joining
+          // (REQ-838 AMENDMENT, dm9 p4 — the stage's roster comes a moment later too)
+          if (joining) startJoin();
           refresh();
           askTimes(); // REQ-391, REQ-648
           break;
@@ -693,6 +789,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       release();
       stages.clear();
       endGrace();
+      // REQ-838 (p8) — the next socket joins afresh: it has heard nobody yet
+      clearTimeout(joinTimer);
+      joining = true;
       if (closed || ended || replaced) return refresh();
       if (attempt >= MAX_ATTEMPTS) {
         closed = true;
@@ -770,6 +869,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       clearTimeout(retry);
       for (const h of timeAgain) clearTimeout(h);
       endGrace();
+      clearTimeout(joinTimer); // REQ-838
       release();
       teardownAll();
       const sock = ws;

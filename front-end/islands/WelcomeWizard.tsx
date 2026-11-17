@@ -75,6 +75,7 @@ import {
   type PaymentMethodDef,
 } from "../../shared/identity/payment-methods.ts"; // REQ-620
 import { api } from "../lib/api.ts";
+import { announceProfile } from "../lib/profile-events.ts";
 import { type AddressSuggestion, suggestAddresses } from "../lib/mapbox.ts";
 
 /** REQ-227 — a step's Skip: stamp the question deferred (best effort; the wizard moves on either way) */
@@ -281,6 +282,9 @@ function NameStep({ ctx }: { ctx: StepCtx }) {
     try {
       const updated = await profileClient.updateUser({ name: value.trim() });
       ctx.patchSnap({ user: { ...ctx.snap.user, name: updated.name } });
+      // REQ-836 (demo-loop cycle dm2, m1) — told to the page, as Settings does: a demo's stage
+      // names the customer by it at once (the overlay relays it), not on its next 15 s ask
+      announceProfile({ name: updated.name ?? value.trim() });
       ctx.advance();
     } catch {
       setErr(t("welcome.saveError"));

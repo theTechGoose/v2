@@ -91,8 +91,11 @@ export interface DomChunk {
 /** REQ-391 — why a customer's page went, said by the page itself as it goes (`pagehide`): it is
  *  navigating to another page of the app (a link, `location.href`, a reload or a history step —
  *  a new socket follows), or no next page of the app is known to be coming (`closing`: a closed
- *  tab, the address bar pointed elsewhere, the browser's own reload button) */
-export type LeaveWhy = "navigating" | "closing";
+ *  tab, the address bar pointed elsewhere, the browser's own reload button).
+ *  REQ-823 (demo-loop cycle dm1, M2) — or the customer signed out (`signout`: the app's sign-out,
+ *  said at once by the page that heard it, or by the server when the sign-in's session is gone):
+ *  no page of that sign-in comes next, in this tab or any other of the browser */
+export type LeaveWhy = "navigating" | "closing" | "signout";
 
 /** REQ-436 — a browser tab's key on the wire: what front-end/lib/demo-mode/tab-key.ts makes */
 export const TAB_KEY = /^[A-Za-z0-9_-]{1,64}$/;
@@ -108,7 +111,7 @@ const claimExtras = (
 });
 
 const isLeaveWhy = (x: unknown): x is LeaveWhy =>
-  x === "navigating" || x === "closing";
+  x === "navigating" || x === "closing" || x === "signout";
 
 export type PeerMessage =
   | { k: "move"; a: Anchor; t?: number } // t: the sender's clock (REQ-180)
@@ -126,6 +129,13 @@ export type PeerMessage =
   // REQ-636 (cycle 5, m8) — a stage that just followed a tab asks it for its pill (one sent
   // before the stage followed it was dropped); `t` above: the pill's frame clock (link.now())
   | { k: "askPill" }
+  // REQ-827 AMENDMENT (demo-loop run 16, m3) — a native confirm()/alert() is up on the customer's
+  // screen (its words, cut to DIALOG_TEXT_MAX), or was just answered (null): the stage says so in
+  // its chrome row — the page under it is blocked and nothing else tells the presenter why
+  | { k: "dialog"; text: string | null; kind?: "alert" }
+  // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name on this page: the stage
+  // asks `active` at once (it names them by it), not on its next ACTIVE_NAME_REFRESH_MS tick
+  | { k: "renamed" }
   // REQ-642 (demo-loop cycle 5, m10) — the customer's overlay says where it PLACED presenter
   // `pid`'s arrow: for anchor `a`, its tip as a fraction of their viewport (`p`; null — not on
   // their screen), `o` on the edge, outside. The stage draws his ghost from this, never a guess.
@@ -140,12 +150,36 @@ export interface PlacedMessage {
   o?: 1;
   /** REQ-645 + REQ-642 (reconciled on demo-fixes) — its element is out of view that way on their
    *  screen: they see a chevron there, so the ghost is that chevron too */
-  d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
+  d?: { dx: -1 | 0 | 1; dy: -1 | 0 | 1; h?: 1 };
+  /** REQ-867 (demo dm4 m6) — `d.h`: no scroll on their screen can reach it that way (a closed
+   *  off-canvas drawer): their cue says hidden, and so does the stage's ghost */
+  /** REQ-837 (demo dm2 m3) — where their tag went beside the arrow: its side, its top-left
+   *  relative to the arrow's box and its size, as fractions of their viewport (x / w of its
+   *  width, y / h of its height) — so the stage draws the presenter's tag on the same side */
+  t?: { s: PlacedTagSide; x: number; y: number; w: number; h: number };
 }
 
-/** REQ-372 — the pill's state in words the stage translates itself (the presenter's language) */
-export type PillStatus = "live" | "connecting" | "ended";
-const PILL_STATUSES: readonly PillStatus[] = ["live", "connecting", "ended"];
+/** REQ-837 — the sides a tag goes to (motion.ts `TagSide`) */
+export const PLACED_TAG_SIDES = [
+  "below",
+  "above",
+  "right",
+  "left",
+  "tail",
+  "tail-up",
+] as const;
+export type PlacedTagSide = typeof PLACED_TAG_SIDES[number];
+
+/** REQ-372 — the pill's state in words the stage translates itself (the presenter's language).
+ *  REQ-838 (demo-loop cycle dm2, p8) — "away": the customer's link is up and no stage is (their
+ *  guide left the stage; the demo is still open) */
+export type PillStatus = "live" | "connecting" | "ended" | "away";
+const PILL_STATUSES: readonly PillStatus[] = [
+  "live",
+  "connecting",
+  "ended",
+  "away",
+];
 /** REQ-372 — the longest pill text that rides to the stage */
 export const PILL_TEXT_MAX = 160;
 /** REQ-430 — the longest status label / guide name that rides to the stage */
@@ -178,6 +212,29 @@ export interface PillFace {
   title?: string;
   /** REQ-540 — the pill's End label in the customer's words (the stage draws it as a disabled chip) */
   end?: string;
+  /** REQ-822 (demo-loop cycle dm1, m1) — End is asking on the customer's pill: the stage's ghost
+   *  draws the question in End's place, and the stage's pill says the customer is deciding */
+  asking?: boolean;
+  /** REQ-822 — the question as the customer's pill words it ("End the demo with Alex?") */
+  ask?: string;
+  /** REQ-822 — its two answers in the customer's words (drawn as disabled chips) */
+  yes?: string;
+  no?: string;
+  /** REQ-838 (demo-loop cycle dm2, m5 + p4) — the pill's "Connecting…" and "The demo ended" in
+   *  the customer's words: what the stage guesses on its own (their app dropped, their next page
+   *  joining) is said in their language, never the presenter's beside their title, line and End */
+  connectingLabel?: string;
+  endedLabel?: string;
+  /** REQ-835 (demo-loop cycle dm2, m2) — the customer's pill wraps into rows (`pillWraps`: the
+   *  phone's compact pill, opened or asking): the stage's ghost wraps the same way */
+  wraps?: boolean;
+  /** REQ-875 (demo-loop cycle dm5, p4) — the STAGE's mark, never on the wire (parsePillFace
+   *  drops it): the customer's page went and the link holds it "between" (SILENT_GRACE_MS, or a
+   *  navigation): the ghost keeps her last face but says no status word, as nothing is connecting */
+  held?: boolean;
+  /** REQ-895 (demo-loop run 6, m6) — the pill IS the ended notice ("You ended the demo" + ×): the
+   *  ghost draws title, text and a ×, never a status chip or End beside them */
+  notice?: boolean;
 }
 
 /** REQ-545 — a colour the stage may paint: hex, rgb() or rgba() only */
@@ -205,6 +262,19 @@ function parsePillFace(o: Record<string, unknown>): PillFace {
   if (typeof o.dim === "string" && BAND_BG.test(o.dim)) f.dim = o.dim;
   if (typeof o.title === "string") f.title = o.title.slice(0, PILL_LABEL_MAX);
   if (typeof o.end === "string") f.end = o.end.slice(0, PILL_LABEL_MAX);
+  if (typeof o.asking === "boolean") f.asking = o.asking;
+  if (typeof o.ask === "string") f.ask = o.ask.slice(0, PILL_TEXT_MAX);
+  if (typeof o.yes === "string") f.yes = o.yes.slice(0, PILL_LABEL_MAX);
+  if (typeof o.no === "string") f.no = o.no.slice(0, PILL_LABEL_MAX);
+  // REQ-838 (dm2, m5 + p4) — the words for the stage's own guesses, capped like the label
+  if (typeof o.connectingLabel === "string") {
+    f.connectingLabel = o.connectingLabel.slice(0, PILL_LABEL_MAX);
+  }
+  if (typeof o.endedLabel === "string") {
+    f.endedLabel = o.endedLabel.slice(0, PILL_LABEL_MAX);
+  }
+  if (typeof o.wraps === "boolean") f.wraps = o.wraps;
+  if (typeof o.notice === "boolean") f.notice = o.notice; // REQ-895
   return f;
 }
 
@@ -276,6 +346,11 @@ export type EndReason = "declined" | "expired";
 
 /** how often a browser with no demo asks `active` again — the customer sees the invitation within this */
 export const ACTIVE_POLL_MS = 5_000;
+/** REQ-817 (demo-loop cycle dm1, m3) — while the customer's app IS connected the stage still asks
+ *  `active` this often, so a name the customer saves mid-demo reaches its pill and their cursor
+ *  (their next page joining asks at once). REQ-836 (cycle dm2, m1) — a fallback only: a name
+ *  saved on the customer's page is pushed as a `renamed` frame and the stage asks at once */
+export const ACTIVE_NAME_REFRESH_MS = 15_000;
 /** REQ-378 (demo-loop cycle 2, m22) — how long the server may hold an ask that finds no demo
  *  (`GET /demo-mode/active?wait=`): it answers the moment a demo is opened for the caller, so the
  *  customer's app hears of it at once instead of on its next ask */
@@ -287,11 +362,18 @@ export const ACTIVE_REASK_MS = 1_000;
  *  is waiting. A page change in the customer's app is a new page and a new socket (the old one
  *  closes, the new one joins once the page has loaded), and it must never flash "waiting".
  *  REQ-391 — on a stage this is the grace of a tab that said it is NAVIGATING (its next page is
- *  coming); one that said it is closing gets none, one that said nothing SILENT_GRACE_MS. */
+ *  coming); one that said it is closing gets none, one that said nothing SILENT_GRACE_MS.
+ *  REQ-838 (demo-loop cycle dm2, m5) — a closing one gets SILENT_GRACE_MS too (the address bar,
+ *  `page.goto` and the reload button say "closing"); only a sign-out gets none. */
 export const PRESENCE_GRACE_MS = 5_000;
 /** REQ-391 — a customer tab's socket went without a word (a crash, a lost network — whose first
  *  reconnect comes after 1 s — or a page from before REQ-391): the stage waits this long for a
- *  next page before it says it is waiting */
+ *  next page before it says it is waiting. REQ-823 (demo-loop cycle dm1, m8) — and the followed
+ *  browser tab whose page went closing or without a word while another of the customer's tabs is
+ *  open is held this long before the stage follows the other tab: an address-bar navigation, a
+ *  `page.goto` or the browser's reload button says "closing" and is that tab's next page.
+ *  REQ-838 (demo-loop cycle dm2, m5) — and so is the last tab's page that went closing: the stage
+ *  says "between" this long, never "waiting" at once */
 export const SILENT_GRACE_MS = 2_000;
 /** a demo nobody ended expires on its own — and says so (REQ-296: `ended … expired` to everyone) */
 export const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -397,10 +479,24 @@ function parsePlaced(o: Record<string, unknown>): PlacedMessage | null {
   const d = o.d as Record<string, unknown> | undefined;
   const unit = (v: unknown): v is -1 | 0 | 1 => v === -1 || v === 0 || v === 1;
   if (p && d && typeof d === "object" && unit(d.dx) && unit(d.dy)) {
-    m.d = { dx: d.dx, dy: d.dy };
+    m.d = d.h === 1 ? { dx: d.dx, dy: d.dy, h: 1 } : { dx: d.dx, dy: d.dy };
+  }
+  // REQ-837 — the tag's placement, when said and well formed (else left out, the report kept)
+  const t = o.t as Record<string, unknown> | undefined;
+  const signed = (v: unknown): v is number => num(v) && v >= -1 && v <= 1;
+  if (
+    p && t && typeof t === "object" &&
+    (PLACED_TAG_SIDES as readonly unknown[]).includes(t.s) &&
+    signed(t.x) && signed(t.y) && signed(t.w) && signed(t.h) &&
+    t.w >= 0 && t.h >= 0
+  ) {
+    m.t = { s: t.s as PlacedTagSide, x: t.x, y: t.y, w: t.w, h: t.h };
   }
   return m;
 }
+
+/** REQ-827 AMENDMENT (dm16, m3) — the most of a native dialog's words carried to the stage */
+export const DIALOG_TEXT_MAX = 400;
 
 export function parsePeerMessage(x: unknown): PeerMessage | null {
   if (!x || typeof x !== "object") return null;
@@ -457,6 +553,16 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
       return parsePlaced(o);
     case "askPill":
       return { k: "askPill" };
+    case "renamed":
+      return { k: "renamed" };
+    case "dialog":
+      // REQ-827 AMENDMENT (dm16, m3) — the words of a native dialog, cut; null: it closed
+      if (o.text === null) return { k: "dialog", text: null };
+      if (typeof o.text !== "string") return null;
+      // REQ-827 AMENDMENT REVISION (dm17, p2) — an alert() is a notice, not a question
+      return o.kind === "alert"
+        ? { k: "dialog", text: o.text.slice(0, DIALOG_TEXT_MAX), kind: "alert" }
+        : { k: "dialog", text: o.text.slice(0, DIALOG_TEXT_MAX) };
     default:
       return null;
   }

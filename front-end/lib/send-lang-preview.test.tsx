@@ -84,7 +84,11 @@ Deno.test("REQ-461 (m8) the preview body shows the subject, the email in a sandb
   );
   const frame = both.querySelector('[data-cy="send-preview-email"]')!;
   assertEquals(frame.tagName, "IFRAME");
-  assertEquals(frame.getAttribute("sandbox"), "");
+  // REQ-819 (cycle dm1, M3): same-origin so the dialog can size the frame to its email (no
+  // inner scroller the demo mirror can't see), still never a script; it never takes the pointer
+  assertEquals(frame.getAttribute("sandbox"), "allow-same-origin");
+  assert(!/allow-scripts/.test(frame.getAttribute("sandbox") ?? ""));
+  assertEquals(frame.getAttribute("scrolling"), "no");
   assertStringIncludes(frame.getAttribute("srcdoc") ?? "", "Hola");
   assertStringIncludes(
     both.querySelector('[data-cy="send-preview-sms"]')!.textContent,

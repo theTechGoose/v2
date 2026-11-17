@@ -16,6 +16,10 @@
  * (The customer scrolling under the presenter's still mouse is REQ-305's M2 story in
  * demo-scroll-pointer.e2e.test.ts, amended by REQ-393: the arrow stays under his cursor.)
  *
+ * REQ-877 (demo-loop cycle dm5, m1) — with his mouse beside the frame the stage draws a faint ghost
+ * of the phone's off marker (chevron + his initial) on the frame's same edge, and it fades out
+ * with the phone's.
+ *
  * REQ-451 AMENDMENT (demo M1 + M14, cycle 3) — his pointer is what he POINTED AT:
  *   1. the cursor handed over from /admin counts only on the frame: the Demo button sits beside
  *      the phone frame, so the phone shows no arrow (and the stage no "off" hint) until he moves;
@@ -185,16 +189,21 @@ const arrowOn = (pg: Page) =>
     | null
   >;
 
-/** the presenter's arrow on a tab once it has come to rest (two reads apart agree) */
+/** the presenter's arrow on a tab once it has come to rest: four reads 200 ms apart agree. The
+ *  glide steps once per animation frame, and a headless page with two or more pages open ticks
+ *  frames ~6 times a second, so two reads 150 ms apart could both land before the first step and
+ *  read a glide not yet begun as rest (REQ-393 M2 tab switch was red on that) */
 async function settledArrow(pg: Page) {
   let last = await arrowOn(pg);
+  let same = 0;
   for (let i = 0; i < 40; i++) {
-    await sleep(150);
+    await sleep(200);
     const now = await arrowOn(pg);
-    if (
-      now && last && Math.abs(now.x - last.x) < 0.5 &&
-      Math.abs(now.y - last.y) < 0.5
-    ) return now;
+    same = now && last && Math.abs(now.x - last.x) < 0.5 &&
+        Math.abs(now.y - last.y) < 0.5
+      ? same + 1
+      : 0;
+    if (now && same >= 3) return now;
     last = now;
   }
   throw new Error(
@@ -243,13 +252,24 @@ const tabNote = (pg: Page) =>
     return el ? (el as HTMLElement).innerText.trim() : null;
   }) as Promise<string | null>;
 
-/** REQ-645 (m36) — the notice for Ana Torres's /settings tab, or what the stage says instead */
+/** REQ-645 (m36) — the notice for Ana Torres's /settings tab, or what the stage says instead.
+ *  REQ-826 (dm2 p10) — it names the page ("Settings"), never its URL, and sits in REQ-642's
+ *  chrome row: its box ends above the frame's top, no part of it over the mirrored header */
 const OTHER_TAB =
-  "Now showing Ana Torres's other tab (/settings) — move to point there";
+  "Now showing Ana Torres's other tab (Settings) — move to point there";
 const saysOtherTab = async (pg: Page) => {
   const note = await tabNote(pg);
   if (note !== OTHER_TAB) {
     throw new Error(`the stage's tab notice is ${JSON.stringify(note)}`);
+  }
+  const b = await pg.locator("[data-cy='demo-tab-switched']").boundingBox();
+  const f = await frameBox(pg);
+  if (!b || b.y < 0 || b.y + b.height > f.y + 0.5) {
+    throw new Error(
+      `REQ-826: the tab notice ${JSON.stringify(b)} is not above the frame ${
+        JSON.stringify(f)
+      }`,
+    );
   }
   return true;
 };
@@ -415,6 +435,36 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
           JSON.stringify(named)
         })`,
       );
+      // REQ-877 (demo-loop cycle dm5, m1) — the stage draws a faint ghost of that marker: the
+      // chevron and his initial on the frame's same (left) edge, no "You" tag
+      const ghostMark = () =>
+        page.evaluate(() => {
+          const g = document.querySelector(
+            "[data-cy='demo-pointer-ghost'][data-off]",
+          );
+          const m = g?.querySelector("[data-cy='demo-pointer-ghost-off-mark']");
+          if (!g || !m) return null;
+          return {
+            x: g.getBoundingClientRect().left,
+            initial:
+              m.querySelector("[data-cy='demo-pointer-ghost-off-initial']")
+                ?.textContent ?? null,
+            label: !!g.querySelector("[data-cy='demo-pointer-ghost-label']"),
+            opacity: Number(getComputedStyle(m).opacity),
+          };
+        });
+      await until(
+        "REQ-877: the stage draws the ghost of the phone's off marker, with his initial, on the frame's left edge",
+        async () => {
+          const g = await ghostMark();
+          const f = await frameBox(page);
+          if (
+            !g || g.initial !== "H" || g.label || Math.abs(g.x - f.x) > 2
+          ) throw new Error(`ghost ${JSON.stringify(g)} frame x ${f.x}`);
+          return true;
+        },
+        5_000,
+      );
       await until(
         "REQ-635: the off marker fades out a few seconds after it showed",
         async () => {
@@ -425,6 +475,17 @@ Deno.test("REQ-393 (demo M8) + REQ-451 (demo M14): the cursor handed over from /
           return true;
         },
         4_000,
+      );
+      await until(
+        "REQ-877: the stage's ghost of the off marker fades out with it",
+        async () => {
+          const g = await ghostMark();
+          if (!g || g.opacity > 0.01) {
+            throw new Error(`ghost ${JSON.stringify(g)}`);
+          }
+          return true;
+        },
+        1_500,
       );
 
       // 3. back on the frame: on the screen, the hint gone
@@ -545,9 +606,8 @@ Deno.test("REQ-539 (demo m24): a desktop customer — the click on Demo lands on
       await useCookie(page.context(), baseUrl, who.admin.cookie);
       const clickedAt = await openDemo(page, baseUrl, who.userPhone);
       // her app picks the demo up where she is (no reload: as in the demo, the page she is on)
-      await desk.locator("[data-cy='demo-status']").waitFor({
-        timeout: 30_000,
-      });
+      // REQ-545 / REQ-890 — her pill whole (it folds to a tab, compact on a crowded row)
+      await pillUp(desk);
       await until(
         "the stage shows the customer's desktop (1280 × 720)",
         async () => (await screenOf(page)).includes("1280 × 720"),
@@ -712,7 +772,9 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-645 (cycle 5 m
       //    mouse still (REQ-538 put one under it), the stage says which tab it shows; his move
       //    reaches tab 2 only
       await pillUp(tab2);
-      await tab2.locator("[data-cy='demo-more']").click();
+      // any pointerdown in the tab claims the stage (REQ-436): the pill itself — a 640 px tab is
+      // not the phone's compact pill (PILL_COMPACT_MAX_W), so it has no `demo-more` toggle (REQ-536)
+      await tab2.locator("[data-cy='demo-pill']").click();
       await until(
         "a click in tab 2 takes the stage (640 × 760)",
         async () => (await screenOf(page)).includes("640 × 760"),

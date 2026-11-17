@@ -14,7 +14,7 @@ import CrazyEgg from "../components/CrazyEgg.tsx";
 import { readSessionCookie } from "../lib/api.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { bootLangScript, resolveSsrLang } from "../lib/ssr-lang.ts";
-import { DEMO_EARLY_SRC } from "../lib/demo-mode/early-src.ts";
+import { DEMO_EARLY_SRC, DEMO_REJOIN_SRC } from "../lib/demo-mode/early-src.ts";
 import { pmLangFromAcceptLanguage } from "../../shared/quote-flow/public-lang.ts";
 
 // Browser-side `lib/api.ts` reads window.__PUBLIC_BACKEND_URL to decide
@@ -166,7 +166,8 @@ export default define.page(function App(ctx) {
         <link rel="apple-touch-icon" href="/logo.png" />
         <title>{tFor(lang, "brand.name")}</title>
         {/* REQ-195 — the motion system: page transitions, entrances, press feedback */}
-        <link rel="stylesheet" href={asset("/motion.css")} />
+        {/* REQ-858 — keyed, or a page's lone unkeyed <Head> link takes its place */}
+        <link key="css-motion" rel="stylesheet" href={asset("/motion.css")} />
         <script
           // Server-built page-transition tagging (no user input).
           // deno-lint-ignore react-no-danger
@@ -207,6 +208,14 @@ export default define.page(function App(ctx) {
         }
         {hasSession && DEMO_EARLY_SRC
           ? <script type="module" async src={DEMO_EARLY_SRC} />
+          : null}
+        {
+          /* REQ-892 (demo-loop run 6, m3): a page WITHOUT a session — the landing a sign-out
+            lands on, a public page — watches for the customer signing in again in another tab
+            when this browser tab's demo was dropped by that sign-out, and rejoins. */
+        }
+        {!hasSession && DEMO_REJOIN_SRC
+          ? <script type="module" async src={DEMO_REJOIN_SRC} />
           : null}
       </head>
       <body>

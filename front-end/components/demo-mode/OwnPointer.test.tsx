@@ -1,0 +1,83 @@
+/**
+ * REQ-813 — Raphael: "fix every issue the demo found, loop until there are none."
+ * Demo-loop cycle dm1 (run r83b6287b), issue m4: the stage drew the presenter's own "You" arrow at
+ * full strength while its banner said his pointer was not on the customer's screen. The marker
+ * (`OwnMarker`, drawn by OwnPointer) now shows what the customer has: dimmed and hollow with a
+ * "not shown" tag while absent, the "pointing…" look while pending, full strength only when live.
+ */
+import { assert, assertEquals, assertMatch } from "@std/assert";
+import { DOMParser } from "@b-fuze/deno-dom";
+import { renderToString } from "preact-render-to-string";
+import { OwnMarker } from "./OwnPointer.tsx";
+import { OWN_ABSENT_OPACITY } from "../../../shared/demo-mode/presenter-anchor.ts";
+
+const parse = (html: string) =>
+  new DOMParser().parseFromString(`<body>${html}</body>`, "text/html")!;
+
+const base = {
+  at: { x: 100, y: 200 },
+  color: "#2a7",
+  z: 10,
+  label: "You",
+  tagged: true,
+  pendingLabel: "pointing…",
+};
+
+Deno.test("REQ-813 (demo dm1 m4): live — full strength, filled, tagged 'You', no data-absent", () => {
+  const doc = parse(renderToString(<OwnMarker {...base} look="live" />));
+  const el = doc.querySelector("[data-cy='demo-pointer-own']")!;
+  assert(el, "the marker is drawn");
+  assert(!el.hasAttribute("data-absent"), "not absent");
+  assert(!el.hasAttribute("data-pending"), "not pending");
+  assert(!/opacity:/.test(el.getAttribute("style") ?? ""), "full strength");
+  assertEquals(
+    doc.querySelector("[data-cy='demo-pointer-own-label']")?.textContent,
+    "You",
+  );
+});
+
+// REQ-848 AMENDMENT (demo dm3 m4): absent is dimmed and hollow but no longer tagged "not shown"
+// in the frame — the white dashed pill sat on the customer's text; the chrome-row
+// demo-pointer-absent banner says it
+Deno.test("REQ-813 (demo dm1 m4) + REQ-848 (dm3 m4): absent (pointerAbsent true) — dimmed, hollow, no in-frame label, data-absent", () => {
+  const doc = parse(renderToString(<OwnMarker {...base} look="absent" />));
+  const el = doc.querySelector("[data-cy='demo-pointer-own']")!;
+  assert(el, "the marker is still drawn (where he pointed)");
+  assert(el.hasAttribute("data-absent"), "data-absent");
+  assertMatch(
+    el.getAttribute("style") ?? "",
+    new RegExp(`opacity:${OWN_ABSENT_OPACITY}`),
+  );
+  const paths = el.querySelectorAll("path");
+  const fill = (paths[paths.length - 1] as unknown as Element).getAttribute(
+    "fill",
+  );
+  assertEquals(fill, "none", "hollow: no fill");
+  assertEquals(
+    doc.querySelector("[data-cy='demo-pointer-own-label']"),
+    null,
+    "REQ-848: no 'not shown' pill in the frame",
+  );
+});
+
+Deno.test("REQ-813 (demo dm1 m4) + REQ-848 (dm3 m4): absent draws no label whether or not a ghost carries 'You'", () => {
+  for (const tagged of [true, false]) {
+    const doc = parse(
+      renderToString(<OwnMarker {...base} tagged={tagged} look="absent" />),
+    );
+    assertEquals(
+      doc.querySelector("[data-cy='demo-pointer-own-label']"),
+      null,
+    );
+  }
+});
+
+Deno.test("REQ-813 (demo dm1 m4): pending — the customer's 'pointing…' look, data-pending", () => {
+  const doc = parse(renderToString(<OwnMarker {...base} look="pending" />));
+  const el = doc.querySelector("[data-cy='demo-pointer-own']")!;
+  assert(el.hasAttribute("data-pending"), "data-pending");
+  assert(!el.hasAttribute("data-absent"), "pending is not absent");
+  const tag = doc.querySelector("[data-cy='demo-pointer-own-pending']");
+  assert(tag, "the pointing… words");
+  assertMatch(tag!.textContent ?? "", /pointing…/);
+});

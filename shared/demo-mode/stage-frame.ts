@@ -26,6 +26,11 @@
  * it for their screen — and the stage sends no pointer against it — and the pill says how long
  * the wait has run ("… N s behind", `pageBehind`), timed from their page going.
  */
+import {
+  ACTIVE_NAME_REFRESH_MS,
+  ACTIVE_POLL_MS,
+  type LeaveWhy,
+} from "./protocol.ts";
 
 /** the transport's link status — mirrored here so this module stays free of the front-end.
  *  REQ-391 — "between": the followed tab's page went and its next page may still come (the
@@ -120,6 +125,32 @@ export function stageFrameLook(
   };
 }
 
+/** REQ-817 (demo-loop cycle dm1, m3) — the demo as an /active answer gives it (the fields the
+ *  stage and the customer's overlay draw from) */
+export interface DemoNames {
+  id: string;
+  presenterName?: string;
+  targetName?: string;
+  presenters: { userId: string; name: string; color: string }[];
+}
+
+/** the same demo with the same presenters and the same names: a poll's echo does not re-render; a
+ *  roster change does, and so (REQ-817, cycle dm1, m3) does a name the customer — or a
+ *  presenter — saved mid-demo (it was dropped, and the stage named the customer by their phone
+ *  for the rest of the demo) */
+export function sameDemo(a: DemoNames | null, b: DemoNames): boolean {
+  return a?.id === b.id &&
+    (a.targetName ?? "") === (b.targetName ?? "") &&
+    (a.presenterName ?? "") === (b.presenterName ?? "") &&
+    JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
+}
+
+/** REQ-817 — when the stage asks /active next: every ACTIVE_POLL_MS while the customer's app is
+ *  not connected (REQ-153), every ACTIVE_NAME_REFRESH_MS while it is (a name saved mid-demo) */
+export function activeAskDelay(peerOnline: boolean): number {
+  return peerOnline ? ACTIVE_NAME_REFRESH_MS : ACTIVE_POLL_MS;
+}
+
 /** REQ-541 (cycle 4, M22) — what the stage does with an /active answer. A stage that showed a
  *  demo and now finds none (ended from another window of this account, which this one — replaced
  *  — never heard) hands the presenter their own account back; it is never left impersonating
@@ -156,6 +187,8 @@ export type StageStatusKey =
   | "waiting"
   | "connecting"
   | "loadingNext"
+  /** REQ-896 — her page went closing (or without a word) and the hold is on: "One moment…" */
+  | "pageGone"
   | "catchingUp"
   | "behind"
   | "live";
@@ -175,6 +208,13 @@ export function stageStatus(o: {
   /** REQ-648 — behindSeconds of the wait for their next page (their page going → the next on
    *  show): "Loading their next page… N s behind" */
   pageBehind?: number;
+  /** REQ-896 (dm6, p1) — why her page went (transport's onStatus): "Loading their next page…"
+   *  only for a navigation; a close, or nothing said, is the neutral "One moment…" */
+  leave?: LeaveWhy;
+  /** REQ-648 AMENDMENT (demo-loop run 18, p3) — the wait is for another of their tabs (a switch
+   *  to a tab already open: nothing of theirs is loading): "Catching up…", never "Loading their
+   *  next page…" */
+  switched?: boolean;
 }): { key: StageStatusKey; n?: number } {
   if (o.ended || o.status === "ended") return { key: "ended" };
   if (o.status === "replaced") return { key: "elsewhere" };
@@ -185,13 +225,18 @@ export function stageStatus(o: {
       ? { key: "loadingNext", n: o.pageBehind }
       : { key: "loadingNext" };
   if (o.status === "between") {
-    return o.mirrored ? loadingNext() : { key: "connecting" };
+    if (!o.mirrored) return { key: "connecting" };
+    return o.leave === "navigating" ? loadingNext() : { key: "pageGone" };
   }
+  const awaitingWord = () =>
+    o.switched ? { key: "catchingUp" as StageStatusKey } : loadingNext();
   if (o.status !== "direct" && o.status !== "relay") {
-    return { key: "connecting" };
+    // REQ-648 AMENDMENT REVISION (dm19, p1) — the link to their NEW tab's page still opening while
+    // their last page is on show: the wait is for that page, never "Connecting…" over it
+    return o.mirrored && o.awaiting ? awaitingWord() : { key: "connecting" };
   }
   if (!o.mirrored) return { key: "connecting" };
-  if (o.awaiting) return loadingNext();
+  if (o.awaiting) return awaitingWord();
   if (o.resyncing) return { key: "catchingUp" };
   if (o.behind > 0) return { key: "behind", n: o.behind };
   return { key: "live" };

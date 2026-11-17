@@ -349,15 +349,21 @@ describe("REQ-391 the stage's link says why the followed tab went", () => {
     };
   }
 
-  test("the tab says it is closing: waiting AT ONCE — no grace, never 'between' (m21)", () => {
+  // REQ-391 AMENDMENT (REQ-838, demo-loop cycle dm2, m5) — an address-bar navigation, page.goto
+  // or the reload button says "closing" too: the last tab closing is "between" for
+  // SILENT_GRACE_MS (its next page may come), then waiting — still long before PRESENCE_GRACE_MS
+  test("the tab says it is closing: 'between' for SILENT_GRACE_MS only, then waiting — not the 5 s grace (m21, REQ-838)", () => {
     jest.useFakeTimers();
     const s = stage();
     s.tab("t1");
     expect(s.status()).toBe("relay");
     const k = s.statuses.length;
     s.tab("t1", false, "closing");
+    expect(s.status()).toBe("between");
+    jest.advanceTimersByTime(SILENT_GRACE_MS + 50);
     expect(s.status()).toBe("waiting");
-    expect(s.since(k)).toEqual(["waiting"]);
+    expect(s.since(k)).toEqual(["between", "waiting"]);
+    expect(SILENT_GRACE_MS).toBeLessThan(PRESENCE_GRACE_MS);
     s.link.close();
   });
 
@@ -492,8 +498,14 @@ describe("REQ-391 the pill's words: Live only when the frame shows the followed 
   });
 
   test("their page went and the next may come ('between'): Loading their next page… over the old screen", () => {
+    // REQ-896 — "Loading their next page…" for a navigation; a closed (or silent) page's hold
+    // is the neutral "One moment…" (pageGone)
+    expect(stageStatus({ ...base, status: "between", leave: "navigating" }))
+      .toEqual({ key: "loadingNext" });
+    expect(stageStatus({ ...base, status: "between", leave: "closing" }))
+      .toEqual({ key: "pageGone" });
     expect(stageStatus({ ...base, status: "between" })).toEqual({
-      key: "loadingNext",
+      key: "pageGone",
     });
     expect(stageStatus({ ...base, status: "between", mirrored: false }))
       .toEqual({ key: "connecting" });
@@ -769,7 +781,9 @@ describe("REQ-391 the wiring", () => {
     expect(fn.slice(0, fn.indexOf("\n}"))).toMatch(/net/);
   });
 
-  test("m21 — the waiting notice is a banner across the frame's top edge, not a card in its middle", () => {
+  // REQ-391 AMENDMENT (REQ-846, cycle dm3 p11): the banner sits in REQ-642's chrome row above the
+  // frame (stageBadgeTop), centred on it and at most its width — no longer on the frame's top edge
+  test("m21 — the waiting notice is a banner in the chrome row above the frame, not a card in its middle", () => {
     const start = stageSrc.indexOf('data-cy="demo-waiting"');
     expect(start).toBeGreaterThan(-1);
     const block = stageSrc.slice(
@@ -778,8 +792,9 @@ describe("REQ-391 the wiring", () => {
     );
     expect(block).not.toMatch(/place-items:center/);
     expect(block).not.toMatch(/\$\{box\}/); // never the whole frame's box
-    expect(block).toMatch(/top:\$\{\s*fit\.top - bannerH\s*\}px/);
-    expect(block).toMatch(/width:\$\{\s*fit\.width\s*\}px/);
+    expect(block).toContain("stageBadgeTop(fit.top - bannerH)");
+    // REQ-846 AMENDMENT (dm13, p3) — clipped to the window, never to a phone-sized frame
+    expect(block).toContain("max-width:calc(100vw - 16px)");
     expect(block).toMatch(/pointer-events:none/);
     expect(block).toContain('t("demoMode.waitingFor", { name })');
     expect(block).toContain('t("demoMode.waitingKeep")');

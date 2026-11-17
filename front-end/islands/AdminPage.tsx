@@ -18,13 +18,15 @@
  */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { adminClient, type AdminUserView } from "../clients/admin.ts";
-import {
-  DEMO_OPENING_EVENT,
-  DEMO_STARTED_EVENT,
-  demoModeClient,
-} from "../clients/demo-mode.ts";
+import { demoModeClient } from "../clients/demo-mode.ts";
+import { openDemo } from "../lib/demo-mode/open-demo.ts";
 import { fmtPhone } from "../lib/format.ts";
-import { t } from "../lib/i18n.ts";
+import {
+  adminQueryStore,
+  keepAdminQuery,
+  readAdminQuery,
+} from "../lib/admin-query.ts";
+import { langSignal, t } from "../lib/i18n.ts";
 import { type FeatureKey, FEATURES } from "../../shared/features.ts";
 import {
   adminEmptyText,
@@ -37,7 +39,7 @@ import {
   refreshWhileVisible,
 } from "../lib/admin-console.ts";
 import { onImpersonation } from "../lib/demo-mode/impersonation-signal.ts";
-import { STAGE_PATH } from "../../shared/demo-mode/protocol.ts";
+import { stageHref } from "../../shared/demo-mode/ended.ts";
 
 const wrap = "max-width:980px;margin:0 auto;padding:8px 4px 48px";
 const card =
@@ -66,6 +68,9 @@ function featureText(key: string, fallback: string): string {
 
 /** REQ-227 (demo-lifecycle-p2): `selfId` — the signed-in admin's own id; their own row offers
  *  neither Impersonate nor Demo (a demo on yourself makes you the customer AND the presenter) */
+/** REQ-864 AMENDMENT (dm16, p2) — the row actions that mark a row busy, each by name */
+type RowAction = "grant" | "feature" | "impersonate" | "demo";
+
 export default function AdminPage({ selfId }: { selfId?: string }) {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<AdminUserView[]>([]);
@@ -75,7 +80,11 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   /** REQ-728 (cycle 5, m15) — the first search has resolved; until then the list is
    *  loading, never "No users found." */
   const [loaded, setLoaded] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // REQ-864 AMENDMENT (demo-loop run 16, p2) — the busy row AND which action is pending: one id for
+  // grant, impersonate and Demo made "Dar admin" read "…" while Demo said "Abriendo…"
+  const [busy, setBusy] = useState<{ id: string; kind: RowAction } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [impersonateId, setImpersonateId] = useState("");
   // REQ-177: Users (search / super-admin / impersonate) and Accounts (feature switches)
@@ -127,7 +136,14 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   // focus / visibility and every ADMIN_REFRESH_MS while the tab is visible.
   // REQ-301 (M18) — the overlay's word that Demo made this browser the customer
   // (this tab or any other of the same browser) locks the page at once.
+  // REQ-894 (dm6, p11) — the query this tab searched last (a demo's end hops back to a fresh
+  // /admin): into the box and the ref BEFORE the first search, so that search is for it
   useEffect(() => {
+    const kept = readAdminQuery(adminQueryStore());
+    if (kept) {
+      setQ(kept);
+      qRef.current = kept;
+    }
     search();
     const stopRefresh = stopRefreshRef.current = refreshWhileVisible(() =>
       void search(undefined, true)
@@ -151,7 +167,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
   }, [lock]);
 
   async function toggleSuper(u: AdminUserView) {
-    setBusyId(u.id);
+    setBusy({ id: u.id, kind: "grant" });
     setError(null);
     try {
       const updated = u.superAdmin
@@ -161,13 +177,13 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
     } catch (err) {
       await fail(err, "adminPage.err.update");
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   // REQ-177: one switch per registered feature, per account
   async function setFeature(u: AdminUserView, key: FeatureKey, on: boolean) {
-    setBusyId(u.id);
+    setBusy({ id: u.id, kind: "feature" });
     setError(null);
     try {
       const updated = await adminClient.setFeature(u.id, key, on);
@@ -175,43 +191,29 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
     } catch (err) {
       await fail(err, "adminPage.err.update");
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
   /** REQ-153 — demo mode: open the invitation for this user and stay here. The overlay
    *  (mounted in the shell) picks the demo up at once and waits in its pill; when the
-   *  customer accepts, it impersonates them and opens the page they are on. */
+   *  customer accepts, it impersonates them and opens the page they are on.
+   *  REQ-864 (dm4 p8) — the row says Opening… until the page moves: start answering does not
+   *  clear it, only a failed start or the overlay's DEMO_PLACE_FAILED_EVENT does. */
   async function demo(id: string, targetName: string) {
     if (!id) return;
-    setBusyId(id);
     setError(null);
-    // REQ-179 — instant feedback: the button reads Opening… and the pill shows before any answer
-    globalThis.dispatchEvent(
-      new CustomEvent(DEMO_OPENING_EVENT, {
-        detail: { targetUserId: id, targetName },
-      }),
-    );
-    try {
-      const started = await demoModeClient.start(id);
-      globalThis.dispatchEvent(
-        new CustomEvent(DEMO_STARTED_EVENT, {
-          detail: { ...started, targetName },
-        }),
-      );
+    await openDemo(id, targetName, {
+      start: (userId) => demoModeClient.start(userId),
+      setBusy: (id) => setBusy(id ? { id, kind: "demo" } : null),
+      fail: (err) => fail(err, "adminPage.err.demo"),
       // REQ-301 (m35) — the row is re-read the moment a demo opens
-      void search(undefined, true);
-    } catch (err) {
-      await fail(err, "adminPage.err.demo");
-      // no detail: the overlay asks the server and clears its Opening… pill
-      globalThis.dispatchEvent(new Event(DEMO_STARTED_EVENT));
-    } finally {
-      setBusyId(null);
-    }
+      refresh: () => void search(undefined, true),
+    });
   }
 
   async function impersonate(id: string) {
     if (!id) return;
-    setBusyId(id);
+    setBusy({ id, kind: "impersonate" });
     setError(null);
     try {
       await adminClient.impersonate(id);
@@ -219,12 +221,12 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
       globalThis.location.href = "/dashboard";
     } catch (err) {
       await fail(err, "adminPage.err.impersonate");
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   /** REQ-301 — every action is off while the page is locked */
-  const frozen = busyId !== null || lock !== null;
+  const frozen = busy !== null || lock !== null;
   const noName = t("adminPage.noNameYet");
 
   return (
@@ -273,7 +275,11 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
             type="search"
             placeholder={t("adminPage.search.placeholder")}
             value={q}
-            onInput={(e) => setQ((e.target as HTMLInputElement).value)}
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setQ(v);
+              keepAdminQuery(adminQueryStore(), v); // REQ-894
+            }}
             aria-label={t("adminPage.search.aria")}
           />
           <button
@@ -303,7 +309,9 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
               type="button"
               data-cy="adm-lock-back"
               style={btnPrimary}
-              onClick={() => globalThis.location.assign(STAGE_PATH)}
+              // REQ-829: in the language this page is showing
+              onClick={() =>
+                globalThis.location.assign(stageHref(langSignal.value))}
             >
               {t("adminPage.lock.back")}
             </button>
@@ -500,7 +508,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                           : t("adminPage.revoke.selfTitle")}
                         onClick={() => toggleSuper(u)}
                       >
-                        {busyId === u.id
+                        {busy?.id === u.id && busy.kind === "grant"
                           ? "…"
                           : u.superAdmin
                           ? t("adminPage.revoke")
@@ -521,7 +529,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                             data-cy="adm-demo"
                             title={t("adminPage.demo.title")}
                             style={btnSecondary + ";margin-left:8px" +
-                              (busyId === u.id
+                              (busy?.id === u.id && busy.kind === "demo"
                                 ? ";opacity:.65;cursor:wait"
                                 : "")}
                             disabled={frozen}
@@ -531,7 +539,7 @@ export default function AdminPage({ selfId }: { selfId?: string }) {
                                 displayName(u.name, u.phoneNumber),
                               )}
                           >
-                            {busyId === u.id
+                            {busy?.id === u.id && busy.kind === "demo"
                               ? t("adminPage.opening")
                               : t("adminPage.demo")}
                           </button>

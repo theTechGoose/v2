@@ -8,6 +8,7 @@
  * followed path (`shouldFollow`) and the element selectors (`selectorFor`, `parseSelector`,
  * `walkSelector`) are gone; their tests went with them (jest/unit/demo-mode-mirror*.test.ts).
  */
+// REVISION (demo-loop run 16, by hand): the busy row carries which action is pending (REQ-864 AMENDMENT).
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -264,7 +265,11 @@ describe("REQ-153 demo mode wiring", () => {
     );
     expect(demoFn).not.toMatch(/impersonate\(/);
     expect(demoFn).not.toMatch(/location\.href/);
-    expect(demoFn).toMatch(/DEMO_STARTED_EVENT/);
+    // REQ-864 (dm4 p8) — the click's sequence lives in lib/demo-mode/open-demo.ts
+    const open = read("front-end/lib/demo-mode/open-demo.ts");
+    expect(open).not.toMatch(/impersonate\(/);
+    expect(open).not.toMatch(/location\./);
+    expect(open).toMatch(/DEMO_STARTED_EVENT/);
   });
 
   test("the Vite dev proxy forwards the demo socket to the backend unchanged (no rewrite)", () => {
@@ -302,7 +307,9 @@ describe("REQ-153 AMENDMENT — same screen at once", () => {
     const island = read2("front-end/islands/DemoModeOverlay.tsx");
     expect(island).toMatch(/demoModeClient\.active\(\{\s*path:/);
     expect(island).toMatch(/adminClient\.impersonate\(/);
-    expect(island).toMatch(/location\.assign\(STAGE_PATH\)/);
+    // REQ-829 (dm2, m7): in the page's language — REQ-855 (dm3, m6): the PRESENTER's (on a
+    // customer's page the page's langSignal is hers)
+    expect(island).toMatch(/location\.assign\(stageHref\(presenterLangFor\(who\)\)\)/);
     const stage = read2("front-end/islands/DemoStage.tsx");
     expect(stage).not.toMatch(/targetPath/);
     // the pending invitation keeps polling, so End from the presenter clears it and the presenter follows the customer's page
@@ -317,17 +324,17 @@ describe("REQ-179 instant feedback on Demo", () => {
     const admin = read3("front-end/islands/AdminPage.tsx");
     // REQ-269: the labels come from the dictionaries (adminPage.opening / adminPage.demo)
     expect(admin).toMatch(
-      /busyId === u\.id\s*\?\s*t\("adminPage\.opening"\)\s*:\s*t\("adminPage\.demo"\)/,
+      /busy\?\.id === u\.id && busy\.kind === "demo"\s*\?\s*t\("adminPage\.opening"\)\s*:\s*t\("adminPage\.demo"\)/,
     );
     const en3 = JSON.parse(read3("lang/en.json")) as Record<string, string>;
     expect(en3["adminPage.opening"]).toBe("Opening…");
     expect(en3["adminPage.demo"]).toBe("Demo");
-    const demoFn = admin.slice(
-      admin.indexOf("async function demo("),
-      admin.indexOf("async function impersonate("),
-    );
+    // REQ-864 (dm4 p8) — the click's sequence moved into lib/demo-mode/open-demo.ts
+    expect(admin).toMatch(/await openDemo\(id, targetName,/);
+    const openSrc = read3("front-end/lib/demo-mode/open-demo.ts");
+    const demoFn = openSrc.slice(openSrc.indexOf("export async function openDemo("));
     const opening = demoFn.indexOf("DEMO_OPENING_EVENT");
-    const start = demoFn.indexOf("demoModeClient.start(");
+    const start = demoFn.indexOf("deps.start(");
     const started = demoFn.indexOf("DEMO_STARTED_EVENT");
     expect(opening).toBeGreaterThan(-1);
     expect(opening).toBeLessThan(start);

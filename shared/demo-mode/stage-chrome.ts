@@ -14,6 +14,43 @@ export function impersonationBannerOn(pathname: string): boolean {
   return pathname.replace(/\/+$/, "") !== STAGE_PATH;
 }
 
+/**
+ * REQ-855 (demo-loop cycle dm3, issue m5) — one notice per page. While this staff presents the demo
+ * the red "Impersonating … Return to your account" bar sat next to the overlay's "Demo mode ·
+ * Guiding {name} · Back to the demo" pill (and on /admin over the REQ-376 guide gate as well): two
+ * vocabularies, two competing exits. The bar is drawn only for an impersonation, never on the stage
+ * (REQ-537), never while this staff presents the demo (the presenter's pill is its notice and
+ * carries the way out), and never over /admin's guide gate — what /admin shows an impersonated
+ * non-super-admin (routes/admin/_middleware.ts), with its own Back to the demo and Return.
+ */
+export function impersonationBarShown(o: {
+  path: string;
+  /** whoami: this session acts as someone */
+  impersonating: boolean;
+  /** whoami: the account it acts as is a super admin (then /admin is the console, not the gate) */
+  superAdmin?: boolean;
+  /** GET /demo-mode/active: this staff presents the demo (role "presenter") */
+  presenting: boolean;
+}): boolean {
+  if (!o.impersonating || o.presenting || !impersonationBannerOn(o.path)) {
+    return false;
+  }
+  return !adminGateShown(o);
+}
+
+/** REQ-855 — does this page show /admin's guide gate (REQ-376): /admin while this browser acts as
+ *  a non-super-admin (routes/admin/_middleware.ts renders it instead of the console). Its card has
+ *  Back to the demo, Return to your account and the EN | ES switch, so neither the red bar nor the
+ *  presenter pill's own exits and switch are drawn beside it. */
+export function adminGateShown(o: {
+  path: string;
+  impersonating: boolean;
+  superAdmin?: boolean;
+}): boolean {
+  const admin = o.path === "/admin" || o.path.startsWith("/admin/");
+  return admin && o.impersonating && o.superAdmin !== true;
+}
+
 /** does the stage pill offer "Leave the demo" next to End — only when others present too */
 export function stageLeaveShown(presenters: number): boolean {
   return presenters > 1;
@@ -62,4 +99,41 @@ export function stagePillH(
   endAsking: boolean,
 ): number {
   return endAsking && prev > 0 ? prev : measured;
+}
+
+/**
+ * REQ-844 (demo-loop cycle dm3, issue p13) — the stage pill offers "End demo" only while the demo
+ * is live. Once it has ended (by you: end() waits for the API, then 800 ms; by the other side:
+ * onEnded waits 1500 ms) the stage stays up until the hop to /admin, and a dimmed End next to
+ * "The demo ended" offered to end a demo that was already over.
+ */
+export function stageEndShown(ended: boolean): boolean {
+  return !ended;
+}
+
+/**
+ * REQ-857 (demo-loop cycle dm4, issue p10) — once the demo has ended, the stage pill keeps only its
+ * title and "The demo ended". Until the hop to /admin (end(): 800 ms after the API answers; onEnded:
+ * 1500 ms) it read "Guiding Maria Lopez | Alex (you) | The demo ended | Maria Lopez's screen,
+ * 1280 × 800": present-tense lines next to a past-tense status. The "Guiding {name}" line, the
+ * presenter chips and the "{name}'s screen" label are drawn only while the demo is live.
+ */
+export function stageLiveDetailsShown(ended: boolean): boolean {
+  return !ended;
+}
+
+/**
+ * REQ-868 (demo-loop cycle dm5, issue p8) — the chrome-row badges above the frame (pointer off,
+ * tab switched, pointer absent) are drawn only while the demo is live. Once it has ended (end():
+ * 800 ms after the API answers; onEnded: 1500 ms) the stage read "Your pointer is off Maria
+ * Lopez's screen" next to "The demo ended" until the hop to /admin. One gate for all three, so they
+ * stay consistent: mirrored, live, the customer on the demo's tab, and not waiting for their app.
+ */
+export function stageBadgesShown(o: {
+  ended: boolean;
+  mirrored: boolean;
+  elsewhere: boolean;
+  waiting: boolean;
+}): boolean {
+  return !o.ended && o.mirrored && !o.elsewhere && !o.waiting;
 }

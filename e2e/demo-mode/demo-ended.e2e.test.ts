@@ -200,7 +200,60 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         await held;
         await route.continue();
       }, { times: 1 });
+      // REQ-898 AMENDMENT (dm8, p4) — at 420 px the welcome page's whole-pill spots each graze a
+      // link (1 px of the brand link at the top, 9 px of the footer's phone number), so after Keep
+      // going the pill folds to its edge tab (REQ-545): brought out again, as a person would
+      await pillUp(userPage, { live: true });
       await userPage.locator("[data-cy='demo-end']").click();
+      // REQ-895 (dm6, m6) — sample the stage every ~50 ms from her Yes until the hop to /admin
+      type Frame = {
+        now: number;
+        status: string | null;
+        outline: string | null;
+        dismiss: boolean;
+        text: string;
+        cut: boolean;
+        clipped: boolean;
+        chips: number;
+      };
+      const sampled = (async () => {
+        const out: Frame[] = [];
+        const until = Date.now() + 20_000;
+        while (
+          Date.now() < until && new URL(page.url()).pathname !== "/admin"
+        ) {
+          const f = await page.evaluate((): Frame | null => {
+            const status = document.querySelector("[data-cy='demo-status']");
+            const frame = document.querySelector("[data-cy='demo-frame']");
+            const g = document.querySelector<HTMLElement>(
+              "[data-cy='demo-pill-ghost']",
+            );
+            const txt = g?.querySelector<HTMLElement>(
+              "[data-cy='demo-pill-ghost-text']",
+            );
+            if (!status && !g) return null;
+            return {
+              now: Date.now(),
+              status: status?.textContent?.trim() ?? null,
+              outline: frame?.parentElement
+                ? getComputedStyle(frame.parentElement).outlineStyle
+                : null,
+              dismiss: !!g?.querySelector(
+                "[data-cy='demo-pill-ghost-dismiss']",
+              ),
+              text: (txt?.textContent ?? "").trim(),
+              cut: !!txt && txt.scrollWidth > txt.clientWidth + 1,
+              clipped: g?.hasAttribute("data-clipped") ?? false,
+              chips: g?.querySelectorAll(
+                "[data-cy='demo-pill-ghost-status'],[data-cy='demo-pill-ghost-end']",
+              ).length ?? 0,
+            };
+          }).catch(() => null);
+          if (f) out.push(f);
+          await sleep(50);
+        }
+        return out;
+      })();
       await userPage.locator("[data-cy='demo-end-confirm']").click();
       await userPage.locator("[data-cy='demo-ended']").waitFor({
         timeout: 1_000,
@@ -239,6 +292,40 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         "the pill is gone; the notice stands in its place",
       );
       release();
+      // REQ-895 (dm6, m6) — the stage's last frames, sampled from her Yes to the hop: whenever the
+      // ghost showed her notice it was whole (text + ×, no status chip, no End, nothing cut), and
+      // no frame whose status read "The demo ended" had the dashed off-frame outline
+      const frames = await sampled;
+      const noticed = frames.filter((f) => f.dismiss);
+      const ended = frames.filter((f) => f.status === "The demo ended");
+      const runs: string[] = [];
+      for (const f of frames) {
+        const key = `${
+          f.now % 100000
+        } ${f.status} ×=${f.dismiss} chips=${f.chips} outline=${f.outline} text=${f.text}`;
+        const prev = runs[runs.length - 1];
+        if (!prev || prev.slice(6) !== key.slice(6)) runs.push(key);
+      }
+      const seen = runs.join(" || ");
+      expect(
+        noticed.length > 0,
+        `m6: the stage's ghost showed her notice (×) at least once ${seen}`,
+      );
+      expect(
+        noticed.every((f) =>
+          f.text === "You ended the demo" && !f.cut && !f.clipped &&
+          f.chips === 0
+        ),
+        `m6: every notice ghost was whole, with no chip ${seen}`,
+      );
+      expect(
+        ended.length > 0,
+        `m6: the stage said "The demo ended" at least once ${seen}`,
+      );
+      expect(
+        ended.every((f) => f.outline === "none"),
+        `m6: no off-frame outline on the ended frames ${seen}`,
+      );
       // Hans's stage hands him his own account back, and /admin says who ended it
       await page.waitForURL((u) => u.pathname === "/admin", {
         timeout: 20_000,
@@ -250,12 +337,25 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         ),
         "/admin says the customer ended it, by name",
       );
+      // read once: the ended parameters are gone from the address (REQ-829/855 — the
+      // presenter's ?lang= stays)
       expect.eq(
-        new URL(page.url()).search,
+        ["demo", "by", "name"].filter((k) =>
+          new URL(page.url()).searchParams.has(k)
+        ).join(","),
         "",
-        "read once: the address is a bare /admin again",
+        `read once: the address carries no ended parameter (${page.url()})`,
       );
       await page.locator("[data-cy='adm-q']").waitFor({ timeout: 15_000 });
+      // REQ-894 (dm6, p11) — the search the demo was started from is still in the box
+      expect.eq(
+        await page.locator("[data-cy='adm-q']").inputValue(),
+        userPhone.slice(2),
+        "p11: /admin's search box still holds the query after the demo ended",
+      );
+      await page.locator("[data-cy='adm-demo']").first().waitFor({
+        timeout: 15_000,
+      });
       await sleep(LASTING_MS);
       expect(
         (await textOf(userPage, "demo-ended")).includes("You ended the demo"),

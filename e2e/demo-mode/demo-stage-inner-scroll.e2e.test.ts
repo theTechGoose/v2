@@ -331,28 +331,36 @@ Deno.test("REQ-641 (cycle 5, demo m11): the customer scrolls the quote card's in
           `${b.what}: the customer's card scrolled (${before} → ${want})`,
         );
         const restedAt = Date.now();
+        // REQ-641 REVISION (2026-11-16) — judged against where the customer's card IS, read again
+        // with the stage: a headless page under two or more pages ticks frames at ~6 fps, and a
+        // smooth wheel scroll's last compositor frame can land AFTER an instant script scroll and
+        // put the card back (640 → 600 at +130 ms here); the stage followed both within 70 ms
+        let at = want;
         let got = await stageTop(page);
         while (
-          Math.abs(got - want) > 1 && Date.now() - restedAt < CATCH_UP_MS
+          Math.abs(got - at) > 1 && Date.now() - restedAt < CATCH_UP_MS
         ) {
           await new Promise((r) => setTimeout(r, 20));
           got = await stageTop(page);
+          at = await customerTop(userPage);
         }
-        if (Math.abs(got - want) > 1) {
+        if (Math.abs(got - at) > 1) {
           // how long it really takes, if it ever does without another scroll
           let late = "never within 3 s";
           while (Date.now() - restedAt < 3_000) {
-            if (Math.abs((await stageTop(page)) - want) <= 1) {
+            got = await stageTop(page);
+            at = await customerTop(userPage);
+            if (Math.abs(got - at) <= 1) {
               late = `${Date.now() - restedAt} ms`;
               break;
             }
             await new Promise((r) => setTimeout(r, 50));
           }
           misses.push(
-            `${b.what}: customer at ${want}, stage at ${got} after ${CATCH_UP_MS} ms (caught up: ${late})`,
+            `${b.what}: customer at ${at} (rested at ${want}), stage at ${got} after ${CATCH_UP_MS} ms (caught up: ${late})`,
           );
         }
-        before = want;
+        before = at;
       }
       await userPage.evaluate(() => {
         const w = globalThis as unknown as { __mute?: (e: Event) => void };

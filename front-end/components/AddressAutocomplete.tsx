@@ -24,6 +24,12 @@ interface Props {
   id: string;
   "data-cy"?: string;
   inputStyle?: string;
+  /** REQ-861 — given, a picked suggestion is handed over whole (the caller
+   *  fills its own street/city/state/ZIP); else its label goes to onInput */
+  onPick?: (s: AddressSuggestion) => void;
+  /** REQ-861 — the input lost focus (the settings card flushes its autosave) */
+  onBlur?: () => void;
+  placeholder?: string;
 }
 
 const LIST_STYLE =
@@ -93,7 +99,11 @@ export default function AddressAutocomplete(props: Props) {
             close();
           }
         }}
-        onBlur={() => setOpen(false)}
+        placeholder={props.placeholder}
+        onBlur={() => {
+          setOpen(false);
+          props.onBlur?.();
+        }}
         style={props.inputStyle}
       />
       {showList && (
@@ -126,7 +136,9 @@ export default function AddressAutocomplete(props: Props) {
                 type="button"
                 style={OPT_STYLE}
                 onClick={() => {
-                  onInput(s.label);
+                  if (props.onPick) {
+                    props.onPick(s);
+                  } else onInput(s.label);
                   close();
                 }}
               >

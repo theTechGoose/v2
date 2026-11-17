@@ -36,21 +36,24 @@ class DemoOnSelfError extends Error {
 
 /** REQ-214 / REQ-232 — a presenter off a demo: it goes on for the others (who hear them go, and
  *  their sockets close everywhere), and ends for everyone when nobody is left on it. A module
- *  function: Danet routes every controller method. */
+ *  function: Danet routes every controller method.
+ *  REQ-870 (demo-loop dm5, p7) — true when this leave ended the demo (the last presenter went), so
+ *  the caller can say "You ended the demo" only when it did. */
 async function leaveDemo(
   demos: DemoSessionStore,
   hub: DemoHub,
   id: string,
   userId: string,
-): Promise<void> {
+): Promise<boolean> {
   const rest = await demos.leave(id, userId);
   if (rest && !rest.endedAt && presentersOf(rest).length === 0) {
     await demos.end(id);
     // REQ-235 — the customer hears it was this presenter (the last one to go)
     await hub.end(id, "presenter", undefined, userId);
-  } else if (rest && !rest.endedAt) {
-    await hub.dropPresenter(id, userId);
+    return true;
   }
+  if (rest && !rest.endedAt) await hub.dropPresenter(id, userId);
+  return false;
 }
 
 /**
@@ -208,8 +211,10 @@ export class DemoModeController {
     const caller = await this.access.caller(ctx);
     const { demo, role, pid } = await this.access.roleIn(caller, id);
     if (role !== "presenter" || !pid) throw new DemoForbiddenError();
-    if (!demo.endedAt) await leaveDemo(this.demos, this.hub, id, pid);
-    return { ok: true };
+    // REQ-870 — `ended`: this leave ended the demo (nobody left presenting it)
+    const ended = !demo.endedAt &&
+      await leaveDemo(this.demos, this.hub, id, pid);
+    return { ok: true, ended };
   }
 
   @Post("sessions/:id/end")

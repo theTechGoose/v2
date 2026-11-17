@@ -724,6 +724,54 @@ describe("REQ-645 placeView, visibleBox, cueKey: an element out of view is a che
     tree({ left: 0, top: 0, width: 420, height: 2060 }, {}, [bar, page2]);
     expect(visibleBox(toggle, phone, styleOf)).toEqual(phone);
   });
+
+  /** REQ-814 (demo dm1 m7) — the Settings page on a phone: a sticky 91 px topbar over the
+   *  window-scrolled page, the "Account" heading inside an overflow:hidden `.panel` card */
+  const settingsPhone = (panelBox: Box, headingBox: Box) => {
+    const heading = tree(headingBox, {});
+    const panel = tree(panelBox, { overflowX: "hidden", overflowY: "hidden" }, [
+      heading,
+    ]);
+    const content = tree({ left: 0, top: -559, width: 390, height: 2400 }, {}, [
+      panel,
+    ]);
+    const topbar = tree({ left: 0, top: 0, width: 390, height: 91 }, {
+      position: "sticky",
+    });
+    const main = tree({ left: 0, top: -650, width: 390, height: 2491 }, {
+      overflowX: "clip",
+      overflowY: "visible",
+    }, [topbar, content]);
+    tree({ left: 0, top: -650, width: 390, height: 2491 }, {}, [main]);
+    return heading;
+  };
+  const phone804 = { left: 0, top: 0, width: 390, height: 804 };
+
+  test("REQ-814 visibleBox (dm1 m7): the target's overflow:hidden panel scrolled fully above the view — the box is the screen under the sticky topbar (top 91), never top 0 with no height; the chevron sits at y=91, not over the topbar", () => {
+    const { visibleBox, placeView } = pa();
+    const heading = settingsPhone(
+      { left: 16, top: -540, width: 358, height: 300 },
+      { left: 32, top: -520, width: 200, height: 24 },
+    );
+    const box = visibleBox(heading, phone804, styleOf);
+    expect(box.top).toBe(91);
+    expect(box).toEqual({ left: 0, top: 91, width: 390, height: 713 });
+    const p = placeView({ x: 132, y: -508 }, box);
+    expect(p.outside).toBe(true);
+    expect(p.at.y).toBe(91);
+    expect(p.dir).toEqual({ dx: 0, dy: -1 });
+  });
+
+  test("REQ-814 visibleBox (dm1 m7): the panel partly visible but less than twice the topbar's height (150 px on screen) — the topbar still cuts it: top 91, bottom 150", () => {
+    const { visibleBox, placeView } = pa();
+    const heading = settingsPhone(
+      { left: 16, top: -100, width: 358, height: 250 },
+      { left: 32, top: -80, width: 200, height: 24 },
+    );
+    const box = visibleBox(heading, phone804, styleOf);
+    expect(box).toEqual({ left: 16, top: 91, width: 358, height: 59 });
+    expect(placeView({ x: 132, y: -68 }, box).at.y).toBe(91);
+  });
 });
 
 describe("REQ-645 tabSwitched, keepHeld, keptFor: another browser tab followed drops his anchor; it is kept for its page load only", () => {
@@ -965,6 +1013,9 @@ describe("REQ-645 the replay: a node's print, and the one laid-out node with a p
       top: 0,
       width: 420,
       height: 800,
+      // REQ-867 (demo dm4 m6) — the ways a scroll can reach it: this fake DOM has no scroll
+      // metrics, so every way is open (the cue as before)
+      room: { left: true, right: true, up: true, down: true },
     });
     expect(rep.clipOf!({ id: 99_999, x: 0.5, y: 0.5 })).toBeNull();
   });
@@ -1092,16 +1143,18 @@ describe("REQ-645 the stage: the print rides with his anchor; a dead one is re-f
 
   test("the stage says it: the tab notice (demo-tab-switched) and the absent hint, in en and es", () => {
     expect(stage).toMatch(/data-cy="demo-tab-switched"/);
-    expect(stage).toContain(
-      't("demoMode.tabSwitched", { name, path: tabNote })',
+    // REQ-826 AMENDMENT (dm2 p10): the page's name, never its raw path
+    expect(stage).toMatch(
+      // REQ-826 AMENDMENT 3 (dm9, p1) — with the mirrored document's title for an unknown page
+      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*mirroredTitle\(\),(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
     );
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
     expect(en["demoMode.tabSwitched"]).toBe(
-      "Now showing {name}'s other tab ({path}) — move to point there",
+      "Now showing {name}'s other tab ({page}) — move to point there",
     );
     expect(es["demoMode.tabSwitched"]).toBe(
-      "Ahora ves la otra pestaña de {name} ({path}) — mueve el puntero para señalar ahí",
+      "Ahora ves la otra pestaña de {name} ({page}) — mueve el puntero para señalar ahí",
     );
   });
 

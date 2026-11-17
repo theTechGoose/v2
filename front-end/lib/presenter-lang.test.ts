@@ -65,7 +65,7 @@ Deno.test("REQ-341 presenterLang — the impersonator's language wins over the r
   );
 });
 
-Deno.test("REQ-341 presenterLang — not impersonating, no whoami, or an impersonator without a language: the resolved user's (en by default)", () => {
+Deno.test("REQ-341 (amended by REQ-829) presenterLang — not impersonating or no whoami: the resolved user's; an impersonator without a language: en, never the customer's", () => {
   assertEquals(
     presenterLang({ authenticated: true, impersonating: false }, customerEs),
     "es",
@@ -77,7 +77,8 @@ Deno.test("REQ-341 presenterLang — not impersonating, no whoami, or an imperso
       impersonating: true,
       impersonator: { id: "staff" },
     }, customerEs),
-    "es",
+    "en",
+    "REQ-829: never the impersonated CUSTOMER's language (the fallback is the pm_lang cookie, then en)",
   );
   assertEquals(presenterLang(undefined, undefined), "en");
   assertEquals(presenterLang(undefined, { id: "x" }), "en");
@@ -136,6 +137,95 @@ Deno.test("REQ-341 presenterLangForRequest — a whoami that fails, a plain sess
         "es",
       );
       assertEquals(seen.length, 0, "no session, no backend call");
+    },
+  );
+});
+
+/**
+ * REQ-829 (demo-loop cycle dm2, issue m7) — the presenter's LIVE language travels with the demo: an
+ * es-profile staff member viewing /admin?lang=en presses Demo → the stage opens at
+ * /demo/stage?lang=en and must be English. Order: an explicit ?lang= → the impersonator's profile →
+ * (not impersonating) the person's own → the pm_lang cookie → en.
+ */
+const staffEsImpersonating = {
+  authenticated: true,
+  impersonating: true,
+  impersonator: { id: "staff", language: "es" },
+};
+
+Deno.test("REQ-829 presenterLang — an explicit ?lang= wins over the impersonator's profile and the cookie", () => {
+  assertEquals(
+    presenterLang(staffEsImpersonating, customerEs, {
+      query: "en",
+      cookie: "es",
+    }),
+    "en",
+  );
+  assertEquals(
+    presenterLang({ authenticated: true, impersonating: false }, customerEs, {
+      query: "en",
+    }),
+    "en",
+  );
+  // junk ?lang= is ignored
+  assertEquals(
+    presenterLang(staffEsImpersonating, customerEs, { query: "fr" }),
+    "es",
+  );
+});
+
+Deno.test("REQ-829 presenterLang — the impersonator's profile beats the cookie; with no profile language the cookie, not the customer's", () => {
+  assertEquals(
+    presenterLang(staffEsImpersonating, customerEs, { cookie: "en" }),
+    "es",
+  );
+  assertEquals(
+    presenterLang(
+      { authenticated: true, impersonating: true, impersonator: { id: "s" } },
+      customerEs,
+      { cookie: "en" },
+    ),
+    "en",
+  );
+  assertEquals(
+    presenterLang(undefined, { id: "x" }, { cookie: "es" }),
+    "es",
+  );
+});
+
+Deno.test("REQ-829 presenterLangForRequest — /demo/stage?lang=en for an es presenter: en; the pm_lang cookie is the last fallback", async () => {
+  await withBackend(
+    () => json({ ...staffEsImpersonating, user: customerEs }),
+    async () => {
+      assertEquals(
+        await presenterLangForRequest(
+          new Request("http://app/demo/stage?lang=en", {
+            headers: { cookie: "pm_session=sess_1; pm_lang=es" },
+          }),
+          customerEs,
+        ),
+        "en",
+      );
+    },
+  );
+  await withBackend(
+    () =>
+      json({
+        authenticated: true,
+        user: customerEs,
+        impersonating: true,
+        impersonator: { id: "staff" },
+      }),
+    async () => {
+      assertEquals(
+        await presenterLangForRequest(
+          new Request("http://app/demo/stage", {
+            headers: { cookie: "pm_session=sess_1; pm_lang=en" },
+          }),
+          customerEs,
+        ),
+        "en",
+      );
     },
   );
 });

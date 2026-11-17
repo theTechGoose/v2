@@ -101,11 +101,17 @@ export default define.page(async function PublicChangeOrder(ctx) {
     <>
       <Head>
         {/* REQ-628: the tab names the business, never DocuMonster */}
+        {
+          /* REQ-826 AMENDMENT 5 (demo-loop run 11) — a dead link's tab says so, never "Orden
+            de cambio": the demo stage names the page by its title */
+        }
         <DocTitle
           lang={lang}
           title={(l) =>
             publicDocTitle(
-              tFor(l, "changeOrderPublic.docTitle"),
+              !co
+                ? tFor(l, "changeOrderPublic.error.title")
+                : tFor(l, "changeOrderPublic.docTitle"),
               co?.businessName,
             )}
         />
@@ -117,6 +123,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
         />
       </Head>
       <div
+        data-error-page={co ? undefined : ""}
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:592px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">

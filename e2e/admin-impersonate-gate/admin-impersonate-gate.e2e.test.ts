@@ -73,7 +73,7 @@ async function superAdmin(
   return admin;
 }
 
-Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows 'You are guiding {name} in this browser' — not the customer's /dashboard — and Return to your account brings the console (and Demo) back", (t) =>
+Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows 'You are guiding {name} in this browser' — not the customer's /dashboard — and Return to your account brings the console (and Demo) back; REQ-869 (dm5 p3): the gate's h1 is set in Nunito", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const customerPhone = `+1512${digits()}`;
@@ -117,16 +117,80 @@ Deno.test("REQ-376 m20 + nc-second-demo: a second /admin tab during a demo shows
         /start another demo/i.test(text),
         `it says how to start another demo: ${text}`,
       );
-      expect.eq(
-        await tabB.locator("[data-cy='admin-gate-back']").getAttribute("href"),
-        "/demo/stage",
-        "Back to the demo goes to the stage",
+      // REQ-869 (dm5 p3): the gate heading resolves to the app's heading font, not the body's Inter
+      const h1Font = await gate.locator("h1").evaluate((el) =>
+        getComputedStyle(el).fontFamily
+      );
+      expect(
+        /^"?Nunito"?\b/.test(h1Font),
+        `the gate h1 is set in Nunito (--font-heading): ${h1Font}`,
+      );
+      // REQ-829: in the presenter's language
+      const back = await tabB.locator("[data-cy='admin-gate-back']")
+        .getAttribute("href");
+      expect(
+        /^\/demo\/stage\?lang=(en|es)$/.test(back ?? ""),
+        `Back to the demo goes to the stage, in the presenter's language: ${back}`,
       );
 
       // Return to your account → the console, Demo reachable again
       await tabB.locator("[data-cy='admin-gate-return']").click();
       await tabB.locator("[data-cy='adm-q']").waitFor({ timeout: 20_000 });
       expect.eq(new URL(tabB.url()).pathname, "/admin", "back on the console");
+      await tabB.locator("[data-cy='adm-q']").fill(customerPhone.slice(2));
+      await tabB.locator("[data-cy='adm-search']").click();
+      await tabB.locator("[data-cy='adm-demo']").first().waitFor({
+        timeout: 15_000,
+      });
+      expect.eq(
+        await tabB.locator("[data-cy='adm-demo']").first().isDisabled(),
+        false,
+        "Demo can be started again",
+      );
+    } finally {
+      await tabB.close();
+    }
+  }));
+
+Deno.test("REQ-870 (demo-loop dm5, p7): as the only presenter, Return to your account from /admin's gate ends the demo and lands on /admin saying 'You ended the demo' — as End from the pill does", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const customerPhone = `+1512${digits()}`;
+    const customer = await verify(http, customerPhone);
+    await answerQuestions(http, customer.auth, {
+      name: "Maria Lopez",
+      businessName: "Lopez Remodeling",
+    });
+    const admin = await superAdmin(http, expect);
+    await useCookie(page.context(), baseUrl, admin.cookie);
+
+    await page.goto("/admin");
+    await page.locator("[data-cy='adm-q']").fill(customerPhone.slice(2));
+    await page.locator("[data-cy='adm-search']").click();
+    await page.locator("[data-cy='adm-demo']").first().waitFor({
+      timeout: 15_000,
+    });
+    await page.locator("[data-cy='adm-demo']").first().click();
+    await page.waitForURL((u) => u.pathname === "/demo/stage", {
+      timeout: 20_000,
+    });
+
+    const tabB = await page.context().newPage();
+    try {
+      await tabB.goto(`${baseUrl}/admin`);
+      await tabB.locator("[data-cy='admin-gate']").waitFor({ timeout: 15_000 });
+      await tabB.locator("[data-cy='admin-gate-return']").click();
+      await tabB.waitForURL((u) => u.pathname === "/admin", {
+        timeout: 20_000,
+      });
+      const notice = tabB.locator("[data-cy='demo-ended']");
+      await notice.waitFor({ timeout: 20_000 });
+      const text = (await notice.innerText()).trim();
+      expect(
+        text.includes("You ended the demo"),
+        `/admin after the gate's Return says "You ended the demo": ${text}`,
+      );
+      // and the demo really is over: the customer can be shown a new one
       await tabB.locator("[data-cy='adm-q']").fill(customerPhone.slice(2));
       await tabB.locator("[data-cy='adm-search']").click();
       await tabB.locator("[data-cy='adm-demo']").first().waitFor({

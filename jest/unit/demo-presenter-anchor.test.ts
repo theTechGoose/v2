@@ -1,4 +1,6 @@
 /**
+ * REVISION (demo-loop run 19, m2 — REQ-877 AMENDMENT): hold() keeps the off marker's ghost when the
+ * new anchor is off too (her marker glides); any other anchor still clears it. The regex says so.
  * REQ-451 — demo issues M1 and M14 (demo-loop cycle 3): the presenter's pointer is WHAT HE POINTED
  * AT. Amends REQ-393, which made it "the spot under his still mouse", looked up again after every
  * layout pass of the replay: the customer's arrow then stayed at one screen spot over whatever
@@ -376,7 +378,7 @@ describe("REQ-451 the stage: his anchor stays on what he pointed at; a new page 
     expect(fn("showGhost")).toMatch(/reportedGhost\(/);
     expect(fn("showGhost")).not.toMatch(/presenterOnStage\(/);
     expect(fn("replace")).toMatch(/showGhost\(\);/);
-    expect(fn("hold")).toMatch(/setGhost\(null\)/);
+    expect(fn("hold")).toMatch(/setGhost\(\(was\) => a\.o === 1 && was\?\.off \? was : null\);/); // REVISION (run 19, m2): the off ghost is kept while his mouse moves beside the frame
     expect(stage).toMatch(/<PointerGhost/);
     const ghost = read("front-end/components/demo-mode/PointerGhost.tsx");
     expect(ghost).toMatch(/data-cy="demo-pointer-ghost"/);

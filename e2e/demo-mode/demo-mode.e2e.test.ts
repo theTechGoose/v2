@@ -141,6 +141,22 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
     try {
       const userPage = await userCtx.newPage();
       await useCookie(userCtx, baseUrl, user.cookie);
+      // REQ-378 — her app hears of a demo the moment it opens (a held /active ask answers at
+      // once), so the stage's "Waiting for her app" lasts only as long as her app takes to join.
+      // Hold her app's answers until the stage has been SEEN waiting (REQ-232 lifecycle-p1), then
+      // let them through: what is asserted is the stage's wording, not how fast her app is.
+      let releaseCust!: () => void;
+      const heldCust = new Promise<void>((r) => (releaseCust = r));
+      const CUST_ACTIVE = "**/api/demo-mode/active**";
+      await userPage.route(CUST_ACTIVE, async (route) => {
+        try {
+          const answer = await route.fetch();
+          await heldCust;
+          await route.fulfill({ response: answer });
+        } catch {
+          // her app gave the ask up meanwhile (a reload, a hidden tab): nothing to answer
+        }
+      });
       await userPage.goto(`${baseUrl}/dashboard`);
 
       // 1. the admin clicks Demo on the user's row and lands AT ONCE on the stage, as the user, waiting
@@ -177,14 +193,40 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         "/admin",
         "nothing has moved yet — the answer is still held",
       );
+      // REQ-864 (dm4 p8) — start answering is not the end of opening: the overlay still asks
+      // whoami + impersonate before the page moves, and the button keeps saying Opening… all
+      // that time (it read "Demo" ~28 ms after start answered). Hold the impersonation to look.
+      let releaseImp!: () => void;
+      const heldImp = new Promise<void>((r) => (releaseImp = r));
+      const impAsked = new Promise<void>((asked) => {
+        void page.route("**/api/admin/impersonate/**", async (route) => {
+          asked();
+          await heldImp;
+          await route.continue();
+        }, { times: 1 });
+      });
       release();
       await continued;
+      await impAsked;
+      expect.eq(
+        (await page.locator("[data-cy='adm-demo']").first().innerText()).trim(),
+        "Opening…",
+        "REQ-864: start has answered, the page has not moved — the button still says Opening…",
+      );
+      expect.eq(
+        new URL(page.url()).pathname,
+        "/admin",
+        "REQ-864: still on /admin while the impersonation is held",
+      );
+      releaseImp();
       await page.waitForURL((u) => u.pathname === "/demo/stage", {
         timeout: 20_000,
       });
       await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
       // REQ-232 (demo-lifecycle-p1) — it waits for the customer's APP; nobody is asked to accept
       await expect.see("Waiting for Ana Torres's app");
+      releaseCust();
+      await userPage.unroute(CUST_ACTIVE);
       // REQ-242 — no invented page: the stage says it is connecting until the customer's app
       // reports, then mirrors the page the customer is really on
       await until(
@@ -261,21 +303,19 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
         `the details button says the status only (${moreLabel})`,
       );
 
-      // REQ-181 — the staff page has the impersonation banner; the stage starts below it
+      // REQ-181 → REQ-537 / REQ-855 — the stage carries no red impersonation bar (the pill's
+      // End / Leave are the way out); it starts at the top of the window
       const room = await page.evaluate(() => {
-        const b = document.querySelector("[data-demo-skip]")
-          ?.getBoundingClientRect();
         const s = document.querySelector("[data-cy='demo-stage']")
           ?.getBoundingClientRect();
         return {
-          bannerBottom: b ? b.bottom : null,
+          banners: document.querySelectorAll("[data-cy='imp-banner']").length,
           stageTop: s ? s.top : null,
         };
       });
       expect(
-        room.bannerBottom !== null && room.stageTop !== null &&
-          room.stageTop >= room.bannerBottom - 0.5,
-        `REQ-181: the stage (top ${room.stageTop}) starts below the banner (bottom ${room.bannerBottom})`,
+        room.banners === 0 && room.stageTop !== null && room.stageTop <= 0.5,
+        `REQ-537/855: no impersonation bar on the stage (${room.banners}) and the stage starts at the top (top ${room.stageTop})`,
       );
 
       // 3. REQ-187 — the frame IS the user's screen: the user's exact viewport, on the user's page,
@@ -453,6 +493,23 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await page.locator("[data-cy='demo-pointer']").waitFor({
         timeout: 10_000,
       });
+      // the pointer glides from where the click left it (to the RIGHT of the sweep's start) to the
+      // start: let that glide settle, or the recorder reads it as the sweep stepping back (the
+      // headless lane's ~6 fps stretches the 250 ms glide past the recorder's start)
+      await until(
+        "the user's pointer has settled at the sweep's start",
+        async () => {
+          const a = await page.locator("[data-cy='demo-pointer']").evaluate(
+            (el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m41,
+          );
+          await new Promise((r) => setTimeout(r, 120));
+          const b = await page.locator("[data-cy='demo-pointer']").evaluate(
+            (el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m41,
+          );
+          return Math.abs(a - b) < 0.1;
+        },
+        5_000,
+      );
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __pmXs: number[];

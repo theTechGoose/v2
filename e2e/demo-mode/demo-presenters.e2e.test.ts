@@ -202,7 +202,9 @@ Deno.test("REQ-214: two staff present to one customer — Lia's Demo on an alrea
         pg.locator("[data-cy='demo-pointer']").evaluateAll((els) =>
           els.map((el) => ({
             name: (el as HTMLElement).dataset.presenter ?? "",
-            color: el.querySelector("path")?.getAttribute("fill") ?? "",
+            // the arrow's filled path (its first path is the white outline, fill="none")
+            color: el.querySelector('path[fill]:not([fill="none"])')
+              ?.getAttribute("fill") ?? "",
           }))
         );
       const lb = await frameBox(liaPage);

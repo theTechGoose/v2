@@ -95,6 +95,10 @@ export const TAG_IDLE_MS = 1_500;
  *  scrim showed through it and the pointer read as "under the dark layer". It rests fully opaque
  *  on its solid colour, shrunk to the initials (`tagLabel`) so it covers less of the page */
 export const TAG_REST_OPACITY = 1;
+/** REQ-848 (demo dm3 p9) — the STAGE's copy of the customer's resting tag is see-through: solid,
+ *  it hid the day '20' and 'Keep going' in the frame. Per instance (`restTag` below), so the
+ *  presenter's arrow on the customer's own screen keeps REQ-633's opaque tag */
+export const STAGE_TAG_REST_OPACITY = 0.6;
 /** REQ-761 (demo c4-S12b, cycle 5v2) — a RESTING arrow is semi-transparent: Pair 5's employee
  *  read 'TBD' as 'Today' because the customer's arrow, solid at opacity 1, hid its letters. The
  *  svg (halo + dark outline) stays at ARROW_REST_OPACITY — never the faint .45/.55 REQ-374 (p8)
@@ -105,20 +109,31 @@ export const ARROW_REST_FILL = 0.5;
  *  (REQ-761) it turns see-through; the tag rests by shrinking (`compact`, REQ-633), not fading */
 export function pointerLook(
   resting: boolean,
+  restTag: number = TAG_REST_OPACITY,
 ): { arrow: number; fill: number; tag: number; compact: boolean } {
   return {
     arrow: resting ? ARROW_REST_OPACITY : 1,
     fill: resting ? ARROW_REST_FILL : 1,
-    tag: resting ? TAG_REST_OPACITY : 1,
+    tag: resting ? restTag : 1,
     compact: resting,
   };
 }
 /** REQ-633 (demo m2, cycle 5) — the tag's text: the whole name while the pointer moves, its
- *  initials (two at most) once it rests */
+ *  initials (two at most) once it rests. REQ-817 (cycle dm1, m3) — initials are LETTERS: a name
+ *  with none (a customer named by their phone, REQ-355) rests on its last two digits, never '+' */
 export function tagLabel(name: string, compact: boolean): string {
   if (!compact) return name;
-  return name.trim().split(/\s+/).filter(Boolean).slice(0, 2)
-    .map((w) => w[0].toUpperCase()).join("");
+  return initialsOf(name, 2);
+}
+/** REQ-817 — up to `max` initials: the first letter of each word that has one; for a name with
+ *  no letters, its last two digits (a phone's); '' for neither */
+export function initialsOf(name: string, max: number): string {
+  const letters = name.trim().split(/\s+/)
+    .map((w) => Array.from(w).find((c) => /\p{L}/u.test(c)))
+    .filter((c): c is string => Boolean(c))
+    .slice(0, max);
+  if (letters.length) return letters.map((c) => c.toLocaleUpperCase()).join("");
+  return name.replace(/\D/g, "").slice(-2);
 }
 /** REQ-374 / REQ-437 — the gap between the tag and what it sits beside (the arrow, an element) */
 export const TAG_GAP = 6;
@@ -286,4 +301,25 @@ export function placeIn(
     },
     outside: true,
   };
+}
+
+/** REQ-850 (demo-loop cycle dm3, p10) — where the stage draws a customer's anchor `a`, resolved
+ *  to `p` inside `box`. A fraction-only anchor at her window's far edge (vx or vy = 1: a point
+ *  clamped there, her cursor past the edge of a window she narrowed) lies ON the box's edge, which
+ *  placeIn counts as inside — the arrow then hung past the frame. Such an anchor is drawn as an
+ *  off one (REQ-393): pulled in by the arrow's box, marked outside. */
+export function placeAnchorIn(
+  a: { vx: number; vy: number; n?: unknown; o?: 1 },
+  p: Pt,
+  box: { left: number; top: number; width: number; height: number },
+  arrow: { w: number; h: number } = ARROW_BOX,
+): { at: Pt; outside: boolean } {
+  const farEdge = !a.n && (a.vx >= 1 || a.vy >= 1);
+  return placeIn(p, box, arrow, a.o === 1 || farEdge);
+}
+
+/** REQ-850 (demo-loop cycle dm3, p10) — what wakes the pointer's tag (REQ-374): a new spot or an
+ *  edge toggle; a re-send of the same spot (a new object) does not */
+export function idleKey(p: Pt | null, outside?: boolean): string {
+  return p ? `${p.x}:${p.y}:${outside ? 1 : 0}` : "";
 }

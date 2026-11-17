@@ -2,6 +2,8 @@
  * REQ-376 (demo-loop cycle 2, m20 + nc-second-demo) — /admin's interstitial "Return to your
  * account": leaves the demo this staff presents (if any), hands the account back, lands on the
  * console — where Demo is reachable again. The page around it already says what leaving does.
+ * REQ-855 (cycle dm3, rc-17) — in the gate's language (`lang`, the presenter's: ?lang= first), so a
+ * presenter who picked EN on the gate lands on an English console.
  */
 import { useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
@@ -27,7 +29,7 @@ export default function AdminGateReturn(
       onClick={async () => {
         setBusy(true);
         try {
-          await returnToOwnAccount(demoId);
+          await returnToOwnAccount(demoId, lang);
         } catch {
           setBusy(false);
         }

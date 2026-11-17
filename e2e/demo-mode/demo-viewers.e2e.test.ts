@@ -197,6 +197,8 @@ Deno.test("REQ-232 (demo-lifecycle-p1): the pills say plainly whether the demo i
         );
       }
       await page.locator("[data-cy='demo-end']").click();
+      // REQ-235 — End asks first
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await tab1.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,
@@ -264,14 +266,15 @@ Deno.test("REQ-232 (B3): a second customer tab is followed; a click in the first
         "the stage follows tab 2 (640 × 760)",
         async () => (await screenOf(page)).includes("640 × 760"),
       );
-      // the customer clicks in tab 1: the stage follows tab 1 again
-      await tab1.locator("[data-cy='demo-pill'] strong").click();
+      // the customer clicks in tab 1: the stage follows tab 1 again (REQ-890 — the phone's pill
+      // is compact, no title: the pill itself is clicked)
+      await tab1.locator("[data-cy='demo-pill']").click();
       await until(
         "B3: a click in tab 1 takes the stage back (420 × 800)",
         async () => (await screenOf(page)).includes("420 × 800"),
       );
       // … and in tab 2 again; then tab 2 closes: the stage falls back to tab 1, stays live
-      await tab2.locator("[data-cy='demo-pill'] strong").click();
+      await tab2.locator("[data-cy='demo-pill']").click();
       await until(
         "tab 2 again (640 × 760)",
         async () => (await screenOf(page)).includes("640 × 760"),
@@ -317,6 +320,8 @@ Deno.test("REQ-232 (B3): a second customer tab is followed; a click in the first
         10_000,
       );
       await page.locator("[data-cy='demo-end']").click();
+      // REQ-235 — End asks first
+      await page.locator("[data-cy='demo-end-confirm']").click();
       await tab1.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,
@@ -398,6 +403,8 @@ Deno.test("REQ-232 (demo-lifecycle-m3): a second window of the same staff accoun
       );
 
       await win2.locator("[data-cy='demo-end']").click();
+      // REQ-235 — End asks first
+      await win2.locator("[data-cy='demo-end-confirm']").click();
       await tab.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,
@@ -408,7 +415,7 @@ Deno.test("REQ-232 (demo-lifecycle-m3): a second window of the same staff accoun
     }
   }));
 
-Deno.test("REQ-232 (M21): Return to your account on the stage asks first, leaves the demo (it ends for the customer — Hans was its only presenter) and lands on /admin, where it stays", (t) =>
+Deno.test("REQ-232 (M21) + REQ-855: the stage's way out — no Return-to-your-account bar, the pill's End — asks first, ends the demo for the customer (Hans was its only presenter) and lands on /admin, where it stays", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const { user, admin, userPhone } = await people(http);
@@ -434,30 +441,20 @@ Deno.test("REQ-232 (M21): Return to your account on the stage asks first, leaves
       page.on("framenavigated", (f: any) => {
         if (f === page.mainFrame()) navs.push(new URL(f.url()).pathname);
       });
-      await page.locator("[data-cy='imp-banner'] button", {
-        hasText: "Return to your account",
-      }).click();
-      const ask = page.locator("[data-cy='imp-leave-demo']");
+      // REQ-537 / REQ-855 — the stage carries no red impersonation bar: the pill's End is the one
+      // exit (Hans is the only presenter), and it asks first (REQ-235)
+      expect.eq(
+        await page.locator("[data-cy='imp-banner']").count(),
+        0,
+        "M21: no 'Return to your account' bar on the stage — the pill's End is the exit",
+      );
+      await page.locator("[data-cy='demo-end']").click();
+      const ask = page.locator("[data-cy='demo-end-confirm']");
       const asked = await ask.waitFor({ timeout: 5_000 }).then(
         () => true,
         () => false,
       );
-      if (asked) {
-        const banner = await page.locator("[data-cy='imp-banner']")
-          .innerText();
-        expect(
-          banner.includes("Ana Torres"),
-          `the question names the customer ("${banner}")`,
-        );
-        // REQ-298 — Hans is the only presenter: the question says leaving ends the demo
-        expect(
-          banner.includes(
-            "You are the only presenter — leaving ends the demo for Ana Torres.",
-          ),
-          `REQ-298: the only presenter is told leaving ends the demo ("${banner}")`,
-        );
-        await ask.click();
-      }
+      if (asked) await ask.click();
       await until(
         "the staff window lands on /admin",
         () => navs.includes("/admin"),
@@ -468,11 +465,11 @@ Deno.test("REQ-232 (M21): Return to your account on the stage asks first, leaves
       expect(
         !after.includes("/demo/stage") &&
           new URL(page.url()).pathname === "/admin",
-        `M21: Return to your account stays returned — never bounced back to the stage (pages after it: ${
+        `M21: the stage's exit stays returned — never bounced back to the stage (pages after it: ${
           after.join(" → ")
         })`,
       );
-      expect(asked, "M21: during a demo, Return to your account asks first");
+      expect(asked, "M21: the stage's End asks first");
       await tab.locator("[data-cy='demo-pill']").waitFor({
         state: "hidden",
         timeout: 15_000,

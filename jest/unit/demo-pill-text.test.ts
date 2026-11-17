@@ -1,3 +1,4 @@
+// REVISION (demo-loop run 15, by hand, 2026-11-17): REQ-833 AMENDMENT (dm15, p1): the compact details line wraps only on its own row (pillWraps), else it is cut
 /**
  * REQ-294 — demo-loop cycle 1, issues m21 + m43: the demo pill keeps the guide's name (the
  * ended notice wraps; the phone's compact pill opens its details full-width and wrapping), the
@@ -20,16 +21,18 @@ const block = (src: string, from: string, to: string) => {
 };
 
 describe("REQ-294 the pill carries the app's own font (demo m21: monospace on the 404 page)", () => {
-  test("PILL_FONT is the app's --font-body stack", () => {
+  test("PILL_FONT is the app's --font-body stack (REQ-825: plus Arial, Helvetica before the generic)", () => {
     const css = read("front-end/static/dashboard.css");
     const body = css.match(/--font-body:\s*([^;]+);/)?.[1].trim();
     expect(body).toBeDefined();
-    expect(PILL_FONT).toBe(body);
+    const named = body!.replace(/,\s*sans-serif$/, "");
+    expect(PILL_FONT).toBe(`${named}, Arial, Helvetica, sans-serif`);
   });
 
   test("the pill style uses PILL_FONT, never font:inherit", () => {
     const o = read("front-end/islands/DemoModeOverlay.tsx");
-    const pillStyle = o.match(/const pillStyle = `([^`]*)`/)?.[1] ?? "";
+    // REQ-831 — deno fmt may break the template onto the next line
+    const pillStyle = o.match(/const pillStyle =\s*`([^`]*)`/)?.[1] ?? "";
     expect(pillStyle).toContain("font-family:${PILL_FONT}");
     expect(pillStyle).not.toContain("font:inherit");
     expect(o).toMatch(
@@ -57,8 +60,11 @@ describe("REQ-294 the pill keeps the guide's name (demo m21: 'ended th…', 'Ale
 
   test("the compact pill's details open full-width and wrapping, the guiding text whole", () => {
     const details = block(o, 'data-cy="demo-details"', 'data-cy="demo-more"');
-    expect(details).toMatch(/compact \? `flex-basis:100%;\$\{wrap\}` : cut/);
-    expect(details).toMatch(/style=\{compact \? wrap : cut\}>\{guidingText\}/);
+    expect(details).toMatch(/compact\s*\?\s*\(wraps \? `flex-basis:100%;\$\{wrap\}` : cut\)\s*:\s*cut/);
+    // REVISION (dm15, p1 — REQ-833 AMENDMENT): the guiding line wraps only on its own row (wraps)
+    expect(details).toMatch(
+      /style=\{compact && wraps \? wrap : cut\}>\s*\{guidingText\}/,
+    );
     expect(details).not.toMatch(/<span style=\{cut\}>\{guidingText\}/);
     expect(details).toMatch(
       /\{!compact && <strong>\{t\("demoMode\.title"\)\}<\/strong>\}/,
@@ -68,7 +74,7 @@ describe("REQ-294 the pill keeps the guide's name (demo m21: 'ended th…', 'Ale
     const at = o.indexOf('data-cy="demo-details"');
     const live = o.slice(o.lastIndexOf('data-cy="demo-pill"', at), at);
     expect(live).toMatch(
-      /pillWraps\(\{ compact, open, asking \}\) \? ";flex-wrap:wrap" : ""/,
+      /pillWraps\(\{ compact, open: shownOpen, asking \}\)\s*\?\s*";flex-wrap:wrap"\s*:\s*""/,
     );
   });
 });

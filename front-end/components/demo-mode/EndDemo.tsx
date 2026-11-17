@@ -17,13 +17,35 @@
  * REQ-649 (demo-loop cycle 5, m64) — the question is the caller's: the stage keeps "End for
  * everyone?" (`demoMode.endAsk`, a presenter among staff); the customer's pill passes
  * `askKey="demoMode.endAskViewer"` with the guide's name ("End the demo with {name}?").
+ *
+ * REQ-855 (demo-loop cycle dm3, m5) — `outline`: a secondary action in its host (the presenter's
+ * pill off the stage, beside its solid Back to the demo) — outlined, not a second solid button.
  */
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import type { Vars } from "../../lib/i18n.ts";
-import { type EndAsk, endConfirm } from "../../../shared/demo-mode/ended.ts";
+import {
+  type EndAsk,
+  endConfirm,
+  yesArmsAtOnce,
+} from "../../../shared/demo-mode/ended.ts";
 
 const BTN =
   "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
+/** End and Yes. REQ-865 (cycle dm4, p1) — exported: the stage's ghost draws them with these */
+export const END_BTN = BTN;
+/** Keep going's style, as drawn below. REQ-865 — exported for the stage's ghost (a unit test
+ *  holds the two equal) */
+export const END_NO =
+  "padding:5px 6px;border:0;background:transparent;color:#fff;text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;font-weight:600;pointer-events:auto";
+/** REQ-855 — End as an outlined secondary on a dark pill */
+const OUTLINE =
+  "background:transparent;color:#fff;border:1px solid rgba(255,255,255,.7)";
 
 /** The caller's string lookup (REQ-544). */
 export type DemoT = (key: string, vars?: Vars) => string;
@@ -54,8 +76,18 @@ export default function EndDemo(
     askAtOnce = false,
     askKey,
     askVars,
+    outline = false,
+    guard,
+    pressedAt,
   }: {
     onEnd: () => void;
+    /** REQ-235 AMENDMENT (demo-loop run 18, m1) — where the press that asked landed when it was
+     *  not End's own click (the folded tab's ×, `askAtOnce`): Yes arms at once when that press
+     *  is not on it. Null: unknown — the clock as before */
+    pressedAt?: () => { x: number; y: number } | null;
+    /** REQ-890 AMENDMENT 4 (demo-loop run 15, m2) — asked before End asks: true, the host took
+     *  this click as its own (the tab's, where a resting pointer opened the peek) */
+    guard?: (e: MouseEvent) => boolean;
     disabled?: boolean;
     /** REQ-548 — the question takes a whole row of a wrapping host (the phone's compact pill) */
     ownRow?: boolean;
@@ -66,6 +98,8 @@ export default function EndDemo(
     /** REQ-637 (demo-loop cycle 5, m5) — shown already asking: the folded mini-pill's × was End's
      *  first click (Yes still waits END_ARM_MS, so no tap ends a demo on its own) */
     askAtOnce?: boolean;
+    /** REQ-855 — drawn outlined (a secondary beside its host's primary) */
+    outline?: boolean;
   } & EndAskWords,
 ) {
   const words = endDemoWords(t, { askKey, askVars });
@@ -90,6 +124,16 @@ export default function EndDemo(
   useEffect(() => {
     if (askAtOnce) ask.ask();
   }, []);
+  // REQ-235 AMENDMENT (demo-loop run 18, m1) — the wait before Yes counts is for a double click's
+  // second click, which lands where the first did: a Yes the press is not on arms at once
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  const yesRef = useRef<HTMLButtonElement | null>(null);
+  useLayoutEffect(() => {
+    if (!s.asking || s.armed) return;
+    const press = pressRef.current ?? pressedAt?.() ?? null;
+    const yes = yesRef.current?.getBoundingClientRect() ?? null;
+    if (yesArmsAtOnce(press, yes)) ask.arm();
+  }, [s.asking, s.armed]);
   useEffect(() => () => {
     ask.dispose();
     // REQ-548 — gone (the demo ended): the host is no longer asked anything
@@ -125,8 +169,15 @@ export default function EndDemo(
         type="button"
         data-cy="demo-end"
         disabled={disabled}
-        onClick={ask.ask}
-        style={`${BTN};background:#fff;color:#7a2e2e${
+        onClick={(e) => {
+          if (guard?.(e)) return;
+          // REQ-235 AMENDMENT — a pointer's press (the keyboard's has no place: the clock)
+          pressRef.current = e.detail > 0
+            ? { x: e.clientX, y: e.clientY }
+            : null;
+          ask.ask();
+        }}
+        style={`${BTN};${outline ? OUTLINE : "background:#fff;color:#7a2e2e"}${
           disabled ? ";opacity:.55;cursor:default" : ""
         }`}
       >
@@ -147,6 +198,7 @@ export default function EndDemo(
     >
       <span style="font-weight:700">{words.ask}</span>
       <button
+        ref={yesRef}
         type="button"
         data-cy="demo-end-confirm"
         disabled={!s.armed}

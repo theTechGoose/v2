@@ -34,3 +34,7 @@ Take the issue through the questions **in this order. The first one that matches
 - `OWNER_CALL`: the customer is not asked before a demo attaches (deliberate, REQ-300).
 - `NITPICK`: "I'd put the Save button on the left", when the right matches every other form in the app.
 - `PEDANTIC`: a console-only warning with no visible effect.
+
+## Known limits of the demo VMs (test setup, not app bugs)
+
+- **No `MAPBOX_TOKEN` on the VMs** (REQ-861). `/api/geocode` answers `{ features: [] }` there, so every address field (onboarding, New customer, /settings mailing address) shows only its first row, the typed text with "Use as typed"; real Mapbox suggestions need a token. A missing suggestion list or no "Use as typed" row is still a real issue; missing Mapbox rows alone are not.

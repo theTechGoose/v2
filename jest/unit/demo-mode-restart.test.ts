@@ -189,7 +189,10 @@ describe("REQ-298 the islands are wired", () => {
     expect(overlay).toMatch(/startedText\(/);
     expect(overlay).toContain('data-cy="demo-restarted"');
     // the phone's compact pill hides its details until tapped: a restart is shown anyway
-    expect(overlay).toMatch(/compact && !open && !started \? "none"/);
+    //    REQ-833 AMENDMENT — through pillDetailsShown, which also shows a join's guiding line
+    expect(overlay).toMatch(
+      /pillDetailsShown\(\{\s*compact,\s*open: shownOpen,\s*started: started !== null/,
+    );
     expect(overlay).not.toMatch(
       /useEffect\(\(\) => \{\s*if \(demo\) setNotice\(null\);\s*\}, \[demo\?\.id\]\);/,
     );

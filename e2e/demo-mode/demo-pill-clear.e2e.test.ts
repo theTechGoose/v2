@@ -265,12 +265,21 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
           });
           const pill = (await userPage.locator("[data-cy='demo-pill']")
             .innerText()).replace(/\s+/g, " ").trim();
-          const want = [
-            "Demo mode",
-            "Hans from DocuMonster is guiding you",
-            "Connected",
-            "End demo",
-          ];
+          // REVISION (demo-loop run 15 follow-up, 2026-11-17): the pill `pillUp` brought out of
+          // its tab is a PEEK, and on the dashboard's crowded row it is the compact form
+          // (REQ-890: the guide's short name, the status, End — no title, no guiding line);
+          // the ghost says what the pill says, whichever form that is
+          const compact = (await userPage.locator(
+            "[data-cy='demo-pill'][data-compact]",
+          ).count()) > 0;
+          const want = compact
+            ? ["Hans", "Connected", "End demo"]
+            : [
+              "Demo mode",
+              "Hans from DocuMonster is guiding you",
+              "Connected",
+              "End demo",
+            ];
           for (const w of want) {
             if (
               !pill.includes(w)
@@ -282,7 +291,9 @@ Deno.test("REQ-228 + REQ-291: the customer's demo pill covers no control of the 
             if (i < 0) return `the ghost lacks "${w}" (in order): "${g.all}"`;
             at = i + w.length;
           }
-          if (g.title !== "Demo mode") return `ghost title "${g.title}"`;
+          if (g.title !== (compact ? "" : "Demo mode")) {
+            return `ghost title "${g.title}" (compact ${compact})`;
+          }
           if (g.end !== "End demo" || !g.endDisabled) {
             return `ghost End "${g.end}" (disabled: ${g.endDisabled})`;
           }

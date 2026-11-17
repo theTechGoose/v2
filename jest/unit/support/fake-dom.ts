@@ -267,6 +267,48 @@ export class FElement extends FNode {
   toDataURL(): string {
     return this.bitmap;
   }
+  /** REQ-845 — `closest()` for a list of simple selectors: `tag`, `tag[attr]`, `[attr="v"]`
+   *  (what CONTROL_SELECTOR is made of); itself included, as in a browser */
+  closest(sel: string): FElement | null {
+    const parts = sel.split(",").map((p) => {
+      const m = /^([a-z0-9-]*)(?:\[([a-z-]+)(?:="([^"]*)")?\])?$/i.exec(
+        p.trim(),
+      );
+      if (!m) throw new Error(`fake-dom closest(): unsupported selector ${p}`);
+      return { tag: m[1].toLowerCase(), attr: m[2], val: m[3] };
+    });
+    const hit = (e: FElement) =>
+      parts.some((p) =>
+        (!p.tag || e.localName === p.tag) &&
+        (!p.attr || (p.val === undefined
+          ? e.getAttribute(p.attr) !== null
+          : e.getAttribute(p.attr) === p.val))
+      );
+    for (let e: FNode | null = this; e; e = e.parentNode) {
+      if (e.nodeType === 1 && hit(e as FElement)) return e as FElement;
+    }
+    return null;
+  }
+  /** REQ-824 — the four user-action pseudo-classes, answered from the document's state (any other
+   *  selector is a test's mistake: it throws) */
+  matches(sel: string): boolean {
+    const d = this.ownerDocument;
+    const focused = d.focused?.isConnected && d.windowFocused
+      ? d.focused
+      : null;
+    switch (sel) {
+      case ":hover":
+        return !!d.hovered?.isConnected && this.contains(d.hovered);
+      case ":focus":
+        return focused === this;
+      case ":focus-visible":
+        return focused === this && d.focusVisible;
+      case ":focus-within":
+        return !!focused && this.contains(focused);
+      default:
+        throw new Error(`fake-dom matches(): unsupported selector ${sel}`);
+    }
+  }
 }
 
 /** REQ-547 — a constructed stylesheet (what the replay adopts to hold the frame still) */
@@ -343,6 +385,16 @@ export class FDocument extends FNode {
   hit: ((x: number, y: number) => FElement | null) | null = null;
   /** REQ-547 — the document's adopted (constructed) stylesheets */
   adoptedStyleSheets: FCSSStyleSheet[] = [];
+  /** REQ-824 — what `matches()` answers from: the element under the pointer (it and its
+   *  ancestors match :hover), the focused element, whether its focus shows (:focus-visible), and
+   *  whether the window has focus (:focus matches only then, as in Chromium) */
+  hovered: FElement | null = null;
+  focused: FElement | null = null;
+  focusVisible = true;
+  windowFocused = true;
+  get activeElement(): FElement | null {
+    return this.focused?.isConnected ? this.focused : this.body;
+  }
   constructor(href = "https://app.test/", w = 420, h = 800) {
     super(null as unknown as FDocument, 9, "#document");
     this.ownerDocument = this;

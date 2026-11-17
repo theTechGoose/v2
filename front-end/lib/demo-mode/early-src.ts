@@ -4,5 +4,7 @@
  * replaces it on the server's side — in dev with the script's own source as Vite serves it, in a
  * build with the chunk it was built to. null: no early script (the overlay island opens the page's
  * demo link, as before).
+ * REQ-892 — and the session-less page's rejoin script (demo-rejoin.ts), served the same way.
  */
 export const DEMO_EARLY_SRC: string | null = null;
+export const DEMO_REJOIN_SRC: string | null = null;

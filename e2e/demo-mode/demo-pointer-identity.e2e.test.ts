@@ -233,16 +233,21 @@ const arrowOf = async (pg: Page) => {
   return p && !p.pending && !p.cue ? p : null;
 };
 
-/** his arrow on the customer's screen once it has come to rest (two reads 300 ms apart agree) */
+/** his arrow on the customer's screen once it has come to rest: four reads 200 ms apart agree
+ *  (the glide steps once per animation frame; a headless page with two or more pages open ticks
+ *  ~6 frames a second, so two reads could both fall before the first step — REQ-645 M1 read the
+ *  pre-glide spot as rest and then found the arrow 26 px away on the re-rendered card) */
 async function restingArrow(pg: Page, what: string) {
   let last = await arrowOf(pg);
-  for (let i = 0; i < 30; i++) {
-    await sleep(300);
+  let same = 0;
+  for (let i = 0; i < 40; i++) {
+    await sleep(200);
     const now = await arrowOf(pg);
-    if (
-      now && last && Math.abs(now.x - last.x) < 0.5 &&
-      Math.abs(now.y - last.y) < 0.5
-    ) return now;
+    same = now && last && Math.abs(now.x - last.x) < 0.5 &&
+        Math.abs(now.y - last.y) < 0.5
+      ? same + 1
+      : 0;
+    if (now && same >= 3) return now;
     last = now;
   }
   throw new Error(`${what}: no arrow came to rest (${JSON.stringify(last)})`);
@@ -411,10 +416,19 @@ Deno.test("REQ-645 (demo c4-M6): on a phone, what he points at scrolled up under
         content.append(room);
         scrollTo(0, 0);
       });
-      const bar = await userPage.evaluate(() => {
-        const r = document.querySelector(".topbar")?.getBoundingClientRect();
-        return r ? { top: r.top, bottom: r.bottom } : null;
-      });
+      // the topbar's entrance (REQ-195's motion) is still sliding for a few frames in the headless
+      // lane (~6 fps with two pages open: a 0.7–1.4 px translateY at 1.6 s): wait for it to settle
+      const readBar = () =>
+        userPage.evaluate(() => {
+          const r = document.querySelector(".topbar")?.getBoundingClientRect();
+          return r ? { top: r.top, bottom: r.bottom } : null;
+        });
+      let bar = await readBar();
+      const settleT0 = Date.now();
+      while ((!bar || bar.top !== 0) && Date.now() - settleT0 < 4_000) {
+        await new Promise((r) => setTimeout(r, 100));
+        bar = await readBar();
+      }
       if (!bar || bar.top !== 0) {
         throw new Error(`the topbar is not at the top: ${JSON.stringify(bar)}`);
       }
@@ -584,6 +598,61 @@ Deno.test("REQ-645 (demo cycle 5 M2, page change): a desktop customer — he poi
         late <= 1_500,
         `REQ-645 (M2): the arrow is back ${late} ms after the stage showed her page (at most 1500)`,
       );
+    } finally {
+      await d.userCtx.close();
+    }
+  }));
+
+Deno.test("REQ-539 AMENDMENT 2 / REQ-451 (dm8 m4): the customer narrows her window under his still mouse — his arrow stays on what he pointed at, never pinned to the frame's edge", (t) =>
+  story(t, async (tools) => {
+    const { page, expect } = tools;
+    const view = { width: 1280, height: 800 };
+    const d = await demoOn(tools, view, "/customers");
+    const { userPage } = d;
+    try {
+      // a fixed card at the left of her wide page: it stays at (40,300) when the window narrows
+      await userPage.evaluate(() => {
+        const b = document.createElement("button");
+        b.setAttribute("data-cy", "e2e-card");
+        b.textContent = "Mailing address";
+        b.style.cssText =
+          "position:fixed;left:40px;top:300px;width:260px;height:64px;font-size:18px;z-index:20";
+        document.body.appendChild(b);
+      });
+      await pointAt(page, view.width, "[data-cy='e2e-card']");
+      await until(
+        "her screen has his arrow on the card",
+        async () => (await arrowOf(userPage))?.under === "e2e-card",
+        10_000,
+      );
+      const before = await restingArrow(userPage, "his arrow on the card");
+      // her window narrows to a phone: the fitted frame shrinks out from under his still mouse
+      // (Chromium fires a trusted pointerover on the stage for that — no move of his)
+      await userPage.setViewportSize({ width: 390, height: 844 });
+      // the arrow's spot is judged against the card's box, not by what is topmost under it: for
+      // ~400 ms after the narrowing the app's own sidebar drawer slides out across the card
+      const card = await userPage.evaluate(() => {
+        const r = document.querySelector("[data-cy='e2e-card']")!
+          .getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      });
+      const t0 = Date.now();
+      while (Date.now() - t0 < 3_000) {
+        const a = await arrowOf(userPage);
+        const onCard = a && a.x >= card.left && a.x <= card.right &&
+          a.y >= card.top && a.y <= card.bottom;
+        if (a && (!onCard || a.outside)) {
+          throw new Error(
+            `REQ-451: his arrow left the card after her resize ${
+              JSON.stringify(a)
+            } (before ${JSON.stringify(before)}; card ${JSON.stringify(card)})`,
+          );
+        }
+        await sleep(150);
+      }
+      const after = await arrowOf(userPage);
+      expect.eq(after?.under, "e2e-card", "his arrow is still on the card");
+      expect.eq(after?.outside, false, "and not marked off her screen");
     } finally {
       await d.userCtx.close();
     }

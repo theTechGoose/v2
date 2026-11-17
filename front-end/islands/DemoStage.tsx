@@ -53,6 +53,9 @@
  * a reload or another tab gets no arrow until he moves — never a fraction under his still mouse.
  * The hand-off counts only once the frame is fitted, and only on it (`seedOn`): beside the frame
  * it is unknown until he moves. Off the frame, their screen shows a small edge marker, no tag.
+ * REQ-877 (demo dm5 m1) — and the stage draws a faint ghost of that marker (chevron + his
+ * initial) on the frame's same edge from their report, fading out when theirs does; the chrome
+ * row still says "Your pointer is off {name}'s screen".
  * REQ-539 (demo m24 — cycle 4) — amends that: only the stage's own hand-off (a reload) is sent;
  * /admin's (the Demo click, on a desktop customer's frame) is a hint for the off outline only, and
  * their screen gets no arrow until he makes a real pointer move (`seedUse`).
@@ -97,6 +100,13 @@
  * frames come in over 1.5 s late (each frame carries its push time on the deploy's clock; the dev
  * chip shows the lag's median/worst, whole path and wire). A tab that said it is closing is
  * "Waiting for {name}'s app…" at once, under a banner across the frame's top edge.
+ *
+ * REQ-823 (demo-loop cycle dm1, m8 + M2) — the tab notice says only what the presenter SAW change:
+ * the transport holds a same-tab navigation the page could not tell from a close (SILENT_GRACE_MS),
+ * and `followTabs` weighs a follow against the tab last on show (`shown`, from pageShown) — a
+ * fallback whose page never showed, then the same tab again, is no switch and drops a pending
+ * notice. A customer who signed out (`onSignedOut`) is said: "{name} signed out" in the pill and
+ * on the waiting banner, until a tab of theirs is followed again.
  */
 import {
   useCallback,
@@ -109,11 +119,11 @@ import { type Lang, langSignal, t } from "../lib/i18n.ts";
 import { demoModeClient } from "../clients/demo-mode.ts";
 import { adminClient } from "../clients/admin.ts";
 import {
-  ACTIVE_POLL_MS,
   type Anchor,
   CUSTOMER_COLOR,
   fitScale,
   fracToPoint,
+  type LeaveWhy,
   type PeerMessage,
   type PillFace,
   type PlacedMessage,
@@ -139,12 +149,15 @@ import {
   moveThrottle,
   newerMove,
   outsideBox,
+  placeAnchorIn,
   placeIn,
   type Pt,
+  STAGE_TAG_REST_OPACITY,
 } from "../../shared/demo-mode/motion.ts";
 import {
   type CursorSeed,
   handCursor,
+  pointerCounts,
   sessionStore,
   takeCursor,
 } from "../lib/demo-mode/cursor-handoff.ts";
@@ -169,65 +182,94 @@ import {
 import {
   anchorDead,
   anchorPoint,
+  cueKey,
   type Dir,
   followTabs,
   ghostWait,
   type Held,
+  initialOf,
   keepHeld,
   keptFor,
   lookAgain,
   type NodePrint,
   ownAt,
+  ownCueKey,
+  ownLook,
+  PENDING_MS,
   placeView,
   pointerAbsent,
   printable,
   reanchored,
+  ghostNext,
   reportedGhost,
+  reportedTag,
   resendable,
+  type Room,
   seedUse,
   SEEK_RETRY_MS,
+  seekGaveUp,
   seekPrint,
+  type TagPlace,
 } from "../../shared/demo-mode/presenter-anchor.ts";
 import { anchorAhead } from "../../shared/demo-mode/customer-pointer.ts";
 import PointerGhost from "../components/demo-mode/PointerGhost.tsx";
 import OwnPointer from "../components/demo-mode/OwnPointer.tsx";
-import DemoPointer, { WAVE_MS } from "../components/demo-mode/DemoPointer.tsx";
+import DemoPointer, {
+  frameCoverage,
+  WAVE_MS,
+} from "../components/demo-mode/DemoPointer.tsx";
 import PeerPointer, {
   type PointerCmd,
 } from "../components/demo-mode/PeerPointer.tsx";
 import PresenterChips from "../components/demo-mode/PresenterChips.tsx";
 import EndDemo from "../components/demo-mode/EndDemo.tsx";
+// REQ-865 — End's own styles, for the ghost of the customer's pill
+import { END_BTN, END_NO } from "../components/demo-mode/EndDemo.tsx";
 import {
   STAGE_BADGE_H,
   STAGE_DEBUG_KEY,
   STAGE_TOP_INSET,
+  stageBadgesShown,
   stageBadgeTop,
   stageDebugOn,
+  stageEndShown,
   stageLeaveShown,
+  stageLiveDetailsShown,
   stagePillH,
 } from "../../shared/demo-mode/stage-chrome.ts";
+import { pageLabel } from "../../shared/demo-mode/page-label.ts";
+import { liveTitle } from "../lib/doc-title.ts";
 import {
+  ADMIN_PATH,
   endedHref,
   type EndedNotice,
   whoEnded,
+  withLang,
 } from "../../shared/demo-mode/ended.ts";
 import {
   bandGhostBox,
   bandPaint,
+  ghostDrawsTab,
+  ghostFlow,
   ghostWords,
+  PILL_BOX_METRICS,
   PILL_FONT,
+  PILL_STATUS_CHIP,
   PILL_UNDER_DIALOG_OPACITY,
   pillFaceAwaiting,
   pillFaceOffline,
   pillGhost,
+  pillShowsAtOnce,
   STAGE_PILL_BOTTOM,
   stageInsetBottom,
 } from "../../shared/demo-mode/pill.ts";
 import { createPillSync } from "../../shared/demo-mode/pill-sync.ts";
 import {
+  activeAskDelay,
   afterActiveCheck,
   behindSeconds,
   frameReady,
+  sameDemo,
   stageFrameLook,
   stageStatus,
   STYLE_WAIT_MS,
@@ -249,11 +291,6 @@ interface Screen {
   h: number;
   path: string;
 }
-
-/** the same demo with the same presenters (a roster change re-renders, a poll's echo does not) */
-const sameDemo = (a: Demo | null, b: Demo) =>
-  a?.id === b.id &&
-  JSON.stringify(a.presenters) === JSON.stringify(b.presenters);
 
 const Z = 2147483000;
 /** REQ-636 — a `pill` message from the customer */
@@ -321,6 +358,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-541 — the stage is already on its way back to the presenter's own account */
   const leavingRef = useRef(false);
   const [status, setStatus] = useState<LinkStatus>("connecting");
+  /** REQ-896 (dm6, p1 + p7) — why her followed page went, while no tab of hers is back */
+  const [leaveWhy, setLeaveWhy] = useState<LeaveWhy | undefined>(
+    undefined,
+  );
   const [peerOnline, setPeerOnline] = useState(false);
   const [ended, setEnded] = useState(false);
   /** REQ-537 — Leave the demo was clicked here: on the way to /admin */
@@ -440,6 +481,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  first snapshot has not come yet (the stage then says which tab it shows) */
   const keptRef = useRef(new Map<string, Held>());
   const switchedRef = useRef(false);
+  /** REQ-648 AMENDMENT REVISION (dm19, p1) — awaiting a tab followed BEFORE ("Catching up…"):
+   *  state, so the word is said in the render after the switch is known (the key may come after
+   *  the socket, `learn`) */
+  const [switching, setSwitching] = useState(false);
+  // the word holds until that tab's screen is on show (awaiting false): the tab note (and the
+  // other resets of switchedRef) come a beat before — "Loading their next page…" showed in between
+  useEffect(() => {
+    if (!awaiting) setSwitching(false);
+  }, [awaiting]);
   /** REQ-645 (m36) — which browser tab of theirs the stage follows (its key, once said); a page
    *  that came in before the tab it is of was known (given its due when it is) */
   const tabsRef = useRef(followTabs());
@@ -450,14 +500,25 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-539 (m24) — /admin's hand-off: where his mouse is, for the off hint only (never sent,
    *  never his pointer); dropped by a real pointer event */
   const hintRef = useRef<Pt | null>(null);
+  /** REQ-539 AMENDMENT — has he moved (or pressed) on this stage since it opened? Before that a
+   *  `pointerover` (Chromium's, at load, under a still mouse) is where the mouse was, not a move */
   /** REQ-451 — the ghost of his arrow where their screen has it, while that is apart from his
    *  cursor (their page moved it with its element, or the frame moved) */
   const [ghost, setGhost] = useState<
-    { at: Pt; outside: boolean; dir?: Dir | null } | null
+    {
+      at: Pt;
+      outside: boolean;
+      dir?: Dir | null;
+      // REQ-877 — their off marker: drawn at once (never held back for REQ-789's rest), as theirs is
+      off?: { key: string } | null;
+    } | null
   >(null);
   /** REQ-642 (cycle 5, m10) — the followed tab's last report of where it placed HIS arrow: the
    *  ghost is drawn from it (never from this stage's own replay, which can put it elsewhere) */
   const reportRef = useRef<PlacedMessage | null>(null);
+  /** REQ-837 (demo dm2 m3) — where the customer's screen has HIS name tag (their report's `t`, in
+   *  this stage's px): his own marker and the ghost draw their tag there */
+  const [ownTag, setOwnTag] = useState<TagPlace | null>(null);
   /** REQ-789 — when he last pointed (performance.now()), and the one report waiting for his
    *  rest: a report that comes back while he still moves is never drawn — it flashed the ghost
    *  on and off beside his cursor, elsewhere on the frame, on every move */
@@ -477,8 +538,44 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  swapped, a new page) until he moves or REQ-645 finds it again by its print; REQ-645 — and
    *  while he holds nothing (the demo's start, another tab followed) */
   const [absent, setAbsent] = useState(false);
+  /** REQ-813 (demo dm1 m4) — their page says "{name} is pointing…" (resendPointer sent `pending`):
+   *  his own marker shows the same, for PENDING_MS at most (their chip's own limit), until a move
+   *  or a `leave` (the look by the print gave up) ends both */
+  const [pending, setPending] = useState(false);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSentRef = useRef(false);
+  const endPending = () => {
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = null;
+    pendingSentRef.current = false;
+    setPending(false);
+  };
+  const startPending = () => {
+    endPending();
+    pendingSentRef.current = true;
+    setPending(true);
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null;
+      pendingSentRef.current = false;
+      setPending(false);
+    }, PENDING_MS);
+  };
+  useEffect(() => () => {
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+  }, []);
   /** REQ-645 (m36) — the stage follows another of their tabs now: its page, said until he moves */
   const [tabNote, setTabNote] = useState<string | null>(null);
+  /** REQ-862 AMENDMENT 5 (demo-loop run 11, m1) — the picker chip's words when the frame has no
+   *  spot clear of the page for it (a dense phone form): shown in the chrome row instead */
+  const [pickerOut, setPickerOut] = useState<string | null>(null);
+  /** REQ-827 AMENDMENT (demo-loop run 16, m3) — the words of a native confirm()/alert() up on the
+   *  customer's screen (their page is blocked by it), said in the chrome row; null: none */
+  const [nativeAsk, setNativeAsk] = useState<
+    { text: string; kind?: "alert" } | null
+  >(null);
+  /** REQ-823 (cycle dm1, M2) — the customer signed out in the tab the stage followed: the pill and
+   *  the waiting banner say so, until a tab of theirs is followed again */
+  const [signedOut, setSignedOut] = useState(false);
   const tabNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** REQ-214 — how a colleague's pointer is driven, for the placing again */
   const commandRef = useRef<
@@ -513,6 +610,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   );
   const fitRef = useRef(fit);
   fitRef.current = fit;
+  /** REQ-848 (demo dm3 m4 + p9) — how much a tag at stage px `r` would hide of the customer's
+   *  page: hit-tested in the replay (this document only sees the click-capture layer over the
+   *  frame, so every spot scored 0 and the tail slot sat on their text) */
+  const coversFrame = useCallback(
+    (r: Rect, at: Pt) =>
+      frameCoverage(frameRef.current?.contentDocument, fitRef.current, r, at),
+    [],
+  );
   /** REQ-188 — the frame's box on this screen: fractions of the customer's viewport map onto it */
   const fitBox = () => fitRef.current;
   /** REQ-393 — the frame on the stage is fitted to the replay's screen, so a point of the stage
@@ -541,8 +646,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     deadAtRef.current = null;
     holdAtRef.current = performance.now(); // REQ-789 — the ghost waits for his rest
     clearGhostWait();
-    setGhost(null);
+    // REQ-877 AMENDMENT (dm19, m2) — his mouse moving beside the frame: her off marker glides,
+    // and so does its ghost — kept until her next report moves it (never cleared per move)
+    setGhost((was) => a.o === 1 && was?.off ? was : null);
     setAbsent(false); // REQ-538 — made where he points now: drawn there
+    endPending(); // REQ-813 — a move ends their "pointing…"
     ownSetRef.current?.(ownAt(heldNow())); // REQ-642 — his own marker, where he points
     return a;
   };
@@ -558,6 +666,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     clearGhostWait(); // REQ-789
     setGhost(null);
     setAbsent(true);
+    endPending(); // REQ-813
     ownSetRef.current?.(null);
   };
   /** REQ-242 — a point of this screen as the customer's: the fraction of the frame and, when the
@@ -638,7 +747,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-645 (c4-M6) — where on the stage the element an anchor names can be seen: the frame
    *  without the customer's band, cut by the replay's clipping ancestors (its scroller, under its
    *  topbar) — never the frame's edge over their topbar's search bar */
-  const visOnStage = (a: Anchor): Rect => {
+  const visOnStage = (a: Anchor): Rect & { room?: Room } => {
     const f = fitBox();
     const frame = {
       left: f.left,
@@ -664,6 +773,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       top,
       width: Math.max(0, right - left),
       height: Math.max(0, bottom - top),
+      room: c.room, // REQ-867 (demo dm4 m6) — the ways a scroll can reach it, for placeView
     };
   };
   /** REQ-451 — what he points at, as the stage keeps it */
@@ -679,6 +789,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   /** REQ-451 — the ghost of his arrow where their screen has it now, when apart from his cursor;
    *  REQ-642 (cycle 5, m10) — where their overlay REPORTED it, for the anchor he holds now */
   const showGhost = () => {
+    // REQ-837 (demo dm2 m3) — his tag where their screen has it (a report of another anchor keeps
+    // the one drawn: the next report moves it)
+    const tg = reportedTag(heldNow(), reportRef.current, fitBox());
+    if (tg !== undefined) {
+      setOwnTag((was) =>
+        was && tg && was.side === tg.side &&
+          Math.abs(was.x - tg.x) < 0.5 && Math.abs(was.y - tg.y) < 0.5 &&
+          Math.abs(was.w - tg.w) < 0.5 && Math.abs(was.h - tg.h) < 0.5
+          ? was
+          : tg
+      );
+    }
     const g = reportedGhost(heldNow(), reportRef.current, fitBox());
     if (!g) {
       // a report of nowhere, a stale one, none: no ghost, and nothing to wait for
@@ -690,7 +812,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // timer; his next anchor drops it), and is looked at again then — if it is still the report
     // for the anchor he holds
     const wait = ghostWait(holdAtRef.current, performance.now());
-    if (wait > 0) {
+    if (wait > 0 && !g.off) {
       if (!ghostWaitRef.current) {
         ghostWaitRef.current = setTimeout(() => {
           ghostWaitRef.current = null;
@@ -699,13 +821,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       }
       return;
     }
-    setGhost((was) =>
-      was && g && was.outside === g.outside &&
-        was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
-        Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5
-        ? was
-        : g
-    );
+    // REQ-877 AMENDMENT (dm19, m2) — the off marker's ghost glides with her marker (one key);
+    // REQ-867 — the same ghost stays the same object
+    setGhost((was) => ghostNext(was, g));
   };
   const showGhostRef = useRef(showGhost);
   showGhostRef.current = showGhost;
@@ -776,6 +894,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         a: { vx: h.a.vx, vy: h.a.vy },
         t: performance.now(),
       });
+      // REQ-813 (demo dm1 m4) — and his own marker says the same, for the same window
+      startPending();
     }
     seekAgain();
   };
@@ -801,7 +921,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // the look runs from when it was found dead on THIS page load (a new page: looked for afresh)
     if (deadAtRef.current?.load !== load) deadAtRef.current = { at: now, load };
     const shown = { load, styled: true, alive };
-    if (!seekPrint(h, shown, now - deadAtRef.current.at)) return;
+    if (!seekPrint(h, shown, now - deadAtRef.current.at)) {
+      // REQ-813 (demo dm1 m4) — the look gave up with no match: their "pointing…" ends now, when
+      // the stage stops looking (not at its own PENDING_MS); his marker shows "not shown"
+      if (
+        pendingSentRef.current &&
+        seekGaveUp(h, shown, now - deadAtRef.current.at)
+      ) {
+        linkRef.current?.send({ k: "leave" });
+        endPending();
+      }
+      return;
+    }
     const n = h.a?.n;
     const id = h.print ? rep.findPrint(h.print) : null;
     if (id === null || !n) {
@@ -874,9 +1005,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
 
   /** REQ-305 — where an anchor's pointer is drawn: on the frame's edge, pointing outside, when the
    *  element it names is out of the frame (scrolled away, or a frame not yet scrolled); REQ-393 —
-   *  and when a colleague's mouse is beside their frame */
+   *  and when a colleague's mouse is beside their frame; REQ-850 (dm3 p10) — and a fraction-only
+   *  anchor at the far edge of her window: inside the frame by the arrow's box, never past it */
   const placeOnStage = (a: Anchor) =>
-    placeIn(toStage(a), fitBox(), ARROW_BOX, a.o === 1);
+    placeAnchorIn(a, toStage(a), fitBox(), ARROW_BOX);
   const showCustomer = () => {
     const a = customerRef.current;
     if (!a) return;
@@ -892,6 +1024,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     const p = placeOnStage(a);
     glide.glideTo(p.at, p.outside, p.outside ? null : rectOnStage(a));
   };
+  /** REQ-837 (demo dm2 p3) — a presenter's name as the customer's screen words it (its roster) */
+  const presenterNameOf = (pid: string | null | undefined) =>
+    demoRef.current?.presenters.find((x) => x.userId === pid)?.name ??
+      demoRef.current?.presenterName ?? "";
   const placePeer = (pid: string, a: Anchor, kind: "move" | "click") => {
     const p = presenterOnStage(a);
     // REQ-451 — what the colleague pointed at is not in this frame (another page now): no arrow
@@ -908,7 +1044,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       // REQ-645 — out of view: the chevron where the replay shows its element, no ring
       outside: p.outside && !p.dir,
       off: a.o === 1,
-      cue: p.dir ? { box: visOnStage(a), text: "" } : null,
+      // REQ-837 (demo dm2 p3) — with the way in words, as their screen says it
+      cue: p.dir
+        ? {
+          box: visOnStage(a),
+          text: t(cueKey(p.dir), { name: presenterNameOf(pid) }),
+          dir: p.dir,
+        }
+        : null,
       rect: p.outside ? null : rectOnStage(a), // REQ-437 — the tag sits outside it
     });
   };
@@ -989,6 +1132,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
     seekTimerRef.current = null;
     switchedRef.current = true;
+    setSwitching(tabsRef.current.revisit()); // REQ-648 AMENDMENT REVISION (dm19, p1)
   };
   /** REQ-645 (cycle 5 m36) — a page load mirrored afresh: a tab followed again with its page
    *  unchanged gets back the anchor he left on that page load (sent) — when he has pointed at
@@ -1029,6 +1173,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     }, TAB_NOTE_MS);
   };
 
+  /** REQ-826 AMENDMENT 6 (demo-loop run 12, p2) — a tab notice still up names the page the
+   *  followed tab shows NOW: she closed tab 2 ("(Bienvenido)") and went to /terms in tab 1 within
+   *  the second, and the notice kept "(Bienvenido)" over the Terms for seconds. The timer runs
+   *  on; a notice already read (null) stays read */
+  const renoteTab = (path: string) => {
+    if (!tabNoteTimerRef.current) return;
+    setTabNote((n) => n === null || n === (path || "/") ? n : path || "/");
+  };
   /** REQ-242 — a frame of the customer's screen, into the replay */
   const take = (f: MirrorFrame, load: string, seq: number | null = null) => {
     const rep = replayerRef.current;
@@ -1084,6 +1236,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }, ms);
       });
       setStale(false); // REQ-297 — their screen is current again
+      if (newLoad) renoteTab(path); // REQ-826 AMENDMENT 6 (dm12, p2)
       // REQ-391 — and it is the followed tab's: REQ-648 — once it is ON SHOW (pageShown)
       // REQ-370 — the first snapshot starts the wait for its stylesheets (at most STYLE_WAIT_MS)
       if (firstSnapAtRef.current === null) {
@@ -1102,6 +1255,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const pageShown = () => {
     pageClockRef.current?.shown();
     setAwaiting(false);
+    tabsRef.current.shown(); // REQ-823 (m8) — he has seen this tab now
   };
   const pageShownRef = useRef(pageShown);
   pageShownRef.current = pageShown;
@@ -1120,6 +1274,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       onLayout: () => replaceRef.current(),
       // REQ-648 — a snapshot's page on show
       onShown: () => pageShownRef.current(),
+      // REQ-827 — the chip under an open date picker / file chooser, in the presenter's language
+      pickerLabel: (k) =>
+        t(k === "date" ? "demoMode.pickerDate" : "demoMode.pickerFile"),
+      // REQ-862 AMENDMENT 5 (dm11, m1) — a chip with no clear spot in the frame: its words here
+      onPicker: (p) => setPickerOut(p && !p.inside ? p.text : null),
     });
     const q = queueRef.current;
     queueRef.current = [];
@@ -1183,7 +1342,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     return () => ro.disconnect();
   }, [hasPill]);
 
-  // 1. which demo: on load, every 5 s while the customer's app is not connected
+  // 1. which demo: on load, every 5 s while the customer's app is not connected; REQ-817 (cycle
+  //    dm1, m3) — every ACTIVE_NAME_REFRESH_MS while it is, and when their next page joins, so a
+  //    name they save mid-demo reaches the pill and their cursor (sameDemo compares the names)
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1211,8 +1372,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       } catch {
         // signed out, or the backend is away
       }
-      if (alive && !peerOnlineRef.current) {
-        timer = setTimeout(check, ACTIVE_POLL_MS);
+      if (alive) {
+        timer = setTimeout(check, activeAskDelay(peerOnlineRef.current));
       }
     };
     pollRef.current = () => void check();
@@ -1240,24 +1401,43 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     commandRef.current = command;
     /** REQ-636 (cycle 5, m8) — the customer's pill faces, each held until its frame is replayed */
     const pills = createPillSync<PillMsg>();
+    /** REQ-822 (dm1, m1) — the face on the stage as the customer's pill last said it, and whether
+     *  the stage shows its own guess since a follow switch (pillFaceAwaiting) */
+    let shownFace: PillFace = {};
+    let awaiting = false;
+    const faceOf = (m: PillMsg): PillFace => ({
+      compact: m.compact,
+      open: m.open,
+      status: m.status,
+      text: m.text,
+      clipped: m.clipped,
+      label: m.label,
+      guide: m.guide,
+      // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
+      tucked: m.tucked,
+      band: m.band,
+      bandBg: m.bandBg,
+      dim: m.dim,
+      title: m.title,
+      end: m.end,
+      // REQ-822 (dm1, m1) — End asking on their pill, in their words
+      asking: m.asking,
+      ask: m.ask,
+      yes: m.yes,
+      no: m.no,
+      // REQ-838 (dm2, m5 + p4) — their words for what this stage guesses (a drop, a new page)
+      connectingLabel: m.connectingLabel,
+      endedLabel: m.endedLabel,
+      // REQ-835 (dm2, m2) — their pill wraps into rows: the ghost does too
+      wraps: m.wraps,
+      // REQ-895 (dm6, m6) — their pill is the ended notice: title, text and a ×
+      notice: m.notice,
+    });
     const showPill = (m: PillMsg) => {
       setPillBox(m.r);
-      setPillFace({
-        compact: m.compact,
-        open: m.open,
-        status: m.status,
-        text: m.text,
-        clipped: m.clipped,
-        label: m.label,
-        guide: m.guide,
-        // REQ-545 (cycle 4, m2) — tucked to its tab, and the band the customer sees
-        tucked: m.tucked,
-        band: m.band,
-        bandBg: m.bandBg,
-        dim: m.dim,
-        title: m.title,
-        end: m.end,
-      });
+      shownFace = faceOf(m);
+      awaiting = false;
+      setPillFace(shownFace);
     };
     const rx = createMirrorReceiver({
       onFrame: (f, load, seq, sent) => {
@@ -1299,6 +1479,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       pid: demo.pid ?? undefined,
       // REQ-648 — the followed tab's page went: the page clock runs from when it said so
       onPageGone: (at) => pages.left(at),
+      // REQ-823 (M2) — the customer signed out there: said, and no other tab of theirs followed
+      onSignedOut: () => setSignedOut(true),
       onPresence: (pid, online) => {
         lastTOf.delete(pid); // their stage came or went: its clock starts over
         if (!online) {
@@ -1311,8 +1493,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         }
         pollRef.current?.();
       },
-      onStatus: (s) => {
+      onStatus: (s, why) => {
         setStatus(s);
+        setLeaveWhy(why);
         const online = s === "direct" || s === "relay";
         setPeerOnline(online);
         // the customer's app dropped: their pointer is nowhere now (the mirror keeps their last
@@ -1322,7 +1505,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           glide.hide();
           lastTRef.current = 0;
           // REQ-430 (cycle 3, m4) — the frozen ghost stops saying "Connected": connecting (or
-          // ended) in the stage's words until the customer's pill speaks again
+          // ended) in the stage's words until the customer's pill speaks again. REQ-875 (cycle
+          // dm5, p4) — "between" (her page held): her last face with no status word, never
+          // "Connecting…" while nothing connects
           setPillFace((f) => pillFaceOffline(f, s));
         }
         if (s === "waiting") setStale(true);
@@ -1364,12 +1549,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // REQ-642 — a report from the page before says nothing of this one's screen
         reportRef.current = null;
         showGhost();
+        setSignedOut(false); // REQ-823 (M2) — a tab of theirs is followed again
         if (cid !== followedCid) {
           // REQ-645 (cycle 5 m36) — ANOTHER of their browser tabs (not the same tab's next page):
           // his anchor is kept for its page load and dropped here (otherTab) — known now when the
           // socket's claim said its key first, else once it says it (onPeerTab); the last socket's
-          // page waits for nothing more
+          // page waits for nothing more. REQ-823 (m8) — no switch from the tab he last saw (the
+          // same tab's next page after a fallback that never showed): no tab notice is owed
           if (tabsRef.current.follow(cid, tab)) otherTab();
+          else switchedRef.current = false;
           waitTabRef.current = null;
           // REQ-292 — another of the customer's tabs: its page load may be OLDER than the one
           // shown; the receiver starts over so that tab's snapshot is taken (the mirrored page
@@ -1385,11 +1573,22 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         // connecting and cannot say so: its face rides the link that is opening) — never a blank
         // and then a "Connected" the customer's pill never showed
         setPillFace((f) => pillFaceAwaiting(f));
+        // REQ-822 (dm1, m1) — the new page's first face replaces that guess at once when it
+        // differs from it only in what the guess made up (its tuck, its status)
+        shownFace = pillFaceAwaiting(shownFace);
+        awaiting = true;
         // REQ-636 (cycle 5, m8) — the old tab's held faces go; the new tab's wait for its own
         // frames, and it is asked for its pill (one it sent before this stage followed it was
         // dropped by the link)
         pills.reset();
         linkRef.current?.send({ k: "askPill" });
+        // REQ-817 (cycle dm1, m3) — their next page (after saving a name, say): ask who they are
+        pollRef.current?.();
+      },
+      // REQ-645 AMENDMENT 2 (dm8, p2) — every tab of hers is gone: the next tab followed is hers,
+      // not "the other" one (her only tab closed and a new one opened said "other tab" for 5 s)
+      onTabsGone: () => {
+        tabsRef.current.closed();
       },
       onPeerTab: (cid, tab) => {
         // REQ-645 (cycle 5 m36) — the followed socket says which browser tab it is only now: another
@@ -1450,6 +1649,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "leave":
             customerRef.current = null;
             glide.hide();
+            setNativeAsk(null); // REQ-827 AMENDMENT — the page went: no dialog is up on it
             break;
           case "placed":
             // REQ-642 (cycle 5, m10) — where their screen has HIS arrow (a colleague's report is
@@ -1458,9 +1658,29 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             reportRef.current = m;
             showGhost();
             break;
+          case "renamed":
+            // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name: ask who they
+            // are now, at once (one round trip), not on the next ACTIVE_NAME_REFRESH_MS tick
+            pollRef.current?.();
+            break;
+          case "dialog":
+            // REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() blocks their page: its
+            // words in the chrome row until it is answered
+            setNativeAsk(
+              m.text === null
+                ? null
+                : m.kind ? { text: m.text, kind: m.kind } : { text: m.text },
+            );
+            break;
           case "pill": {
             // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
-            const p = pills.offer(m, m.t);
+            // REQ-822 (dm1, m1) — End's question (overlay state only) is not held for a frame
+            // REQ-828 (dm2, p7) — nor the fold that follows it with no frame between
+            const p = pills.offer(
+              m,
+              m.t,
+              pillShowsAtOnce(shownFace, faceOf(m), awaiting, pills.atOnce()),
+            );
             if (p) showPill(p);
             break;
           }
@@ -1469,6 +1689,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       onEnded: (by, reason, pid) => {
         leavingRef.current = true; // REQ-541 — the notice below says who ended it
         setEnded(true);
+        // REQ-868 (dm5 p8) — no live badge beside "The demo ended"
+        setOff(false);
+        setTabNote(null);
+        setAbsent(false);
+        setNativeAsk(null);
         customerRef.current = null;
         peersRef.current.clear();
         placedRef.current.clear();
@@ -1556,10 +1781,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       deadAtRef.current = null;
       keptRef.current.clear();
       switchedRef.current = false;
+      setSwitching(false);
       waitTabRef.current = null;
       if (tabNoteTimerRef.current) clearTimeout(tabNoteTimerRef.current);
       tabNoteTimerRef.current = null;
       setTabNote(null);
+      setSignedOut(false); // REQ-823 — the next demo starts unsaid
       styledRef.current = false;
       setStyled(false);
       setPeerOnline(false);
@@ -1576,6 +1803,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     // REQ-451 (M14) — held until the frame is fitted, and counted only on it (takeSeed)
     seedRef.current = takeCursor(sessionStore());
     const at = (e: PointerEvent) => {
+      // REQ-539 AMENDMENT — the pointerover Chromium fires at load under a still mouse is not a
+      // move of his: nothing of his on her screen until he moves (or presses) on the stage
+      if (!pointerCounts(e.type)) return;
       const p = { x: e.clientX, y: e.clientY };
       seedRef.current = null; // REQ-451 — a real event says where the mouse is
       hintRef.current = null;
@@ -1614,15 +1844,35 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
 
   /** REQ-153 — the demo over, the presenter is handed their own account back; REQ-235 — on
    *  /admin, which says who ended it */
-  async function backToOwnAccount(notice: EndedNotice) {
+  async function backToOwnAccount(notice: EndedNotice | null) {
     try {
       const who = await adminClient.whoami();
       if (who.impersonating) await adminClient.stopImpersonating();
     } catch {
       // not impersonating, or signed out
     }
-    globalThis.location.href = endedHref(notice);
+    // REQ-829 — /admin in the stage's language, not the profile's. REQ-647 AMENDMENT (demo-loop
+    // run 10, p4) — no notice (the empty stage's way back): /admin plain, never a stale "The demo
+    // ended" for a demo announced a minute ago
+    if (!notice) {
+      globalThis.location.href = withLang(ADMIN_PATH, langSignal.value);
+      return;
+    }
+    globalThis.location.href = endedHref(notice, langSignal.value);
   }
+
+  /** REQ-826 AMENDMENT 4 (demo-loop run 10, m2) — the mirrored page is the app's error page
+   *  (`_error.tsx` marks its root `data-error-page`): named by its title, whatever its path */
+  const mirroredErrorPage = () =>
+    !!frameRef.current?.contentDocument?.querySelector("[data-error-page]");
+  /** REQ-826 AMENDMENT 5 (demo-loop run 11) — the mirrored page's title in the STAGE's language
+   *  (a DocTitle carries every language's: `data-title-es` / `data-title-en`), else the title as
+   *  the customer's tab shows it: an EN customer's 404 is "(No encontramos esa página)" on an ES
+   *  stage, like every other name in the notice */
+  const mirroredTitle = () => {
+    const d = frameRef.current?.contentDocument;
+    return d ? liveTitle(d, langSignal.value) ?? d.title : undefined;
+  };
 
   /** REQ-541 (cycle 4, M22) — the demo went without this stage hearing who ended it: back to
    *  the presenter's own account, once */
@@ -1637,6 +1887,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     endedHere.current = true;
     leavingRef.current = true;
     setEnded(true);
+    // REQ-868 (dm5 p8) — no live badge beside "The demo ended"
+    setOff(false);
+    setTabNote(null);
+    setAbsent(false);
     linkRef.current?.end();
     try {
       if (demo) await demoModeClient.end(demo.id);
@@ -1658,7 +1912,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     } catch {
       // not impersonating, or signed out
     }
-    globalThis.location.href = "/admin";
+    globalThis.location.href = withLang("/admin", langSignal.value);
   }
 
   // REQ-648 — a click on the page they left (the next one loading) is never sent: it landed on
@@ -1679,6 +1933,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  customer's orange) */
   const myColor = demo?.presenters.find((p) => p.userId === demo.pid)?.color ??
     PRESENTER_COLORS[0];
+  /** REQ-877 (demo dm5 m1) — his initial, as the customer's off marker shows it (REQ-635) */
+  const myInitial = initialOf(presenterNameOf(demo?.pid));
   // REQ-232 (demo-lifecycle-p1, m1, m3) — plain words, never the transport
   // REQ-309 (demo m26) — "Live" is the frame's truth: the followed tab's screen is in it
   // REQ-391 (M4) — …and in time: their page gone or not in yet, a resync out, frames late
@@ -1691,10 +1947,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     resyncing: lagView.resyncing,
     behind: lagView.behind,
     pageBehind: lagView.page,
+    leave: leaveWhy,
+    // REQ-648 AMENDMENT (dm18, p3) — another of their tabs: "Catching up…", nothing loads;
+    // REVISION (dm19, p1) — only a tab followed before: a NEW tab's first page loads
+    switched: switching,
   });
   // REQ-648 (c4-m28) — the frame holds the page they left while their next one loads: dimmed, and
   // his pointer is not sent against it (the move throttle, the look-up of his still mouse, a click)
-  const loadingNext = live.key === "loadingNext";
+  // REQ-896 — and while a closed page is held ("One moment…"), the same
+  const loadingNext = live.key === "loadingNext" ||
+    live.key === "pageGone" ||
+    // REQ-648 AMENDMENT (dm18, p3) — the tab they left, while the other one's screen comes
+    (awaiting && switchedRef.current);
   loadingNextRef.current = loadingNext;
   // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
   // is the one from before the customer's app dropped; REQ-370 — hidden until the replay is styled
@@ -1705,15 +1969,49 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     styled,
     loadingNext,
   });
+  // REQ-868 (cycle dm5, p8) — the chrome-row badges (pointer off, tab switched, pointer absent):
+  // one gate, false once the demo has ended
+  const badges = stageBadgesShown({
+    ended,
+    mirrored: !!mirrored,
+    elsewhere: !!look.elsewhere,
+    waiting: look.waiting,
+  });
+  // REQ-846 (cycle dm3, p11) — the waiting / signed-out notice, whole: the banner shows it on one
+  // line in the chrome row (clipped with an ellipsis), its title and aria-label carry all of it
+  const waitingNote = signedOut
+    ? `${t("demoMode.signedOut", { name })}. ${t("demoMode.signedOutKeep")}`
+    : `${t("demoMode.waitingFor", { name })} ${t("demoMode.waitingKeep")}`;
   // REQ-646 (cycle 5, m63) — no copy of the customer's pill while another window has the demo:
-  // this one no longer hears it, so it would only say a stale "Connecting…"
-  const pillShown = look.elsewhere ? null : pillBox;
+  // this one no longer hears it, so it would only say a stale "Connecting…". REQ-838 (cycle dm2,
+  // p4) — nor while the customer is signed out: their pill went with their session
+  // REQ-896 (dm6, p7) — nor while waiting after her page closed (or went without a word): the
+  // ghost would only say "Connecting…" for a page that is gone; after a navigation, as before
+  // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…", pageGone):
+  // the ghost would say "{name} is guiding you · End" of a page that is gone
+  const pillBoxNow = look.elsewhere || signedOut ||
+      (look.waiting && leaveWhy !== "navigating") || live.key === "pageGone"
+    ? null
+    : pillBox;
+  // REQ-854 (demo-loop cycle dm3, p6) — the ghost is the folded tab when their pill is, and while
+  // awaiting a new page in the tab's box: never the whole pill's words in a tab-sized box
+  const tabNow = pillBoxNow !== null &&
+    ghostDrawsTab(pillFace, pillBoxNow, awaiting);
+  // REQ-868 AMENDMENT (dm16, p3) — under "The demo ended" the folded TAB's ghost ("Demo ×" of a
+  // pill that is gone) is dropped with the badges; her whole notice stays drawn (REQ-895)
+  const pillShown = ended && tabNow ? null : pillBoxNow;
+  const pillTab = pillShown !== null && tabNow;
   const statusLabel = live.key === "ended"
     ? t("demoMode.ended")
     : live.key === "elsewhere"
     ? t("demoMode.elsewhere")
     : live.key === "waiting"
-    ? t("demoMode.waitingFor", { name })
+    // REQ-823 (M2) — waiting because the customer signed out: said as that
+    ? (signedOut
+      ? t("demoMode.signedOut", { name })
+      : t("demoMode.waitingFor", { name }))
+    : live.key === "pageGone"
+    ? t("demoMode.pageGone")
     : live.key === "loadingNext"
     ? (live.n
       ? t("demoMode.loadingNextBehind", { n: live.n })
@@ -1760,7 +2058,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               <button
                 type="button"
                 data-cy="demo-stage-back"
-                onClick={() => void backToOwnAccount({ by: "unknown" })}
+                onClick={() => void backToOwnAccount(null)}
                 style="color:#fff;text-decoration:underline;font-size:13px;background:none;border:0;padding:0;cursor:pointer;font:inherit"
               >
                 {t("demoMode.backToAdmin")}
@@ -1790,8 +2088,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
             )}
             <div
               style={`${box};border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);background:#fff;overflow:hidden;visibility:${look.visibility};filter:${look.filter};transition:filter .3s;outline:${
-                mirrored && off ? "2px dashed rgba(255,255,255,.85)" : "none"
-              };outline-offset:4px`}
+                // REQ-895 (dm6, m6) — no off-frame outline once the demo has ended (as the badges, REQ-868)
+                !ended && mirrored && off
+                  ? "2px dashed rgba(255,255,255,.85)"
+                  : "none"};outline-offset:4px`}
             >
               <iframe
                 ref={frameRef}
@@ -1837,7 +2137,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 />
               );
             })()}
-            {mirrored && pillShown && pillFace.tucked === true && (() => {
+            {mirrored && pillShown && pillTab && (() => {
               // REQ-545 — the pill tucked to its edge tab on their screen: a tab here too.
               // REQ-637 (demo-loop cycle 5, m5) — the labelled mini-pill: "● Demo" and its ×
               const ghost = pillGhost(pillShown, fit);
@@ -1867,8 +2167,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     }px;height:${
                       Math.max(3, 8 * fit.s)
                     }px;border-radius:50%;background:${
-                      pillFace.status === "live" ? "#7ee081" : "#f2c14e"
-                    }`}
+                      // REQ-875 (dm5, p4) — held between pages: not the live green
+                      pillFace.status === "live" && !pillFace.held
+                        ? "#7ee081"
+                        : "#f2c14e"}`}
                   />
                   <span
                     data-cy="demo-pill-ghost-tab-label"
@@ -1880,7 +2182,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 </div>
               );
             })()}
-            {mirrored && pillShown && pillFace.tucked !== true && (() => {
+            {mirrored && pillShown && !pillTab && (() => {
               // REQ-372 (cycle 2, m1 + m8) — cut to the frame, and a read-only replica of what
               // the pill says, and a marker when the pill runs off their screen or past the frame.
               // REQ-430 (cycle 3, m4) — its status in the CUSTOMER's words (their pill's label),
@@ -1891,7 +2193,17 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               const g = ghost.box;
               const cut = ghost.clipped || pillFace.clipped === true;
               const words = ghostWords(pillFace, t);
-              const px = Math.max(7, 13 * fit.s);
+              // REQ-865 (demo-loop cycle dm4, p1) — laid out at the CUSTOMER's px with her pill's
+              // own styles (PILL_BOX_METRICS, PILL_STATUS_CHIP, EndDemo's END_BTN / END_NO) in a
+              // box of her width, then scaled by the frame's s from its top-left: the same words
+              // fit as on her pill, never cut by metrics of the stage's own
+              const lw = g.width / fit.s;
+              const lh = g.height / fit.s;
+              /** a chip the stage cannot use (EndDemo's buttons take the pointer; these never) */
+              const inert = "pointer-events:none;cursor:default";
+              // REQ-835 (demo-loop cycle dm2, m2) — rows like the customer's when their pill wraps
+              // (the phone's pill asking or opened), one cut row otherwise
+              const flow = ghostFlow(pillFace.wraps === true);
               return (
                 <div
                   data-cy="demo-pill-ghost"
@@ -1899,15 +2211,10 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   data-dim={pillFace.dim ? "" : undefined}
                   aria-hidden="true"
                   title={t("demoMode.pillGhost", { name })}
-                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${g.width}px;height:${g.height}px;z-index:${Z};box-sizing:border-box;border:1.5px dashed rgba(31,61,27,.55);border-radius:${
-                    Math.max(4, 14 * fit.s)
-                  }px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
+                  // REQ-865 — the dashed edge is an outline: it takes no layout space (a border took 3 px)
+                  style={`position:fixed;left:${g.left}px;top:${g.top}px;width:${lw}px;height:${lh}px;transform:scale(${fit.s});transform-origin:0 0;z-index:${Z};box-sizing:border-box;outline:1.5px dashed rgba(31,61,27,.55);outline-offset:-1.5px;border-radius:14px;background:rgba(31,61,27,.78);color:#fff;pointer-events:none;opacity:${
                     pillFace.dim ? PILL_UNDER_DIALOG_OPACITY : 1
-                  };display:flex;align-items:center;gap:${
-                    Math.max(2, 6 * fit.s)
-                  }px;padding:0 ${
-                    Math.max(2, 8 * fit.s)
-                  }px;overflow:hidden;white-space:nowrap;font-family:${PILL_FONT};font-size:${px}px;line-height:1.1`}
+                  };display:flex;align-items:center;justify-content:space-between;${PILL_BOX_METRICS};overflow:hidden;${flow.box};font-family:${PILL_FONT}`}
                 >
                   {words.title && (
                     <strong
@@ -1920,7 +2227,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {words.text && (
                     <span
                       data-cy="demo-pill-ghost-text"
-                      style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                      style={flow.text}
                     >
                       {words.text}
                     </span>
@@ -1928,7 +2235,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {words.guide && (
                     <span
                       data-cy="demo-pill-ghost-guide"
-                      style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis"
+                      style={flow.part}
                     >
                       {words.guide}
                     </span>
@@ -1936,9 +2243,40 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {words.status && (
                     <span
                       data-cy="demo-pill-ghost-status"
-                      style="flex:none;padding:1px 4px;border-radius:999px;background:rgba(255,255,255,.18);font-weight:700"
+                      style={`flex:none;${PILL_STATUS_CHIP}`}
                     >
                       {words.status}
+                    </span>
+                  )}
+                  {words.ask && (
+                    // REQ-822 (demo-loop cycle dm1, m1) — End is asking on their pill: the
+                    // question and both answers in End's place, chips the stage cannot use.
+                    // REQ-851 (dm3, p3) — in ONE group, as EndDemo draws them: wrapping, the
+                    // group takes the row and the answers sit beside the question when they fit
+                    <span
+                      data-cy="demo-pill-ghost-asking"
+                      style={`${flow.ask};gap:8px`}
+                    >
+                      <strong
+                        data-cy="demo-pill-ghost-ask"
+                        style={flow.q}
+                      >
+                        {words.ask}
+                      </strong>
+                      <span
+                        data-cy="demo-pill-ghost-yes"
+                        aria-disabled="true"
+                        style={`flex:none;${END_BTN};background:#c62828;color:#fff;opacity:.75;${inert}`}
+                      >
+                        {words.yes}
+                      </span>
+                      <span
+                        data-cy="demo-pill-ghost-no"
+                        aria-disabled="true"
+                        style={`flex:none;${END_NO};opacity:.75;${inert}`}
+                      >
+                        {words.no}
+                      </span>
                     </span>
                   )}
                   {words.end && (
@@ -1946,9 +2284,19 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     <span
                       data-cy="demo-pill-ghost-end"
                       aria-disabled="true"
-                      style="flex:none;padding:1px 5px;border-radius:5px;background:#fff;color:#7a2e2e;font-weight:700;opacity:.6"
+                      style={`flex:none;${END_BTN};background:#fff;color:#7a2e2e;opacity:.6;${inert}`}
                     >
                       {words.end}
+                    </span>
+                  )}
+                  {words.dismiss && (
+                    // REQ-895 (dm6, m6) — the ended notice's ×, as on the customer's pill
+                    <span
+                      data-cy="demo-pill-ghost-dismiss"
+                      aria-hidden="true"
+                      style="flex:none;padding:0 6px;font-size:18px;line-height:1;opacity:.85"
+                    >
+                      {words.dismiss}
                     </span>
                   )}
                   {cut && (
@@ -1964,22 +2312,33 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               );
             })()}
             {look.waiting && (
-              // REQ-391 (m21) — a banner across the frame's top edge, never a card over their page
+              // REQ-391 (m21) — a banner, never a card over their page; REQ-846 (cycle dm3, p11) —
+              // in REQ-642's chrome row ABOVE the frame, one badge high: never over their header
               <div
                 data-cy="demo-waiting"
                 role="status"
-                style={`position:absolute;left:${fit.left}px;top:${
-                  fit.top - bannerH
-                }px;width:${fit.width}px;z-index:${
+                title={waitingNote}
+                aria-label={waitingNote}
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
                   Z + 2
-                };box-sizing:border-box;pointer-events:none;color:#fff;font:inherit`}
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:rgba(18,26,22,.92);color:#fff;font:inherit;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
-                <div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;justify-content:center;text-align:center;padding:7px 12px;border-radius:6px 6px 0 0;background:rgba(18,26,22,.88);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12.5px;line-height:1.35">
-                  <strong>{t("demoMode.waitingFor", { name })}</strong>
-                  <span style="opacity:.8">
-                    {t("demoMode.waitingKeep")}
-                  </span>
-                </div>
+                <strong>
+                  {signedOut
+                    ? t("demoMode.signedOut", { name })
+                    : t("demoMode.waitingFor", { name })}
+                </strong>{" "}
+                <span style="opacity:.8">
+                  {signedOut
+                    ? t("demoMode.signedOutKeep")
+                    : t("demoMode.waitingKeep")}
+                </span>
               </div>
             )}
             {look.elsewhere && !ended && (
@@ -2023,13 +2382,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-451 (demo M1) — his arrow where their screen has it, while apart from his cursor;
                 REQ-642 (cycle 5, m10) — where their screen REPORTED it, tagged "You", the tag
                 outside his element and off its neighbours; REQ-646 (cycle 5, m63) — none of his
-                pointer while another window has the demo */
+                pointer while another window has the demo; REQ-838 (cycle dm2, p4) — nor while the
+                customer is signed out (their screen is gone); REQ-847 (cycle dm3, p16) — out of
+                view its cue words where the customer's are too (their reported tag, else placed in
+                their px at the frame's scale) */
             }
-            {mirrored && !look.elsewhere && ghost && (
+            {mirrored && !look.elsewhere && !signedOut && ghost && (
               <PointerGhost
                 at={ghost.at}
                 outside={ghost.outside}
                 dir={ghost.dir}
+                off={ghost.off} // REQ-877 — his mouse beside the frame: their off marker
+                initial={myInitial}
                 color={myColor}
                 z={Z + 1}
                 label={t("demoMode.pointerGhost")}
@@ -2037,15 +2401,33 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 rect={sentRef.current && !ghost.outside
                   ? rectOnStage(sentRef.current)
                   : null}
+                tag={ownTag}
+                covers={coversFrame}
+                scale={fit.s}
+                cueText={ghost.dir
+                  ? t(ownCueKey(ghost.dir)) // REQ-843 — his own words, not his name
+                  : undefined}
+                cueBox={ghost.dir && sentRef.current
+                  ? visOnStage(sentRef.current)
+                  : null}
               />
             )}
-            {/* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You" */}
-            {mirrored && !look.elsewhere && (
+            {
+              /* REQ-642 (setup-14d) — his own pointer, always, where he pointed: his colour, "You";
+                REQ-813 — dimmed "not shown" / "pointing…" as their screen has it; REQ-838 (cycle
+                dm2, p4) — not while the customer is signed out: no screen of theirs to point on */
+            }
+            {mirrored && !look.elsewhere && !signedOut && (
               <OwnPointer
                 color={myColor}
                 z={Z + 1}
                 label={t("demoMode.pointerGhost")}
                 tagged={!ghost}
+                look={ownLook(absent, pending)}
+                pendingLabel={t("demoMode.pointerOwnPending")}
+                tag={ownTag}
+                bounds={fit}
+                covers={coversFrame}
                 bind={bindOwn}
               />
             )}
@@ -2053,7 +2435,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
                 in the chrome row above the frame, never over the replica */
             }
-            {mirrored && !look.elsewhere && off && (
+            {
+              /* REQ-862 AMENDMENT 7 (dm13, m1) — and after the tab notice: his mouse resting
+                beside the frame must not hide that her screen is another tab now */
+            }
+            {badges && off && pickerOut === null && tabNote === null && nativeAsk === null && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -2070,27 +2456,100 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 {t("demoMode.pointerOff", { name })}
               </div>
             )}
-            {/* REQ-645 (demo cycle 5 m36) — another of their tabs is shown now: said, until he moves */}
-            {mirrored && !look.elsewhere && tabNote !== null && !off && (
+            {
+              /* REQ-645 (demo cycle 5 m36) — another of their tabs is shown now: said, until he
+                moves. REQ-826 (dm2 p10) — it names the page (never its URL) and sits in REQ-642's
+                chrome row above the frame, never over the replica */
+            }
+            {badges && tabNote !== null && (
               <div
                 data-cy="demo-tab-switched"
                 role="status"
                 style={`position:absolute;left:${
                   fit.left + fit.width / 2
                 }px;top:${
-                  fit.top - bannerH
-                }px;transform:translate(-50%,-50%);z-index:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
                   Z + 2
-                };pointer-events:none;white-space:nowrap;max-width:${
-                  Math.max(200, fit.width)
-                }px;overflow:hidden;text-overflow:ellipsis;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:#3d2e1b;color:#fff;font:inherit;font-size:12.5px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
-                {t("demoMode.tabSwitched", { name, path: tabNote })}
+                {t("demoMode.tabSwitched", {
+                  name,
+                  // REQ-826 AMENDMENT 3 (dm9, p1) — a page with no name of its own is named by
+                  // the mirrored document's title, never its path
+                  page: pageLabel(
+                    tabNote,
+                    t,
+                    mirroredTitle(),
+                    // REQ-826 AMENDMENT 4 (dm10, m2) — the error page, even under a known path
+                    mirroredErrorPage(),
+                  ),
+                })}
               </div>
             )}
-            {/* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is */}
-            {mirrored && !look.elsewhere && absent && !off &&
-              tabNote === null && (
+            {
+              /* REQ-862 AMENDMENT 5 (dm11, m1) — the picker chip the frame had no clear spot
+                for: its words in the chrome row (the tab notice, when up, has the row).
+                REQ-862 AMENDMENT 6 (dm12, m3) — before the pointer-off hint: his mouse resting
+                beside the frame must not hide what she is doing */
+            }
+            {
+              /* REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() is up on their screen:
+                its words here (the page is blocked by it; the picker chip and the pointer-off
+                hint yield the row — this is the news) */
+            }
+            {badges && nativeAsk !== null && tabNote === null && (
+              <div
+                data-cy="demo-native-dialog"
+                role="status"
+                title={nativeAsk.text}
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:#1f1f1f;color:#fff;font-size:13px;font-weight:600`}
+              >
+                {
+                  /* REQ-827 AMENDMENT REVISION (dm17, p2) — an alert() is a notice ("Aviso"),
+                    a confirm() a question ("Pregunta") */
+                  t(
+                    nativeAsk.kind === "alert"
+                      ? "demoMode.nativeAlert"
+                      : "demoMode.nativeDialog",
+                    { text: nativeAsk.text },
+                  )
+                }
+              </div>
+            )}
+            {badges && pickerOut !== null && tabNote === null && nativeAsk === null && (
+              <div
+                data-cy="demo-picker-outside"
+                role="status"
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:#1f1f1f;color:#fff;font-size:13px;font-weight:600`}
+              >
+                {pickerOut}
+              </div>
+            )}
+            {
+              /* REQ-538 (demo cycle 4 M1) — his arrow is not on their screen: said, until it is;
+                REQ-838 (cycle dm2, p4) — never while their app is gone (signed out, waiting): there
+                is no screen to move it onto */
+            }
+            {badges && !signedOut && absent && !off && tabNote === null && (
               <div
                 data-cy="demo-pointer-absent"
                 role="status"
@@ -2119,6 +2578,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
         z={Z + 1}
         attach={glide.attach}
         bounds={fit}
+        covers={coversFrame}
+        restTagOpacity={STAGE_TAG_REST_OPACITY}
       />
       {demo?.presenters.filter((p) => p.userId !== demo.pid).map((p) => (
         <PeerPointer
@@ -2141,20 +2602,25 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           {/* REQ-650 (cycle 5, c4-m1) — End's question replaces these, adding no width */}
           {!endAsking && (
             <>
-              {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
-              <span style="display:inline-flex;align-items:center;gap:6px">
-                <span
-                  data-cy="demo-customer-dot"
-                  aria-hidden="true"
-                  style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
-                />
-                {t("demoMode.presenting", { name })}
-              </span>
-              <PresenterChips
-                presenters={demo.presenters}
-                me={demo.pid}
-                t={t}
-              />
+              {/* REQ-857 (dm4 p10) — present-tense lines only while live; ended keeps the title + status */}
+              {stageLiveDetailsShown(ended) && (
+                <>
+                  {/* REQ-374 (demo p8) — the customer's pointer colour is named, as the chips name each presenter's */}
+                  <span style="display:inline-flex;align-items:center;gap:6px">
+                    <span
+                      data-cy="demo-customer-dot"
+                      aria-hidden="true"
+                      style={`width:10px;height:10px;border-radius:50%;background:${CUSTOMER_COLOR};box-shadow:0 0 0 2px rgba(255,255,255,.85)`}
+                    />
+                    {t("demoMode.presenting", { name })}
+                  </span>
+                  <PresenterChips
+                    presenters={demo.presenters}
+                    me={demo.pid}
+                    t={t}
+                  />
+                </>
+              )}
               <span
                 data-cy="demo-status"
                 style={live.key === "elsewhere"
@@ -2164,6 +2630,18 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               >
                 {statusLabel}
               </span>
+              {pillFace.asking === true && pillFace.status !== "ended" &&
+                !ended && (
+                  // REQ-822 (demo-loop cycle dm1, m1) — End is asking on the customer's pill: said on
+                  // this pill too, wherever (or whether) the ghost is in view
+                  <span
+                    data-cy="demo-customer-asking-end"
+                    role="status"
+                    style="padding:2px 8px;border-radius:999px;background:#f2c14e;color:#3a2a00;font-size:11.5px;font-weight:700"
+                  >
+                    {t("demoMode.customerAskingEnd", { name })}
+                  </span>
+                )}
               {dev && statsText && (
                 <span
                   data-cy="demo-mirror-stats"
@@ -2183,7 +2661,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   {t("demoMode.useHere")}
                 </button>
               )}
-              {mirrored && (
+              {stageLiveDetailsShown(ended) && mirrored && (
                 <span
                   data-cy="demo-screen"
                   title={t("demoMode.pointOnlyHint")}
@@ -2210,13 +2688,15 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               )}
             </>
           )}
-          {/* REQ-235 — End asks first */}
-          <EndDemo
-            onEnd={end}
-            disabled={ended || leavingHere}
-            onAsking={setEndAsking}
-            t={t}
-          />
+          {/* REQ-235 — End asks first; REQ-844 (dm3 p13) — and is gone once the demo ended */}
+          {stageEndShown(ended) && (
+            <EndDemo
+              onEnd={end}
+              disabled={leavingHere}
+              onAsking={setEndAsking}
+              t={t}
+            />
+          )}
         </div>
       )}
     </div>

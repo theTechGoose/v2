@@ -26,6 +26,7 @@ import {
   publicBusinessLabel,
   publicDocTitle,
 } from "../../shared/documents/public-brand.ts";
+import { titleAttr } from "../lib/doc-title.ts";
 
 interface State {
   phase: "loading" | "error" | "ok";
@@ -80,6 +81,16 @@ export default function PublicQuoteView(
   useEffect(() => {
     if (s.phase === "ok" && typeof document !== "undefined") {
       document.title = titleFor(lang);
+    }
+    // REQ-826 AMENDMENT 6 (dm12, m4) — a link that opens no quote is an error page: its title is
+    // the error heading in every language (the DocTitle's data-title-en/es, read by the stage's
+    // tab notice: "(Mmm, no se puede abrir esto)", never "(Cotización + Acuerdo)")
+    if (s.phase === "error" && typeof document !== "undefined") {
+      const el = document.querySelector("title");
+      for (const l of ["en", "es"] as const) {
+        el?.setAttribute(titleAttr(l), tFor(l, "quoteDoc.cantOpen"));
+      }
+      document.title = tFor(picked ? lang : (errorLang ?? lang), "quoteDoc.cantOpen");
     }
   }, [s.phase]);
   function pick(next: Lang) {

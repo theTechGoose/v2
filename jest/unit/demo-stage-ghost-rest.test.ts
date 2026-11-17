@@ -1,4 +1,6 @@
 /**
+ * REVISION (demo-loop run 19, m2 — REQ-877 AMENDMENT): hold() clears the ghost for every new anchor
+ * but an off one following an off ghost (kept, gliding); the assertion names the new call.
  * REQ-789 — Raphael (hotfix, 2026-11-13): "look at this in demo view — this flickers my cursor
  * and the flicker is in the wrong place."
  *
@@ -23,6 +25,9 @@ import * as path from "path";
 import {
   GHOST_REST_MS,
   ghostWait,
+  GHOST_FADE_MS,
+  ghostFade,
+  GHOST_SETTLE_MS,
 } from "../../shared/demo-mode/presenter-anchor";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -59,7 +64,7 @@ describe("REQ-789 wiring: the stage defers the ghost to his rest and drops the w
     const body = slice("const hold = (", 1400);
     expect(body).toContain("holdAtRef.current = performance.now()");
     expect(body).toMatch(/clearGhostWait\(\)/);
-    expect(body).toContain("setGhost(null)");
+    expect(body).toContain("setGhost((was) => a.o === 1 && was?.off ? was : null);"); // REVISION (run 19, m2)
   });
   test("drop() (his mouse left, the demo went, another tab) drops the wait too", () => {
     const body = slice("const drop = () =>", 700);
@@ -88,5 +93,31 @@ describe("REQ-789 wiring: the stage defers the ghost to his rest and drops the w
       src.indexOf("return () => {"),
     );
     expect(unmount).toBeGreaterThan(-1);
+  });
+});
+
+describe("REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost fades in where it settles: a spot that moves mid-fade starts the fade over there, never fades in on the way and jumps", () => {
+  const start = { x: 357.1, y: 545.9, since: 1000, key: 0 };
+  test("a report that moves the ghost 77 px while the fade runs: a new key, the fade's clock reset, the new spot", () => {
+    const f = ghostFade(start, { x: 357.1, y: 469.3 }, 1083);
+    // REVISION (dm15, m3 — REQ-789 AMENDMENT 2): the restarted fade carries its wait (`delay`)
+    expect(f).toEqual({ x: 357.1, y: 469.3, since: 1083, key: 1, delay: GHOST_SETTLE_MS });
+    const g = ghostFade(f, { x: 357.1, y: 462.4 }, 1150);
+    expect(g.key).toBe(2);
+    expect(g.since).toBe(1150);
+  });
+  test("after the fade (GHOST_FADE_MS) a move keeps the key: the drawn ghost slides, no flash", () => {
+    const f = ghostFade(start, { x: 357.1, y: 469.3 }, 1000 + GHOST_FADE_MS + 1);
+    expect(f.key).toBe(0);
+    expect(f.since).toBe(1000);
+    expect([f.x, f.y]).toEqual([357.1, 469.3]);
+  });
+  test("a sub-pixel jitter (< 2 px) is not a move, fading or not", () => {
+    expect(ghostFade(start, { x: 358, y: 546.5 }, 1050)).toBe(start);
+  });
+  test("wiring: PointerGhost keeps the fade state in a ref and keys the fading element by it", () => {
+    const ghost = read("front-end/components/demo-mode/PointerGhost.tsx");
+    expect(ghost).toMatch(/fadeRef\.current = ghostFade\(fadeRef\.current, at, performance\.now\(\)\)/);
+    expect(ghost).toMatch(/<div\s+key=\{fadeRef\.current\.key\}\s+data-cy="demo-pointer-ghost"/);
   });
 });

@@ -44,6 +44,27 @@
  * the stage's replay draws the list from them. A multiple or size > 1 select is a list box on
  * the page itself: it never opens.
  *
+ * REQ-827 (demo-loop cycle dm2, s1) — a native date/time picker and the OS file chooser are drawn
+ * outside the DOM too. The same mark goes on an `input[type=date|time|datetime-local|month|week]`
+ * (not disabled or readonly) from a primary mousedown on it, a click that reaches it (a label's,
+ * or the one a page's `showPicker()` runs from) or F4 / Alt+Arrow, until a change, a blur,
+ * Escape/Enter/Tab, a mousedown elsewhere or the input leaving the page; and on an
+ * `input[type=file]` (not disabled) from the click that opens its chooser (a label's or a
+ * script's `.click()` reach it too), until a change, a `cancel`, the window getting its focus
+ * back, a mousedown elsewhere or the input leaving the page — never on the blur the dialog causes.
+ * The stage draws a chip for it (mirror-replay.ts).
+ *
+ * REQ-824 (demo-loop cycle dm1, m2) — and hover and focus are browser state too: the stage showed
+ * the composer the customer typed in with its idle fill, never what her mouse was over. The
+ * recorder marks what her own browser says matches (`Element.matches`), on the elements that
+ * cross: `data-mirror-focus` on the one matching `:focus` ("visible" when `:focus-visible` too),
+ * `data-mirror-focus-within` on every one matching `:focus-within`, `data-mirror-hover` on every
+ * one matching `:hover` — read again at every snapshot and frame, a frame asked for on a focus
+ * change, a pointer crossing or a key (the page's own marks never cross; her DOM is never
+ * touched). No hover marks where her pointer cannot hover (`(hover: none)`: a tap's sticky
+ * `:hover` would light up the page's `@media (hover: hover)` rules on the presenter's desktop
+ * only). The stage reads the marks in her own rules (shared/demo-mode/mirror-state.ts).
+ *
  * REQ-641 (demo-loop cycle 5, m11) — a scroll is not only what its events say. A page that runs
  * no rendering steps (hidden, occluded, throttled) fires no scroll event at all, so a burst's
  * resting place could stay on the customer's screen alone until their next scroll. Every element
@@ -62,6 +83,11 @@ import {
   type SNode,
 } from "../../../shared/demo-mode/mirror.ts";
 import { isSafePath } from "../../../shared/demo-mode/protocol.ts";
+import {
+  FOCUS_ATTR,
+  HOVER_ATTR,
+  WITHIN_ATTR,
+} from "../../../shared/demo-mode/mirror-state.ts";
 
 /** REQ-534 (cycle 4, M8) — while a canvas is drawn on, its bitmap goes out at most this often
  *  (the 1 s sweep left a live signature up to a second behind, or unseen until after signing) */
@@ -160,6 +186,15 @@ const NO_VALUE = new Set([
 
 /** REQ-638 — the attribute that says a native select's list is open (the recorder's, never the page's) */
 export const OPEN_ATTR = "data-mirror-open";
+/** REQ-881 — without `:open`, a pointer move this long after a select opened, and this far from
+ *  where it was opened, says its native list is gone (the list captures the pointer while open) */
+export const OPEN_MOVE_GRACE_MS = 400;
+export const OPEN_MOVE_PX = 4;
+/** REQ-827 — the inputs whose native date/time picker the mark also covers */
+const DATE_TYPES = new Set(["date", "time", "datetime-local", "month", "week"]);
+
+/** REQ-824 — the recorder's marks of the customer's focus and hover (the page's own never cross) */
+const STATE_ATTRS = new Set([FOCUS_ATTR, WITHIN_ATTR, HOVER_ATTR]);
 
 /** REQ-638 — the keys that open a focused native select's list (Chrome, every platform) */
 function opensList(e: KeyboardEvent): boolean {
@@ -254,6 +289,7 @@ function nameAllowed(tag: string, name: string): boolean {
     return false;
   }
   if (n === OPEN_ATTR) return false; // REQ-638 — only the recorder says a select is open
+  if (STATE_ATTRS.has(n)) return false; // REQ-824 — only the recorder marks focus and hover
   if (EMBED_TAGS.has(tag) && (n === "src" || n === "srcdoc" || n === "data")) {
     // REQ-780 — but an iframe's srcdoc (the send dialog's email preview) crosses, cleaned
     return tag === "iframe" && n === "srcdoc";
@@ -362,10 +398,23 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   let inkDue = false;
   /** REQ-380 — canvas bitmaps sent */
   let cvSent = 0;
-  /** REQ-638 — the native select whose list is open on the customer's screen, and the id of the
-   *  one the stage has marked open */
+  /** REQ-638 — the native select whose list is open on the customer's screen (REQ-827: or the
+   *  date input whose picker, the file input whose chooser is open), and the id of the one the
+   *  stage has marked open */
   let openSel: Element | null = null;
   let sentOpen: number | null = null;
+  /** REQ-881 — when and where the open one was opened, whether the browser's own `:open` has
+   *  read true for it (only then is a false reading trusted), and whether `:open` is supported */
+  let openAt = 0;
+  let openPt: { x: number; y: number } | null = null;
+  let openSeen = false;
+  let openSupported: boolean | null = null;
+  /** REQ-824 — the focus and hover marks of the customer's screen as last read (element → value,
+   *  by attribute), and the ones the stage has (mirror id → value, by attribute) */
+  let wantMarks = new Map<string, Map<Element, string>>();
+  const sentMarks = new Map<string, Map<number, string>>(
+    [...STATE_ATTRS].map((a) => [a, new Map<number, string>()]),
+  );
 
   let observer: MutationObserver | null = null;
   let pending: MutationRecord[] = [];
@@ -482,6 +531,57 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
   const isViewport = (e: Element) =>
     e === doc.scrollingElement || e === doc.documentElement;
 
+  /** REQ-824 — `e` matches the user-action pseudo-class `sel` on the customer's screen (false
+   *  where the browser cannot say) */
+  function is(e: Element, sel: string): boolean {
+    try {
+      return typeof e.matches === "function" && e.matches(sel);
+    } catch {
+      return false;
+    }
+  }
+  /** REQ-824 — every element matching `sel` (`:hover`, `:focus-within`: an element and all its
+   *  ancestors), found from the root down through the children that match, never into what
+   *  does not cross; an element not mirrored yet is gone through too (it may be sent this frame) */
+  function chain(sel: string): Map<Element, string> {
+    const out = new Map<Element, string>();
+    const root = doc.documentElement;
+    if (!root || !is(root, sel)) return out;
+    const stack: Element[] = [root];
+    while (stack.length) {
+      const e = stack.pop()!;
+      out.set(e, "");
+      for (const k of Array.from(e.childNodes)) {
+        if (k.nodeType !== ELEMENT) continue;
+        const c = k as Element;
+        if (is(c, sel) && !skipped(c)) stack.push(c);
+      }
+    }
+    return out;
+  }
+  /** REQ-824 — the customer's pointer can hover (a phone's cannot: a tap leaves a sticky :hover
+   *  that the page's `@media (hover: hover)` rules ignore on her screen, never on the stage's) */
+  function hovers(): boolean {
+    try {
+      return !win?.matchMedia?.("(hover: none)")?.matches;
+    } catch {
+      return true;
+    }
+  }
+  /** REQ-824 — the marks of the customer's screen now */
+  function readMarks() {
+    const focus = new Map<Element, string>();
+    const a = doc.activeElement;
+    if (a && a.nodeType === ELEMENT && is(a, ":focus")) {
+      focus.set(a, is(a, ":focus-visible") ? "visible" : "");
+    }
+    wantMarks = new Map([
+      [FOCUS_ATTR, focus],
+      [WITHIN_ATTR, chain(":focus-within")],
+      [HOVER_ATTR, hovers() ? chain(":hover") : new Map()],
+    ]);
+  }
+
   /** the state of `e` an attribute does not carry, as ops (and remembered as sent) */
   function stateOf(
     e: Element,
@@ -559,6 +659,14 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       (a ??= {})[at.name] = v;
     }
     if (e === openSel) (a ??= {})[OPEN_ATTR] = ""; // REQ-638
+    for (const [attr, want] of wantMarks) {
+      // REQ-824 — sent whole: the stage's copy has exactly these marks
+      const v = want.get(e);
+      if (v !== undefined) {
+        (a ??= {})[attr] = v;
+        sentMarks.get(attr)!.set(i, v);
+      } else sentMarks.get(attr)!.delete(i);
+    }
     if (a) s.a = a;
     const c: SNode[] = [];
     const list: number[] = [];
@@ -590,6 +698,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     nudged = false;
     promised = false;
     sentOpen = null;
+    for (const m of sentMarks.values()) m.clear(); // REQ-824
   }
 
   function forget(id: number) {
@@ -604,6 +713,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     scrollers.delete(id);
     inked.delete(id);
     if (sentOpen === id) sentOpen = null;
+    for (const m of sentMarks.values()) m.delete(id); // REQ-824
   }
 
   const onScroll = (e: Event) => {
@@ -614,6 +724,16 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     nudged = true;
     schedule();
   };
+  /** REQ-824 — the focus moved (or the window's did), the pointer crossed into or out of an
+   *  element, or a key (it can make a focus visible): the marks are read again in a frame */
+  const onState = () => schedule();
+  const STATE_EVENTS = [
+    "focusin",
+    "focusout",
+    "pointerover",
+    "pointerout",
+    "keydown",
+  ] as const;
 
   /** REQ-638 — `t` is a native select that opens a list (not a list box, not disabled) */
   function popupSelect(t: EventTarget | null): Element | null {
@@ -626,19 +746,81 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     const size = Number(e.getAttribute("size") ?? "0");
     return Number.isFinite(size) && size > 1 ? null : e;
   }
-  function setOpen(e: Element | null) {
+  /** REQ-827 — `t` is an input of `types` that can open its picker (not disabled; a date one
+   *  not readonly either) */
+  function pickerInput(t: EventTarget | null, file: boolean): Element | null {
+    const n = t as Node | null;
+    if (!n || n.nodeType !== ELEMENT) return null;
+    const e = n as Element;
+    if (e.namespaceURI && e.namespaceURI !== XHTML) return null;
+    if (tagOf(e) !== "input" || e.hasAttribute("disabled")) return null;
+    const type = lower(e.getAttribute("type"));
+    if (file) return type === "file" ? e : null;
+    return DATE_TYPES.has(type) && !e.hasAttribute("readonly") ? e : null;
+  }
+  const isFile = (e: Element | null) =>
+    !!e && tagOf(e) === "input" && lower(e.getAttribute("type")) === "file";
+  function setOpen(e: Element | null, at?: { x: number; y: number } | null) {
     if (openSel === e) return;
     openSel = e;
+    openAt = now();
+    openPt = at ?? null;
+    openSeen = false;
     schedule();
   }
+  /** REQ-881 — the browser's own word on the open select's popup: `:open`. Once it has read
+   *  true, a false reading means the popup is gone (an Escape or a click outside that the page
+   *  never saw) and the mark comes off. Unsupported (it throws): the events keep deciding. */
+  function readOpen() {
+    if (!openSel || !popupSelect(openSel)) return;
+    try {
+      const open = openSel.matches(":open");
+      openSupported = true;
+      if (open) openSeen = true;
+      else if (openSeen) openSel = null;
+    } catch {
+      openSupported = false;
+    }
+  }
+  /** REQ-881 — without `:open`: an open native list captures the pointer, so a move that reaches
+   *  the page well after the opening, and away from where it was opened, means the list is gone */
+  const onMove = (e: Event) => {
+    if (!openSel || !popupSelect(openSel)) return;
+    if (openSupported === null) readOpen();
+    if (openSupported !== false) return;
+    if (now() - openAt < OPEN_MOVE_GRACE_MS) return;
+    const m = e as MouseEvent;
+    if (
+      openPt && typeof m.clientX === "number" && typeof m.clientY === "number"
+    ) {
+      const d = Math.hypot(m.clientX - openPt.x, m.clientY - openPt.y);
+      if (d < OPEN_MOVE_PX) return;
+    }
+    setOpen(null);
+  };
   /** REQ-638 — a mousedown on a closed select opens its list; any mousedown while one is open
-   *  (on it again, or elsewhere) closes it */
+   *  (on it again, or elsewhere) closes it. REQ-827 — one on a date input opens its picker (and
+   *  keeps it open: its click follows) */
   const onDown = (e: Event) => {
     const btn = (e as MouseEvent).button;
-    const sel = btn === undefined || btn === 0 ? popupSelect(e.target) : null;
-    setOpen(sel && sel !== openSel ? sel : null);
+    const primary = btn === undefined || btn === 0;
+    const date = primary ? pickerInput(e.target, false) : null;
+    if (date) return setOpen(date);
+    const sel = primary ? popupSelect(e.target) : null;
+    const m = e as MouseEvent;
+    const at = typeof m.clientX === "number" && typeof m.clientY === "number"
+      ? { x: m.clientX, y: m.clientY }
+      : null;
+    setOpen(sel && sel !== openSel ? sel : null, at);
   };
-  /** REQ-638 — the keys that open a focused select's list, and the ones that close it */
+  /** REQ-827 — the click that reaches a date input (a label's; a page's showPicker() runs from
+   *  it) or a file input (its chooser opens) */
+  const onClick = (e: Event) => {
+    const p = pickerInput(e.target, true) ?? pickerInput(e.target, false);
+    if (p) setOpen(p);
+  };
+  /** REQ-638 — the keys that open a focused select's list, and the ones that close it (REQ-827:
+   *  a date input's picker too, from F4 or Alt+Arrow) */
   const onKey = (e: Event) => {
     const k = e as KeyboardEvent;
     if (openSel) {
@@ -649,11 +831,22 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       return;
     }
     const sel = popupSelect(e.target);
-    if (sel && opensList(k)) setOpen(sel);
+    if (sel && opensList(k)) return setOpen(sel);
+    const date = pickerInput(e.target, false);
+    if (date && k.key !== " " && opensList(k)) setOpen(date);
   };
-  /** REQ-638 — the open select lost focus, or a pick was made: its list is closed */
+  /** REQ-638 — the open select lost focus, or a pick was made: its list is closed. REQ-827 — not
+   *  a file input: its own dialog takes the focus */
   const onBlur = (e: Event) => {
+    if (openSel && e.target === openSel && !isFile(openSel)) setOpen(null);
+  };
+  /** REQ-827 — the file chooser was dismissed */
+  const onCancel = (e: Event) => {
     if (openSel && e.target === openSel) setOpen(null);
+  };
+  /** REQ-827 — the window has its focus back: the file chooser is closed */
+  const onWinFocus = () => {
+    if (isFile(openSel)) setOpen(null);
   };
   const onChange = (e: Event) => {
     if (openSel && e.target === openSel) openSel = null;
@@ -727,12 +920,22 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.addEventListener("input", onEvent, true);
     doc.addEventListener("change", onChange, true);
     doc.addEventListener("mousedown", onDown, true);
+    doc.addEventListener("click", onClick, true); // REQ-827
+    doc.addEventListener("cancel", onCancel, true); // REQ-827
     doc.addEventListener("keydown", onKey, true);
     doc.addEventListener("focusout", onBlur, true);
+    doc.addEventListener("pointermove", onMove, {
+      capture: true,
+      passive: true,
+    }); // REQ-881
+    win?.addEventListener("focus", onWinFocus); // REQ-827
     doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
     win?.addEventListener("resize", onEvent);
     for (const t of INK_EVENTS) {
       doc.addEventListener(t, onInk, { capture: true, passive: true });
+    }
+    for (const t of STATE_EVENTS) {
+      doc.addEventListener(t, onState, { capture: true, passive: true }); // REQ-824
     }
     if (!o.manual) {
       sweepTimer = setInterval(() => {
@@ -756,12 +959,19 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     doc.removeEventListener("input", onEvent, true);
     doc.removeEventListener("change", onChange, true);
     doc.removeEventListener("mousedown", onDown, true);
+    doc.removeEventListener("click", onClick, true); // REQ-827
+    doc.removeEventListener("cancel", onCancel, true); // REQ-827
     doc.removeEventListener("keydown", onKey, true);
     doc.removeEventListener("focusout", onBlur, true);
+    doc.removeEventListener("pointermove", onMove, { capture: true }); // REQ-881
+    win?.removeEventListener("focus", onWinFocus); // REQ-827
     doc.removeEventListener("scroll", onScroll, { capture: true });
     win?.removeEventListener("resize", onEvent);
     for (const t of INK_EVENTS) {
       doc.removeEventListener(t, onInk, { capture: true });
+    }
+    for (const t of STATE_EVENTS) {
+      doc.removeEventListener(t, onState, { capture: true }); // REQ-824
     }
     clearTimeout(flushTimer);
     flushTimer = undefined;
@@ -784,6 +994,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
     if (!root) return;
     const out: Op[] = [];
     if (openSel && !openSel.isConnected) openSel = null; // REQ-638
+    readMarks(); // REQ-824
     const s = ser(root, false, out, new Set());
     if (!s || "x" in s) return;
     sentOpen = openSel && mirrored(openSel) ? ids.get(openSel)! : null;
@@ -844,6 +1055,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       }
     }
     if (resnap) return snapshot();
+    readMarks(); // REQ-824 — before anything is sent whole: it is sent with its marks
 
     const ops: Op[] = [];
     const state: Op[] = [];
@@ -939,6 +1151,7 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
       }
     }
     // REQ-638 — the open select's mark: moved, set or taken off (a node sent whole has it as is)
+    readOpen(); // REQ-881
     if (openSel && !(mirrored(openSel) && inPage(openSel))) openSel = null;
     const wantOpen = openSel ? ids.get(openSel)! : null;
     if (wantOpen !== sentOpen) {
@@ -950,6 +1163,23 @@ export function createRecorder(doc: Document, o: RecorderOptions): Recorder {
         ops.push({ o: "a", i: wantOpen!, n: OPEN_ATTR, v: "" });
       }
       sentOpen = wantOpen;
+    }
+    // REQ-824 — the focus and hover marks: taken off, moved or set (a node sent whole has them)
+    for (const [attr, want] of wantMarks) {
+      const sent = sentMarks.get(attr)!;
+      for (const id of [...sent.keys()]) {
+        const n = nodes.get(id);
+        if (n && (fresh.has(n) || want.has(n as Element))) continue;
+        if (n) ops.push({ o: "a", i: id, n: attr, v: null });
+        sent.delete(id);
+      }
+      for (const [e, v] of want) {
+        const id = ids.get(e);
+        if (id === undefined || fresh.has(e) || sent.get(id) === v) continue;
+        if (!mirrored(e) || !inPage(e)) continue;
+        ops.push({ o: "a", i: id, n: attr, v });
+        sent.set(id, v);
+      }
     }
     for (const n of texts) {
       if (fresh.has(n) || n.nodeType !== TEXT || !mirrored(n)) continue;

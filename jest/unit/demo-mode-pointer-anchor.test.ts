@@ -744,8 +744,9 @@ describe("REQ-305 the stage: anchors kept and placed again; its presenter's poin
     expect(stage).toMatch(/peersRef\.current\.set\(pid, m\.a\)/);
     expect(stage).toMatch(/case "leave":\s*customerRef\.current = null/);
     // REQ-393 — and an off-screen anchor (a colleague's mouse beside their frame) on the edge
+    // REQ-850 AMENDMENT (dm3 p10): through placeAnchorIn — placeIn with a far-edge fraction too
     expect(fn("placeOnStage")).toMatch(
-      /placeIn\(toStage\(a\), fitBox\(\)(, ARROW_BOX, a\.o === 1)?\)/,
+      /placeAnchorIn\(a, toStage\(a\), fitBox\(\), ARROW_BOX\)/,
     );
     expect(stage).toMatch(
       /createReplayer\(doc, \{[\s\S]{0,160}onLayout: \(\) => replaceRef\.current\(\)/,
@@ -792,7 +793,8 @@ describe("REQ-305 the customer's overlay: presenters' anchors follow their nodes
       /case "resync":[\s\S]{0,160}recorder\.snapshot\(\);\s*resendPointer\(\)/,
     );
     expect(overlay).toMatch(
-      /const rest = lastMoveRef\.current;[\s\S]{0,120}if \(!sameAnchor\(was, anchorOf\(rest\)\)\) throttle\.push\(rest\)/,
+      // REQ-850 AMENDMENT (dm3 p10): a rest no longer in the viewport is a leave first
+      /const rest = lastMoveRef\.current;[\s\S]{0,400}if \(!sameAnchor\(was, anchorOf\(rest\)\)\) throttle\.push\(rest\)/,
     );
   });
 });
@@ -802,7 +804,7 @@ describe("REQ-305 the pointer says when it points outside its box", () => {
     const glide = read("front-end/lib/demo-mode/use-glide.ts");
     expect(glide).toMatch(/outside: boolean/);
     // REQ-437 adds the anchored element's rect as a third argument
-    expect(glide).toMatch(/glideTo\(target: Pt, outside\?: boolean[,)]/);
+    expect(glide).toMatch(/glideTo\(\s*target: Pt,\s*outside\?: boolean[,)]/);
     const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
     expect(peer).toMatch(/outside\?: boolean/);
     expect(peer).toMatch(/glide\.glideTo\(cmd\.at, cmd\.outside[,)]/);

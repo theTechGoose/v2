@@ -96,6 +96,12 @@ export class DemoAccess {
     );
   }
 
+  /** REQ-823 (demo-loop cycle dm1, M2) — `fn` runs once the caller's sign-in is over (its session
+   *  gone: a logout, an account closed or wiped); resolves to the watch's stop */
+  whenSignedOut(caller: Caller, fn: () => void): Promise<() => void> {
+    return this.sessions.whenGone(caller.session.id, fn);
+  }
+
   /** the live demo the caller is in, as presenter (own or impersonation session) or viewer */
   async current(
     caller: Caller,

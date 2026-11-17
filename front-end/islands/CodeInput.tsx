@@ -5,6 +5,10 @@ import { verifyClient } from "../clients/verify.ts";
 import { clearDevCode, peekDevCode, stashDevCode } from "../lib/dev-code.ts";
 import DevCodeCard from "../components/DevCodeCard.tsx";
 import { DEFAULT_VERIFY_EDIT_HREF } from "../lib/verify-edit-href.ts";
+// REQ-821 AMENDMENT (demo-loop run 11, p2) — a sign-in is a new session: the demo pill's carry
+// (REQ-830) from before a sign-out is forgotten, so the next page joins as a first join
+import { forgetDemo } from "../lib/demo-mode/pill-carry.ts";
+import { sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import { CHECK_SVG_MARKUP } from "../components/ui/Icon.tsx";
 
 interface Props {
@@ -161,6 +165,7 @@ export default function CodeInput(
           const inDot = inStep.querySelector(".pm-steps__dot");
           if (inDot) inDot.innerHTML = CHECK_SVG_MARKUP;
         }
+        forgetDemo(sessionStore());
         setTimeout(() => {
           globalThis.location.href = result.redirectTo;
         }, 400);
@@ -193,6 +198,7 @@ export default function CodeInput(
       const res = mode === "recover"
         ? await verifyClient.recover(recovery.token)
         : await verifyClient.startFresh(recovery.token);
+      forgetDemo(sessionStore());
       globalThis.location.href = res.redirectTo;
     } catch {
       setRecovery(null);

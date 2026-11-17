@@ -29,6 +29,13 @@ import { DemoAccess } from "@demo-mode/domain/coordinators/demo-access/mod.ts";
  * the page is going on the peer — its departure (`peer … online:false`) carries it. REQ-648
  * (demo-loop cycle 5, M3) — and when: the deploy's clock stamps the `leaving` (`at` on the
  * departure), so the stage times a page change from the moment the page went.
+ *
+ * REQ-823 (demo-loop cycle dm1, M2) — a customer's socket lives only as long as her sign-in: once
+ * its session is gone (a logout, an account closed or wiped) the socket goes as if its page had
+ * said `leaving: signout` — the hub announces the tab gone with why "signout" and the socket is
+ * closed. The stage then follows no other tab of the dead session, and that session's upgrade is
+ * refused from now on (`caller`): it can never rejoin. Another sign-in of hers (another device)
+ * stays.
  */
 @Controller("api/demo-mode")
 export class DemoModeSocketController {
@@ -70,9 +77,12 @@ export class DemoModeSocketController {
     // REQ-292 — the socket may close while the join is awaited: then the peer leaves as soon as
     // it is in, so a tab closed mid-join is removed and announced, never a ghost
     let closed = false;
+    /** REQ-823 — stops the watch on the customer's sign-in */
+    let unwatch: (() => void) | null = null;
     const onGone = () => {
       closed = true;
       leave?.();
+      unwatch?.();
     };
 
     socket.onopen = async () => {
@@ -106,6 +116,24 @@ export class DemoModeSocketController {
       });
       leave = joined.leave;
       if (closed) return leave();
+      // REQ-823 (M2) — her sign-in over: she signed out — said on the departure, the socket closed
+      if (role === "viewer") {
+        try {
+          const stop = await this.access.whenSignedOut(caller, () => {
+            peer.leaving = "signout";
+            peer.leftAt = Date.now();
+            onGone();
+            try {
+              socket.close(1000, "signed out");
+            } catch { /* already closed */ }
+          });
+          if (closed) stop();
+          else unwatch = stop;
+        } catch (err) {
+          // the store went away (a shutdown, a test's teardown): nothing left to watch
+          console.warn("[demo-socket] sign-in not watched:", err);
+        }
+      }
     };
     socket.onmessage = async (e) => {
       if (typeof e.data !== "string") return;

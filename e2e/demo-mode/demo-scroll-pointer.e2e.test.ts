@@ -30,6 +30,9 @@
  *      next page has no such element: no arrow while his mouse is still, and the stage says his
  *      pointer isn't on their screen; his move puts it on the element under his cursor. The
  *      customer reloads that page: the arrow is back on the same element with no move.
+ *      REQ-813 AMENDMENT (demo dm1 m4): while her next page has no arrow, the stage's own marker
+ *      is drawn "not shown" (data-absent), never a live "You" arrow; his move makes it live.
+ *      REQ-848 (demo dm3 m4): and with no in-frame "not shown" pill (the banner says it).
  */
 import { story, type StoryTools } from "#shots";
 import { pillUp } from "../_shared/demo-pill.ts";
@@ -297,14 +300,20 @@ async function demoOn(
     y: fb.y + p.y * s,
   });
 
-  /** the customer's window scroll once it stops moving (End and Home scroll smoothly) */
+  /** the customer's window scroll once it stops moving (End, Home and a scripted scrollTo all
+   *  scroll smoothly: the move starts a frame or more after the call — under load, a few hundred
+   *  ms — so "settled" is the same figure for 400 ms, never two reads 100 ms apart) */
   const settledScrollY = async () => {
-    let last = await userPage.evaluate(() => globalThis.scrollY);
-    for (let i = 0; i < 40; i++) {
+    const read = () => userPage.evaluate(() => globalThis.scrollY);
+    let last = await read();
+    let same = 0;
+    for (let i = 0; i < 60; i++) {
       await new Promise((r) => setTimeout(r, 100));
-      const now = await userPage.evaluate(() => globalThis.scrollY);
-      if (now === last) return now;
+      const now = await read();
+      same = now === last ? same + 1 : 0;
       last = now;
+      // i >= 5: at least 600 ms for a smooth scroll to begin, then 400 ms of stillness
+      if (same >= 4 && i >= 5) return now;
     }
     return last;
   };
@@ -451,12 +460,22 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
       expect.eq(y3, 0, "Home scrolled back to the top");
       await customerPointerOnItsNode("after Home", cursor);
 
-      // 4. an in-page anchor link to the sign form's name field
-      const target = `sign-name-${d.quote.id}`;
-      expect.eq(
-        await userPage.locator(`[id="${target}"]`).count(),
-        1,
-        "the quote page has the sign form's name field to jump to",
+      // 4. an in-page anchor link to an element near the end of the page (the owner previewing
+      //    her own quote has no sign form — "signing … off" — so not its name field any more;
+      //    what is under test is an anchor link's scroll reaching the stage)
+      const target = await userPage.evaluate(() => {
+        const els = Array.from(
+          document.querySelectorAll("h2,h3,section,footer"),
+        )
+          .filter((e) => !e.closest("[data-demo-overlay]"));
+        const el = els[els.length - 1] as HTMLElement | undefined;
+        if (!el) return "";
+        if (!el.id) el.id = "pm-jump-target";
+        return el.id;
+      });
+      expect(
+        target !== "",
+        "the quote page has an element near its end to jump to",
       );
       await userPage.evaluate((id) => {
         const a = document.createElement("a");
@@ -478,7 +497,7 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
     }
   }));
 
-Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): after the customer goes to another page the arrow is not put on whatever is under his still mouse — the stage says it isn't on their screen and his move brings it; after a reload it is back on the same element with no move; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
+Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2) + REQ-813 (dm1 m4): after the customer goes to another page the arrow is not put on whatever is under his still mouse — the stage says it isn't on their screen and his move brings it; after a reload it is back on the same element with no move; when the customer scrolls it rides with its element and the stage draws its ghost there", (t) =>
   story(t, async (tools) => {
     const { page, expect, baseUrl } = tools;
     const d = await demoOn(tools, () => "/customers");
@@ -549,9 +568,41 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): af
             1,
         5_000,
       );
+      // REQ-813 (demo dm1 m4) — the stage's own marker says what she has: nothing on her
+      // screen, so his marker is drawn "not shown" (data-absent), never a live "You" arrow
+      await until(
+        "REQ-813: the stage's own marker is absent while the customer has no presenter pointer",
+        async () => {
+          const own = await page.locator(
+            "[data-cy='demo-pointer-own'][data-absent]",
+          ).count();
+          const live = await page.locator(
+            "[data-cy='demo-pointer-own']:not([data-absent]):not([data-pending])",
+          ).count();
+          const theirs = await userPage.locator("[data-cy='demo-pointer']")
+            .count();
+          // REQ-848 (demo dm3 m4) — no 'not shown' pill in the frame over her text (the
+          // chrome-row demo-pointer-absent banner says it): the faint hollow arrow only
+          const pill = await page.locator(
+            "[data-cy='demo-pointer-own'][data-absent] [data-cy='demo-pointer-own-label']",
+          ).count();
+          if (own !== 1 || live !== 0 || theirs !== 0 || pill !== 0) {
+            throw new Error(
+              `stage own marker absent=${own} live=${live} pill=${pill} · customer demo-pointer=${theirs}`,
+            );
+          }
+          return true;
+        },
+        5_000,
+      );
       await page.mouse.move(stagePt.x + 2, stagePt.y + 1);
       await page.mouse.move(stagePt.x, stagePt.y);
       await presenterOnItsNode("REQ-645: his move on /q");
+      expect.eq(
+        await page.locator("[data-cy='demo-pointer-own'][data-absent]").count(),
+        0,
+        "REQ-813: once the arrow is on her screen his own marker is live again",
+      );
       expect.eq(
         await page.locator("[data-cy='demo-pointer-absent']").count(),
         0,
@@ -595,13 +646,52 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): af
       if (!before) throw new Error("no presenter arrow before the scroll");
       const meant = await underCustomer(userPage, before.x, before.y);
       const from = await userPage.evaluate(() => globalThis.scrollY);
-      const to = from >= 250 ? from - 250 : from + 250;
+      // as far as the page goes: /customers with one customer is not 250 px taller than a phone
+      const max = await userPage.evaluate(() =>
+        (document.scrollingElement?.scrollHeight ?? 0) - innerHeight
+      );
+      const to = from >= 250 ? from - 250 : Math.min(from + 250, max);
+      // REQ-451 AMENDMENT 2 (demo-loop run 9, p5) — frame by frame through the scroll: his arrow's
+      // drawn spot on her screen, with the page's scroll at that frame
+      await userPage.evaluate(() => {
+        type Pt = { t: number; y: number; s: number; pending: boolean };
+        const w = globalThis as unknown as {
+          __pmRide?: Pt[];
+          __pmRideStop?: () => void;
+        };
+        const out: Pt[] = [];
+        w.__pmRide = out;
+        let on = true;
+        w.__pmRideStop = () => {
+          on = false;
+        };
+        const t0 = performance.now();
+        const tick = () => {
+          const el = Array.from(
+            document.querySelectorAll("[data-cy='demo-pointer']"),
+          ).find((e) => e.getAttribute("data-presenter") === "Hans");
+          if (el) {
+            const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+            out.push({
+              t: Math.round(performance.now() - t0),
+              y: m.m42,
+              s: globalThis.scrollY,
+              pending: el.hasAttribute("data-pending"),
+            });
+          }
+          if (on && out.length < 600) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
       await userPage.evaluate((y) => globalThis.scrollTo(0, y), to);
       const after = await frameFollows(
         "the customer's scroll under the presenter's still mouse",
       );
       const delta = after - from;
-      expect(Math.abs(delta) >= 200, `the customer's page scrolled (${delta})`);
+      expect(
+        Math.abs(delta) >= Math.min(200, Math.abs(to - from) - 2),
+        `the customer's page scrolled (${delta}; asked ${from} → ${to}, the page scrolls to ${max})`,
+      );
       await until(
         `REQ-451: the presenter's arrow rides with its element (the page scrolled ${delta}px) and the stage's ghost is on it`,
         async () => {
@@ -633,6 +723,35 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2): af
           return true;
         },
         8_000,
+      );
+      // REQ-451 AMENDMENT 2 (dm9, p5) — in every frame the arrow was where it had been (the page not
+      // yet re-placed under it) or exactly with its element at that frame's scroll (or the frame
+      // before: the re-placing runs on the next frame) — never gliding between the two
+      const ride = await userPage.evaluate(() => {
+        const w = globalThis as unknown as {
+          __pmRide?: { t: number; y: number; s: number; pending: boolean }[];
+          __pmRideStop?: () => void;
+        };
+        w.__pmRideStop?.();
+        return w.__pmRide ?? [];
+      });
+      const rests = (i: number) => {
+        const now = ride[i].s - from;
+        const prev = i > 0 ? ride[i - 1].s - from : 0;
+        return [before.y, before.y - now, before.y - prev];
+      };
+      const gliding = ride.filter((p, i) =>
+        !p.pending && rests(i).every((r) => Math.abs(p.y - r) > 3.5)
+      );
+      expect(
+        ride.length >= 2,
+        `REQ-451 AMENDMENT 2 (p5): the ride was sampled (${ride.length} frames)`,
+      );
+      expect(
+        gliding.length === 0,
+        `REQ-451 AMENDMENT 2 (p5): the arrow glided through ${gliding.length} frame(s) instead of riding with its element (scroll ${from} → ${to}, arrow from y=${before.y}): ${
+          JSON.stringify(gliding.slice(0, 8))
+        } of ${ride.length} frames`,
       );
 
       // 4. End from the customer (it asks first) clears both

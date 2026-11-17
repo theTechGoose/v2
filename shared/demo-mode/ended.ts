@@ -16,7 +16,12 @@
  *     cancel itself after 4 s, before an agent or a reading human had answered, so Yes landed on
  *     nothing. It now stays up until answered, Escape, or a click outside the pill (EndDemo).
  */
-import type { EndReason, Presenter, Role } from "./protocol.ts";
+import {
+  type EndReason,
+  type Presenter,
+  type Role,
+  STAGE_PATH,
+} from "./protocol.ts";
 
 /** who ended it, from the reader's side: themselves, someone by name, or nobody nameable */
 export type EndedNotice =
@@ -44,6 +49,26 @@ export const ADMIN_PATH = "/admin";
 export const NAME_MAX = 80;
 /** how long Yes waits before it counts: longer than a double click's second click */
 export const END_ARM_MS = 400;
+/** REQ-235 AMENDMENT (demo-loop run 18, m1) — a double click's second click lands within this of
+ *  the first: a Yes farther than that from the press that asked arms at once */
+export const END_PRESS_NEAR_PX = 12;
+
+/**
+ * REQ-235 AMENDMENT (demo-loop run 18, m1) — Yes counts at once when the press that asked is not
+ * on it. The folded tab's × asked and the FIRST click on "Sí, terminar", 820 px away, did
+ * nothing: Yes was still waiting END_ARM_MS (measured from the question's effect, ~480 ms after
+ * the ×) for a double click that could never land there. No press known (the keyboard, a stale
+ * one), or Yes not laid out: the clock as before.
+ */
+export function yesArmsAtOnce(
+  press: { x: number; y: number } | null | undefined,
+  yes: { left: number; top: number; width: number; height: number } | null,
+  near = END_PRESS_NEAR_PX,
+): boolean {
+  if (!press || !yes || (yes.width === 0 && yes.height === 0)) return false;
+  return press.x < yes.left - near || press.x > yes.left + yes.width + near ||
+    press.y < yes.top - near || press.y > yes.top + yes.height + near;
+}
 
 const named = (name: string | undefined): EndedNotice => {
   const n = (name ?? "").trim().slice(0, NAME_MAX);
@@ -103,8 +128,21 @@ export function endedText(
   return { key: "demoMode.ended" };
 }
 
-/** /admin, saying who ended it */
-export function endedHref(n: EndedNotice): string {
+/** REQ-829 (demo-loop dm2, m7) — `href` carrying the presenter's live language as `lang=`, so the
+ *  page it opens speaks what the presenter was viewing (an es-profile staff on /admin?lang=en);
+ *  unchanged without a language */
+export function withLang(href: string, lang?: string | null): string {
+  if (lang !== "en" && lang !== "es") return href;
+  return `${href}${href.includes("?") ? "&" : "?"}lang=${lang}`;
+}
+
+/** REQ-829 — the stage, in the presenter's live language */
+export function stageHref(lang?: string | null): string {
+  return withLang(STAGE_PATH, lang);
+}
+
+/** /admin, saying who ended it; REQ-829 — in the stage's language when given */
+export function endedHref(n: EndedNotice, lang?: string | null): string {
   const q = new URLSearchParams({ demo: "ended" });
   if (n.by === "you") q.set("by", "you");
   if (n.by === "expired") q.set("by", "expired");
@@ -112,7 +150,15 @@ export function endedHref(n: EndedNotice): string {
     q.set("by", "other");
     q.set("name", n.name.slice(0, NAME_MAX));
   }
-  return `${ADMIN_PATH}?${q}`;
+  return withLang(`${ADMIN_PATH}?${q}`, lang);
+}
+
+/** REQ-870 (demo-loop dm5, p7) — where "Return to your account" lands: when its leave ended the
+ *  demo (this was the last presenter), the same /admin End from the pill hands back to ("You ended
+ *  the demo"); otherwise (a colleague goes on with it, or the leave's outcome is unknown) the plain
+ *  console — never claiming an end that did not happen. In the presenter's language. */
+export function returnedHref(ended: boolean, lang?: string | null): string {
+  return ended ? endedHref({ by: "you" }, lang) : withLang(ADMIN_PATH, lang);
 }
 
 /** the notice an address carries, and the address's own parameters without it; null when none */
@@ -145,6 +191,8 @@ export interface EndConfirm {
   ask(): void;
   /** Yes: ends (once), when asked and armed */
   confirm(): void;
+  /** REQ-235 AMENDMENT — Yes counts from now (the press that asked is not on it) */
+  arm(): void;
   /** Keep going */
   cancel(): void;
   /** stop the clock (unmount) */
@@ -185,6 +233,11 @@ export function endConfirm(o: {
       stop();
       set(IDLE);
       o.onEnd();
+    },
+    arm() {
+      if (!s.asking || s.armed) return;
+      stop();
+      set({ asking: true, armed: true });
     },
     cancel() {
       if (!s.asking) return;

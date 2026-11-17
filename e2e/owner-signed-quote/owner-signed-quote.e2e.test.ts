@@ -202,7 +202,10 @@ Deno.test("REQ-687 (demo p14, cycle 5): scrolling SIGN HERE to the top collapses
       "the banner collapses once scrolled",
     );
     await page.waitForTimeout(300);
-    const strip = await banner.boundingBox();
+    // REQ-687 AMENDMENT — the painted strip is the inner box; the sticky shell keeps the expanded
+    // banner's height so the collapse never moves the page
+    const strip = await page.locator("[data-cy='quote-preview-visual']")
+      .boundingBox();
     expect.eq(
       !!strip && strip.y >= -1 && strip.height <= 60 &&
         (!tall || strip.height < tall.height),
@@ -230,5 +233,56 @@ Deno.test("REQ-687 (demo p14, cycle 5): scrolling SIGN HERE to the top collapses
       await banner.locator("[data-cy='quote-preview-sign-in-person']").count(),
       1,
       "Sign in person stays on the strip",
+    );
+  }));
+
+Deno.test("REQ-687 AMENDMENT (dm7 lane): the preview banner's collapse never shortens the page under the reader — a scroll lands where it was sent, the document's height holds", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, "en");
+    const quoteId = await sentQuote(http, auth);
+    await page.goto(`/q/${quoteId}`);
+    const banner = page.locator("[data-cy='quote-preview-banner']");
+    await banner.waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+    // an instant scroll (the page's smooth scrolling off), as window.scrollTo in an app does
+    const before = await page.evaluate(() => {
+      const s = document.createElement("style");
+      s.textContent = "html{scroll-behavior:auto!important}";
+      document.head.appendChild(s);
+      return document.scrollingElement!.scrollHeight;
+    });
+    await page.evaluate(() => globalThis.scrollTo(0, 250));
+    // the banner collapses (its sentinel is off the top); the collapse must not move the page
+    for (let i = 0; i < 20; i++) {
+      if ((await banner.getAttribute("data-compact")) === "true") break;
+      await page.waitForTimeout(100);
+    }
+    expect.eq(
+      await banner.getAttribute("data-compact"),
+      "true",
+      "the banner collapsed once scrolled",
+    );
+    await page.waitForTimeout(600);
+    const after = await page.evaluate(() => ({
+      y: globalThis.scrollY,
+      h: document.scrollingElement!.scrollHeight,
+    }));
+    expect.eq(
+      after.y,
+      250,
+      `the page stays where it was scrolled (height ${before} → ${after.h})`,
+    );
+    expect.eq(
+      after.h,
+      before,
+      "the document is as tall as before the collapse",
+    );
+    // the strip is still a one-line box at the top, above the content, clickable
+    const strip = await page.locator("[data-cy='quote-preview-visual']")
+      .boundingBox();
+    expect.eq(
+      !!strip && strip.y >= -1 && strip.height <= 60,
+      true,
+      `a one-line strip at the top (${JSON.stringify(strip)})`,
     );
   }));

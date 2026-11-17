@@ -38,7 +38,8 @@ describe("REQ-536 (cycle 4, m29) the full-size pill's status is not a dead butto
   test("the details button is never announced as expanded when nothing can collapse", () => {
     expect(tail).not.toMatch(/aria-expanded=\{!compact \|\| open\}/);
     const more = tail.slice(tail.indexOf('data-cy="demo-more"'));
-    expect(more.slice(0, more.indexOf(">"))).toMatch(/aria-expanded=\{open\}/);
+    // REQ-890 AMENDMENT 3 (dm14, m2) — a peek shows `shownOpen` (its own details), not `open`
+    expect(more.slice(0, more.indexOf(">"))).toMatch(/aria-expanded=\{shownOpen\}/);
   });
 
   test("the full-size branch shows the status in a plain span: no button, no aria-expanded", () => {

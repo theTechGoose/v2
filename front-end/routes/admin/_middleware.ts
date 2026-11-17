@@ -2,6 +2,7 @@ import { h } from "preact";
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
 import { adminGateForRequest } from "../../lib/admin-gate.ts";
+import { recordDemoLang } from "../../lib/presenter-lang-rank.ts";
 import AdminGuideGate from "../../components/AdminGuideGate.tsx";
 
 /** Auth + super-admin gate for /admin.
@@ -25,7 +26,14 @@ export const handler = define.middleware(async (ctx) => {
   }
   if (user.superAdmin !== true) {
     const gate = await adminGateForRequest(ctx.req);
-    if (gate) return await ctx.render(h(AdminGuideGate, { gate }));
+    // REQ-855 — the gate's EN | ES switch links this same address with ?lang=
+    if (gate) {
+      // REQ-863 (dm4 p5) — the gate's EN | ES pick is the demo's language for this browser
+      return recordDemoLang(
+        ctx.req,
+        await ctx.render(h(AdminGuideGate, { gate, url: ctx.req.url })),
+      );
+    }
     return new Response(null, {
       status: 302,
       headers: { Location: "/dashboard" },

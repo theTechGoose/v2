@@ -124,6 +124,8 @@ import {
   toggleReminderDay,
 } from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623
 import { Icon } from "../components/ui/Icon.tsx";
+import AddressAutocomplete from "../components/AddressAutocomplete.tsx"; // REQ-861
+import { addressPick, type AddressSuggestion } from "../lib/mapbox.ts"; // REQ-861
 import {
   CardGridSkeleton,
   PageHeaderSkeleton,
@@ -855,7 +857,9 @@ function EditCard(
           <button
             type="button"
             class="btn btn-secondary"
-            aria-label={t.ariaUploadLogo}
+            aria-label={snapshot.identity?.logoFileId
+              ? t.replaceLogo
+              : t.ariaUploadLogo}
             disabled={busy === "logo"}
             onClick={() => logoInputRef.current?.click()}
             style={btnSecondary}
@@ -1081,6 +1085,16 @@ function AddressEditCard(
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => flushAutosave(), 350);
   }
+  /** REQ-861 — a picked suggestion fills street, city, state and ZIP and
+   *  autosaves the whole address. */
+  function pickAddress(sug: AddressSuggestion) {
+    const p = addressPick(sug);
+    setStreet(p.street);
+    setCity(p.city);
+    setStateV(p.state);
+    setPostal(p.postal);
+    queueAutosave(payload(p));
+  }
   function flushAutosave() {
     const body = pendingRef.current;
     if (!body) return;
@@ -1128,16 +1142,24 @@ function AddressEditCard(
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.street}</span>
-          <input
-            type="text"
-            style={inputStyle}
+          {
+            /* REQ-861 — the same street autocomplete as onboarding and the
+              New customer modal; the typed text is always the first row */
+          }
+          <AddressAutocomplete
+            id="settings-street"
+            data-cy="settings-street"
+            label={t.street}
+            useTypedLabel={tFor(langSignal.value, "welcome.address.useTyped")}
+            lang={langSignal.value}
             value={street}
             placeholder={t.phStreet}
-            onInput={(e) => {
-              const v = (e.target as HTMLInputElement).value;
+            inputStyle={inputStyle}
+            onInput={(v) => {
               setStreet(v);
               queueAutosave(payload({ street: v }));
             }}
+            onPick={pickAddress}
             onBlur={flushAutosave}
           />
         </label>

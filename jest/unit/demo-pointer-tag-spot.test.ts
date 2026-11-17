@@ -153,7 +153,10 @@ describe("REQ-437 (demo m3 + p8-pair3-a, cycle 3) the pointer's name tag sits ou
       /name\.length \* 7\.5, h: 22 \};\n\s*const place = pointer\s*\?\s*tagPlacement\(pointer, bounds/,
     );
     const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
-    expect(peer).toMatch(/glide\.glideTo\(cmd\.at, cmd\.outside, cmd\.rect\)/);
+    // REQ-451 AMENDMENT 2 (dm9, p5) — and whether to snap: the page moved under the pointer
+    expect(peer).toMatch(
+      /glide\.glideTo\(cmd\.at, cmd\.outside, cmd\.rect, cmd\.snap === true\)/,
+    );
     expect(peer).toMatch(/rect=\{glide\.rect\}/);
     const overlay = read("front-end/islands/DemoModeOverlay.tsx");
     expect(overlay).toMatch(/rect: p\.outside \? null : rectOnScreen\(a\)/);

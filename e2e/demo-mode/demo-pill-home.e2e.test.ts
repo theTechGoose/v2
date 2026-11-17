@@ -452,7 +452,11 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
         "phone: the pill's empty area lets a tap through",
       );
 
-      // the details, opened, stay open across a reload (the tab remembers)
+      // the details, opened, stay open across a reload (the tab remembers) — on the WHOLE pill.
+      // REQ-890 AMENDMENT 3 (dm14, m2) — out of its mini-pill (a peek), "more" opens them for that
+      // peek only: nothing is remembered, and the pill folds again
+      const peeking =
+        (await userPage.locator("[data-cy='demo-pill'][data-peek]").count()) > 0;
       await userPage.locator("[data-cy='demo-more']").click({ timeout: 5_000 });
       await userPage.locator("[data-cy='demo-details']").waitFor({
         state: "visible",
@@ -460,19 +464,37 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
       });
       await userPage.reload();
       await connected();
-      await until(
-        "the opened details are still open after a reload",
-        async () => {
-          const open = await userPage.locator("[data-cy='demo-more']")
-            .getAttribute("aria-expanded");
-          const shown = await userPage.locator("[data-cy='demo-details']")
-            .isVisible();
-          return open === "true" && shown
-            ? null
-            : `aria-expanded ${open}, details visible ${shown}`;
-        },
-      );
-      await userPage.locator("[data-cy='demo-more']").click({ timeout: 5_000 });
+      const detailsState = async () => {
+        const more = userPage.locator("[data-cy='demo-more']");
+        const open = (await more.count())
+          ? await more.getAttribute("aria-expanded")
+          : null;
+        const det = userPage.locator("[data-cy='demo-details']");
+        const shown = (await det.count()) ? await det.isVisible() : false;
+        return { open, shown };
+      };
+      if (!peeking) {
+        await until(
+          "the opened details are still open after a reload",
+          async () => {
+            const { open, shown } = await detailsState();
+            return open === "true" && shown
+              ? null
+              : `aria-expanded ${open}, details visible ${shown}`;
+          },
+        );
+        await userPage.locator("[data-cy='demo-more']").click({ timeout: 5_000 });
+      } else {
+        await until(
+          "REQ-890 AMENDMENT 3: a peek's 'more' is not remembered — after the reload the details are closed",
+          async () => {
+            const { open, shown } = await detailsState();
+            return open !== "true" && !shown
+              ? null
+              : `aria-expanded ${open}, details visible ${shown}`;
+          },
+        );
+      }
 
       // the drawer: "Log out" at its foot is above the pill, and on top at its middle
       await userPage.locator("[data-cy='mobile-menu']").click({

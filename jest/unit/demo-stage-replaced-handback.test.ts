@@ -118,4 +118,15 @@ describe("REQ-541 (cycle 4, M22) — a stage whose demo is gone hands the accoun
     const fn = src.slice(src.indexOf("async function backToOwnAccount"));
     expect(fn.slice(0, 600)).toMatch(/adminClient\.stopImpersonating\(\)/);
   });
+
+  test("REQ-647 AMENDMENT (demo-loop run 10, p4): the EMPTY screen's Back to admin carries no ended notice — /admin plain, never a stale 'The demo ended' for a demo announced a minute ago", () => {
+    const src = read(ISLAND);
+    const at = src.indexOf('data-cy="demo-stage-empty"');
+    const empty = src.slice(at, at + 1200);
+    expect(empty).toMatch(/onClick=\{\(\) => void backToOwnAccount\(null\)\}/);
+    const fn = src.slice(src.indexOf("async function backToOwnAccount"));
+    expect(fn.slice(0, 900)).toMatch(
+      /if \(!notice\) \{\s*globalThis\.location\.href = withLang\(ADMIN_PATH, langSignal\.value\);\s*return;\s*\}/,
+    );
+  });
 });

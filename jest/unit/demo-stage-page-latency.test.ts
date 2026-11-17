@@ -154,6 +154,8 @@ describe("REQ-648 the pill says how far behind the stage is while it waits for t
     awaiting: false,
     resyncing: false,
     behind: 0,
+    // REQ-896 — "Loading their next page…" is a navigation's hold; a close is "One moment…"
+    leave: "navigating" as const,
   };
 
   test("Loading their next page… carries N s once the wait is over LAG_BEHIND_MS, whether their page is gone (between) or the new tab's snapshot is not in (awaiting)", () => {
@@ -930,8 +932,10 @@ describe("REQ-648 the early script's URL (front-end/vite-demo-early.ts)", () => 
   test("in a build: an input of its own for the browser, and the server reads the chunk it was built to", () => {
     const p = demoEarly() as Any;
     const cfg = p.config({ root }, { command: "build" });
+    // REQ-892 — the session-less page's rejoin script is a second input
     expect(cfg.environments.client.build.rollupOptions.input).toEqual({
       "pm-demo-early": entry,
+      "pm-demo-rejoin": `${root}/lib/demo-mode/demo-rejoin.ts`,
     });
     p.configResolved({ root });
     p.generateBundle.call({ environment: { name: "client" } }, {}, {
@@ -979,7 +983,8 @@ describe("REQ-648 the wiring", () => {
 
   test("_app.tsx puts the early script in the head of every signed-in page, async (it runs as soon as it is in)", () => {
     expect(app).toMatch(
-      /import \{ DEMO_EARLY_SRC \} from "\.\.\/lib\/demo-mode\/early-src\.ts"/,
+      // REQ-892 — DEMO_REJOIN_SRC comes from the same stand-in
+      /import \{\s*DEMO_EARLY_SRC,(\s*DEMO_REJOIN_SRC,?)?\s*\} from "\.\.\/lib\/demo-mode\/early-src\.ts"/,
     );
     const head = app.slice(app.indexOf("<head>"), app.indexOf("</head>"));
     expect(head).toMatch(

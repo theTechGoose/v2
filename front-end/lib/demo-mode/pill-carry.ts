@@ -35,25 +35,49 @@ export interface CarriedDemo {
   presenters: Presenter[];
 }
 
+/**
+ * REQ-830 (demo-loop cycle dm2, p6) — where the pill was when its page went: folded to its
+ * mini-pill or whole, the mini-pill's spot (`tabAt`), the whole pill's offset from home (`dock`) and
+ * its whole size (`full`, when measured). The next page draws its first frame from it, never the
+ * whole pill at home before the first measure folds and moves it.
+ */
+export interface PillPlace {
+  tucked: boolean;
+  tabAt: { x: number; y: number };
+  dock: { x: number; y: number };
+  full?: { w: number; h: number };
+  /** REQ-379 AMENDMENT 2 — the WHOLE pill's size when last measured (the base form on a desktop;
+   *  on a window that asks for the compact form the whole never renders, so it must be carried):
+   *  the next page judges its form from it before paint */
+  whole?: { w: number; h: number };
+}
+
 export interface Carried {
   demo: CarriedDemo;
   /** the page it came from was connected to the presenter */
   connected: boolean;
+  /** REQ-830 — where its pill was (absent: not known, the pill starts home as before) */
+  place?: PillPlace;
 }
 
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-/** keep this tab's demo, whether it is connected, and when (now) */
+/** keep this tab's demo, whether it is connected, and when (now); REQ-830 — and where its pill is */
 export function keepDemo(
   store: Store | null | undefined,
   demo: CarriedDemo,
   connected: boolean,
   now: number,
+  place?: PillPlace | null,
 ): void {
   try {
     store?.setItem(
       PILL_CARRY_KEY,
-      JSON.stringify({ demo, connected, at: now }),
+      JSON.stringify(
+        place
+          ? { demo, connected, at: now, place }
+          : { demo, connected, at: now },
+      ),
     );
   } catch { /* storage full or refused: the next page asks, as before */ }
 }
@@ -129,6 +153,37 @@ const isPresenter = (p: unknown): p is Presenter =>
   typeof (p as Presenter).name === "string" &&
   typeof (p as Presenter).color === "string";
 
+const isNum = (n: unknown): n is number =>
+  typeof n === "number" && Number.isFinite(n);
+const isXY = (v: unknown): v is { x: number; y: number } =>
+  typeof v === "object" && v !== null &&
+  isNum((v as { x: unknown }).x) && isNum((v as { y: unknown }).y);
+
+/** REQ-830 — a kept placement, if well formed — else undefined (the pill starts home) */
+function readPlace(v: unknown): PillPlace | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const p = v as Record<string, unknown>;
+  if (typeof p.tucked !== "boolean" || !isXY(p.tabAt) || !isXY(p.dock)) {
+    return undefined;
+  }
+  const out: PillPlace = {
+    tucked: p.tucked,
+    tabAt: { x: p.tabAt.x, y: p.tabAt.y },
+    dock: { x: p.dock.x, y: p.dock.y },
+  };
+  if (p.full !== undefined) {
+    const f = p.full as Record<string, unknown> | null;
+    if (!f || !isNum(f.w) || !isNum(f.h)) return undefined;
+    out.full = { w: f.w, h: f.h };
+  }
+  if (p.whole !== undefined) {
+    const f = p.whole as Record<string, unknown> | null;
+    if (!f || !isNum(f.w) || !isNum(f.h)) return undefined;
+    out.whole = { w: f.w, h: f.h };
+  }
+  return out;
+}
+
 /** what the last page of this tab left, if it is fresh and well formed — else null */
 export function carriedDemo(
   store: Store | null | undefined,
@@ -154,7 +209,9 @@ export function carriedDemo(
       typeof d.targetUserId !== "string" ||
       !Array.isArray(d.presenters) || !d.presenters.every(isPresenter)
     ) return null;
+    const place = readPlace(v.place);
     return {
+      ...(place ? { place } : {}),
       demo: {
         id: d.id,
         role: d.role,

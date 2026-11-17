@@ -58,7 +58,8 @@ describe("REQ-631 every UI-language read goes through the helper", () => {
     "routes/field/batches.tsx",
     "routes/field/subscriptions.tsx",
     "routes/welcome.tsx",
-    "routes/demo/stage.tsx",
+    // REQ-812: the stage's language is resolved once, in the /demo middleware (ctx.state.lang)
+    "routes/demo/_middleware.ts",
     "routes/plan/pay.tsx",
     "routes/plan/test.tsx",
   ];

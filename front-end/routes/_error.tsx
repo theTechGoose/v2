@@ -2,6 +2,7 @@ import { HttpError } from "fresh";
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
+import DocTitle from "../components/DocTitle.tsx";
 import { tFor } from "../lib/i18n.ts";
 import { resolvePublicLang } from "../../shared/quote-flow/public-lang.ts";
 
@@ -36,13 +37,39 @@ export default define.page((ctx) => {
   return (
     <>
       {
-        /* REQ-294 — the body font: this page links no app stylesheet, so the demo pill (styled
-          inline, in <body> beside this div) fell back to the browser's default face */
+        /* REQ-294 / REQ-825 — the body font and the Inter webfont: this page links no app
+          stylesheet, so error-page.css loads Inter (like demo-stage.css) for the demo pill,
+          styled inline with PILL_FONT in <body> beside this div */
       }
       <Head>
         <link rel="stylesheet" href={asset("/error-page.css")} />
+        {
+          /* REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — the page says what it is in its title (the
+            browser tab read "DocuMonster"; the demo stage names an unknown mirrored page by its
+            title, and read "(Outbox)" off a mistyped path) */
+        }
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${
+              tFor(
+                l,
+                isNotFound
+                  ? "errorPage.notFound.heading"
+                  : "errorPage.server.heading",
+              )
+            } · ${tFor(l, "brand.name")}`}
+        />
       </Head>
-      <div style="min-height:100dvh;display:flex;flex-direction:column;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
+      {
+        /* REQ-826 AMENDMENT 4 (demo-loop run 10, m2) — the page says what it is to the demo stage
+          too: its mirrored copy carries this mark, so the tab notice names it by its title even
+          under a known path (/quotes/new) */
+      }
+      <div
+        data-error-page=""
+        style="min-height:100dvh;display:flex;flex-direction:column;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30"
+      >
         <div style="flex:1;width:100%;max-width:472px;margin:0 auto;padding:32px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
           <a
             href="/"

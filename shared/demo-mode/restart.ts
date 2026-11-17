@@ -41,8 +41,9 @@ export interface RestartNotice {
 }
 
 export function restartNotice(o: {
-  /** true: say "started a new demo"; false: back to the plain line */
-  onChange: (fresh: boolean) => void;
+  /** true: say "started a new demo"; false: back to the plain line. REQ-833 — `read` with false:
+   *  the customer's input ended it (true) or its clock ran out (false) */
+  onChange: (fresh: boolean, read?: boolean) => void;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
@@ -70,8 +71,105 @@ export function restartNotice(o: {
       o.onChange(true);
       timer = setTimer(() => {
         timer = null;
-        o.onChange(false);
+        o.onChange(false, false);
       }, RESTART_SAY_MS);
+    },
+    touched() {
+      if (timer === null || now() - saidAt < RESTART_MIN_MS) return;
+      stop();
+      o.onChange(false, true);
+    },
+    dispose: stop,
+  };
+}
+
+/** REQ-821 (demo-loop cycle dm1, m9) — how long a first join keeps the whole pill out ("{name} is
+ *  guiding you" with End) before it yields to the page (REQ-545/637/781). Short enough that a
+ *  dense page is covered only briefly; the customer's input after RESTART_MIN_MS ends it sooner */
+export const JOIN_SAY_MS = 5_000;
+
+export interface JoinGrace {
+  /** a demo id reached this tab: the first time it is seen, the whole pill shows (Connecting…
+   *  included) — for JOIN_SAY_MS at most if the link never comes up */
+  arrived(id: string): void;
+  /** the link is up for this id: the JOIN_SAY_MS clock starts over, once, so "{name} is guiding
+   *  you" is read with Connected */
+  live(id: string): void;
+  /** this id is already known (carried in from the last page): no grace for it */
+  seen(id: string): void;
+  /** REQ-833 (demo-loop cycle dm2, m6) — REQ-298's "started a new demo" line for this id went
+   *  away; `read`: the customer's input ended it. Its clock running out hands over to a fresh
+   *  JOIN_SAY_MS of "{name} is guiding you" (the grace otherwise ran out under the 10 s line).
+   *  Once per arrived id; a stale id, or a line the customer dismissed by acting, says nothing */
+  restartEnded(id: string, read: boolean): void;
+  /** the customer pressed or typed: the line has been read (after RESTART_MIN_MS) */
+  touched(): void;
+  /** stop the clock (unmount) */
+  dispose(): void;
+}
+
+/**
+ * REQ-821 — a first join gets the grace a restart gets (REQ-298/647): the REQ-153 amendment's
+ * "{name} is guiding you" with End is on screen from the moment the demo arrives until JOIN_SAY_MS
+ * after its link is up, or until the customer acts after RESTART_MIN_MS, before the pill yields.
+ * Once per demo id: a page load that carries the demo in (REQ-535, every link is a full load)
+ * calls `seen` and says nothing again.
+ * REQ-833 — after a restart the order is "started a new demo" (REQ-298, ≤ RESTART_SAY_MS), then
+ * "{name} is guiding you" (JOIN_SAY_MS, or until the customer acts), then the pill yields.
+ */
+export function joinGrace(o: {
+  /** true: keep the whole pill out; false: it may yield again */
+  onChange: (joined: boolean) => void;
+  now?: () => number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (h: unknown) => void;
+}): JoinGrace {
+  const now = o.now ?? (() => Date.now());
+  const setTimer = o.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer = o.clearTimer ?? ((h) => clearTimeout(h as number));
+  const known = new Set<string>();
+  let current: string | null = null;
+  let wentLive = false;
+  /** REQ-833 — the restart's hand-over is still owed to `current` */
+  let owed = false;
+  let timer: unknown = null;
+  let saidAt = 0;
+  const stop = () => {
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+  };
+  const say = () => {
+    stop();
+    saidAt = now();
+    timer = setTimer(() => {
+      timer = null;
+      o.onChange(false);
+    }, JOIN_SAY_MS);
+  };
+  return {
+    arrived(id) {
+      if (known.has(id)) return;
+      known.add(id);
+      current = id;
+      wentLive = false;
+      owed = true;
+      say();
+      o.onChange(true);
+    },
+    live(id) {
+      if (id !== current || wentLive || timer === null) return;
+      wentLive = true;
+      say();
+    },
+    seen(id) {
+      known.add(id);
+    },
+    restartEnded(id, read) {
+      if (id !== current || !owed) return;
+      owed = false;
+      if (read) return;
+      say();
+      o.onChange(true);
     },
     touched() {
       if (timer === null || now() - saidAt < RESTART_MIN_MS) return;
@@ -86,12 +184,19 @@ export function restartNotice(o: {
 export function startedText(
   presenters: Presenter[],
   presenterName: string | undefined,
+  /** REQ-298 AMENDMENT (dm13, p2) — the phone's compact pill: "{name} · new demo" (the full line
+   *  with "Connected" and "End demo" wrapped to two lines in a 366 px row; the 54 px pill then fit
+   *  no band and sat on "Step 2 of 10") */
+  compact = false,
 ): { key: string; vars?: { name: string } } {
   const names = presenters.length > 0
     ? presenters.map((p) => p.name).join(", ")
     : (presenterName ?? "").trim();
   return names
-    ? { key: "demoMode.startedBy", vars: { name: names } }
+    ? {
+      key: compact ? "demoMode.startedByCompact" : "demoMode.startedBy",
+      vars: { name: names },
+    }
     : { key: "demoMode.started" };
 }
 

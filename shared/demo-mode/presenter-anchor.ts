@@ -56,11 +56,15 @@
  */
 import {
   ARROW_BOX,
+  initialsOf,
   type MoveThrottle,
   moveThrottle,
   outsideBox,
   placeIn,
   type Pt,
+  TAG_EDGE,
+  TAG_GAP,
+  type TagSide,
 } from "./motion.ts";
 import {
   type Anchor,
@@ -293,6 +297,20 @@ export function seekPrint(
   return printable(h.print) && deadForMs <= REANCHOR_CAP_MS;
 }
 
+/** REQ-813 (demo dm1 m4) — the look by the print gave up: the anchor is dead on a styled replay,
+ *  its print tells the node by something, and REANCHOR_CAP_MS passed with no match. The stage
+ *  then tells the customer's page to stop saying "pointing…" (`{k:"leave"}`) at that moment */
+export function seekGaveUp(
+  h: Held,
+  shown: { load: string | null; styled?: boolean; alive?: boolean },
+  deadForMs: number,
+): boolean {
+  if (!anchorDead(h, shown) || shown.load === null || !shown.styled) {
+    return false;
+  }
+  return printable(h.print) && deadForMs > REANCHOR_CAP_MS;
+}
+
 /** REQ-645 — his anchor on the node found by its print: that node of the page load shown, at the
  *  same spot of its box he pointed at (`at`: that spot as a fraction of their screen now) */
 export function reanchored(
@@ -319,6 +337,18 @@ export function pointerAbsent(h: Held, alive: boolean): boolean {
   if (!h.a) return true;
   return !!h.a.n && h.a.o !== 1 && !alive;
 }
+
+/** REQ-813 (demo dm1 m4) — how the stage draws his own marker, so it says what the customer has:
+ *  "pending" while their page says "{name} is pointing…" (the stage's pending window), "absent"
+ *  while his arrow is not on their screen (`pointerAbsent`: dimmed, hollow, "not shown"), else
+ *  "live" (full strength) */
+export type OwnLook = "live" | "absent" | "pending";
+export function ownLook(absent: boolean, pending: boolean): OwnLook {
+  if (pending) return "pending";
+  return absent ? "absent" : "live";
+}
+/** REQ-813 — the strength of his own marker while it is not on their screen */
+export const OWN_ABSENT_OPACITY = 0.4;
 
 /** REQ-645 — how far an arrow's point may move from where it was drawn when he pointed (his mouse
  *  still: a card grew, the page moved) before it is faded: on another control by then */
@@ -349,34 +379,101 @@ export function tabSwitched(
  *  the followed socket's key, said by its claim AFTER the stage followed it (a socket is announced
  *  before its page says which tab it is). Each answers whether the stage shows ANOTHER browser tab
  *  than before (`tabSwitched` against the last key known). `unsure` — another socket is followed and
- *  which tab it is of is not known yet: nothing of his is sent to it or looked for on it until it is */
+ *  which tab it is of is not known yet: nothing of his is sent to it or looked for on it until it is.
+ *  REQ-823 (demo-loop cycle dm1, m8) — `shown`: the followed socket's page is on show (the replay's
+ *  onShown). A socket followed and left before any page of it was on show is no tab he saw: the
+ *  next follow is weighed against the tab last on show — A → B (never on show) → A is no switch,
+ *  so the stage's own detour is never said as "Now showing {name}'s other tab" */
 export function followTabs(): {
   follow(cid: string | undefined, key?: string): boolean;
   learn(cid: string, key: string): boolean;
+  shown(): void;
   unsure(): boolean;
+  /** REQ-648 AMENDMENT REVISION (demo-loop run 19, p1) — the tab followed now had been followed
+   *  before (a switch back to a tab already open): "Catching up…", nothing of theirs loads. A tab
+   *  never followed is a new one: its first page load is "Loading their next page…" */
+  revisit(): boolean;
+  /** REQ-645 AMENDMENT 2 (dm8, p2) — every tab of hers is gone: forget which was followed, so the
+   *  next one followed (a new tab after her only one closed) is no "other tab" */
+  closed(): void;
 } {
   let cid: string | undefined;
   let key: string | undefined;
   /** the key of what was followed before `cid`, while `cid`'s own is not known */
   let before: string | undefined;
+  /** REQ-823 — the key of the browser tab whose page was last on show; and whether a page of the
+   *  socket followed now has been on show */
+  let seenKey: string | undefined;
+  let seen = false;
+  /** REQ-648 AMENDMENT REVISION — every tab key followed so far, and whether the one followed
+   *  now was among them before */
+  const known = new Set<string>();
+  let revisited = false;
+  const note = (k: string | undefined) => {
+    revisited = !!k && known.has(k);
+    if (k) known.add(k);
+  };
   return {
     follow(c, k) {
       if (c === cid) return false;
-      const was = key ?? before;
+      const was = seen || seenKey === undefined ? key ?? before : seenKey;
       cid = c;
       key = k;
+      seen = false;
       before = k ? undefined : was;
+      note(k);
       return tabSwitched(was, k);
     },
     learn(c, k) {
       if (c !== cid || key) return false;
       key = k;
+      if (seen) seenKey = k;
       const was = before;
       before = undefined;
+      note(k);
       return tabSwitched(was, k);
     },
+    revisit: () => revisited,
+    shown() {
+      seen = true;
+      if (key) seenKey = key;
+    },
     unsure: () => !key && !!before,
+    closed() {
+      cid = undefined;
+      key = undefined;
+      before = undefined;
+      seenKey = undefined;
+      seen = false;
+      known.clear();
+      revisited = false;
+    },
   };
+}
+
+/**
+ * REQ-877 AMENDMENT (demo-loop run 19, m2) — the next ghost drawn, given the one drawn now: the
+ * same one (its object kept: no re-render) when nothing of it changed; the off marker's ghost
+ * keeps its fade KEY while her marker glides along the frame's edge — every move used to remount
+ * it (a new key per spot) and restart its fade, so it blinked ~10 times in a second while he
+ * moved beside the frame. A new fade only when the ghost comes back from nowhere or from his
+ * arrow.
+ */
+export function ghostNext<
+  G extends {
+    at: Pt;
+    outside: boolean;
+    dir?: Dir | null;
+    off?: { key: string } | null;
+  },
+>(was: G | null, g: G): G {
+  if (!was) return g;
+  const still = was.outside === g.outside &&
+    was.dir?.dx === g.dir?.dx && was.dir?.dy === g.dir?.dy &&
+    was.dir?.hidden === g.dir?.hidden && // REQ-867
+    Math.abs(was.at.x - g.at.x) < 0.5 && Math.abs(was.at.y - g.at.y) < 0.5;
+  if (was.off && g.off) return still ? was : { ...g, off: was.off };
+  return still && was.off?.key === g.off?.key ? was : g;
 }
 
 /** REQ-645 (m36) — the anchors kept per page load: so many of the newest */
@@ -403,6 +500,17 @@ export function keptFor(
 export interface Dir {
   dx: -1 | 0 | 1;
   dy: -1 | 0 | 1;
+  /** REQ-867 (demo dm4 m6) — no scroll can bring it into view that way (an item in a closed
+   *  off-canvas drawer): the cue says it is hidden, never "scroll" */
+  hidden?: true;
+}
+
+/** REQ-867 (demo dm4 m6) — which ways an element's scrollers can still scroll (`scrollRoom`) */
+export interface Room {
+  left: boolean;
+  right: boolean;
+  up: boolean;
+  down: boolean;
 }
 
 /** REQ-645 — where an anchor's point `p` is drawn against `box`, the box its element can be seen
@@ -411,7 +519,7 @@ export interface Dir {
  *  a chevron with a cue there, never an arrow over the page's chrome */
 export function placeView(
   p: Pt,
-  box: Rect,
+  box: Rect & { room?: Room | null },
   arrow: { w: number; h: number } = ARROW_BOX,
 ): { at: Pt; outside: boolean; dir: Dir | null } {
   if (!outsideBox(p, box)) {
@@ -419,20 +527,50 @@ export function placeView(
   }
   const dx = p.x < box.left ? -1 : p.x > box.left + box.width ? 1 : 0;
   const dy = p.y < box.top ? -1 : p.y > box.top + box.height ? 1 : 0;
-  return { ...placeIn(p, box, arrow), dir: { dx, dy } };
+  // REQ-867 (demo dm4 m6) — a way no scroller can go (`box.room`, from `scrollRoom`): hidden
+  const r = box.room;
+  const stuck = !!r &&
+    ((dx < 0 && !r.left) || (dx > 0 && !r.right) ||
+      (dy < 0 && !r.up) || (dy > 0 && !r.down));
+  const dir: Dir = stuck ? { dx, dy, hidden: true } : { dx, dy };
+  return { ...placeIn(p, box, arrow), dir };
 }
 
 /** REQ-645 — the words for the way to an element out of view (up / down first) */
 export function cueKey(
-  dir: { dx: number; dy: number },
+  dir: { dx: number; dy: number; hidden?: boolean },
 ):
+  | "demoMode.pointerHidden"
   | "demoMode.pointerBelow"
   | "demoMode.pointerAbove"
   | "demoMode.pointerRight"
   | "demoMode.pointerLeft" {
+  // REQ-867 (demo dm4 m6) — nothing can scroll to it: never "scroll ←"
+  if (dir.hidden) return "demoMode.pointerHidden";
   if (dir.dy > 0) return "demoMode.pointerBelow";
   if (dir.dy < 0) return "demoMode.pointerAbove";
   return dir.dx < 0 ? "demoMode.pointerLeft" : "demoMode.pointerRight";
+}
+
+/**
+ * REQ-843 (demo-loop cycle dm3, p15) — the stage's own ghost's words for the way to its element:
+ * second person, no name ("You · pointing below — the customer must scroll ↓"). The customer's
+ * `cueKey` words ("{name} is pointing below") stay for colleagues' pointers on the stage.
+ */
+export function ownCueKey(
+  dir: { dx: number; dy: number; hidden?: boolean },
+):
+  | "demoMode.pointerGhostCue.hidden"
+  | "demoMode.pointerGhostCue.below"
+  | "demoMode.pointerGhostCue.above"
+  | "demoMode.pointerGhostCue.right"
+  | "demoMode.pointerGhostCue.left" {
+  if (dir.hidden) return "demoMode.pointerGhostCue.hidden"; // REQ-867 (demo dm4 m6)
+  if (dir.dy > 0) return "demoMode.pointerGhostCue.below";
+  if (dir.dy < 0) return "demoMode.pointerGhostCue.above";
+  return dir.dx < 0
+    ? "demoMode.pointerGhostCue.left"
+    : "demoMode.pointerGhostCue.right";
 }
 
 /** REQ-645 — the bits of an element `visibleBox` reads */
@@ -441,6 +579,13 @@ export interface ClipNode {
   getBoundingClientRect(): Rect;
   /** its element children (a bar pinned over its other children: a sticky topbar) */
   children?: ArrayLike<ClipNode>;
+  /** REQ-867 — its scroll metrics, as `scrollRoom` reads them (absent: unknown) */
+  scrollLeft?: number;
+  scrollTop?: number;
+  scrollWidth?: number;
+  scrollHeight?: number;
+  clientWidth?: number;
+  clientHeight?: number;
 }
 /** REQ-645 — the bits of its computed style `visibleBox` reads */
 export interface ClipStyle {
@@ -455,16 +600,41 @@ const clips = (o: string | undefined) => !!o && o !== "visible";
  *  every bar pinned over the content beside it (a phone's sticky topbar over the scrolled page; a
  *  fixed bar at the bottom) — so a row scrolled up under the topbar is out of view, never
  *  "visible" over its search bar. A fixed element, or one under a fixed ancestor, is clipped by
- *  nothing above that */
+ *  nothing above that.
+ *  REQ-814 (demo dm1 m7) — a bar is judged against the screen (and the scrollers), never the box
+ *  already narrowed by a clipping card: a card scrolled partly or fully out of view is still cut
+ *  by the topbar. When the clipping ancestors leave nothing (the card is wholly out of view), the
+ *  box is the outer one — the screen cut by the bars and the scrollers only — never a box at
+ *  top 0 with no height (a chevron drawn over the topbar) */
 export function visibleBox(
   el: ClipNode,
   screen: Rect,
   styleOf: (e: ClipNode) => ClipStyle | null,
 ): Rect {
-  let left = screen.left;
-  let top = screen.top;
-  let right = screen.left + screen.width;
-  let bottom = screen.top + screen.height;
+  type B = { left: number; top: number; right: number; bottom: number };
+  const empty = (b: B) => b.right <= b.left || b.bottom <= b.top;
+  const full = (): B => ({
+    left: screen.left,
+    top: screen.top,
+    right: screen.left + screen.width,
+    bottom: screen.top + screen.height,
+  });
+  /** cut by every clipping ancestor and bar */
+  const inner = full();
+  /** cut by the bars and the scrollers only (a scroller that would leave nothing is skipped) */
+  const outer = full();
+  const scrolls = (o: string | undefined) =>
+    o === "auto" || o === "scroll" || o === "overlay";
+  /** a bar `r` covering `b`'s top or bottom edge cuts that strip off it */
+  const cut = (b: B, r: Rect) => {
+    if (r.top <= b.top + 1 && r.top + r.height > b.top) {
+      b.top = Math.max(b.top, r.top + r.height);
+    } else if (r.top + r.height >= b.bottom - 1 && r.top < b.bottom) {
+      b.bottom = Math.min(b.bottom, r.top);
+    }
+  };
+  const spans = (b: B, r: Rect) =>
+    !empty(b) && r.left <= b.left + 1 && r.left + r.width >= b.right - 1;
   /** a sticky or fixed sibling of `child` that spans the box's width and sits at its top or its
    *  bottom edge covers that strip (never a full-screen layer, a floating button, or a sticky
    *  header mid-page, in its place in the flow) */
@@ -478,13 +648,10 @@ export function visibleBox(
       if (pos !== "sticky" && pos !== "fixed") continue;
       const r = k.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) continue;
-      if (r.left > left + 1 || r.left + r.width < right - 1) continue;
-      if (r.height * 2 >= bottom - top) continue;
-      if (r.top <= top + 1 && r.top + r.height > top) {
-        top = r.top + r.height;
-      } else if (r.top + r.height >= bottom - 1 && r.top < bottom) {
-        bottom = r.top;
-      }
+      if (!spans(outer, r) && !spans(inner, r)) continue;
+      if (r.height * 2 >= screen.height) continue;
+      cut(outer, r);
+      cut(inner, r);
     }
   };
   if (styleOf(el)?.position !== "fixed") {
@@ -497,24 +664,89 @@ export function visibleBox(
       const cy = clips(s.overflowY);
       if (cx || cy) {
         const r = a.getBoundingClientRect();
-        if (cx) {
-          left = Math.max(left, r.left);
-          right = Math.min(right, r.left + r.width);
-        }
-        if (cy) {
-          top = Math.max(top, r.top);
-          bottom = Math.min(bottom, r.top + r.height);
+        const narrow = (b: B, x: boolean, y: boolean) => {
+          if (x) {
+            b.left = Math.max(b.left, r.left);
+            b.right = Math.min(b.right, r.left + r.width);
+          }
+          if (y) {
+            b.top = Math.max(b.top, r.top);
+            b.bottom = Math.min(b.bottom, r.top + r.height);
+          }
+        };
+        narrow(inner, cx, cy);
+        const sx = scrolls(s.overflowX);
+        const sy = scrolls(s.overflowY);
+        if (sx || sy) {
+          const next = { ...outer };
+          narrow(next, sx, sy);
+          if (!empty(next)) Object.assign(outer, next);
         }
       }
       if (s.position === "fixed") break;
     }
   }
+  const b = empty(inner) ? outer : inner;
   return {
-    left,
-    top,
-    width: Math.max(0, right - left),
-    height: Math.max(0, bottom - top),
+    left: b.left,
+    top: b.top,
+    width: Math.max(0, b.right - b.left),
+    height: Math.max(0, b.bottom - b.top),
   };
+}
+
+/** REQ-867 (demo dm4 m6) — which ways a scroll can still move `el`: every ancestor that scrolls on
+ *  an axis (overflow auto / scroll / overlay) with room left that way — `scrollLeft > 0` for
+ *  left, `scrollWidth − clientWidth − scrollLeft > 0` for right, the same for up / down — and the
+ *  document (the root, unless its overflow, or the body's it takes, is hidden). A fixed element,
+ *  or one under a fixed ancestor, is moved by nothing above it, so an item in a closed off-canvas
+ *  drawer (fixed, translated off the screen; or on a page as wide as the screen at scrollX 0) can
+ *  be scrolled to no way at all. With no scroll metrics on `el` (a bare box, not an element) every
+ *  way is open, as before. */
+export function scrollRoom(
+  el: ClipNode,
+  styleOf: (e: ClipNode) => ClipStyle | null,
+): Room {
+  const open: Room = { left: true, right: true, up: true, down: true };
+  // a real element always has its metrics; a caller's bare box has none: unknown, every way open
+  if (typeof el.scrollWidth !== "number") return open;
+  const room: Room = { left: false, right: false, up: false, down: false };
+  const scrolls = (o: string | undefined) =>
+    o === "auto" || o === "scroll" || o === "overlay";
+  const add = (a: ClipNode, x: boolean, y: boolean) => {
+    const n = (v: number | undefined) => typeof v === "number" && isFinite(v);
+    if (!n(a.scrollWidth) || !n(a.clientWidth)) return;
+    const sl = Math.abs(a.scrollLeft ?? 0);
+    const st = a.scrollTop ?? 0;
+    if (x) {
+      if (sl > 0.5) room.left = true;
+      if (a.scrollWidth! - a.clientWidth! - sl > 0.5) room.right = true;
+    }
+    if (y && n(a.scrollHeight) && n(a.clientHeight)) {
+      if (st > 0.5) room.up = true;
+      if (a.scrollHeight! - a.clientHeight! - st > 0.5) room.down = true;
+    }
+  };
+  if (styleOf(el)?.position !== "fixed") {
+    let child: ClipNode = el;
+    for (let a = el.parentElement; a; child = a, a = a.parentElement) {
+      const s = styleOf(a);
+      if (!a.parentElement) {
+        // the document's scroller: the root's overflow, or the body's when the root's is visible
+        const own = (o: string | undefined) => !o || o === "visible";
+        const b = child !== el ? styleOf(child) : null;
+        const ox = own(s?.overflowX) ? b?.overflowX : s?.overflowX;
+        const oy = own(s?.overflowY) ? b?.overflowY : s?.overflowY;
+        add(a, own(ox) || scrolls(ox), own(oy) || scrolls(oy));
+        break;
+      }
+      if (s && (scrolls(s.overflowX) || scrolls(s.overflowY))) {
+        add(a, scrolls(s.overflowX), scrolls(s.overflowY));
+      }
+      if (s?.position === "fixed") break;
+    }
+  }
+  return room;
 }
 
 /** the mouse handed over by the page that opened the stage, counted only on the fitted frame */
@@ -559,6 +791,41 @@ export function ghostWait(
   return Math.max(0, rest - since);
 }
 
+/** REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost's fade-in takes this long (PointerGhost's
+ *  pmDemoGhostIn) ... */
+export const GHOST_FADE_MS = 250;
+/** ... and a spot that moves at least this far while it fades starts the fade over, there */
+export const GHOST_FADE_MOVE_PX = 2;
+
+/** REQ-789 AMENDMENT (demo-loop run 12, p1) — the ghost fades in WHERE IT SETTLES: a report that
+ *  moves it while the fade is still running (their smooth scroll riding the element 83 px in
+ *  100 ms) restarts the fade at the new spot — a new `key` remounts the fading element — instead
+ *  of fading in on the way and jumping. After the fade a move is a move: the same key, no flash */
+export function ghostFade(
+  f: { x: number; y: number; since: number; key: number; delay?: number },
+  at: Pt,
+  now: number,
+  fade = GHOST_FADE_MS,
+  settle = GHOST_SETTLE_MS,
+): { x: number; y: number; since: number; key: number; delay?: number } {
+  if (Math.hypot(at.x - f.x, at.y - f.y) < GHOST_FADE_MOVE_PX) return f;
+  // REQ-789 AMENDMENT 2 (dm15, m3) — the fade (and the wait before it) still running: this move
+  // restarts it, and the restarted fade waits `settle` unseen first — a spot still moving (their
+  // smooth scroll) blinked the ghost at every stop of the way (0.24 → 0 → 0.2 → 0 → 0.5)
+  const fading = now - f.since < fade + (f.delay ?? 0);
+  return {
+    x: at.x,
+    y: at.y,
+    since: fading ? now : f.since,
+    key: fading ? f.key + 1 : f.key,
+    delay: fading ? settle : 0,
+  };
+}
+/** REQ-789 AMENDMENT 2 (demo-loop run 15, m3) — how long a fade restarted by a move stays unseen
+ *  before it begins: a spot that moves again within it starts the wait over, so the ghost fades
+ *  in once, where the spot has settled */
+export const GHOST_SETTLE_MS = 150;
+
 /** where the stage draws the ghost of his arrow, or null: `placed` is where their screen has it
  *  now (on the frame), the page shown is `shownLoad` (REQ-645 — handed back as it came: its way
  *  to an element out of view rides along) */
@@ -582,10 +849,14 @@ export function placedReport(
   a: Anchor,
   placed: { at: Pt; outside: boolean; dir?: Dir | null } | null,
   view: Rect,
+  tag?: TagPlace | null,
 ): PlacedMessage {
   if (!placed) return { k: "placed", pid, a, p: null };
   const frac = (v: number, lo: number, len: number) =>
     Math.round(Math.min(1, Math.max(0, (v - lo) / (len || 1))) * 1e4) / 1e4;
+  /** REQ-837 — a signed length as a fraction of the viewport's */
+  const part = (v: number, len: number) =>
+    Math.round(Math.min(1, Math.max(-1, v / (len || 1))) * 1e4) / 1e4 || 0;
   const p = {
     vx: frac(placed.at.x, view.left, view.width),
     vy: frac(placed.at.y, view.top, view.height),
@@ -594,8 +865,104 @@ export function placedReport(
     ? { k: "placed", pid, a, p, o: 1 }
     : { k: "placed", pid, a, p };
   // REQ-645 + REQ-642 (reconciled on demo-fixes) — out of view that way: a chevron on their screen
-  if (placed.dir) m.d = { dx: placed.dir.dx, dy: placed.dir.dy };
+  if (placed.dir) {
+    m.d = placed.dir.hidden // REQ-867 (demo dm4 m6) — hidden, not a way to scroll
+      ? { dx: placed.dir.dx, dy: placed.dir.dy, h: 1 }
+      : { dx: placed.dir.dx, dy: placed.dir.dy };
+  }
+  // REQ-837 (demo dm2 m3) — where its tag went beside the arrow, so the stage draws it there too
+  if (tag) {
+    m.t = {
+      s: tag.side,
+      x: part(tag.x, view.width),
+      y: part(tag.y, view.height),
+      w: part(tag.w, view.width),
+      h: part(tag.h, view.height),
+    };
+  }
   return m;
+}
+
+/** REQ-837 (demo dm2 m3) — a tag's placement beside its arrow: the side it went to
+ *  (`tagPlacement`), its top-left relative to the arrow's box (the tip's point) and its size, in
+ *  px of the screen it is drawn on */
+export interface TagPlace {
+  side: TagSide;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** REQ-837 (demo dm2 m3) — the customer's tag for the anchor he holds, in the stage's px (`frame`:
+ *  the fitted replica of their viewport): null when their report says no tag (none placed, or not
+ *  on their screen), undefined when the report is not for this anchor (keep what is drawn) */
+export function reportedTag(
+  h: Held,
+  r: PlacedMessage | null,
+  frame: Rect,
+): TagPlace | null | undefined {
+  if (!h.a || !r || !sameAnchor(r.a, h.a)) return undefined;
+  if (!r.p || !r.t) return null;
+  return {
+    side: r.t.s,
+    x: r.t.x * frame.width,
+    y: r.t.y * frame.height,
+    w: r.t.w * frame.width,
+    h: r.t.h * frame.height,
+  };
+}
+
+/** REQ-837 (demo dm2 m3) — where a tag of size `own` goes to sit as `tag` does: the edge that
+ *  faces the arrow kept (a tag above keeps its bottom, one to the left its right edge), so a
+ *  smaller or larger label never runs into the arrow.
+ *  REQ-860 (demo dm4 m5 + p6) — given the arrow's tip (`at`) and the box the tag must stay in
+ *  (`bounds`: the fitted frame, the cue's box), the placed tag is shifted back TAG_EDGE inside it:
+ *  the customer's tag was sized for HER words (Spanish, 244 px) and the stage's are wider
+ *  (English, 333 px), so her left edge kept ran 30 px past the frame. A tag beside the arrow that
+ *  a shift would push over it goes to the arrow's other side instead. Offsets from `at`. */
+export function alignTag(
+  tag: TagPlace,
+  own: { w: number; h: number },
+  at?: Pt | null,
+  bounds?: Rect | null,
+): { left: number; top: number } {
+  let left = tag.side === "left" ? tag.x + tag.w - own.w : tag.x;
+  let top = tag.side === "above" || tag.side === "tail-up"
+    ? tag.y + tag.h - own.h
+    : tag.y;
+  if (!at || !bounds) return { left, top };
+  // one axis: the offset `v` of a tag `n` long, from the tip at `p`, kept in [lo, hi]
+  const into = (v: number, n: number, p: number, lo: number, hi: number) => {
+    const over = p + v + n - hi;
+    if (over > 0) v -= over;
+    const under = lo - (p + v);
+    if (under > 0) v += under;
+    return v;
+  };
+  const loX = bounds.left + TAG_EDGE;
+  const hiX = bounds.left + bounds.width - TAG_EDGE;
+  const loY = bounds.top + TAG_EDGE;
+  const hiY = bounds.top + bounds.height - TAG_EDGE;
+  const x = into(left, own.w, at.x, loX, hiX);
+  // beside the arrow (right / left of it) and shifted over it: the other side of the arrow
+  const overArrow = x < ARROW_BOX.w && x + own.w > 0;
+  if (tag.side === "right" && x !== left && overArrow) {
+    left = into(-TAG_GAP - own.w, own.w, at.x, loX, hiX);
+  } else if (tag.side === "left" && x !== left && overArrow) {
+    left = into(ARROW_BOX.w + TAG_GAP, own.w, at.x, loX, hiX);
+  } else left = x;
+  const y = into(top, own.h, at.y, loY, hiY);
+  const overY = y < ARROW_BOX.h && y + own.h > 0 && left < ARROW_BOX.w &&
+    left + own.w > 0;
+  if (tag.side === "above" && y !== top && overY) {
+    top = into(ARROW_BOX.h + TAG_GAP, own.h, at.y, loY, hiY);
+  } else if (
+    (tag.side === "below" || tag.side === "tail") && y !== top && overY
+  ) {
+    top = into(-TAG_GAP - own.h, own.h, at.y, loY, hiY);
+  } else top = y;
+  return { left, top };
 }
 
 /** REQ-642 — the customer's reports go out at most this often per presenter (the last always) */
@@ -603,7 +970,10 @@ export const PLACED_GAP_MS = 100;
 
 const samePlaced = (x: PlacedMessage | null, y: PlacedMessage) =>
   !!x && x.pid === y.pid && !x.o === !y.o && sameAnchor(x.a, y.a) &&
-  x.d?.dx === y.d?.dx && x.d?.dy === y.d?.dy &&
+  x.d?.dx === y.d?.dx && x.d?.dy === y.d?.dy && x.d?.h === y.d?.h &&
+  // REQ-837 — the tag moved (another side, another spot): a new report
+  x.t?.s === y.t?.s && x.t?.x === y.t?.x && x.t?.y === y.t?.y &&
+  x.t?.w === y.t?.w && x.t?.h === y.t?.h &&
   (x.p === null || y.p === null
     ? x.p === y.p
     : x.p.vx === y.p.vx && x.p.vy === y.p.vy);
@@ -667,21 +1037,76 @@ export function placedReporter(o: {
 /** REQ-642 — where the stage draws the ghost of his arrow: where the customer's screen REPORTED
  *  it (`r`) for the anchor he holds now, on `frame` (the fitted replica of their viewport), when
  *  that is apart from where he put it. A report of another anchor (an older one, still on the
- *  wire), of nowhere, or none: no ghost. */
+ *  wire), of nowhere, or none: no ghost.
+ *  REQ-877 (demo-loop cycle dm5, m1) — his mouse beside the frame (an o:1 anchor): their screen
+ *  shows the off marker (chevron + his initial, REQ-635) on its edge for OFF_MARK_SHOW_MS +
+ *  OFF_MARK_FADE_MS, so the stage's ghost is that marker (`off`) on the same edge of the frame,
+ *  keyed on her marker's rounded spot (`key`: DemoPointer's markKey) — never dropped as under
+ *  his cursor. */
 export function reportedGhost(
   h: Held,
   r: PlacedMessage | null,
-  frame: Rect,
-): { at: Pt; outside: boolean; dir?: Dir | null } | null {
-  if (!h.a || h.a.o === 1 || !r?.p || !sameAnchor(r.a, h.a)) return null;
+  frame: Rect & { s?: number },
+): {
+  at: Pt;
+  outside: boolean;
+  dir?: Dir | null;
+  off?: { key: string } | null;
+} | null {
+  if (!h.a || !r?.p) return null;
+  // REQ-877 AMENDMENT (dm19, m2) — his mouse beside the frame: her marker is where she last
+  // reported it, whichever of his off spots the report was for (every move is a new off anchor;
+  // a report of the one before cleared the ghost until the next one came — a blink per move)
+  if (h.a.o === 1) return r.a?.o === 1 ? offGhost(r.p, frame) : null;
+  if (!sameAnchor(r.a, h.a)) return null;
   // REQ-645 + REQ-642 — out of view on their screen: the ghost is their chevron, where it is
-  if (r.d) return { at: fracToPoint(r.p, frame), outside: false, dir: r.d };
+  if (r.d) {
+    const { dx, dy } = r.d;
+    // REQ-867 (demo dm4 m6) — hidden on their screen: hidden on the ghost too
+    const dir: Dir = r.d.h === 1 ? { dx, dy, hidden: true } : { dx, dy };
+    return { at: fracToPoint(r.p, frame), outside: false, dir };
+  }
   const placed = placeIn(fracToPoint(r.p, frame), frame, ARROW_BOX, r.o === 1);
   if (
     !placed.outside && h.at &&
     Math.hypot(placed.at.x - h.at.x, placed.at.y - h.at.y) <= GHOST_GAP_PX
   ) return null;
   return placed;
+}
+
+/** REQ-877 (demo-loop cycle dm5, m1) — the stage's ghost of the off marker their screen draws at
+ *  `p` (the fraction of their viewport the report gave): the edge it is against is read in THEIR
+ *  px (the frame's `s`: a scaled clamp is not on the stage's edge), and the ghost sits against
+ *  that edge of `frame`, at the same point along it */
+function offGhost(
+  p: { vx: number; vy: number },
+  frame: Rect & { s?: number },
+): { at: Pt; outside: true; off: { key: string } } {
+  const s = frame.s && frame.s > 0 ? frame.s : 1;
+  const view = {
+    left: 0,
+    top: 0,
+    width: frame.width / s,
+    height: frame.height / s,
+  };
+  const hers = { x: p.vx * view.width, y: p.vy * view.height };
+  const e = offEdge(hers, view);
+  const { at } = placeIn(fracToPoint(p, frame), frame, ARROW_BOX, true);
+  const snap = (
+    d: -1 | 0 | 1,
+    v: number,
+    lo: number,
+    len: number,
+    arrow: number,
+  ) => d === 1 ? lo + len - arrow : d === -1 ? lo : v;
+  return {
+    at: {
+      x: snap(e.dx, at.x, frame.left, frame.width, ARROW_BOX.w),
+      y: snap(e.dy, at.y, frame.top, frame.height, ARROW_BOX.h),
+    },
+    outside: true,
+    off: { key: `${Math.round(hers.x)},${Math.round(hers.y)}` },
+  };
 }
 
 /** REQ-642 (setup-14d) — where the stage draws his own small marker: where he pointed, whenever
@@ -735,9 +1160,40 @@ export function offMark(
   return { left, top, deg };
 }
 
+/** REQ-815 (demo dm1 p4) — the out-of-view chevron (REQ-645) inside the arrow box (its top-left
+ *  at the tip), from the way to the element alone: against the edge it is off (OFF_MARK_INSET in),
+ *  centred on the tip along that edge, turned to point out. The customer's DemoPointer and the
+ *  stage's PointerGhost both draw it from this, so the two screens put it on the same pixel (the
+ *  stage only gets the report's tip and way, never the customer's box) */
+export function cueMarkOffset(
+  dir: Dir,
+): { left: number; top: number; deg: number } {
+  const half = OFF_MARK_PX / 2;
+  const along = (d: -1 | 0 | 1, size: number) =>
+    d === 1
+      ? size - OFF_MARK_PX - OFF_MARK_INSET
+      : d === -1
+      ? OFF_MARK_INSET
+      : -half;
+  return {
+    left: along(dir.dx, ARROW_BOX.w),
+    top: along(dir.dy, ARROW_BOX.h),
+    deg: dir.dx === 0 && dir.dy === 0
+      ? 0
+      : Math.round(Math.atan2(dir.dy, dir.dx) * 180 / Math.PI),
+  };
+}
+
 /** REQ-635 (demo m37, cycle 5) — how long the off marker is shown before it fades, and the fade */
 export const OFF_MARK_SHOW_MS = 2_500;
 export const OFF_MARK_FADE_MS = 400;
+/** REQ-635 — the off marker's fade: OFF_MARK_OPACITY for OFF_MARK_SHOW_MS, then out. REQ-877 —
+ *  one definition for the customer's marker (DemoPointer) and the stage's ghost of it
+ *  (PointerGhost), so both are gone at the same moment */
+export const OFF_FADE_KEYFRAMES =
+  `@keyframes pmDemoOffFade{0%{opacity:${OFF_MARK_OPACITY}}${
+    Math.round(OFF_MARK_SHOW_MS / (OFF_MARK_SHOW_MS + OFF_MARK_FADE_MS) * 100)
+  }%{opacity:${OFF_MARK_OPACITY}}100%{opacity:0}}`;
 /** REQ-635 — the off marker's layer on the customer's screen: under the app's modal dims (the
  *  lowest is z-index 50) — a hint, never over a dialog. The arrow keeps the overlay's top layer. */
 export const OFF_MARK_Z = 45;
@@ -758,8 +1214,9 @@ export function offBadge(at: Pt, box: Rect): { left: number; top: number } {
   return { left, top };
 }
 
-/** REQ-635 — the sender's initial: the name's first letter, upper-cased ('?' for no name) */
+/** REQ-635 — the sender's initial: the name's first letter, upper-cased ('?' for no name).
+ *  REQ-817 (cycle dm1, m3) — a name with no letters (a phone, REQ-355) shows its last two
+ *  digits, never '+' */
 export function initialOf(name: string): string {
-  const first = Array.from(name.trim())[0];
-  return first ? first.toLocaleUpperCase() : "?";
+  return initialsOf(name, 1) || "?";
 }

@@ -16,7 +16,7 @@
  * (/i/:id) mirrors this layout without duplicating markup. This file keeps the
  * agreement-only bits: the 14 numbered legal clauses and the signature block.
  */
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import BizBrand from "./BizBrand.tsx";
 import { publicBusinessLabel } from "../../shared/documents/public-brand.ts";
 import PublicSignQuote from "../islands/PublicSignQuote.tsx";
@@ -271,7 +271,11 @@ export function ErrorCard(
 ) {
   return (
     <>
-      <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">
+      <div
+        // REQ-826 AMENDMENT 6 (dm12, m4) — an error page, for the stage's tab notice
+        data-error-page=""
+        style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center"
+      >
         <div style={`font-weight:800;color:${TEAL};font-size:18px`}>
           {tFor(lang, "quoteDoc.cantOpen")}
         </div>
@@ -324,6 +328,19 @@ export function QuoteDoc(
   // reserve the strip's height (`.ctr--previewing section`, public-contract.css).
   const [compact, setCompact] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
+  // REQ-687 AMENDMENT (demo-loop run 7 lane) — the collapse must not shorten the page under the
+  // reader: the strip was the same in-flow box as the banner, so the document lost the two rows'
+  // height and the browser's scroll anchoring pulled the page back by it (scrollTo(0, 250) landed
+  // at 187 on /q). The sticky shell keeps the expanded banner's height (measured before paint while
+  // expanded), transparent and click-through while compact; the strip paints inside it, at its top
+  const shell = useRef<HTMLDivElement>(null);
+  const [slotH, setSlotH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (compact) return;
+    // the fractional height: a rounded one shifts the page by the remainder
+    const h = shell.current?.getBoundingClientRect().height;
+    if (h) setSlotH(h);
+  });
   useEffect(() => {
     if (!preview) {
       setCompact(false);
@@ -488,53 +505,61 @@ export function QuoteDoc(
         // button (same handler as the signature card's link).
         // REQ-687 (c5 p14): scrolled, it is a one-line strip.
         <div
+          ref={shell}
           data-cy="quote-preview-banner"
           data-compact={String(compact)}
           role="status"
           class="ctr__no-print"
           style={`position:sticky;top:0;z-index:20;margin-bottom:18px;${
-            compact ? "padding:6px 6px 6px 14px" : "padding:12px 16px"
-          };background:#fff6e5;border:1px solid rgba(255,170,40,0.55);border-radius:14px;box-shadow:0 4px 14px rgba(138,90,16,0.12);display:flex;align-items:center;gap:12px;flex-wrap:${
-            compact ? "nowrap" : "wrap"
-          };color:#8a5a10;font-size:14px;line-height:1.45`}
+            compact ? `min-height:${slotH}px;pointer-events:none` : ""
+          }`}
         >
-          {compact
-            ? (
-              <span style="flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                {customerName
-                  ? tFor(lang, "public.doc.previewBanner.compact", {
-                    name: customerName,
-                  })
-                  : tFor(lang, "public.doc.previewBanner.compactCustomer")}
-              </span>
-            )
-            : (
-              <div style="flex:1;min-width:200px">
-                <span style="font-weight:800">
+          <div
+            data-cy="quote-preview-visual"
+            style={`pointer-events:auto;${
+              compact ? "padding:6px 6px 6px 14px" : "padding:12px 16px"
+            };background:#fff6e5;border:1px solid rgba(255,170,40,0.55);border-radius:14px;box-shadow:0 4px 14px rgba(138,90,16,0.12);display:flex;align-items:center;gap:12px;flex-wrap:${
+              compact ? "nowrap" : "wrap"
+            };color:#8a5a10;font-size:14px;line-height:1.45`}
+          >
+            {compact
+              ? (
+                <span style="flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
                   {customerName
-                    ? tFor(lang, "public.doc.previewBanner.as", {
+                    ? tFor(lang, "public.doc.previewBanner.compact", {
                       name: customerName,
                     })
-                    : tFor(lang, "public.doc.previewBanner.asCustomer")}
-                </span>{" "}
-                — {tFor(lang, "public.doc.previewBanner.off")}
-                <span style="display:block;margin-top:2px;font-size:13px">
-                  {tFor(lang, "public.doc.previewBanner.here")}
+                    : tFor(lang, "public.doc.previewBanner.compactCustomer")}
                 </span>
-              </div>
-            )}
-          <button
-            type="button"
-            data-cy="quote-preview-sign-in-person"
-            onClick={() => onSignInPerson?.()}
-            style={`background:#144852;color:#fff;border:0;border-radius:10px;font:inherit;${
-              compact
-                ? "padding:6px 12px;font-size:13px"
-                : "padding:10px 18px;font-size:14px"
-            };font-weight:800;cursor:pointer;white-space:nowrap`}
-          >
-            {tFor(lang, "public.doc.previewBanner.signInPerson")}
-          </button>
+              )
+              : (
+                <div style="flex:1;min-width:200px">
+                  <span style="font-weight:800">
+                    {customerName
+                      ? tFor(lang, "public.doc.previewBanner.as", {
+                        name: customerName,
+                      })
+                      : tFor(lang, "public.doc.previewBanner.asCustomer")}
+                  </span>{" "}
+                  — {tFor(lang, "public.doc.previewBanner.off")}
+                  <span style="display:block;margin-top:2px;font-size:13px">
+                    {tFor(lang, "public.doc.previewBanner.here")}
+                  </span>
+                </div>
+              )}
+            <button
+              type="button"
+              data-cy="quote-preview-sign-in-person"
+              onClick={() => onSignInPerson?.()}
+              style={`background:#144852;color:#fff;border:0;border-radius:10px;font:inherit;${
+                compact
+                  ? "padding:6px 12px;font-size:13px"
+                  : "padding:10px 18px;font-size:14px"
+              };font-weight:800;cursor:pointer;white-space:nowrap`}
+            >
+              {tFor(lang, "public.doc.previewBanner.signInPerson")}
+            </button>
+          </div>
         </div>
       )}
       {signed && signerName && (
