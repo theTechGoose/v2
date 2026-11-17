@@ -34,6 +34,10 @@ export class LineConflictError extends Error {
 }
 
 /** Twilio refused or failed a provisioning step (502: the fault is upstream) */
+/** REQ-918b: a webhook URL only when we have a public one — a relative path would be refused by Twilio */
+const hook = (cfg: { publicUrl: string }, route: string): string =>
+  cfg.publicUrl ? publicUrl(cfg, route) : "";
+
 export class ProvisioningError extends Error {
   readonly status: number = 502;
   readonly code?: number;
@@ -95,7 +99,7 @@ export class Lines {
     const app = await this.twilio.createTwimlApp({
       accountSid: sub.sid,
       friendlyName: `${label} softphone`,
-      voiceUrl: publicUrl(cfg, ROUTES.voiceOutgoing),
+      voiceUrl: hook(cfg, ROUTES.voiceOutgoing),
     });
     if (!app.ok) return rollback("twiml app", app);
 
@@ -103,9 +107,9 @@ export class Lines {
       accountSid: sub.sid,
       phoneNumber: input.phoneNumber,
       ...(input.friendlyName ? { friendlyName: input.friendlyName } : {}),
-      voiceUrl: publicUrl(cfg, ROUTES.voiceIncoming),
-      smsUrl: publicUrl(cfg, ROUTES.sms),
-      statusCallback: publicUrl(cfg, ROUTES.voiceStatus),
+      voiceUrl: hook(cfg, ROUTES.voiceIncoming),
+      smsUrl: hook(cfg, ROUTES.sms),
+      statusCallback: hook(cfg, ROUTES.voiceStatus),
     });
     if (!number.ok) return rollback("number", number);
 

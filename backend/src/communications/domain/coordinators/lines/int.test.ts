@@ -143,3 +143,28 @@ Deno.test("REQ-905 lines int: release gives the number back, closes the subaccou
     await restore();
   }
 });
+
+Deno.test("REQ-918b no public URL (a laptop): the number and its TwiML App are created without webhook URLs", async () => {
+  const { restore, cfg } = await freshLine({
+    COMMS_PUBLIC_URL: "",
+    PUBLIC_BACKEND_URL: undefined,
+  });
+  try {
+    const s = await stores();
+    const twilio = new ProvisioningTwilio();
+    const lines = new Lines(twilio.asClient(), s.lines, cfg);
+    await lines.buy("u_laptop", { phoneNumber: "+18435550100" });
+    const app = twilio.calls.find((c) => c.op === "createTwimlApp")!.args as {
+      voiceUrl: string;
+    };
+    const num = twilio.calls.find((c) => c.op === "buyNumber")!.args as {
+      voiceUrl: string;
+      smsUrl: string;
+      statusCallback: string;
+    };
+    assertEquals(app.voiceUrl, "");
+    assertEquals([num.voiceUrl, num.smsUrl, num.statusCallback], ["", "", ""]);
+  } finally {
+    await restore();
+  }
+});

@@ -14,37 +14,69 @@ function capture(handler: (req: Request, body: string) => Response) {
   return { f, calls };
 }
 
-const LIVE = { COMMS_TWILIO_ACCOUNT_SID: "ACtest", COMMS_TWILIO_AUTH_TOKEN: "tok", COMMS_TWILIO_FROM: "+18432588463" };
+const LIVE = {
+  COMMS_TWILIO_ACCOUNT_SID: "ACtest",
+  COMMS_TWILIO_AUTH_TOKEN: "tok",
+  COMMS_TWILIO_FROM: "+18432588463",
+};
 
 Deno.test("REQ-899 TwilioClient smoke: dev mode (no account SID) never calls fetch", async () => {
   const { f, calls } = capture(() => new Response("no", { status: 500 }));
   const c = new TwilioClient(configFromEnv({}));
   c.fetchOverride = f;
   const out = await c.sendMessage({ to: "+15125551234", body: "hi" });
-  assertEquals(out, { ok: true, reason: "dev_mode_no_dispatch", status: "dev" });
+  assertEquals(out, {
+    ok: true,
+    reason: "dev_mode_no_dispatch",
+    status: "dev",
+  });
   assertEquals(calls.length, 0);
 });
 
 Deno.test("REQ-899 TwilioClient smoke: posts the urlencoded Messages create with basic auth, From = the line, StatusCallback", async () => {
-  const { f, calls } = capture(() => new Response(JSON.stringify({ sid: "SM1", status: "queued" }), { status: 201 }));
+  const { f, calls } = capture(() =>
+    new Response(JSON.stringify({ sid: "SM1", status: "queued" }), {
+      status: 201,
+    })
+  );
   const c = new TwilioClient(configFromEnv(LIVE));
   c.fetchOverride = f;
-  const out = await c.sendMessage({ to: "+15125551234", body: "hi & bye", statusCallback: "https://x.test/communications/twilio/sms-status" });
+  const out = await c.sendMessage({
+    to: "+15125551234",
+    body: "hi & bye",
+    statusCallback: "https://x.test/communications/twilio/sms-status",
+  });
   assertEquals(out, { ok: true, sid: "SM1", status: "queued" });
   const { req, body } = calls[0];
-  assertEquals(req.url, "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages.json");
+  assertEquals(
+    req.url,
+    "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages.json",
+  );
   assertEquals(req.headers.get("authorization"), `Basic ${btoa("ACtest:tok")}`);
-  assertEquals(req.headers.get("content-type"), "application/x-www-form-urlencoded");
+  assertEquals(
+    req.headers.get("content-type"),
+    "application/x-www-form-urlencoded",
+  );
   const form = new URLSearchParams(body);
   assertEquals(form.get("To"), "+15125551234");
   assertEquals(form.get("From"), "+18432588463");
   assertEquals(form.get("Body"), "hi & bye");
-  assertEquals(form.get("StatusCallback"), "https://x.test/communications/twilio/sms-status");
+  assertEquals(
+    form.get("StatusCallback"),
+    "https://x.test/communications/twilio/sms-status",
+  );
 });
 
 Deno.test("REQ-899 TwilioClient smoke: a Twilio rejection surfaces its code and message; COMMS_TWILIO_BASE_URL redirects the REST origin", async () => {
-  const { f, calls } = capture(() => new Response(JSON.stringify({ code: 21211, message: "Invalid 'To' Phone Number" }), { status: 400 }));
-  const c = new TwilioClient(configFromEnv({ ...LIVE, COMMS_TWILIO_BASE_URL: "http://localhost:1/" }));
+  const { f, calls } = capture(() =>
+    new Response(
+      JSON.stringify({ code: 21211, message: "Invalid 'To' Phone Number" }),
+      { status: 400 },
+    )
+  );
+  const c = new TwilioClient(
+    configFromEnv({ ...LIVE, COMMS_TWILIO_BASE_URL: "http://localhost:1/" }),
+  );
   c.fetchOverride = f;
   const out = await c.sendMessage({ to: "+1", body: "x" });
   assertEquals(out.ok, false);
