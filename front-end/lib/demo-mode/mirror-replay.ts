@@ -295,6 +295,22 @@ const SKIP_TEXT = new Set([
   "meta",
   "link",
 ]);
+/** REQ-862 AMENDMENT 2 (dm9, p3) — inline wrappers around a control that are no row of the page */
+const INLINE_WRAP = new Set([
+  "label",
+  "span",
+  "a",
+  "b",
+  "i",
+  "em",
+  "strong",
+  "small",
+  "u",
+  "abbr",
+  "code",
+  "sub",
+  "sup",
+]);
 /** REQ-878 — elements whose own box is what the customer reads */
 const BOXED_TEXT = new Set([
   "input",
@@ -686,8 +702,46 @@ export function createReplayer(
   /** REQ-878 AMENDMENT (dm8, m3) — what the customer's control is called: its aria-label, else
    *  its text ("Subir logo"), at most 40 characters */
   function controlName(e: Element): string {
-    const t = (e.getAttribute("aria-label") || e.textContent || "").trim()
-      .replace(/\s+/g, " ");
+    const squashed = (v: string | null | undefined) =>
+      (v ?? "").replace(/\s+/g, " ").trim();
+    // REQ-878 AMENDMENT 2 (dm9, m4) — what the customer READS first ("Reemplazar logo"), the
+    // aria-label only for a control with no text (it was stale: "Subir logo" on a replace button)
+    let t = squashed(e.textContent) || squashed(e.getAttribute("aria-label"));
+    if (!t) {
+      // REQ-878 AMENDMENT 2 (dm9, m1) — an input has no text: its label names it
+      // a walk, not querySelectorAll: the stage's frame document and the tests' fake one alike
+      const found = (pick: (n: Element) => boolean): Element | undefined => {
+        const root = doc.body ?? doc.documentElement;
+        const stack: Element[] = root ? [root] : [];
+        while (stack.length > 0) {
+          const n = stack.pop()!;
+          if (pick(n)) return n;
+          for (const c of Array.from(n.childNodes)) {
+            if (c.nodeType === 1) stack.push(c as Element);
+          }
+        }
+        return undefined;
+      };
+      const byId = (ids: string | null) =>
+        (ids ?? "").split(/\s+/).filter(Boolean)
+          .map((id) =>
+            squashed(found((n) => n.getAttribute("id") === id)?.textContent)
+          )
+          .filter(Boolean).join(" ");
+      t = byId(e.getAttribute("aria-labelledby"));
+      const id = e.getAttribute("id");
+      if (!t && id) {
+        t = squashed(
+          found((n) =>
+            n.localName.toLowerCase() === "label" &&
+            n.getAttribute("for") === id
+          )?.textContent,
+        );
+      }
+      if (!t) t = squashed(e.closest("label")?.textContent);
+      if (!t) t = squashed(e.getAttribute("placeholder"));
+      if (!t) t = squashed(e.getAttribute("title"));
+    }
     return t.length > 40 ? `${t.slice(0, 39)}…` : t;
   }
   /** REQ-878 AMENDMENT (dm8, m3) — is the chip at `c` beside its control `r`: on it, at its left
@@ -906,6 +960,7 @@ export function createReplayer(
         spots.push([r.left + (r.width - w) / 2, mid]);
       }
       spots.push([right, mid], [leftOf, mid]);
+      const rowSpots = () => spots.length;
       const band = texts.filter((t) =>
         t.top < mid + h && mid < t.top + t.height
       );
@@ -917,31 +972,66 @@ export function createReplayer(
         const t of band.filter((t) => t.left + t.width <= r.left)
           .sort((a, b) => b.left - a.left)
       ) spots.push([t.left - CHIP_GAP - w, mid]);
-      spots.push(
-        [r.left, r.top + r.height + CHIP_UNDER],
-        [r.left, r.top - CHIP_UNDER - h],
-      );
-      // a spot inside the control's own row (its parent's box) before one outside it: never the
-      // page's sidebar when there is room past the row's hint
-      const row = sel.parentElement?.getBoundingClientRect();
+      const inRowCount = rowSpots();
+      // REQ-862 AMENDMENT 2 (dm9, m2 + p3) — under and over it: at its left edge, at its right
+      // edge, and past the text in that band (a date input that spans a 390 px row: over it,
+      // right of its "VENCE" label — never on it, never in the card next door)
+      for (
+        const y of [r.top + r.height + CHIP_UNDER, r.top - CHIP_UNDER - h]
+      ) {
+        spots.push([r.left, y], [r.left + r.width - w, y]);
+        const bandAt = texts.filter((t) =>
+          t.top < y + h && y < t.top + t.height
+        );
+        for (
+          const t of bandAt.filter((t) => t.left + t.width > r.left)
+            .sort((a, b) => (a.left + a.width) - (b.left + b.width))
+        ) spots.push([t.left + t.width + CHIP_GAP, y]);
+        for (
+          const t of bandAt.filter((t) => t.left < r.left + r.width)
+            .sort((a, b) => b.left - a.left)
+        ) spots.push([t.left - CHIP_GAP - w, y]);
+      }
+      // a spot inside the control's own row before one outside it: never the page's sidebar when
+      // there is room past the row's hint. REQ-862 AMENDMENT 2 (dm9, p3) — the row is the first
+      // ancestor that lays out a block (a <label> or <span> around the input is not a row: the
+      // chip right of "Start <input>" is in its paragraph), and a spot in the row beside the
+      // control comes before one under or over it, which comes before any spot outside the row
+      // (the chip beside "VENCE" reached into the card next door; over it, by its label, is home)
+      let rowEl: Element | null = sel.parentElement;
+      while (rowEl && INLINE_WRAP.has(rowEl.localName.toLowerCase())) {
+        rowEl = rowEl.parentElement;
+      }
+      const row = rowEl?.getBoundingClientRect();
       const inRow = (x: number) =>
         !row || !(row.width > 0) ||
         (x >= row.left && x + w <= row.left + row.width);
       const ok = ([x, y]: [number, number]) =>
         fits(x) && fitsY(y) && !covers(x, y);
-      free = spots.find((p) => ok(p) && inRow(p[0])) ?? spots.find(ok) ??
-        null;
+      const beside = spots.slice(0, inRowCount);
+      const stacked = spots.slice(inRowCount);
+      free = beside.find((p) => ok(p) && inRow(p[0])) ??
+        stacked.find((p) => ok(p) && inRow(p[0])) ??
+        beside.find(ok) ?? stacked.find(ok) ?? null;
     } catch {
       free = null; // no layout to read: REQ-862's rule below
     }
     let left: number, top: number;
     if (free) [left, top] = free;
-    else {
-      if (onControl && w <= r.width) left = r.left + (r.width - w) / 2;
-      else if (fits(right)) left = right;
-      else if (fits(leftOf)) left = leftOf;
-      else left = r.left + (r.width - w) / 2;
+    else if (onControl && w <= r.width) {
+      left = r.left + (r.width - w) / 2;
       top = mid;
+    } else if (fits(right)) {
+      left = right;
+      top = mid;
+    } else if (fits(leftOf)) {
+      left = leftOf;
+      top = mid;
+    } else {
+      // REQ-862 AMENDMENT 2 (dm9, m2 + m3) — nothing free and no room beside: under it, never
+      // on it (an input's value, a button's label)
+      left = r.left;
+      top = r.top + r.height + CHIP_UNDER;
     }
     if (vw) left = Math.max(0, Math.min(left, vw - w));
     if (vh) top = Math.max(0, Math.min(top, vh - h));

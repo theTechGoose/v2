@@ -2,6 +2,7 @@ import { HttpError } from "fresh";
 import { asset, Head } from "fresh/runtime";
 import { define } from "../utils.ts";
 import SiteFooter from "../components/SiteFooter.tsx";
+import DocTitle from "../components/DocTitle.tsx";
 import { tFor } from "../lib/i18n.ts";
 import { resolvePublicLang } from "../../shared/quote-flow/public-lang.ts";
 
@@ -42,6 +43,23 @@ export default define.page((ctx) => {
       }
       <Head>
         <link rel="stylesheet" href={asset("/error-page.css")} />
+        {
+          /* REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — the page says what it is in its title (the
+            browser tab read "DocuMonster"; the demo stage names an unknown mirrored page by its
+            title, and read "(Outbox)" off a mistyped path) */
+        }
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            `${
+              tFor(
+                l,
+                isNotFound
+                  ? "errorPage.notFound.heading"
+                  : "errorPage.server.heading",
+              )
+            } · ${tFor(l, "brand.name")}`}
+        />
       </Head>
       <div style="min-height:100dvh;display:flex;flex-direction:column;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
         <div style="flex:1;width:100%;max-width:472px;margin:0 auto;padding:32px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">

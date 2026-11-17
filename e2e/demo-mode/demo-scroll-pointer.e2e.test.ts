@@ -651,6 +651,38 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2) + R
         (document.scrollingElement?.scrollHeight ?? 0) - innerHeight
       );
       const to = from >= 250 ? from - 250 : Math.min(from + 250, max);
+      // REQ-451 AMENDMENT 2 (demo-loop run 9, p5) — frame by frame through the scroll: his arrow's
+      // drawn spot on her screen, with the page's scroll at that frame
+      await userPage.evaluate(() => {
+        type Pt = { t: number; y: number; s: number; pending: boolean };
+        const w = globalThis as unknown as {
+          __pmRide?: Pt[];
+          __pmRideStop?: () => void;
+        };
+        const out: Pt[] = [];
+        w.__pmRide = out;
+        let on = true;
+        w.__pmRideStop = () => {
+          on = false;
+        };
+        const t0 = performance.now();
+        const tick = () => {
+          const el = Array.from(
+            document.querySelectorAll("[data-cy='demo-pointer']"),
+          ).find((e) => e.getAttribute("data-presenter") === "Hans");
+          if (el) {
+            const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+            out.push({
+              t: Math.round(performance.now() - t0),
+              y: m.m42,
+              s: globalThis.scrollY,
+              pending: el.hasAttribute("data-pending"),
+            });
+          }
+          if (on && out.length < 600) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
       await userPage.evaluate((y) => globalThis.scrollTo(0, y), to);
       const after = await frameFollows(
         "the customer's scroll under the presenter's still mouse",
@@ -691,6 +723,35 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2) + R
           return true;
         },
         8_000,
+      );
+      // REQ-451 AMENDMENT 2 (dm9, p5) — in every frame the arrow was where it had been (the page not
+      // yet re-placed under it) or exactly with its element at that frame's scroll (or the frame
+      // before: the re-placing runs on the next frame) — never gliding between the two
+      const ride = await userPage.evaluate(() => {
+        const w = globalThis as unknown as {
+          __pmRide?: { t: number; y: number; s: number; pending: boolean }[];
+          __pmRideStop?: () => void;
+        };
+        w.__pmRideStop?.();
+        return w.__pmRide ?? [];
+      });
+      const rests = (i: number) => {
+        const now = ride[i].s - from;
+        const prev = i > 0 ? ride[i - 1].s - from : 0;
+        return [before.y, before.y - now, before.y - prev];
+      };
+      const gliding = ride.filter((p, i) =>
+        !p.pending && rests(i).every((r) => Math.abs(p.y - r) > 3.5)
+      );
+      expect(
+        ride.length >= 2,
+        `REQ-451 AMENDMENT 2 (p5): the ride was sampled (${ride.length} frames)`,
+      );
+      expect(
+        gliding.length === 0,
+        `REQ-451 AMENDMENT 2 (p5): the arrow glided through ${gliding.length} frame(s) instead of riding with its element (scroll ${from} → ${to}, arrow from y=${before.y}): ${
+          JSON.stringify(gliding.slice(0, 8))
+        } of ${ride.length} frames`,
       );
 
       // 4. End from the customer (it asks first) clears both

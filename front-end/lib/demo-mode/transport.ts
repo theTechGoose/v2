@@ -257,8 +257,9 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
   /** REQ-896 — a presenter: why the followed (or last) tab's page went; undefined once a tab of
    *  hers is here again */
   let lastLeave: LeaveWhy | undefined;
-  /** REQ-838 (p8) — the customer's side: this socket has not heard who is there yet (not
-   *  welcomed, or welcomed less than JOIN_GRACE_MS ago with no stage heard) */
+  /** REQ-838 (p8) — this socket has not heard who is there yet (not welcomed, or welcomed less
+   *  than JOIN_GRACE_MS ago with nobody heard: the customer's side a stage, the stage a tab —
+   *  REQ-838 AMENDMENT, dm9 p4) */
   let joining = true;
   let joinTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
@@ -297,12 +298,10 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
     if (replaced) return setStatus("replaced");
     if (closed) return setStatus("closed");
     if (ws?.readyState !== WebSocket.OPEN) return setStatus("connecting");
-    // REQ-838 (p8) — the customer's link that has not heard who is there yet is still connecting
-    if (!online()) {
-      return setStatus(
-        o.role === "viewer" && joining ? "connecting" : "waiting",
-      );
-    }
+    // REQ-838 (p8) — the customer's link that has not heard who is there yet is still connecting;
+    // REQ-838 AMENDMENT (dm9, p4) — the stage's too: its roster lands a message after the welcome,
+    // and "Waiting for her app" flashed over a customer who was there all along
+    if (!online()) return setStatus(joining ? "connecting" : "waiting");
     // REQ-823 (M2) — the customer signed out: nothing of theirs is coming — waiting, not between
     if (o.role === "presenter" && held?.signout) return setStatus("waiting");
     // REQ-391 — a stage whose customer's page went: never "live" over it while the next may come
@@ -566,6 +565,7 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
       if (late) o.onPeerTab?.(cid, key);
     }
     endGrace();
+    endJoin(); // REQ-838 AMENDMENT (dm9, p4) — a tab heard: this stage knows who is there
     follow();
     refresh();
   };
@@ -731,7 +731,8 @@ export function connectDemo(o: DemoLinkOptions): DemoLink {
           // who is here comes next, one `peer` each (REQ-232); this tab says again it is in use
           reclaim();
           // REQ-838 (p8) — and the other hubs' stages answer a moment later: still joining
-          if (o.role === "viewer" && joining) startJoin();
+          // (REQ-838 AMENDMENT, dm9 p4 — the stage's roster comes a moment later too)
+          if (joining) startJoin();
           refresh();
           askTimes(); // REQ-391, REQ-648
           break;

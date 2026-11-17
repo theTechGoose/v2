@@ -20,7 +20,12 @@ const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
 const pl = () =>
   require("../../shared/demo-mode/page-label") as {
     pageLabelKey(path: string): string | null;
-    pageLabel(path: string, tr: (key: string) => string): string;
+    pageLabel(
+      path: string,
+      tr: (key: string) => string,
+      title?: string | null,
+    ): string;
+    titleName(title?: string | null): string;
   };
 const trOf = (dict: Record<string, string>) => (k: string) => dict[k] ?? k;
 
@@ -144,7 +149,8 @@ describe("REQ-826 (demo-loop cycle dm2, p10) DemoStage: the banner is wired to p
   test("the banner text is the page's name (pageLabel over t), never the raw tabNote path", () => {
     expect(src).toMatch(/from "\.\.\/\.\.\/shared\/demo-mode\/page-label\.ts"/);
     expect(src).toMatch(
-      /t\("demoMode\.tabSwitched", \{\s*name,\s*page: pageLabel\(tabNote, t\),?\s*\}\)/,
+      // REQ-826 AMENDMENT 3 (dm9, p1) — the mirrored document's title names an unknown page
+      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*frameRef\.current\?\.contentDocument\?\.title,?\s*\),?\s*\}\)/,
     );
     expect(src).not.toContain("path: tabNote");
   });
@@ -156,5 +162,46 @@ describe("REQ-826 (demo-loop cycle dm2, p10) DemoStage: the banner is wired to p
     expect(style).toContain("transform:translateX(-50%)");
     expect(style).toContain("height:${STAGE_BADGE_H}px");
     expect(style).not.toContain("translate(-50%,-50%)");
+  });
+});
+
+describe("REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — a page with no name of its own is named by its document title, never its path", () => {
+  const L = (p: string, title?: string | null) =>
+    pl().pageLabel(p, trOf(en), title);
+  test("a 404 page typed by hand: its title's own part, not '(Outbox)' / '(Campo)' read off the path", () => {
+    expect(L("/outbox", "No encontramos esa página · DocuMonster")).toBe(
+      "No encontramos esa página",
+    );
+    expect(L("/campo/xyz", "Page not found · DocuMonster")).toBe(
+      "Page not found",
+    );
+    expect(L("/field-notes/7f3a", "Field notes | DocuMonster")).toBe(
+      "Field notes",
+    );
+  });
+  test("a known page keeps its localized name whatever the title says", () => {
+    expect(L("/dashboard", "Something else · DocuMonster")).toBe("Dashboard");
+    expect(L("/q/cfe16416-ed6e-48ee-9b98-a636c835d3e3", "Quote · X")).toBe(
+      "Quote",
+    );
+  });
+  test("no title, an empty one, or the bare app name: the path's first segment as before", () => {
+    expect(L("/field-notes/x")).toBe("Field notes");
+    expect(L("/field-notes/x", "")).toBe("Field notes");
+    expect(L("/field-notes/x", "   ")).toBe("Field notes");
+    expect(L("/field-notes/x", "DocuMonster")).toBe("Field notes");
+    expect(L("/field-notes/x", "documonster")).toBe("Field notes");
+  });
+  test("titleName: the part before the app's separator, whitespace squashed, long names cut at 40", () => {
+    const T = (t?: string | null) => pl().titleName(t);
+    expect(T("Mi página  de\n prueba · DocuMonster")).toBe("Mi página de prueba");
+    expect(T("Settings - DocuMonster")).toBe("Settings");
+    expect(T("Settings — DocuMonster")).toBe("Settings");
+    expect(T("Just a title")).toBe("Just a title");
+    expect(T(null)).toBe("");
+    expect(T(undefined)).toBe("");
+    expect(T("x".repeat(60))).toBe("x".repeat(39) + "…");
+    // a hyphenated name is not split: the separator is a spaced dash
+    expect(T("Field-notes · DocuMonster")).toBe("Field-notes");
   });
 });

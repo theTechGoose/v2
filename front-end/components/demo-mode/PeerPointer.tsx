@@ -47,6 +47,9 @@ export interface PointerCmd {
   faded?: boolean;
   /** REQ-645 — a `pending` command's words ("{name} is pointing…") */
   text?: string;
+  /** REQ-451 AMENDMENT 2 (dm9, p5) — a `move` because the page moved under the pointer: drawn at
+   *  `at` this frame, no glide (the glide is for his hand's moves) */
+  snap?: boolean;
 }
 
 export default function PeerPointer(
@@ -79,7 +82,7 @@ export default function PeerPointer(
     switch (cmd.kind) {
       case "move":
         if (cmd.at) {
-          glide.glideTo(cmd.at, cmd.outside, cmd.rect);
+          glide.glideTo(cmd.at, cmd.outside, cmd.rect, cmd.snap === true);
           setOff(cmd.off === true);
           setCue(cmd.cue ?? null);
           setFaded(cmd.faded === true);

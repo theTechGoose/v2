@@ -2405,7 +2405,13 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               >
                 {t("demoMode.tabSwitched", {
                   name,
-                  page: pageLabel(tabNote, t),
+                  // REQ-826 AMENDMENT 3 (dm9, p1) — a page with no name of its own is named by
+                  // the mirrored document's title, never its path
+                  page: pageLabel(
+                    tabNote,
+                    t,
+                    frameRef.current?.contentDocument?.title,
+                  ),
                 })}
               </div>
             )}

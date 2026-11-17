@@ -75,10 +75,30 @@ export function pageLabelKey(path: string): string | null {
   return null;
 }
 
-/** the page's name for people: `tr` localizes a key; an unnamed page is its first segment */
-export function pageLabel(path: string, tr: (key: string) => string): string {
+/** the page's name for people: `tr` localizes a key; an unnamed page is named by its document
+ *  title when one is known (REQ-826 AMENDMENT 3, demo-loop run 9 p1: a 404 page typed by hand
+ *  read "(Outbox)" / "(Campo)" from its path; its title says "No encontramos esa página"), else
+ *  its first segment */
+export function pageLabel(
+  path: string,
+  tr: (key: string) => string,
+  title?: string | null,
+): string {
   const key = pageLabelKey(path);
   if (key) return tr(key);
+  const named = titleName(title);
+  if (named) return named;
   const seg = segments(path)[0].replace(/[-_]+/g, " ").trim();
   return seg.charAt(0).toUpperCase() + seg.slice(1);
+}
+
+/** REQ-826 AMENDMENT 3 — the page's own name out of its document title: the part before the
+ *  app's " · DocuMonster" (or " | " / " - ") suffix, trimmed; nothing for an empty or bare
+ *  app-name title */
+export function titleName(title?: string | null): string {
+  const t = (title ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  const head = t.split(/\s[·|–—-]\s/)[0].trim();
+  if (!head || /^documonster$/i.test(head)) return "";
+  return head.length > 40 ? `${head.slice(0, 39)}…` : head;
 }

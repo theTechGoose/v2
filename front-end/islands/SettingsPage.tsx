@@ -857,7 +857,9 @@ function EditCard(
           <button
             type="button"
             class="btn btn-secondary"
-            aria-label={t.ariaUploadLogo}
+            aria-label={snapshot.identity?.logoFileId
+              ? t.replaceLogo
+              : t.ariaUploadLogo}
             disabled={busy === "logo"}
             onClick={() => logoInputRef.current?.click()}
             style={btnSecondary}

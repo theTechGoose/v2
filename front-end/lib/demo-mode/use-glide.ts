@@ -20,8 +20,16 @@ export interface Glide {
   outside: boolean;
   /** REQ-437 — the box of the element the target is anchored to (null: none, or out of view) */
   rect: Rect | null;
-  /** REQ-305 — the same target again (a pointer placed afresh after a layout change) is no move */
-  glideTo(target: Pt, outside?: boolean, rect?: Rect | null): void;
+  /** REQ-305 — the same target again (a pointer placed afresh after a layout change) is no move.
+   *  REQ-451 AMENDMENT 2 (demo-loop run 9, p5) — `snap`: the page moved under the pointer (a
+   *  scroll, a resize, a layout change): drawn AT the target this frame, no glide — the arrow
+   *  trailed its field by up to 85 px through a wheel burst */
+  glideTo(
+    target: Pt,
+    outside?: boolean,
+    rect?: Rect | null,
+    snap?: boolean,
+  ): void;
   hide(): void;
   /** the pointer element's ref callback: paints the shown position on mount; REQ-437 —
    *  `onPaint` is called with every drawn position (the tag is placed from it) */
@@ -61,7 +69,7 @@ export function useGlide(): Glide {
     pointer,
     outside,
     rect,
-    glideTo(target, out = false, box = null) {
+    glideTo(target, out = false, box = null, snap = false) {
       const cur = targetRef.current;
       if (
         cur && shownRef.current && outsideRef.current === out &&
@@ -72,8 +80,10 @@ export function useGlide(): Glide {
       setOutside(out);
       setRect(out ? null : box);
       setPointer(target);
-      if (!shownRef.current) {
-        // first sight: appear AT the target
+      if (!shownRef.current || snap) {
+        // first sight: appear AT the target; REQ-451 AMENDMENT 2 — a page shift: drawn there now
+        if (raf.current) cancelAnimationFrame(raf.current);
+        raf.current = 0;
         shownRef.current = target;
         paint(target);
         return;

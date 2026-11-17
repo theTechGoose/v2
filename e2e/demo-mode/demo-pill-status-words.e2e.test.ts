@@ -644,3 +644,61 @@ Deno.test("REQ-645 AMENDMENT 2 (demo-loop run 8, p2): the customer closes her on
       await userCtx.close();
     }
   }));
+
+Deno.test("REQ-838 AMENDMENT (demo-loop run 9, p4): the stage (re)loads while the customer is already connected — its status goes Connecting… → Live, never a flash of 'Waiting for Ana Torres's app' before her tab's presence lands", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { userCtx } = await demoOn(
+      page,
+      http,
+      baseUrl,
+      { user: "en", admin: "en" },
+      { width: 1000, height: 760 },
+      "Live",
+    );
+    try {
+      // every status word the stage shows from its first paint, in order (a MutationObserver:
+      // not a frame sampler — a one-render flash is recorded too)
+      await page.addInitScript(() => {
+        const w = globalThis as unknown as { __pmWords: string[] };
+        w.__pmWords = [];
+        let last = "";
+        const look = () => {
+          const el = document.querySelector("[data-cy='demo-status']");
+          const s = el?.textContent?.trim() ?? "";
+          if (s && s !== last) {
+            last = s;
+            w.__pmWords.push(s);
+          }
+        };
+        // at document start there is no <html> yet: the document node itself is watched
+        new MutationObserver(look).observe(document, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+        });
+        document.addEventListener("DOMContentLoaded", look);
+      });
+      await page.reload();
+      await until(
+        "the reloaded stage is Live on her screen",
+        async () => (await statusOf(page)) === "Live",
+        30_000,
+      );
+      await new Promise((r) => setTimeout(r, 1_000));
+      const words = await page.evaluate(() =>
+        (globalThis as unknown as { __pmWords: string[] }).__pmWords
+      ) as string[];
+      const live = words.indexOf("Live");
+      expect(live >= 0, `the stage went Live (${JSON.stringify(words)})`);
+      const before = words.slice(0, live);
+      expect(
+        before.every((s) => !/waiting/i.test(s)),
+        `p4: no 'Waiting for her app' before Live over a customer who was there all along (${
+          JSON.stringify(words)
+        })`,
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));

@@ -457,7 +457,7 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     expect(chip(stage)!.style).toMatch(/left:554px;top:105px;/);
   });
 
-  test("no room on the control, on either side, under or over it: centred on the control, kept inside the frame", () => {
+  test("no room on the control, on either side, under or over it: under the control (REQ-862 AMENDMENT 2, dm9 m2/m3 — never on it, which hid the value or the label), kept inside the frame", () => {
     const { doc, by, stage, sync, boxes } = setup();
     // a 200 px button in a 300 px frame: the 238 px chip fits neither on it nor beside it
     by("logo-btn").rect = { left: 10, top: 100, width: 200, height: 36 };
@@ -470,8 +470,8 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     doc.fire("click", by("logo-btn"));
     doc.fire("click", by("logo"));
     sync();
-    // centred would be left -9: clamped to the frame's edge, still in the button's row
-    expect(chip(stage)!.style).toMatch(/left:0px;top:105px;/);
+    // REQ-862 AMENDMENT 2 — under the button (its top + height + 4), at its left edge
+    expect(chip(stage)!.style).toMatch(/left:10px;top:140px;/);
   });
 
   test("the chip is set in the app's font: the frame body's family, Inter when it has none — never the system-ui stack", () => {
@@ -704,5 +704,310 @@ describe("REQ-878 (cycle dm5, p2) — the file chip by a sibling upload button c
     expect(hits(c, rows["left-col"])).toBe(false);
     expect(c.left).toBeGreaterThanOrEqual(0);
     expect(c.left + CHIP_W).toBeLessThanOrEqual(1280);
+  });
+});
+
+describe("REQ-862 AMENDMENT 2 / REQ-878 AMENDMENT 2 (demo-loop run 9: m1–m4, p3) — a chip never on an input or over a picture; an input is named by its label; the name is what the customer reads", () => {
+  const DATE_W = 156; // "Choosing a date…" as Chromium drew it at 1280 and 390
+  const FILE_W = 203;
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    const orig = FElement.prototype.getBoundingClientRect;
+    spy = jest.spyOn(FElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: FElement) {
+        if (this.hasAttribute("data-mirror-picker")) {
+          const text = this.textContent ?? "";
+          const base = text.startsWith("Choosing a date") ? DATE_W : FILE_W;
+          const name = text.includes(" · ") ? text.split(" · ")[1] : "";
+          const w = base + (name ? name.length * 7.5 + 12 : 0);
+          return {
+            left: 0,
+            top: 0,
+            width: w,
+            height: 26,
+            x: 0,
+            y: 0,
+            right: w,
+            bottom: 26,
+          };
+        }
+        return orig.call(this);
+      });
+  });
+  afterEach(() => spy.mockRestore());
+
+  type R = { left: number; top: number; width: number; height: number };
+  const hits = (a: R, b: R) =>
+    a.left < b.left + b.width && b.left < a.left + a.width &&
+    a.top < b.top + b.height && b.top < a.top + a.height;
+
+  /** a page built by `body`, every data-cy element given the demo's box; the chip the stage draws
+   *  once the customer's click on the picker's control has gone over */
+  function page(
+    body: (d: FDocument) => FElement,
+    rows: Record<string, R>,
+    view: { w: number; h: number },
+  ) {
+    const doc = docWith(
+      (d) => h(d, "html", {}, h(d, "head"), body(d)),
+      "https://app.test/x",
+      view.w,
+      view.h,
+    );
+    const cys = Object.keys(rows);
+    const by = (cy: string) =>
+      find(doc, (e) => e.getAttribute("data-cy") === cy)!;
+    for (const cy of cys) by(cy).rect = { ...rows[cy] };
+    const frames: MirrorFrame[] = [];
+    const rec = createRecorder(doc as unknown as Document, {
+      emit: (f) => frames.push(JSON.parse(JSON.stringify(f))),
+      Observer: FakeMutationObserver as unknown as typeof MutationObserver,
+      manual: true,
+    });
+    const stage = new FDocument("about:srcdoc", view.w, view.h);
+    stage.appendChild(
+      h(stage, "html", {}, h(stage, "head"), h(stage, "body")),
+    );
+    const boxes = () => {
+      for (const cy of cys) {
+        const s = find(stage, (e) => e.getAttribute("data-cy") === cy);
+        if (s) s.rect = { ...rows[cy] };
+      }
+    };
+    const rep = createReplayer(stage as unknown as Document, {
+      schedule: (fn) => fn(),
+      Resize: null,
+    });
+    rec.snapshot();
+    expect(rep.apply(frames[0])).toBe(true);
+    boxes();
+    let at = 1;
+    const drawn = (w: number) => {
+      rec.flush();
+      for (; at < frames.length; at++) {
+        expect(rep.apply(frames[at])).toBe(true);
+        boxes();
+      }
+      expect(rep.apply({ t: "ops", ops: [] } as unknown as MirrorFrame)).toBe(
+        true,
+      );
+      const c = chip(stage)!;
+      const left = Number(/left:(-?[\d.]+)px/.exec(c.style)![1]);
+      const top = Number(/top:(-?[\d.]+)px/.exec(c.style)![1]);
+      const text = c.text ?? "";
+      const name = text.includes(" · ") ? text.split(" · ")[1] : "";
+      return {
+        left,
+        top,
+        width: w + (name ? name.length * 7.5 + 12 : 0),
+        height: 26,
+        text,
+      };
+    };
+    return {
+      date: (cy: string) => {
+        doc.fire("mousedown", by(cy));
+        return drawn(DATE_W);
+      },
+      file: (btn: string, input: string) => {
+        doc.fire("mousedown", by(btn));
+        doc.fire("click", by(btn));
+        doc.fire("click", by(input));
+        return drawn(FILE_W);
+      },
+    };
+  }
+
+  test("m2: at 390 px a date input spans the row — the chip goes over it, right of its label, never on it", () => {
+    const rows = {
+      "vence-label": { left: 43, top: 380, width: 57, height: 15 },
+      vence: { left: 43, top: 402, width: 304, height: 41 },
+      "vence-hint": { left: 43, top: 447, width: 304, height: 15 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "div",
+            { "data-cy": "card" },
+            h(d, "label", { "data-cy": "vence-label", for: "vence" }, "VENCE"),
+            h(d, "input", { type: "date", id: "vence", "data-cy": "vence" }),
+            h(
+              d,
+              "p",
+              { "data-cy": "vence-hint" },
+              "Fecha en que vence el seguro",
+            ),
+          ),
+        ),
+      rows,
+      { w: 390, h: 844 },
+    ).date("vence");
+    expect(hits(c, rows.vence)).toBe(false);
+    expect(hits(c, rows["vence-label"])).toBe(false);
+    expect(hits(c, rows["vence-hint"])).toBe(false);
+    expect(c.left).toBeGreaterThanOrEqual(0);
+    expect(c.left + c.width).toBeLessThanOrEqual(390);
+  });
+
+  test("m1 / p3: a date field with a twin at its right (From / To) — the chip never lands beside the other field unnamed; an input is named by its <label>", () => {
+    const rows = {
+      "range-row": { left: 273, top: 690, width: 354, height: 63 },
+      "from-label": { left: 273, top: 690, width: 170, height: 15 },
+      from: { left: 273, top: 707, width: 170, height: 46 },
+      "to-label": { left: 457, top: 690, width: 170, height: 15 },
+      to: { left: 457, top: 707, width: 170, height: 46 },
+      "left-text": { left: 40, top: 707, width: 225, height: 46 },
+      "under-text": { left: 273, top: 757, width: 354, height: 15 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(d, "p", { "data-cy": "left-text" }, "Custom range: pick the dates"),
+          h(
+            d,
+            "div",
+            { "data-cy": "range-row" },
+            h(d, "label", { "data-cy": "from-label", for: "from" }, "From"),
+            h(d, "input", { type: "date", id: "from", "data-cy": "from" }),
+            h(d, "label", { "data-cy": "to-label", for: "to" }, "To"),
+            h(d, "input", { type: "date", id: "to", "data-cy": "to" }),
+          ),
+          h(
+            d,
+            "p",
+            { "data-cy": "under-text" },
+            "Reports cover the days you pick",
+          ),
+        ),
+      rows,
+      { w: 1280, h: 800 },
+    ).date("from");
+    expect(hits(c, rows.from)).toBe(false);
+    expect(hits(c, rows.to)).toBe(false);
+    // not beside From (the row is full): it says which field
+    const besideFrom = c.top < rows.from.top + rows.from.height &&
+      rows.from.top < c.top + c.height &&
+      c.left <= rows.from.left + rows.from.width + 9 &&
+      c.left + c.width >= rows.from.left - 9;
+    const underOrOver = c.left < rows.from.left + rows.from.width &&
+      rows.from.left < c.left + c.width &&
+      (Math.abs(c.top - (rows.from.top + rows.from.height)) <= 5 ||
+        Math.abs(c.top + c.height - rows.from.top) <= 5);
+    if (!besideFrom && !underOrOver) {
+      expect(c.text).toBe("Choosing a date… · From");
+    }
+  });
+
+  test("m3: at 390 px a file chip wider than its button goes under or over the button, never on it or past the frame's edge", () => {
+    const rows = {
+      "logo-row": { left: 43, top: 399, width: 304, height: 81 },
+      "logo-btn": { left: 43, top: 399, width: 108, height: 43 },
+      "logo-hint": { left: 43, top: 450, width: 304, height: 30 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(
+              d,
+              "button",
+              { type: "button", "data-cy": "logo-btn" },
+              "Subir logo",
+            ),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+        ),
+      rows,
+      { w: 390, h: 844 },
+    ).file("logo-btn", "logo-file");
+    expect(hits(c, rows["logo-btn"])).toBe(false);
+    expect(hits(c, rows["logo-hint"])).toBe(false);
+    expect(c.left).toBeGreaterThanOrEqual(0);
+    expect(c.left + c.width).toBeLessThanOrEqual(390);
+  });
+
+  test("m4: after an upload the button reads 'Reemplazar logo' (its aria-label still 'Subir logo') and a thumbnail sits at its right — the chip covers neither the picture nor the hint, and names what the customer reads", () => {
+    const rows = {
+      "logo-row": { left: 271, top: 407, width: 965, height: 43 },
+      "logo-btn": { left: 271, top: 407, width: 130, height: 43 },
+      "logo-img": { left: 413, top: 411, width: 96, height: 32 },
+      "logo-set": { left: 517, top: 421, width: 80, height: 15 },
+      "logo-hint": { left: 609, top: 421, width: 409, height: 15 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(
+              d,
+              "button",
+              {
+                type: "button",
+                "data-cy": "logo-btn",
+                "aria-label": "Subir logo",
+              },
+              "Reemplazar logo",
+            ),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              {},
+              h(d, "img", {
+                "data-cy": "logo-img",
+                src: "/api/files/x",
+                alt: "Logo cargado",
+              }),
+              h(d, "span", { "data-cy": "logo-set" }, "Logo cargado"),
+            ),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+        ),
+      rows,
+      { w: 1280, h: 800 },
+    ).file("logo-btn", "logo-file");
+    expect(hits(c, rows["logo-img"])).toBe(false);
+    expect(hits(c, rows["logo-hint"])).toBe(false);
+    expect(hits(c, rows["logo-btn"])).toBe(false);
+    expect(c.text).toBe("Customer is choosing a file… · Reemplazar logo");
   });
 });

@@ -504,3 +504,40 @@ describe("REQ-838 p4 — the customer signed out: the stage draws nothing of a s
     expect(guardOf("<PointerGhost")).toMatch(/!signedOut/);
   });
 });
+
+describe("REQ-838 AMENDMENT (demo-loop run 9, p4) — the stage's link says 'waiting' (no tab of hers) only once it can know: never while its socket is still joining", () => {
+  test("welcomed, the roster not in yet: 'connecting', not a flash of 'waiting' before her tab's presence lands", () => {
+    jest.useFakeTimers();
+    const s = stage();
+    expect(s.statuses).not.toContain("waiting");
+    jest.advanceTimersByTime(JOIN_GRACE_MS - 100);
+    expect(s.statuses).not.toContain("waiting");
+    s.online("a1");
+    s.claim("a1", 100, "tab-A");
+    expect(s.status()).toBe("relay");
+    expect(s.statuses).not.toContain("waiting");
+    s.link.close();
+  });
+  test("no tab within JOIN_GRACE_MS of the welcome: 'waiting' — and her tab coming is live", () => {
+    jest.useFakeTimers();
+    const s = stage();
+    jest.advanceTimersByTime(JOIN_GRACE_MS + 50);
+    expect(s.status()).toBe("waiting");
+    s.online("a1");
+    s.claim("a1", 100, "tab-A");
+    expect(s.status()).toBe("relay");
+    s.link.close();
+  });
+  test("her only tab closing after the join: 'between' then 'waiting' as before — the join grace is spent", () => {
+    jest.useFakeTimers();
+    const s = stage();
+    s.online("a1");
+    s.claim("a1", 100, "tab-A");
+    const k = s.statuses.length;
+    s.gone("a1", "closing");
+    expect(s.since(k)).toEqual(["between"]);
+    jest.advanceTimersByTime(SILENT_GRACE_MS + 10);
+    expect(s.status()).toBe("waiting");
+    s.link.close();
+  });
+});

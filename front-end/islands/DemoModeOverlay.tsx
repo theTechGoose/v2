@@ -544,6 +544,9 @@ const styleOf = (e: ClipNode): ClipStyle | null => {
   }
 };
 
+/** a pointer command the overlay places for a presenter: his hand moved, or he clicked */
+type PlaceKind = "move" | "click";
+
 export default function DemoModeOverlay(
   props: {
     /** REQ-647 (cycle 5, c2-p13-r) — /admin's handover notice, read by _app on the server */
@@ -1384,7 +1387,8 @@ export default function DemoModeOverlay(
         reporter.report(placedReport(pid, lp.a, lp.p, viewportBox(), tg));
       }
     };
-    const place = (pid: string, a: Anchor, kind: "move" | "click") => {
+    // REQ-451 AMENDMENT 2 (dm9, p5) — `shift`: the page moved under his still pointer (replace)
+    const place = (pid: string, a: Anchor, kind: PlaceKind, shift = false) => {
       const p = placeOnScreen(a);
       // REQ-451 — what he pointed at is not on this page (any more): no arrow, kept until it is
       // back or he points elsewhere
@@ -1411,6 +1415,9 @@ export default function DemoModeOverlay(
         at: p.at,
         outside: p.outside && !p.dir,
         off: a.o === 1,
+        // REQ-451 AMENDMENT 2 (dm9, p5) — the page moved under his still pointer: with its element,
+        // this frame — never a glide that trails the field through a scroll
+        ...(shift ? { snap: true } : {}),
         // REQ-645 (c4-M6) — out of view: the chevron where it can be seen, and the way to it
         cue: p.dir
           ? {
@@ -1438,7 +1445,7 @@ export default function DemoModeOverlay(
               was.outside === p.outside
             : !was
         ) continue;
-        place(pid, a, "move");
+        place(pid, a, "move", true);
       }
       const rest = lastMoveRef.current;
       if (!rest || !linkRef.current) return;

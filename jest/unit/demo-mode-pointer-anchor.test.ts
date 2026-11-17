@@ -804,7 +804,7 @@ describe("REQ-305 the pointer says when it points outside its box", () => {
     const glide = read("front-end/lib/demo-mode/use-glide.ts");
     expect(glide).toMatch(/outside: boolean/);
     // REQ-437 adds the anchored element's rect as a third argument
-    expect(glide).toMatch(/glideTo\(target: Pt, outside\?: boolean[,)]/);
+    expect(glide).toMatch(/glideTo\(\s*target: Pt,\s*outside\?: boolean[,)]/);
     const peer = read("front-end/components/demo-mode/PeerPointer.tsx");
     expect(peer).toMatch(/outside\?: boolean/);
     expect(peer).toMatch(/glide\.glideTo\(cmd\.at, cmd\.outside[,)]/);
