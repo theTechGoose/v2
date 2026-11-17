@@ -233,16 +233,21 @@ const arrowOf = async (pg: Page) => {
   return p && !p.pending && !p.cue ? p : null;
 };
 
-/** his arrow on the customer's screen once it has come to rest (two reads 300 ms apart agree) */
+/** his arrow on the customer's screen once it has come to rest: four reads 200 ms apart agree
+ *  (the glide steps once per animation frame; a headless page with two or more pages open ticks
+ *  ~6 frames a second, so two reads could both fall before the first step — REQ-645 M1 read the
+ *  pre-glide spot as rest and then found the arrow 26 px away on the re-rendered card) */
 async function restingArrow(pg: Page, what: string) {
   let last = await arrowOf(pg);
-  for (let i = 0; i < 30; i++) {
-    await sleep(300);
+  let same = 0;
+  for (let i = 0; i < 40; i++) {
+    await sleep(200);
     const now = await arrowOf(pg);
-    if (
-      now && last && Math.abs(now.x - last.x) < 0.5 &&
-      Math.abs(now.y - last.y) < 0.5
-    ) return now;
+    same = now && last && Math.abs(now.x - last.x) < 0.5 &&
+        Math.abs(now.y - last.y) < 0.5
+      ? same + 1
+      : 0;
+    if (now && same >= 3) return now;
     last = now;
   }
   throw new Error(`${what}: no arrow came to rest (${JSON.stringify(last)})`);

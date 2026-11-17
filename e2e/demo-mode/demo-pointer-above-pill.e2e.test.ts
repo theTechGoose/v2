@@ -192,8 +192,24 @@ Deno.test("REQ-831 (demo-loop cycle dm2, m4): with End's question open on the cu
         "[data-cy='demo-pill'] [data-cy='demo-end-cancel']",
       );
       await cancel.waitFor({ state: "visible", timeout: 5_000 });
-      const kb = await cancel.boundingBox();
+      // the asking pill glides to its spot (REQ-816/852), and a headless page ticks frames ~6 times
+      // a second: Keep going's box is read once it is inside the window and still for 600 ms
+      let kb = await cancel.boundingBox();
+      for (let same = 0, i = 0; i < 30 && same < 3; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        const now = await cancel.boundingBox();
+        same = now && kb && Math.abs(now.x - kb.x) < 0.5 &&
+            Math.abs(now.y - kb.y) < 0.5 && now.x + now.width <= view.width
+          ? same + 1
+          : 0;
+        kb = now;
+      }
       if (!kb) throw new Error("Keep going has no box");
+      if (kb.x + kb.width > view.width) {
+        throw new Error(
+          `Keep going sits off the window: ${JSON.stringify(kb)}`,
+        );
+      }
       const goal = { x: kb.x + kb.width / 2, y: kb.y + kb.height / 2 };
 
       // Alex's mouse on the stage, onto the customer's Keep going (the frame maps the screens)

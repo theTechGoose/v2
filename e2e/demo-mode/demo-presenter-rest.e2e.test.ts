@@ -189,16 +189,21 @@ const arrowOn = (pg: Page) =>
     | null
   >;
 
-/** the presenter's arrow on a tab once it has come to rest (two reads apart agree) */
+/** the presenter's arrow on a tab once it has come to rest: four reads 200 ms apart agree. The
+ *  glide steps once per animation frame, and a headless page with two or more pages open ticks
+ *  frames ~6 times a second, so two reads 150 ms apart could both land before the first step and
+ *  read a glide not yet begun as rest (REQ-393 M2 tab switch was red on that) */
 async function settledArrow(pg: Page) {
   let last = await arrowOn(pg);
+  let same = 0;
   for (let i = 0; i < 40; i++) {
-    await sleep(150);
+    await sleep(200);
     const now = await arrowOn(pg);
-    if (
-      now && last && Math.abs(now.x - last.x) < 0.5 &&
-      Math.abs(now.y - last.y) < 0.5
-    ) return now;
+    same = now && last && Math.abs(now.x - last.x) < 0.5 &&
+        Math.abs(now.y - last.y) < 0.5
+      ? same + 1
+      : 0;
+    if (now && same >= 3) return now;
     last = now;
   }
   throw new Error(
@@ -767,7 +772,9 @@ Deno.test("REQ-393 (demo M2 tab switch) + REQ-451 (demo M1) + REQ-645 (cycle 5 m
       //    mouse still (REQ-538 put one under it), the stage says which tab it shows; his move
       //    reaches tab 2 only
       await pillUp(tab2);
-      await tab2.locator("[data-cy='demo-more']").click();
+      // any pointerdown in the tab claims the stage (REQ-436): the pill itself — a 640 px tab is
+      // not the phone's compact pill (PILL_COMPACT_MAX_W), so it has no `demo-more` toggle (REQ-536)
+      await tab2.locator("[data-cy='demo-pill']").click();
       await until(
         "a click in tab 2 takes the stage (640 × 760)",
         async () => (await screenOf(page)).includes("640 × 760"),
