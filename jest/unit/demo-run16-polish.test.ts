@@ -1,4 +1,7 @@
 /**
+ * REVISION (demo-loop run 18, m2 — REQ-890 AMENDMENT 6 REVISION 2): endGuard and tabClick judge a
+ * click by `approachClaims` (not rested a second, within PEEK_HOVER_CLICK_PX), and every approach
+ * carries `since`; the regexes below say so.
  * Demo-loop run 16 (2026-11-17), by hand — Raphael: "fix the polish problems personally, until
  * there are none."
  *  m1+m2 — REQ-890 AMENDMENT 5: at 390 px the tab's peek opened AWAY from the resting pointer —
@@ -150,7 +153,7 @@ describe("REQ-890 AMENDMENT 6 (run 16, p4 + p5): the tab's click guard follows t
   const start = { at: { x: 297, y: 686 }, moved: 1000, tab };
   test("a continuous move inside the tab's box carries the point with it (the approach goes on)", () => {
     const a = approachMoved(start, { x: 309, y: 700 }, 1000 + PEEK_APPROACH_GAP_MS - 1);
-    expect(a).toEqual({ at: { x: 309, y: 700 }, moved: 1000 + PEEK_APPROACH_GAP_MS - 1, tab });
+    expect(a).toEqual({ at: { x: 309, y: 700 }, moved: 1000 + PEEK_APPROACH_GAP_MS - 1, since: 1000 + PEEK_APPROACH_GAP_MS - 1, tab }); // REVISION (run 18): since
     expect(hoverClickIsTab(a!.at, { x: 309, y: 700 })).toBe(true);
   });
   test("a move after a rest, further than PEEK_HOVER_CLICK_PX: a deliberate move — End is End", () => {
@@ -170,15 +173,15 @@ describe("REQ-890 AMENDMENT 6 (run 16, p4 + p5): the tab's click guard follows t
     expect(overlay).not.toMatch(/hoverOpenAtRef/);
     expect(overlay).toMatch(/const approachRef = useRef<Approach \| null>\(null\);/);
     expect(overlay).toMatch(
-      /onMouseMove=\{\(e\) => \{[\s\S]{0,500}?approachRef\.current = \{\s*at: \{ x: e\.clientX, y: e\.clientY \},\s*moved: Date\.now\(\),\s*tab: pillRef\.current\.getBoundingClientRect\(\),?\s*\};/,
+      /onMouseMove=\{\(e\) => \{[\s\S]{0,500}?approachRef\.current = \{\s*at: \{ x: e\.clientX, y: e\.clientY \},\s*moved: Date\.now\(\),\s*since: Date\.now\(\),\s*tab: pillRef\.current\.getBoundingClientRect\(\),?\s*\};/,
     );
     expect(overlay).toMatch(/approachRef\.current = approachMoved\(\s*approachRef\.current,\s*pointRef\.current,\s*Date\.now\(\),?\s*\);/);
     expect(overlay).toMatch(
-      /const endGuard = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(\s*!hoverClickIsTab\(approachRef\.current\?\.at \?\? null, \{ x: e\.clientX, y: e\.clientY \}\)\s*\) \{?\s*return false;/,
+      /const endGuard = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(\s*!approachClaims\(\s*approachRef\.current,\s*\{ x: e\.clientX, y: e\.clientY \},\s*Date\.now\(\),?\s*\)\s*\) \{?\s*return false;/,
     );
     // REQ-890 AMENDMENT 6 (p4) — the ask withdrawn (Keep going): a click where the mouse rests is not End's
     expect(overlay).toMatch(
-      /if \(wasAsking && !asking && pillRef\.current\) \{\s*(?:\/\/[^\n]*\n\s*)*approachRef\.current = \{\s*at: pointRef\.current,\s*moved: 0,\s*tab: pillRef\.current\.getBoundingClientRect\(\),?\s*\};/,
+      /if \(wasAsking && !asking && pillRef\.current\) \{\s*(?:\/\/[^\n]*\n\s*)*approachRef\.current = \{\s*at: pointRef\.current,\s*moved: 0,\s*since: Date\.now\(\),[^\n]*\n\s*tab: pillRef\.current\.getBoundingClientRect\(\),?\s*\};/,
     );
   });
 });
@@ -271,7 +274,7 @@ describe("run 17 re-checks (demo-loop run 17, by hand): three of the run-16 rule
   });
   test("REQ-890 AMENDMENT 4 REVISION: the tab's click on ANY part of the peek (the guide text at the left dock, not only End) shows the controls — a document click in the capture phase", () => {
     expect(overlay).toMatch(
-      /const tabClick = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*const el = pillRef\.current;\s*if \(\s*!el \|\|\s*!hoverClickIsTab\(approachRef\.current\?\.at \?\? null, \{ x: e\.clientX, y: e\.clientY \}\)\s*\) return;\s*const r = el\.getBoundingClientRect\(\);\s*if \(\s*e\.clientX < r\.left \|\| e\.clientX > r\.right \|\| e\.clientY < r\.top \|\|\s*e\.clientY > r\.bottom\s*\) return;\s*e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*approachRef\.current = null;\s*toggleOpenRef\.current\(\);\s*\};\s*document\.addEventListener\("click", tabClick, \{ capture: true \}\);/,
+      /const tabClick = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*const el = pillRef\.current;\s*if \(\s*!el \|\|\s*!approachClaims\(\s*approachRef\.current,\s*\{ x: e\.clientX, y: e\.clientY \},\s*Date\.now\(\),?\s*\)\s*\) return;\s*const r = el\.getBoundingClientRect\(\);\s*if \(\s*e\.clientX < r\.left \|\| e\.clientX > r\.right \|\| e\.clientY < r\.top \|\|\s*e\.clientY > r\.bottom\s*\) return;\s*e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*approachRef\.current = null;\s*toggleOpenRef\.current\(\);\s*\};\s*document\.addEventListener\("click", tabClick, \{ capture: true \}\);/,
     );
   });
 });

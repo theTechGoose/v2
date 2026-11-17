@@ -60,7 +60,14 @@ export default define.page(function AdminRoute(ctx) {
         <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>
       <div class="app">
-        <DashSidebar active="admin" />
+        {/* REQ-908 AMENDMENT (dm18, p2) — the rail is this session's from the first paint */}
+        <DashSidebar
+          active="admin"
+          seed={{
+            superAdmin: user?.superAdmin === true,
+            name: user?.name ?? null,
+          }}
+        />
         <main class="main">
           {
             /* REQ-507 (demo m25): the account search would search the staff account's own

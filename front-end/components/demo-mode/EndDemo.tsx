@@ -21,9 +21,19 @@
  * REQ-855 (demo-loop cycle dm3, m5) — `outline`: a secondary action in its host (the presenter's
  * pill off the stage, beside its solid Back to the demo) — outlined, not a second solid button.
  */
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import type { Vars } from "../../lib/i18n.ts";
-import { type EndAsk, endConfirm } from "../../../shared/demo-mode/ended.ts";
+import {
+  type EndAsk,
+  endConfirm,
+  yesArmsAtOnce,
+} from "../../../shared/demo-mode/ended.ts";
 
 const BTN =
   "padding:5px 12px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700;pointer-events:auto";
@@ -68,8 +78,13 @@ export default function EndDemo(
     askVars,
     outline = false,
     guard,
+    pressedAt,
   }: {
     onEnd: () => void;
+    /** REQ-235 AMENDMENT (demo-loop run 18, m1) — where the press that asked landed when it was
+     *  not End's own click (the folded tab's ×, `askAtOnce`): Yes arms at once when that press
+     *  is not on it. Null: unknown — the clock as before */
+    pressedAt?: () => { x: number; y: number } | null;
     /** REQ-890 AMENDMENT 4 (demo-loop run 15, m2) — asked before End asks: true, the host took
      *  this click as its own (the tab's, where a resting pointer opened the peek) */
     guard?: (e: MouseEvent) => boolean;
@@ -109,6 +124,16 @@ export default function EndDemo(
   useEffect(() => {
     if (askAtOnce) ask.ask();
   }, []);
+  // REQ-235 AMENDMENT (demo-loop run 18, m1) — the wait before Yes counts is for a double click's
+  // second click, which lands where the first did: a Yes the press is not on arms at once
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  const yesRef = useRef<HTMLButtonElement | null>(null);
+  useLayoutEffect(() => {
+    if (!s.asking || s.armed) return;
+    const press = pressRef.current ?? pressedAt?.() ?? null;
+    const yes = yesRef.current?.getBoundingClientRect() ?? null;
+    if (yesArmsAtOnce(press, yes)) ask.arm();
+  }, [s.asking, s.armed]);
   useEffect(() => () => {
     ask.dispose();
     // REQ-548 — gone (the demo ended): the host is no longer asked anything
@@ -146,6 +171,10 @@ export default function EndDemo(
         disabled={disabled}
         onClick={(e) => {
           if (guard?.(e)) return;
+          // REQ-235 AMENDMENT — a pointer's press (the keyboard's has no place: the clock)
+          pressRef.current = e.detail > 0
+            ? { x: e.clientX, y: e.clientY }
+            : null;
           ask.ask();
         }}
         style={`${BTN};${outline ? OUTLINE : "background:#fff;color:#7a2e2e"}${
@@ -169,6 +198,7 @@ export default function EndDemo(
     >
       <span style="font-weight:700">{words.ask}</span>
       <button
+        ref={yesRef}
         type="button"
         data-cy="demo-end-confirm"
         disabled={!s.armed}

@@ -49,6 +49,26 @@ export const ADMIN_PATH = "/admin";
 export const NAME_MAX = 80;
 /** how long Yes waits before it counts: longer than a double click's second click */
 export const END_ARM_MS = 400;
+/** REQ-235 AMENDMENT (demo-loop run 18, m1) — a double click's second click lands within this of
+ *  the first: a Yes farther than that from the press that asked arms at once */
+export const END_PRESS_NEAR_PX = 12;
+
+/**
+ * REQ-235 AMENDMENT (demo-loop run 18, m1) — Yes counts at once when the press that asked is not
+ * on it. The folded tab's × asked and the FIRST click on "Sí, terminar", 820 px away, did
+ * nothing: Yes was still waiting END_ARM_MS (measured from the question's effect, ~480 ms after
+ * the ×) for a double click that could never land there. No press known (the keyboard, a stale
+ * one), or Yes not laid out: the clock as before.
+ */
+export function yesArmsAtOnce(
+  press: { x: number; y: number } | null | undefined,
+  yes: { left: number; top: number; width: number; height: number } | null,
+  near = END_PRESS_NEAR_PX,
+): boolean {
+  if (!press || !yes || (yes.width === 0 && yes.height === 0)) return false;
+  return press.x < yes.left - near || press.x > yes.left + yes.width + near ||
+    press.y < yes.top - near || press.y > yes.top + yes.height + near;
+}
 
 const named = (name: string | undefined): EndedNotice => {
   const n = (name ?? "").trim().slice(0, NAME_MAX);
@@ -171,6 +191,8 @@ export interface EndConfirm {
   ask(): void;
   /** Yes: ends (once), when asked and armed */
   confirm(): void;
+  /** REQ-235 AMENDMENT — Yes counts from now (the press that asked is not on it) */
+  arm(): void;
   /** Keep going */
   cancel(): void;
   /** stop the clock (unmount) */
@@ -211,6 +233,11 @@ export function endConfirm(o: {
       stop();
       set(IDLE);
       o.onEnd();
+    },
+    arm() {
+      if (!s.asking || s.armed) return;
+      stop();
+      set({ asking: true, armed: true });
     },
     cancel() {
       if (!s.asking) return;

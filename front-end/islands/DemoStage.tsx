@@ -1940,12 +1940,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
     behind: lagView.behind,
     pageBehind: lagView.page,
     leave: leaveWhy,
+    // REQ-648 AMENDMENT (dm18, p3) — another of their tabs: "Catching up…", nothing loads
+    switched: switchedRef.current,
   });
   // REQ-648 (c4-m28) — the frame holds the page they left while their next one loads: dimmed, and
   // his pointer is not sent against it (the move throttle, the look-up of his still mouse, a click)
   // REQ-896 — and while a closed page is held ("One moment…"), the same
   const loadingNext = live.key === "loadingNext" ||
-    live.key === "pageGone";
+    live.key === "pageGone" ||
+    // REQ-648 AMENDMENT (dm18, p3) — the tab they left, while the other one's screen comes
+    (awaiting && switchedRef.current);
   loadingNextRef.current = loadingNext;
   // REQ-297 — the frame's look: greyed, dimmed and under the waiting overlay while the screen in it
   // is the one from before the customer's app dropped; REQ-370 — hidden until the replay is styled

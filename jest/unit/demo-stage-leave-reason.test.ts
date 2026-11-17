@@ -1,4 +1,6 @@
 /**
+ * REVISION (demo-loop run 18, p3 — REQ-648 AMENDMENT): the dim gate also holds while another of
+ * their tabs is awaited (`awaiting && switchedRef.current`); the regex below says so.
  * REQ-896 — demo-loop run 6 (dm6), issues p1 + p7. (p1) Closing the customer's only tab showed
  * "Loading their next page…" for up to SILENT_GRACE_MS before "Waiting for her app…": the label said
  * she was loading a page when the tab was gone. (p7) Once waiting, the stage's dimmed ghost of her
@@ -216,7 +218,7 @@ describe("REQ-896 (dm6, p1 + p7) the stage knows why the customer's page went", 
     );
     // the frame is held (dimmed, no pointer sent) for pageGone as for loadingNext
     expect(stage).toMatch(
-      /const loadingNext = live\.key === "loadingNext" \|\|\s*live\.key === "pageGone";/,
+      /const loadingNext = live\.key === "loadingNext" \|\|\s*live\.key === "pageGone" \|\|\s*(?:\/\/[^\n]*\n\s*)*\(awaiting && switchedRef\.current\);/,
     );
     // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…")
     expect(stage).toMatch(

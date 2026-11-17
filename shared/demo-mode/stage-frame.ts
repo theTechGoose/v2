@@ -211,6 +211,10 @@ export function stageStatus(o: {
   /** REQ-896 (dm6, p1) — why her page went (transport's onStatus): "Loading their next page…"
    *  only for a navigation; a close, or nothing said, is the neutral "One moment…" */
   leave?: LeaveWhy;
+  /** REQ-648 AMENDMENT (demo-loop run 18, p3) — the wait is for another of their tabs (a switch
+   *  to a tab already open: nothing of theirs is loading): "Catching up…", never "Loading their
+   *  next page…" */
+  switched?: boolean;
 }): { key: StageStatusKey; n?: number } {
   if (o.ended || o.status === "ended") return { key: "ended" };
   if (o.status === "replaced") return { key: "elsewhere" };
@@ -228,7 +232,7 @@ export function stageStatus(o: {
     return { key: "connecting" };
   }
   if (!o.mirrored) return { key: "connecting" };
-  if (o.awaiting) return loadingNext();
+  if (o.awaiting) return o.switched ? { key: "catchingUp" } : loadingNext();
   if (o.resyncing) return { key: "catchingUp" };
   if (o.behind > 0) return { key: "behind", n: o.behind };
   return { key: "live" };

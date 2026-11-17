@@ -1,4 +1,6 @@
 /**
+ * REVISION (demo-loop run 18, p2 — REQ-908 AMENDMENT): the sidebar's identity reads the cached
+ * profile, else the page's seed (`s.profile ?? seedIdentity(seed)`); the regex below says so.
  * REQ-624 — "When his daughter logs in she still sees Alexander's name." The signed-in person is
  * named everywhere a person is named (greeting, sidebar user block + initials, welcome toast,
  * AppNav, Settings "your name"); the business stays the owner's. The shared helper picks the
@@ -77,7 +79,7 @@ describe("REQ-624 every person-named surface reads through the helper", () => {
     // REQ-624 AMENDMENT — reconciled with develop on demo-fixes: the sidebar
     // words its identity through demo-fixes' sidebarIdentity (REQ-423/712),
     // which names the person through personName
-    expect(src).toMatch(/sidebarIdentity\(s\.profile/);
+    expect(src).toMatch(/sidebarIdentity\(\s*s\.profile \?\? seedIdentity\(seed\),/);
     expect(read("front-end/lib/greeting-identity.ts")).toMatch(/personName\(/);
     expect(src).not.toMatch(/profile\?\.user\.name/);
     expect(src).toMatch(/<ActorNamePrompt/);

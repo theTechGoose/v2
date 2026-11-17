@@ -341,6 +341,9 @@ export type Approach = {
   at: { x: number; y: number };
   moved: number;
   tab: Rect;
+  /** REQ-890 AMENDMENT 6 REVISION 2 (demo-loop run 18, m2) — when the pointer came to rest at
+   *  `at` (its last continuous move, or Keep going): `approachRested` counts from here */
+  since: number;
 };
 /**
  * REQ-890 AMENDMENT 6 (demo-loop run 16, p5) — the pointer moved while the peek is up. A mouse
@@ -363,9 +366,41 @@ export function approachMoved(
     point.x <= a.tab.left + a.tab.width &&
     point.y >= a.tab.top && point.y <= a.tab.top + a.tab.height;
   if (now - a.moved < gap) {
-    return inTab ? { at: { ...point }, moved: now, tab: a.tab } : null;
+    return inTab
+      ? { at: { ...point }, moved: now, since: now, tab: a.tab }
+      : null;
   }
   return hoverClickIsTab(a.at, point, tol) ? a : null;
+}
+
+/** REQ-890 AMENDMENT 6 REVISION 2 (demo-loop run 18, m2) — a pointer that has rested this long
+ *  where the approach ended means the click there: End under it is End's */
+export const PEEK_APPROACH_REST_MS = 1000;
+/**
+ * REQ-890 AMENDMENT 6 REVISION 2 (demo-loop run 18, m2) — the approach is over once the pointer
+ * has rested PEEK_APPROACH_REST_MS at its spot: the tester's mouse reached the tab in five
+ * steps, the peek opened with End under it, five more small steps and a full second's rest —
+ * and the click was still "the tab's" (nothing visible happened). A second looking at End is
+ * deliberate.
+ */
+export function approachRested(
+  a: Approach,
+  now: number,
+  rest = PEEK_APPROACH_REST_MS,
+): boolean {
+  return now - a.since >= rest;
+}
+/** REQ-890 AMENDMENT 6 REVISION 2 — the approach claims a click as the tab's: it is not over
+ *  (the pointer has not rested PEEK_APPROACH_REST_MS) and the click is within
+ *  PEEK_HOVER_CLICK_PX of where it ended (`hoverClickIsTab`) */
+export function approachClaims(
+  a: Approach | null,
+  click: { x: number; y: number },
+  now: number,
+  tol = PEEK_HOVER_CLICK_PX,
+  rest = PEEK_APPROACH_REST_MS,
+): boolean {
+  return !!a && !approachRested(a, now, rest) && hoverClickIsTab(a.at, click, tol);
 }
 
 /**

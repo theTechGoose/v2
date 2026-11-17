@@ -37,8 +37,18 @@ import { ActorNamePrompt } from "../components/ActorNamePrompt.tsx"; // REQ-624
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
+/** REQ-908 AMENDMENT (demo-loop run 18, p2) — what the page's own session says of the person,
+ *  for the first paint when the tab's dash cache is empty (an impersonation just ended) */
+export interface SidebarSeed {
+  superAdmin: boolean;
+  name?: string | null;
+}
+
 interface Props {
   active?: string;
+  /** REQ-908 AMENDMENT — the session the page rendered for: the Admin tab and the name from
+   *  the first paint, until /me answers (/admin after End painted the generic rail ~350 ms) */
+  seed?: SidebarSeed;
   /** When false, the nav-tab list (Dashboard/Clients/…/Admin) is omitted and
    *  only the sidebar chrome — brand, Assistant CTA, user footer, collapse,
    *  logout — renders. Used by the accounts-manager view, which wants the
@@ -46,7 +56,7 @@ interface Props {
   showNav?: boolean;
 }
 
-interface SbState {
+export interface SbState {
   counts: Partial<Record<CountKey, number>>;
   /** REQ-712 (cycle 5, m7): the profile the identity is worded from — at
    *  render, in the page's language, never the profile's saved one. */
@@ -79,8 +89,22 @@ function projectSidebar(snap: CachedDash | null): SbState {
   return { counts, profile, superAdmin, actor };
 }
 
+/** REQ-908 AMENDMENT (demo-loop run 18, p2) — no cached profile: the page's own session stands
+ *  in (the super-admin flag; the name through `seedIdentity`) until the fetch lands. A cached
+ *  profile is the fresher word and wins. */
+export function seedSidebar(s: SbState, seed?: SidebarSeed): SbState {
+  if (!seed || s.profile !== null) return s;
+  return { ...s, superAdmin: seed.superAdmin };
+}
+/** REQ-908 AMENDMENT — the identity source the seed stands for while no profile is cached */
+export function seedIdentity(
+  seed?: SidebarSeed,
+): { user: { name: string | null } } | null {
+  return seed ? { user: { name: seed.name ?? null } } : null;
+}
+
 export default function DashSidebar(
-  { active = "home", showNav = true }: Props,
+  { active = "home", showNav = true, seed }: Props,
 ) {
   // REQ-156 — which folder is open: the active entry's, until Back or a folder row is clicked
   const [path, setPath] = useState<string[]>(() => restingPath(active));
@@ -108,7 +132,9 @@ export default function DashSidebar(
   // Seed from the shared cache so a navigation between pages renders the
   // last-known counts/identity immediately and the badge doesn't flash
   // empty before the refetch lands.
-  const [s, setS] = useState<SbState>(() => projectSidebar(readCached()));
+  const [s, setS] = useState<SbState>(() =>
+    seedSidebar(projectSidebar(readCached()), seed)
+  );
   // REQ-146: the accounts this session can act in — the switcher shows when
   // there is more than one, the "In X's account" line when acting for another's.
   const [accounts, setAccounts] = useState<AccountsView | null>(null);
@@ -241,7 +267,10 @@ export default function DashSidebar(
   const lang = langSignal.value;
   // REQ-423 — the sign-in placeholder is no name: the business stands in, else "Account".
   // REQ-712 (cycle 5, m7): worded in the page's language, not the profile's.
-  const identity = sidebarIdentity(s.profile, (k, v) => tFor(lang, k, v));
+  const identity = sidebarIdentity(
+    s.profile ?? seedIdentity(seed), // REQ-908 AMENDMENT (dm18, p2)
+    (k, v) => tFor(lang, k, v),
+  );
   // REQ-517 — an icon-only row still names itself: a hover tooltip always, and an
   // aria-label while collapsed (the label span is gone or display:none then).
   const named = (label: string) => ({

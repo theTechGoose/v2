@@ -1,4 +1,7 @@
 /**
+ * REVISION (demo-loop run 18, m2 — REQ-890 AMENDMENT 6 REVISION 2): endGuard judges a click by
+ * `approachClaims` (not rested a second, within PEEK_HOVER_CLICK_PX), and End's click records its
+ * press before asking (REQ-235 AMENDMENT); the regexes below say so.
  * Demo-loop run 15 (2026-11-17), by hand — Raphael: "fix the polish problems personally, until
  * there are none."
  *  m1 — REQ-820 AMENDMENT 3: a customer's FIRST join at 390 px painted the whole pill at its home
@@ -88,7 +91,7 @@ describe("REQ-890 AMENDMENT 4 (demo-loop run 15, m2): a click where the pointer 
     );
     expect(overlay).toMatch(/guard=\{endGuard\}/);
     expect(overlay).toMatch(
-      /const endGuard = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(\s*!hoverClickIsTab\(approachRef\.current\?\.at \?\? null, \{ x: e\.clientX, y: e\.clientY \}\)\s*\) return false;\s*approachRef\.current = null;\s*toggleOpen\(\);\s*return true;\s*\};/,
+      /const endGuard = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*if \(\s*!approachClaims\(\s*approachRef\.current,\s*\{ x: e\.clientX, y: e\.clientY \},\s*Date\.now\(\),?\s*\)\s*\) return false;\s*approachRef\.current = null;\s*toggleOpen\(\);\s*return true;\s*\};/,
     );
     expect(overlay).toMatch(/if \(!peek\) \{\s*setPeekOpen\(false\);\s*approachRef\.current = null;[^\n]*\s*\}/);
     expect(overlay).toMatch(
@@ -96,7 +99,7 @@ describe("REQ-890 AMENDMENT 4 (demo-loop run 15, m2): a click where the pointer 
     );
     expect(endDemo).toMatch(/guard\?: \(e: MouseEvent\) => boolean;/);
     expect(endDemo).toMatch(
-      /onClick=\{\(e\) => \{\s*if \(guard\?\.\(e\)\) return;\s*ask\.ask\(\);\s*\}\}/,
+      /onClick=\{\(e\) => \{\s*if \(guard\?\.\(e\)\) return;\s*(?:\/\/[^\n]*\n\s*)*pressRef\.current = [^;]*;\s*ask\.ask\(\);\s*\}\}/,
     );
   });
 });

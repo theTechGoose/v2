@@ -248,8 +248,8 @@ import {
   peekTimer,
   pillJumps,
   pointerRests,
-  hoverClickIsTab,
   type Approach,
+  approachClaims,
   approachMoved,
   peekStays,
   PILL_BAND_GAP,
@@ -1862,13 +1862,24 @@ export default function DemoModeOverlay(
    *  — it shows the controls (the details) and never asks to end the demo. After the pointer has
    *  moved on, End is End */
   const endGuard = (e: MouseEvent) => {
-    // REQ-890 AMENDMENT 6 (dm16, p5) — judged by where the approach that opened the peek ended
+    // REQ-890 AMENDMENT 6 (dm16, p5) — judged by where the approach that opened the peek ended;
+    // REVISION 2 (dm18, m2) — and whether the pointer has rested there: a second on End is End
     if (
-      !hoverClickIsTab(approachRef.current?.at ?? null, { x: e.clientX, y: e.clientY })
+      !approachClaims(
+        approachRef.current,
+        { x: e.clientX, y: e.clientY },
+        Date.now(),
+      )
     ) return false;
     approachRef.current = null;
     toggleOpen();
     return true;
+  };
+  /** REQ-235 AMENDMENT (demo-loop run 18, m1) — where the folded tab's × (which asks at once)
+   *  was pressed, for Yes to arm at once when it is not there (a stale press: unknown) */
+  const pressedAt = () => {
+    const p = endPressRef.current;
+    return p && Date.now() - p.at < 5000 ? { x: p.x, y: p.y } : null;
   };
   // REQ-890 AMENDMENT 6 (dm16, p4) — Keep going withdrew the question: the pill shrinks back and
   // End lands under the still mouse ("a second click only asks again"). A click where the mouse
@@ -1881,6 +1892,7 @@ export default function DemoModeOverlay(
       approachRef.current = {
         at: pointRef.current,
         moved: 0,
+        since: Date.now(), // REQ-890 AMENDMENT 6 REVISION 2 (dm18, m2) — the rest starts now
         tab: pillRef.current.getBoundingClientRect(),
       };
       // REQ-820 AMENDMENT 5 REVISION (dm17) — the shrunk pill is placed in this layout pass: the
@@ -2616,7 +2628,11 @@ export default function DemoModeOverlay(
       const el = pillRef.current;
       if (
         !el ||
-        !hoverClickIsTab(approachRef.current?.at ?? null, { x: e.clientX, y: e.clientY })
+        !approachClaims(
+          approachRef.current,
+          { x: e.clientX, y: e.clientY },
+          Date.now(),
+        )
       ) return;
       const r = el.getBoundingClientRect();
       if (
@@ -3112,6 +3128,7 @@ export default function DemoModeOverlay(
                   approachRef.current = {
                     at: { x: e.clientX, y: e.clientY },
                     moved: Date.now(),
+                    since: Date.now(),
                     tab: pillRef.current.getBoundingClientRect(),
                   };
                 }
@@ -3242,6 +3259,7 @@ export default function DemoModeOverlay(
             <EndDemo
               onEnd={end}
               guard={endGuard}
+              pressedAt={pressedAt}
               ownRow={compact}
               onAsking={setAsking}
               t={t}
