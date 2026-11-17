@@ -85,9 +85,44 @@ const probe = () => {
     }
   }
   const text = pill?.textContent ?? "";
+  // REQ-890 REVISION — what is under the flush peek box (the spot `peekBox` tries first: the
+  // pill's width, its foot on the tab's foot, flush with the tab's right edge), for the failure
+  // message: a crowded spot there sends the peek to another row
+  const tb = box(tab);
+  const flush: string[] = [];
+  if (tb && b) {
+    const fw = b.width;
+    const fh = 43;
+    const fx = tb.x + tb.width - fw;
+    const fy = tb.y + tb.height - fh;
+    const seen = new Set<Element>();
+    for (let x = fx + 3; x < fx + fw; x += 12) {
+      for (let y = fy + 3; y < fy + fh; y += 8) {
+        const e = document.elementsFromPoint(x, y).find((n) =>
+          !pill?.contains(n)
+        );
+        const c = e?.closest(
+          "button, a[href], input, select, textarea, summary, [role='button'], [role='tab']",
+        );
+        if (c && !seen.has(c)) {
+          seen.add(c);
+          const r = c.getBoundingClientRect();
+          flush.push(
+            `${(c.textContent ?? "").trim().slice(0, 16)}@${
+              Math.round(r.left)
+            },${Math.round(r.top)} ${Math.round(r.width)}x${
+              Math.round(r.height)
+            }`,
+          );
+        }
+      }
+    }
+  }
   return {
     pill: b,
-    tab: box(tab),
+    tab: tb,
+    flush,
+    fonts: document.fonts?.status ?? "?",
     folded: pill?.hasAttribute("data-tucked") ?? false,
     compact: pill?.hasAttribute("data-compact") ?? false,
     text: text.slice(0, 60),
@@ -142,7 +177,25 @@ Deno.test("REQ-890 (run 6, m1+m2): at 700×800 on /customers the hovered tab ope
       await userPage.locator("[data-cy='demo-pill-tab']").waitFor({
         timeout: 15_000,
       });
-      const folded = await userPage.evaluate(probe);
+      // REQ-890 REVISION — the lane's pacing (4 pages, ~6 fps): the chip is hovered only once
+      // the page's fonts are in and its spot has held for 300 ms — a hover on a chip still on
+      // its way to its spot opens the peek from where the chip was, under no pointer, and it
+      // folds again (the 102-story lane: "compact 252,702" at 200 ms, folded at 400 ms)
+      await userPage.evaluate(() => document.fonts?.ready);
+      let folded = await userPage.evaluate(probe);
+      for (let i = 0; i < 20; i++) {
+        await userPage.waitForTimeout(300);
+        const again = await userPage.evaluate(probe);
+        if (
+          again.folded && again.tab && folded.tab &&
+          Math.round(again.tab.x) === Math.round(folded.tab.x) &&
+          Math.round(again.tab.y) === Math.round(folded.tab.y)
+        ) {
+          folded = again;
+          break;
+        }
+        folded = again;
+      }
       expect(
         folded.folded && folded.tab !== null,
         `folded first: ${JSON.stringify(folded)}`,
@@ -170,7 +223,9 @@ Deno.test("REQ-890 (run 6, m1+m2): at 700×800 on /customers the hovered tab ope
                 Math.round(p.pill.width)
               }`
               : "-"
-          } controls=${p.controls.length}`,
+          } controls=${p.controls.length} flush=[${
+            p.flush.join(" ")
+          }] fonts=${p.fonts}`,
         );
       }
       const open = { ...(await userPage.evaluate(probe)), timeline };
