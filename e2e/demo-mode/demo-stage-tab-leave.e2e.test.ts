@@ -525,7 +525,7 @@ Deno.test("REQ-879 (demo-loop cycle dm5, m3): a stale logged-out /login?next=/qu
   }));
 
 Deno.test("REQ-892 (demo-loop run 6, m3): the tab a sign-out landed on '/' (the landing, no session), brought back and clicked after she signed in again in another tab, goes to the dashboard, shows the pill, and the stage follows it", (t) =>
-  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+  story(t, async ({ page, expect, http, baseUrl }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const who = await people(http);
     const browser = page.context().browser();
@@ -678,6 +678,74 @@ Deno.test("REQ-826 AMENDMENT 3 (demo-loop run 9, p1): the customer's other tab i
       expect(
         said.every((s) => !/outbox|zz|field/i.test(s.banner)),
         `p1: no notice ever read the path (${JSON.stringify(said)})`,
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));
+
+Deno.test("REQ-826 AMENDMENT 4 (demo-loop run 10, m2): the customer's other tab is a 404 UNDER A KNOWN PREFIX (/quotes/…) — the stage's 'Now showing … other tab' notice names it by the page's title, never by the path it was typed with", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    // tab 2 is the 404 page of a mistyped /quotes/… URL: the known prefix must not name it
+    const { userCtx, tab2 } = await twoTabs(
+      page,
+      http,
+      baseUrl,
+      { width: 1000, height: 760 },
+      "/quotes/zz-not-a-quote",
+    );
+    try {
+      // the 404 page says what it is in its own title (part of the same fix)
+      expect.eq(
+        await tab2.title(),
+        "We couldn't find that page · DocuMonster",
+        "the 404 page's document title",
+      );
+      await record(page);
+      // the customer uses the 404 tab: the stage follows it and says so
+      await tab2.keyboard.press("Shift");
+      await until(
+        "the stage follows tab 2 (640 × 760) again",
+        async () => (await screenOf(page)).includes("640 × 760"),
+      );
+      await until(
+        "the stage says it shows her other tab",
+        async () =>
+          (await page.locator("[data-cy='demo-tab-switched']").count()) === 1,
+        10_000,
+      );
+      const banner = (await page.locator("[data-cy='demo-tab-switched']")
+        .innerText() as string).trim();
+      const mirrored = await page.evaluate(() => {
+        const f = document.querySelector(
+          "[data-cy='demo-frame']",
+        ) as HTMLIFrameElement | null;
+        const d = f?.contentDocument;
+        return {
+          title: d?.title ?? null,
+          titles: d
+            ? Array.from(d.querySelectorAll("title")).map((e) => e.textContent)
+            : null,
+          path: f?.getAttribute("data-path"),
+        };
+      });
+      expect(
+        /\(We couldn't find that page\)/.test(banner),
+        `m2: the notice names the page by its title — got "${banner}" (the mirror: ${
+          JSON.stringify(mirrored)
+        })`,
+      );
+      expect(
+        !/\((Quote|Quotes|Cotización|Cotizaciones)\)/.test(banner),
+        `m2: never the known prefix's name for a 404 — got "${banner}"`,
+      );
+      const said = (await recorded(page)).filter((s) => s.banner);
+      expect(
+        said.every((s) =>
+          !/\((Quote|Quotes|Cotización|Cotizaciones)\)/.test(s.banner)
+        ),
+        `m2: no notice ever named it by the prefix (${JSON.stringify(said)})`,
       );
     } finally {
       await userCtx.close();

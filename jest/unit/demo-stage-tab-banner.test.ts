@@ -32,7 +32,10 @@ const trOf = (dict: Record<string, string>) => (k: string) => dict[k] ?? k;
 describe("REQ-826 (demo-loop cycle dm2, p10) pageLabel: the banner names the page, never its URL", () => {
   test("app pages map to a page name in en — IDs and the query string dropped", () => {
     const L = (p: string) => pl().pageLabel(p, trOf(en));
-    expect(L("/q/cfe16416-ed6e-48ee-9b98-a636c835d3e3?lang=en")).toBe("Quote");
+    // REQ-826 AMENDMENT 4 (dm10, p3) — the public page is the quote + agreement
+    expect(L("/q/cfe16416-ed6e-48ee-9b98-a636c835d3e3?lang=en")).toBe(
+      "Quote + Agreement",
+    );
     expect(L("/i/9f1c2d3e-0000-4000-8000-000000000001")).toBe("Invoice");
     expect(L("/dashboard")).toBe("Dashboard");
     expect(L("/dashboard?tab=jobs#top")).toBe("Dashboard");
@@ -53,14 +56,14 @@ describe("REQ-826 (demo-loop cycle dm2, p10) pageLabel: the banner names the pag
     expect(L("/refund-policy")).toBe("Refund policy");
     expect(L("/sms-terms")).toBe("SMS terms");
     expect(L("/contracts")).toBe("Contracts");
-    expect(L("/co/abc")).toBe("Contract");
+    expect(L("/co/abc")).toBe("Change order"); // REQ-826 AMENDMENT 4 (dm10, m3)
     expect(L("/admin")).toBe("Admin");
     expect(L("/contact")).toBe("Contact");
   });
   test("the same pages in es", () => {
     const L = (p: string) => pl().pageLabel(p, trOf(es));
     expect(L("/q/cfe16416-ed6e-48ee-9b98-a636c835d3e3?lang=en")).toBe(
-      "Cotización",
+      "Cotización + Acuerdo",
     );
     expect(L("/i/x1")).toBe("Factura");
     expect(L("/dashboard")).toBe("Panel");
@@ -150,7 +153,7 @@ describe("REQ-826 (demo-loop cycle dm2, p10) DemoStage: the banner is wired to p
     expect(src).toMatch(/from "\.\.\/\.\.\/shared\/demo-mode\/page-label\.ts"/);
     expect(src).toMatch(
       // REQ-826 AMENDMENT 3 (dm9, p1) — the mirrored document's title names an unknown page
-      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*frameRef\.current\?\.contentDocument\?\.title,?\s*\),?\s*\}\)/,
+      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*frameRef\.current\?\.contentDocument\?\.title,(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
     );
     expect(src).not.toContain("path: tabNote");
   });
@@ -182,7 +185,7 @@ describe("REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — a page with no name of i
   test("a known page keeps its localized name whatever the title says", () => {
     expect(L("/dashboard", "Something else · DocuMonster")).toBe("Dashboard");
     expect(L("/q/cfe16416-ed6e-48ee-9b98-a636c835d3e3", "Quote · X")).toBe(
-      "Quote",
+      "Quote + Agreement",
     );
   });
   test("no title, an empty one, or the bare app name: the path's first segment as before", () => {
@@ -194,7 +197,9 @@ describe("REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — a page with no name of i
   });
   test("titleName: the part before the app's separator, whitespace squashed, long names cut at 40", () => {
     const T = (t?: string | null) => pl().titleName(t);
-    expect(T("Mi página  de\n prueba · DocuMonster")).toBe("Mi página de prueba");
+    expect(T("Mi página  de\n prueba · DocuMonster")).toBe(
+      "Mi página de prueba",
+    );
     expect(T("Settings - DocuMonster")).toBe("Settings");
     expect(T("Settings — DocuMonster")).toBe("Settings");
     expect(T("Just a title")).toBe("Just a title");
@@ -203,5 +208,49 @@ describe("REQ-826 AMENDMENT 3 (demo-loop run 9, p1) — a page with no name of i
     expect(T("x".repeat(60))).toBe("x".repeat(39) + "…");
     // a hyphenated name is not split: the separator is a spaced dash
     expect(T("Field-notes · DocuMonster")).toBe("Field-notes");
+  });
+});
+
+describe("REQ-826 AMENDMENT 4 (demo-loop run 10: m2, m3, p3) — an error page under a known path is named by its title; a change order and the public quote + agreement by their own names", () => {
+  const L = (p: string, title?: string | null, errorPage = false) =>
+    pl().pageLabel(p, trOf(es), title, errorPage);
+  test("m2: a 404 at /quotes/new — the mirrored page IS the error page: its title's name, not '(Cotización)' off the known prefix", () => {
+    expect(L("/quotes/new", "No encontramos esa página · DocuMonster", true))
+      .toBe("No encontramos esa página");
+    // the same path, a real page: the known name as before
+    expect(L("/quotes/new", "Nueva cotización · DocuMonster", false)).toBe(
+      "Cotización",
+    );
+    // an error page with no title of its own: the known name (nothing better to say)
+    expect(L("/quotes/new", "", true)).toBe("Cotización");
+  });
+  test("m3: /co/<id> is a change order ('Orden de cambio' / 'Change order'), not '(Contrato)'", () => {
+    expect(L("/co/7f3a9c2e-1b4d-4e5f-8a9b-0c1d2e3f4a5b")).toBe(
+      "Orden de cambio",
+    );
+    expect(pl().pageLabel("/co/7f3a9c2e-1b4d-4e5f-8a9b-0c1d2e3f4a5b", trOf(en)))
+      .toBe("Change order");
+    expect(pl().pageLabelKey("/co/x")).toBe("demoMode.page.changeOrder");
+    expect(en["demoMode.page.changeOrder"]).toBe("Change order");
+    expect(es["demoMode.page.changeOrder"]).toBe("Orden de cambio");
+  });
+  test("p3: the public /q/<id> page is the quote + agreement the customer reads ('Cotización + Acuerdo'); the app's own /quotes/<id> stays 'Cotización'", () => {
+    expect(L("/q/7f3a9c2e-1b4d-4e5f-8a9b-0c1d2e3f4a5b?lang=es")).toBe(
+      "Cotización + Acuerdo",
+    );
+    expect(pl().pageLabel("/q/7f3a9c2e", trOf(en))).toBe("Quote + Agreement");
+    expect(L("/quotes/7f3a9c2e-1b4d-4e5f-8a9b-0c1d2e3f4a5b")).toBe(
+      "Cotización",
+    );
+    expect(en["demoMode.page.publicQuote"]).toBe("Quote + Agreement");
+    expect(es["demoMode.page.publicQuote"]).toBe("Cotización + Acuerdo");
+  });
+  test("wiring: the error page marks itself (data-error-page) and the stage reads the mark off the mirrored document", () => {
+    const err = read("front-end/routes/_error.tsx");
+    expect(err).toMatch(/data-error-page=""/);
+    const stage = read("front-end/islands/DemoStage.tsx");
+    expect(stage).toMatch(
+      /const mirroredErrorPage = \(\)[^;]*contentDocument\?\.querySelector\(\s*"\[data-error-page\]",?\s*\)/s,
+    );
   });
 });

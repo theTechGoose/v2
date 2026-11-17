@@ -10,7 +10,8 @@
 /** first segment → the key for the page itself and, when an ID or sub-path follows, for one item */
 const PAGES: Record<string, [list: string, item?: string]> = {
   dashboard: ["dashboard"],
-  q: ["quote"],
+  // REQ-826 AMENDMENT 4 (dm10, p3) — the public page is the quote + agreement the customer reads
+  q: ["publicQuote"],
   quotes: ["quotes", "quote"],
   i: ["invoice"],
   invoices: ["invoices", "invoice"],
@@ -36,7 +37,8 @@ const PAGES: Record<string, [list: string, item?: string]> = {
   "refund-policy": ["refundPolicy"],
   "sms-terms": ["smsTerms"],
   contracts: ["contracts", "contract"],
-  co: ["contract"],
+  // REQ-826 AMENDMENT 4 (dm10, m3) — a change order, not "(Contract)"
+  co: ["changeOrder"],
   admin: ["admin"],
   admins: ["admin"],
   contact: ["contact"],
@@ -83,7 +85,15 @@ export function pageLabel(
   path: string,
   tr: (key: string) => string,
   title?: string | null,
+  /** REQ-826 AMENDMENT 4 (demo-loop run 10, m2) — the mirrored page is the app's error page
+   *  (it marks itself `data-error-page`): its title names it, whatever its path says — a 404 at
+   *  /quotes/new read "(Cotización)" off the known prefix */
+  errorPage = false,
 ): string {
+  if (errorPage) {
+    const named = titleName(title);
+    if (named) return named;
+  }
   const key = pageLabelKey(path);
   if (key) return tr(key);
   const named = titleName(title);

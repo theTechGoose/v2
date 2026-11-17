@@ -470,8 +470,10 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     doc.fire("click", by("logo-btn"));
     doc.fire("click", by("logo"));
     sync();
-    // REQ-862 AMENDMENT 2 — under the button (its top + height + 4), at its left edge
-    expect(chip(stage)!.style).toMatch(/left:10px;top:140px;/);
+    // REQ-862 AMENDMENT 2 put it under the button (its top + height + 4) — ON the next field's
+    // input there; REQ-862 AMENDMENT 3 (dm10, m1) — the nearest clear band instead: one chip's
+    // height plus the gap further, under that field, at the button's left edge
+    expect(chip(stage)!.style).toMatch(/left:10px;top:170px;/);
   });
 
   test("the chip is set in the app's font: the frame body's family, Inter when it has none — never the system-ui stack", () => {
@@ -1009,5 +1011,281 @@ describe("REQ-862 AMENDMENT 2 / REQ-878 AMENDMENT 2 (demo-loop run 9: m1–m4, p
     expect(hits(c, rows["logo-hint"])).toBe(false);
     expect(hits(c, rows["logo-btn"])).toBe(false);
     expect(c.text).toBe("Customer is choosing a file… · Reemplazar logo");
+  });
+});
+
+describe("REQ-862 AMENDMENT 3 / REQ-878 AMENDMENT 3 (demo-loop run 10: m1, m5) — a chip with no clear spot by its control takes the nearest clear band (named); text hidden behind a dialog's backdrop does not push it; a chip narrower than its field stays within the field's span", () => {
+  const DATE_W = 156;
+  const FILE_W = 203;
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    const orig = FElement.prototype.getBoundingClientRect;
+    spy = jest.spyOn(FElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: FElement) {
+        if (this.hasAttribute("data-mirror-picker")) {
+          const text = this.textContent ?? "";
+          const base = text.startsWith("Choosing a date") ? DATE_W : FILE_W;
+          const name = text.includes(" · ") ? text.split(" · ")[1] : "";
+          const w = base + (name ? name.length * 7.5 + 12 : 0);
+          return {
+            left: 0,
+            top: 0,
+            width: w,
+            height: 26,
+            x: 0,
+            y: 0,
+            right: w,
+            bottom: 26,
+          };
+        }
+        return orig.call(this);
+      });
+  });
+  afterEach(() => spy.mockRestore());
+
+  type R = { left: number; top: number; width: number; height: number };
+  const hits = (a: R, b: R) =>
+    a.left < b.left + b.width && b.left < a.left + a.width &&
+    a.top < b.top + b.height && b.top < a.top + a.height;
+
+  function page(
+    body: (d: FDocument) => FElement,
+    rows: Record<string, R>,
+    view: { w: number; h: number },
+  ) {
+    const doc = docWith(
+      (d) => h(d, "html", {}, h(d, "head"), body(d)),
+      "https://app.test/x",
+      view.w,
+      view.h,
+    );
+    const cys = Object.keys(rows);
+    const by = (cy: string) =>
+      find(doc, (e) => e.getAttribute("data-cy") === cy)!;
+    for (const cy of cys) by(cy).rect = { ...rows[cy] };
+    const frames: MirrorFrame[] = [];
+    const rec = createRecorder(doc as unknown as Document, {
+      emit: (f) => frames.push(JSON.parse(JSON.stringify(f))),
+      Observer: FakeMutationObserver as unknown as typeof MutationObserver,
+      manual: true,
+    });
+    const stage = new FDocument("about:srcdoc", view.w, view.h);
+    stage.appendChild(h(stage, "html", {}, h(stage, "head"), h(stage, "body")));
+    const boxes = () => {
+      for (const cy of cys) {
+        const s = find(stage, (e) => e.getAttribute("data-cy") === cy);
+        if (s) s.rect = { ...rows[cy] };
+      }
+    };
+    const rep = createReplayer(stage as unknown as Document, {
+      schedule: (fn) => fn(),
+      Resize: null,
+    });
+    rec.snapshot();
+    expect(rep.apply(frames[0])).toBe(true);
+    boxes();
+    let at = 1;
+    const drawn = (w: number) => {
+      rec.flush();
+      for (; at < frames.length; at++) {
+        expect(rep.apply(frames[at])).toBe(true);
+        boxes();
+      }
+      expect(rep.apply({ t: "ops", ops: [] } as unknown as MirrorFrame)).toBe(
+        true,
+      );
+      const c = chip(stage)!;
+      const left = Number(/left:(-?[\d.]+)px/.exec(c.style)![1]);
+      const top = Number(/top:(-?[\d.]+)px/.exec(c.style)![1]);
+      const text = c.text ?? "";
+      const name = text.includes(" · ") ? text.split(" · ")[1] : "";
+      return {
+        left,
+        top,
+        width: w + (name ? name.length * 7.5 + 12 : 0),
+        height: 26,
+        text,
+      };
+    };
+    return {
+      stage,
+      date: (cy: string) => {
+        doc.fire("mousedown", by(cy));
+        return drawn(DATE_W);
+      },
+      file: (btn: string, input: string) => {
+        doc.fire("mousedown", by(btn));
+        doc.fire("click", by(btn));
+        doc.fire("click", by(input));
+        return drawn(FILE_W);
+      },
+    };
+  }
+
+  test("m1: at 390 px with a logo uploaded (button, thumbnail, 'Logo cargado', a two-line hint, the next label right under) nothing by the button is clear — the chip takes the nearest clear band below, named, inside the frame, over nothing", () => {
+    // /settings at 390×844 (es) as surveyed and as the five testers measured it
+    const rows = {
+      "overhead-input": { left: 43, top: 229, width: 304, height: 41 },
+      "overhead-hint": { left: 43, top: 278, width: 304, height: 74 },
+      "logo-row": { left: 43, top: 366, width: 304, height: 92 },
+      "logo-btn": { left: 43, top: 366, width: 130, height: 43 },
+      "logo-img": { left: 214, top: 373, width: 32, height: 32 },
+      "logo-set": { left: 254, top: 381, width: 80, height: 15 },
+      "logo-hint": { left: 43, top: 421, width: 304, height: 37 },
+      "lang-label": { left: 43, top: 473, width: 116, height: 14 },
+      "lang-select": { left: 43, top: 495, width: 304, height: 40 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(d, "input", { type: "text", "data-cy": "overhead-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "overhead-hint" },
+            "$ = un monto en dólares por visita; % = un porcentaje del total",
+          ),
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(d, "button", {
+              type: "button",
+              "data-cy": "logo-btn",
+              "aria-label": "Reemplazar logo",
+            }, "Reemplazar logo"),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              {},
+              h(d, "img", {
+                "data-cy": "logo-img",
+                src: "/api/files/x",
+                alt: "Logo cargado",
+              }),
+              h(d, "span", { "data-cy": "logo-set" }, "Logo cargado"),
+            ),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+          h(
+            d,
+            "label",
+            {},
+            h(d, "span", { "data-cy": "lang-label" }, "Idioma de la app"),
+            h(d, "select", { "data-cy": "lang-select" }),
+          ),
+        ),
+      rows,
+      { w: 390, h: 844 },
+    ).file("logo-btn", "logo-file");
+    for (
+      const k of [
+        "logo-btn",
+        "logo-img",
+        "logo-set",
+        "logo-hint",
+        "lang-label",
+        "lang-select",
+        "overhead-hint",
+        "overhead-input",
+      ] as const
+    ) {
+      expect([k, hits(c, rows[k])]).toEqual([k, false]);
+    }
+    expect(c.left).toBeGreaterThanOrEqual(0);
+    expect(c.left + c.width).toBeLessThanOrEqual(390);
+    // away from its button: it says which control
+    expect(c.text).toBe("Customer is choosing a file… · Reemplazar logo");
+  });
+
+  test("m5: the invoice modal's 'Servicio hasta' date — the ledger's text behind the modal's backdrop does not push the chip; narrower than its field, the chip stays within the field's span (never over 'Servicio desde')", () => {
+    const rows = {
+      backdrop: { left: 0, top: 0, width: 1280, height: 800 },
+      "behind-a": { left: 254, top: 378, width: 342, height: 16 },
+      "behind-b": { left: 380, top: 425, width: 224, height: 16 },
+      modal: { left: 320, top: 100, width: 640, height: 700 },
+      "pair-row": { left: 346, top: 354, width: 588, height: 66 },
+      "from-label": { left: 346, top: 356, width: 94, height: 16 },
+      from: { left: 346, top: 380, width: 290, height: 41 },
+      "to-label": { left: 644, top: 356, width: 91, height: 16 },
+      to: { left: 644, top: 380, width: 290, height: 41 },
+      concepts: { left: 346, top: 441, width: 80, height: 14 },
+    };
+    const p = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "p",
+            { "data-cy": "behind-a" },
+            "No hay pagos reportados esperando tu confirmación",
+          ),
+          h(
+            d,
+            "p",
+            { "data-cy": "behind-b" },
+            "Nada en espera. Cuando envíes una factura",
+          ),
+          h(d, "div", { "data-cy": "backdrop" }),
+          h(
+            d,
+            "div",
+            { "data-cy": "modal", role: "dialog" },
+            h(
+              d,
+              "div",
+              { "data-cy": "pair-row" },
+              h(
+                d,
+                "label",
+                {},
+                h(d, "span", { "data-cy": "from-label" }, "Servicio desde"),
+                h(d, "input", { type: "date", "data-cy": "from" }),
+              ),
+              h(
+                d,
+                "label",
+                {},
+                h(d, "span", { "data-cy": "to-label" }, "Servicio hasta"),
+                h(d, "input", { type: "date", "data-cy": "to" }),
+              ),
+            ),
+            h(
+              d,
+              "div",
+              {},
+              h(d, "span", { "data-cy": "concepts" }, "Conceptos"),
+            ),
+          ),
+        ),
+      rows,
+      { w: 1280, h: 800 },
+    );
+    const c = p.date("to");
+    expect(hits(c, rows.to)).toBe(false);
+    expect(hits(c, rows.from)).toBe(false);
+    expect(hits(c, rows.concepts)).toBe(false);
+    expect(c.left).toBeGreaterThanOrEqual(rows.to.left);
+    expect(c.left + c.width).toBeLessThanOrEqual(rows.to.left + rows.to.width);
+    // right under its own field: unnamed
+    expect(Math.abs(c.top - (rows.to.top + rows.to.height)))
+      .toBeLessThanOrEqual(5);
+    expect(c.text).toBe("Choosing a date…");
   });
 });

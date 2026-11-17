@@ -311,6 +311,9 @@ const INLINE_WRAP = new Set([
   "sub",
   "sup",
 ]);
+/** REQ-878 — a piece of the page a chip must not cover, and the element it belongs to (REQ-862
+ *  AMENDMENT 3: asked whether a hit at its centre still reaches it) */
+type TextBox = Rect & { el: Element };
 /** REQ-878 — elements whose own box is what the customer reads */
 const BOXED_TEXT = new Set([
   "input",
@@ -865,10 +868,11 @@ export function createReplayer(
    *  boxes, through a Range; its parent's box where there is no Range, unless that parent holds
    *  `at`) and every control or picture other than `at` itself. Never the head, the stage's own
    *  drawn lists and chips, or what has no box. */
-  function textBoxes(at: Element): Rect[] {
-    const out: Rect[] = [];
+  function textBoxes(at: Element): TextBox[] {
+    const out: TextBox[] = [];
     const add = (
       r: { left: number; top: number; width: number; height: number },
+      el: Element,
     ) => {
       if (r.width > 0 && r.height > 0) {
         out.push({
@@ -876,6 +880,7 @@ export function createReplayer(
           top: r.top,
           width: r.width,
           height: r.height,
+          el,
         });
       }
     };
@@ -890,7 +895,7 @@ export function createReplayer(
       if (SKIP_TEXT.has(t)) return;
       if (n.hasAttribute(PICKER_ATTR) || n.hasAttribute(LISTBOX_ATTR)) return;
       if (n !== at && BOXED_TEXT.has(t)) {
-        add(n.getBoundingClientRect());
+        add(n.getBoundingClientRect(), n);
         if (t !== "button") return;
       }
       for (const c of Array.from(n.childNodes)) {
@@ -899,12 +904,12 @@ export function createReplayer(
           if (range) {
             try {
               range.selectNodeContents(c);
-              for (const r of Array.from(range.getClientRects())) add(r);
+              for (const r of Array.from(range.getClientRects())) add(r, n);
             } catch {
               // a node the range cannot hold: nothing to keep clear
             }
           } else if (n === at || !n.contains(at)) {
-            add(n.getBoundingClientRect());
+            add(n.getBoundingClientRect(), n);
           }
         }
       }
@@ -949,11 +954,42 @@ export function createReplayer(
     let free: [number, number] | null = null;
     try {
       const texts = textBoxes(sel);
+      // REQ-862 AMENDMENT 3 (dm10, m5) — a text behind a dialog's backdrop (the ledger under the
+      // new-invoice modal) is not read: a hit at its centre must still reach it (its element, a
+      // child of it, or a parent). Asked once per text, and only for the texts a spot touches
+      const seen = new Map<TextBox, boolean>();
+      const shown = (t: TextBox): boolean => {
+        let v = seen.get(t);
+        if (v === undefined) {
+          v = true;
+          try {
+            const cx = t.left + t.width / 2;
+            const cy = t.top + t.height / 2;
+            const hit = doc.elementFromPoint(
+              vw ? Math.min(Math.max(cx, 0), vw - 1) : cx,
+              vh ? Math.min(Math.max(cy, 0), vh - 1) : cy,
+            );
+            if (
+              hit && hit !== t.el && !hit.hasAttribute(PICKER_ATTR) &&
+              !t.el.contains(hit) && !hit.contains(t.el)
+            ) v = false;
+          } catch {
+            v = true;
+          }
+          seen.set(t, v);
+        }
+        return v;
+      };
       const covers = (x: number, y: number) =>
         texts.some((t) =>
           x < t.left + t.width && t.left < x + w && y < t.top + t.height &&
-          t.top < y + h
+          t.top < y + h && shown(t)
         );
+      // REQ-862 AMENDMENT 3 (dm10, m5) — a chip narrower than its field stays within the field's
+      // span when stacked under or over it (a spot past the text in that band reached 32 px into
+      // the twin "Servicio desde" column)
+      const span = (x: number) =>
+        w <= r.width ? Math.max(r.left, Math.min(x, r.left + r.width - w)) : x;
       const spots: [number, number][] = [];
       // REQ-862 AMENDMENT (dm8, m1) — never on an input: the chip hid the date field's value
       if (onControl && w <= r.width) {
@@ -986,11 +1022,32 @@ export function createReplayer(
         for (
           const t of bandAt.filter((t) => t.left + t.width > r.left)
             .sort((a, b) => (a.left + a.width) - (b.left + b.width))
-        ) spots.push([t.left + t.width + CHIP_GAP, y]);
+        ) spots.push([span(t.left + t.width + CHIP_GAP), y]);
         for (
           const t of bandAt.filter((t) => t.left < r.left + r.width)
             .sort((a, b) => b.left - a.left)
-        ) spots.push([t.left - CHIP_GAP - w, y]);
+        ) spots.push([span(t.left - CHIP_GAP - w), y]);
+      }
+      // REQ-862 AMENDMENT 3 / REQ-878 AMENDMENT 3 (dm10, m1) — nothing beside, under or over the
+      // control is clear (the 390 px logo row: a thumbnail at its right, the hint right under,
+      // the next field's label under that): the nearest clear band — a chip's height plus the gap
+      // further each step, below first, then above — at the control's left edge, its right edge,
+      // the frame's left margin, its right margin. Away from its control, the chip is named
+      const bands: [number, number][] = [];
+      const step = h + CHIP_UNDER;
+      const bandXs = [
+        r.left,
+        r.left + r.width - w,
+        CHIP_GAP,
+        vw ? vw - CHIP_GAP - w : r.left,
+      ];
+      for (let k = 1; k <= 8; k++) {
+        for (
+          const y of [
+            r.top + r.height + CHIP_UNDER + k * step,
+            r.top - CHIP_UNDER - h - k * step,
+          ]
+        ) for (const x of bandXs) bands.push([x, y]);
       }
       // a spot inside the control's own row before one outside it: never the page's sidebar when
       // there is room past the row's hint. REQ-862 AMENDMENT 2 (dm9, p3) — the row is the first
@@ -1012,7 +1069,7 @@ export function createReplayer(
       const stacked = spots.slice(inRowCount);
       free = beside.find((p) => ok(p) && inRow(p[0])) ??
         stacked.find((p) => ok(p) && inRow(p[0])) ??
-        beside.find(ok) ?? stacked.find(ok) ?? null;
+        beside.find(ok) ?? stacked.find(ok) ?? bands.find(ok) ?? null;
     } catch {
       free = null; // no layout to read: REQ-862's rule below
     }

@@ -238,6 +238,7 @@ import {
 } from "../../shared/demo-mode/stage-chrome.ts";
 import { pageLabel } from "../../shared/demo-mode/page-label.ts";
 import {
+  ADMIN_PATH,
   endedHref,
   type EndedNotice,
   whoEnded,
@@ -1804,16 +1805,27 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
 
   /** REQ-153 — the demo over, the presenter is handed their own account back; REQ-235 — on
    *  /admin, which says who ended it */
-  async function backToOwnAccount(notice: EndedNotice) {
+  async function backToOwnAccount(notice: EndedNotice | null) {
     try {
       const who = await adminClient.whoami();
       if (who.impersonating) await adminClient.stopImpersonating();
     } catch {
       // not impersonating, or signed out
     }
-    // REQ-829 — /admin in the stage's language, not the profile's
+    // REQ-829 — /admin in the stage's language, not the profile's. REQ-647 AMENDMENT (demo-loop
+    // run 10, p4) — no notice (the empty stage's way back): /admin plain, never a stale "The demo
+    // ended" for a demo announced a minute ago
+    if (!notice) {
+      globalThis.location.href = withLang(ADMIN_PATH, langSignal.value);
+      return;
+    }
     globalThis.location.href = endedHref(notice, langSignal.value);
   }
+
+  /** REQ-826 AMENDMENT 4 (demo-loop run 10, m2) — the mirrored page is the app's error page
+   *  (`_error.tsx` marks its root `data-error-page`): named by its title, whatever its path */
+  const mirroredErrorPage = () =>
+    !!frameRef.current?.contentDocument?.querySelector("[data-error-page]");
 
   /** REQ-541 (cycle 4, M22) — the demo went without this stage hearing who ended it: back to
    *  the presenter's own account, once */
@@ -1990,7 +2002,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               <button
                 type="button"
                 data-cy="demo-stage-back"
-                onClick={() => void backToOwnAccount({ by: "unknown" })}
+                onClick={() => void backToOwnAccount(null)}
                 style="color:#fff;text-decoration:underline;font-size:13px;background:none;border:0;padding:0;cursor:pointer;font:inherit"
               >
                 {t("demoMode.backToAdmin")}
@@ -2411,6 +2423,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     tabNote,
                     t,
                     frameRef.current?.contentDocument?.title,
+                    // REQ-826 AMENDMENT 4 (dm10, m2) — the error page, even under a known path
+                    mirroredErrorPage(),
                   ),
                 })}
               </div>
