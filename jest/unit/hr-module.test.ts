@@ -187,7 +187,7 @@ describe("REQ-883 the HR module", () => {
         "HrDepartmentsPage",
         "departments",
       ],
-      ["front-end/routes/hr/systems.tsx", "HrSystemsPage", "hrSystems"],
+      // REQ-912: /hr/systems is a 302 to /settings?tab=systems now — no island of its own
       ["front-end/routes/hr/settings.tsx", "HrSettingsPage", "hrSettings"],
     ];
     for (const [rel, island, active] of pages) {

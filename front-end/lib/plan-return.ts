@@ -98,9 +98,11 @@ export function pageAfterPick(back: PickBack): string {
 /** REQ-127 — "how about just a billing tab rather than a slot on the page": /settings is two tabs.
  *  The address opens Billing when asked (?tab=billing), when a pick came back saying why (?plan=),
  *  or when a receipt landed with its marker (?px=, REQ-080); Account otherwise. */
-export type SettingsTab = "account" | "billing";
+// REQ-912: a third tab, Systems — what DocuMonster runs on for the account
+export type SettingsTab = "account" | "billing" | "systems";
 export function settingsTabOf(search: string): SettingsTab {
   const q = new URLSearchParams(search);
+  if (q.get("tab") === "systems") return "systems";
   return q.get("tab") === "billing" || q.has("plan") || q.has("px")
     ? "billing"
     : "account";

@@ -128,18 +128,33 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
       }),
     })).json();
 
-    // 2. a system from the catalog (REQ-888) — no webhook: a manual step on the hire
+    // 2. the systems (REQ-888) live under Account → Systems now (REQ-912); the old URL lands there
     await page.goto("/hr/systems");
-    await page.locator("[data-cy='hr-catalog-card'][data-key='quickbase']")
+    await page.locator("[data-cy='settings-tab-systems'][aria-selected='true']")
+      .waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='sys-email']").waitFor({ timeout: 15_000 });
+    await expect.see("E-signatures");
+    // REQ-913: a built-in arm — the hire becomes a Worker in DocuMonster
+    await page.locator("[data-cy='hr-catalog-card'][data-key='dm-worker']")
       .waitFor({ timeout: 15_000 });
     await clickUntil(
       page,
-      "[data-cy='hr-catalog-card'][data-key='quickbase'] [data-cy='hr-attach']",
+      "[data-cy='hr-catalog-card'][data-key='dm-worker'] [data-cy='hr-attach']",
       async () =>
-        await page.locator("[data-cy='hr-sys-card'][data-key='quickbase']")
+        await page.locator("[data-cy='hr-sys-card'][data-key='dm-worker']")
           .isVisible(),
     );
-    await expect.see("Quickbase CRM");
+    await expect.see("DocuMonster worker account");
+    // and a custom system with no webhook: a manual step on the hire (REQ-888b)
+    await page.locator("[data-cy='hr-custom-name']").fill("Badge printer");
+    await clickUntil(
+      page,
+      "[data-cy='hr-custom-add']",
+      async () =>
+        await page.locator("[data-cy='hr-sys-card'][data-key='custom']")
+          .isVisible(),
+    );
+    await expect.see("Badge printer");
 
     // 3. a department: both documents, the system (REQ-887)
     await page.goto("/hr/departments");
@@ -156,9 +171,13 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
     const docBoxes = page.locator("[data-cy='hr-dept-doc']");
     expect.eq(await docBoxes.count(), 2, "both documents are offered");
     // the handbook first, then the offer — the packet's order
-    await page.locator("[data-cy='hr-dept-doc']:not([data-doc='" + offer.id + "'])").check();
-    await page.locator(`[data-cy='hr-dept-doc'][data-doc='${offer.id}']`).check();
+    await page.locator(
+      "[data-cy='hr-dept-doc']:not([data-doc='" + offer.id + "'])",
+    ).check();
+    await page.locator(`[data-cy='hr-dept-doc'][data-doc='${offer.id}']`)
+      .check();
     await page.locator("[data-cy='hr-dept-system']").first().check();
+    await page.locator("[data-cy='hr-dept-system']").nth(1).check(); // REQ-913: both arms
     const deptSaved = page.waitForResponse((r) =>
       r.request().method() === "PUT" && r.url().includes("/api/hr/departments/")
     );
@@ -169,7 +188,7 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
       timeout: 15_000,
     });
     await expect.see("2 docs");
-    await expect.see("1 systems");
+    await expect.see("2 systems");
 
     // 4. the new hire (REQ-884) — the packet preview follows the department
     await page.goto("/hr/hires/new");
@@ -198,8 +217,9 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
     await expect.see("Dani Reyes");
     await expect.see("Invited");
     const hireUrl = page.url();
-    const signUrl = (await page.locator("[data-cy='hr-sign-url']").textContent())
-      ?.trim() ?? "";
+    const signUrl =
+      (await page.locator("[data-cy='hr-sign-url']").textContent())
+        ?.trim() ?? "";
     const token = signUrl.split("/sign/")[1];
     if (!token) throw new Error(`no token in the signing link: ${signUrl}`);
     expect.eq(
@@ -308,6 +328,13 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
       { timeout: 15_000 },
     );
     await expect.see("Created (manual)");
+    // REQ-913: the built-in arm made Dani a Worker in DocuMonster
+    await page.goto("/field/workers");
+    await page.waitForFunction(
+      () => document.body.textContent?.includes("Dani Reyes"),
+      undefined,
+      { timeout: 15_000 },
+    );
 
     // 7. the roster and the overview count it (REQ-884c, REQ-889d)
     await page.goto("/hr/hires");

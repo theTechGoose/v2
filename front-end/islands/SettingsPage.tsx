@@ -67,6 +67,7 @@ import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-2
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
 import { squareClient, type SquareStatus } from "../clients/square.ts"; // REQ-803
 import { squareTokenInfo } from "../../shared/payments/square.ts"; // REQ-803
+import SystemsTab from "../components/SystemsTab.tsx"; // REQ-912
 
 /** REQ-803 — one card provider at a time: the Stripe and Square cards tell each other when
  *  either connects or disconnects, so the other one re-reads its status. */
@@ -3746,8 +3747,8 @@ export default function SettingsPage() {
   const pickTab = (next: SettingsTab) => {
     setTab(next);
     const u = new URL(location.href);
-    if (next === "billing") u.searchParams.set("tab", "billing");
-    else u.searchParams.delete("tab");
+    if (next === "account") u.searchParams.delete("tab");
+    else u.searchParams.set("tab", next); // billing | systems (REQ-912)
     u.searchParams.delete("plan");
     history.replaceState(null, "", u.pathname + u.search);
   };
@@ -3841,84 +3842,101 @@ export default function SettingsPage() {
         >
           {tFor(lang, "settings.tabBilling")}
         </button>
+        {/* REQ-912 — Systems: what DocuMonster runs on for this account */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "systems"}
+          class={`settings-tab${tab === "systems" ? " settings-tab--on" : ""}`}
+          data-cy="settings-tab-systems"
+          onClick={() => pickTab("systems")}
+        >
+          {tFor(lang, "settings.tabSystems")}
+        </button>
       </nav>
 
-      {tab === "billing" ? <BillingTab snapshot={p} /> : (
-        <>
-          <div class="grid">
-            <Card
-              title={t.account}
-              empty={t.nothingSet}
-              rows={[
-                [t.name, personName(p.user, p.actor)], // REQ-624: the person signed in
-                [
-                  t.phone,
-                  // REQ-220: the phone is the sign-in, so it is not a field — it moves by
-                  // "Transfer account" (owner only; an admin acting never sees the button)
-                  // REQ-624: an editor acting for the account sees her own number here
-                  (p.actor?.phoneNumber ?? p.user.phoneNumber)
-                    ? (
-                      <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <span data-cy="settings-phone">
-                          {fmtPhone(p.actor?.phoneNumber ?? p.user.phoneNumber)}
+      {tab === "billing"
+        ? <BillingTab snapshot={p} />
+        : tab === "systems"
+        ? <SystemsTab />
+        : (
+          <>
+            <div class="grid">
+              <Card
+                title={t.account}
+                empty={t.nothingSet}
+                rows={[
+                  [t.name, personName(p.user, p.actor)], // REQ-624: the person signed in
+                  [
+                    t.phone,
+                    // REQ-220: the phone is the sign-in, so it is not a field — it moves by
+                    // "Transfer account" (owner only; an admin acting never sees the button)
+                    // REQ-624: an editor acting for the account sees her own number here
+                    (p.actor?.phoneNumber ?? p.user.phoneNumber)
+                      ? (
+                        <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
+                          <span data-cy="settings-phone">
+                            {fmtPhone(
+                              p.actor?.phoneNumber ?? p.user.phoneNumber,
+                            )}
+                          </span>
+                          {!acting && <TransferAccount lang={lang} />}
                         </span>
-                        {!acting && <TransferAccount lang={lang} />}
-                      </span>
-                    )
-                    : undefined,
-                ],
-                // UX-35: the email lives on ONE surface — the editable form
-                // below. Repeating it read-only here competed with the form and
-                // clipped long addresses at the card edge.
-                [t.language, lang === "es" ? t.spanish : t.english],
-              ]}
-            />
-            <Card
-              title={t.businessIdentity}
-              empty={t.nothingSet}
-              rows={[
-                [
-                  t.businessName,
-                  p.identity?.businessName || p.identity?.displayName,
-                ],
-                [t.legalName, p.identity?.legalName],
-                [t.license, p.identity?.businessLicense],
-              ]}
-            />
-          </div>
+                      )
+                      : undefined,
+                  ],
+                  // UX-35: the email lives on ONE surface — the editable form
+                  // below. Repeating it read-only here competed with the form and
+                  // clipped long addresses at the card edge.
+                  [t.language, lang === "es" ? t.spanish : t.english],
+                ]}
+              />
+              <Card
+                title={t.businessIdentity}
+                empty={t.nothingSet}
+                rows={[
+                  [
+                    t.businessName,
+                    p.identity?.businessName || p.identity?.displayName,
+                  ],
+                  [t.legalName, p.identity?.legalName],
+                  [t.license, p.identity?.businessLicense],
+                ]}
+              />
+            </div>
 
-          <EditCard snapshot={p} onSaved={onSaved} />
+            <EditCard snapshot={p} onSaved={onSaved} />
 
-          <div class="grid">
-            <AddressEditCard snapshot={p} onSaved={onSaved} />
-            <InsuranceEditCard snapshot={p} onSaved={onSaved} />
-          </div>
+            <div class="grid">
+              <AddressEditCard snapshot={p} onSaved={onSaved} />
+              <InsuranceEditCard snapshot={p} onSaved={onSaved} />
+            </div>
 
-          {
-            /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
+            {
+              /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
             payment terms / deposit / warranty days were read by nothing; the
             payment terms are "Days to pay an invoice" in Edit details. */
-          }
-          <TaxEditCard snapshot={p} onSaved={onSaved} />
+            }
+            <TaxEditCard snapshot={p} onSaved={onSaved} />
 
-          {/* REQ-198/199: the account number and the starting numbers */}
-          <NumberingCard refreshKey={numberingKey} />
+            {/* REQ-198/199: the account number and the starting numbers */}
+            <NumberingCard refreshKey={numberingKey} />
 
-          <PaymentsEditCard snapshot={p} onSaved={onSaved} />
-          {/* REQ-808 — Square | Stripe | Custom button, one section */}
-          <CardPaymentsTabs snapshot={p} onSaved={onSaved} />
+            <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+            {/* REQ-808 — Square | Stripe | Custom button, one section */}
+            <CardPaymentsTabs snapshot={p} onSaved={onSaved} />
 
-          {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
-          <RemindersEditCard snapshot={p} onSaved={onSaved} />
+            {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
+            <RemindersEditCard snapshot={p} onSaved={onSaved} />
 
-          {!acting && (
-            <DangerZoneCard
-              snapshot={p}
-              onReset={() => setNumberingKey((k) => k + 1)}
-            />
-          )}
-        </>
-      )}
+            {!acting && (
+              <DangerZoneCard
+                snapshot={p}
+                onReset={() => setNumberingKey((k) => k + 1)}
+              />
+            )}
+          </>
+        )}
     </>
   );
 }

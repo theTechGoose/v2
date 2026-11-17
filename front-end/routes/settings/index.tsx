@@ -65,6 +65,8 @@ export default define.page(function SettingsRoute(ctx) {
           rel="stylesheet"
           href={asset("/plan-cards.css")}
         />
+        {/* REQ-912 — the Systems tab reuses the HR registry's cards */}
+        <link key="css-hr" rel="stylesheet" href={asset("/hr.css")} />
         {subscribed ? <MetaPixelEvent event={subscribed} /> : null}
       </Head>
       <div class="app">
