@@ -218,6 +218,9 @@ describe("REQ-827 AMENDMENT (run 16, m3): a native confirm()/alert() on the cust
       text: "¿Eliminar esta cotización?",
     });
     expect(parsePeerMessage({ k: "dialog", text: null })).toEqual({ k: "dialog", text: null });
+    // REQ-827 AMENDMENT REVISION (dm17, p2) — an alert() travels as a notice
+    expect(parsePeerMessage({ k: "dialog", text: "Guardado", kind: "alert" })).toEqual({ k: "dialog", text: "Guardado", kind: "alert" });
+    expect(parsePeerMessage({ k: "dialog", text: "x", kind: "other" })).toEqual({ k: "dialog", text: "x" });
     expect(parsePeerMessage({ k: "dialog" })).toBeNull();
     expect(parsePeerMessage({ k: "dialog", text: 7 })).toBeNull();
     // junk is cut, never trusted whole
@@ -227,17 +230,18 @@ describe("REQ-827 AMENDMENT (run 16, m3): a native confirm()/alert() on the cust
   test("wiring: the customer's overlay wraps confirm and alert while it is the customer, says the words before the question blocks, and puts them back", () => {
     expect(overlay).toMatch(/const native = \{ confirm: globalThis\.confirm, alert: globalThis\.alert \};/);
     expect(overlay).toMatch(/globalThis\.confirm = \(text\?: string\) => \{\s*(?:\/\/[^\n]*\n\s*)*say\(String\(text \?\? ""\)\);\s*try \{\s*return native\.confirm\.call\(globalThis, text\);\s*\} finally \{\s*say\(null\);\s*\}\s*\};/);
-    expect(overlay).toMatch(/globalThis\.alert = \(text\?: unknown\) => \{\s*(?:\/\/[^\n]*\n\s*)*say\(String\(text \?\? ""\)\);\s*try \{\s*native\.alert\.call\(globalThis, text\);\s*\} finally \{\s*say\(null\);\s*\}\s*\};/);
-    expect(overlay).toMatch(/linkRef\.current\?\.send\(\{ k: "dialog", text \}\)/);
+    expect(overlay).toMatch(/globalThis\.alert = \(text\?: unknown\) => \{\s*(?:\/\/[^\n]*\n\s*)*say\(String\(text \?\? ""\), "alert"\);[^\n]*\s*try \{\s*native\.alert\.call\(globalThis, text\);\s*\} finally \{\s*say\(null\);\s*\}\s*\};/);
+    expect(overlay).toMatch(/kind \? \{ k: "dialog", text, kind \} : \{ k: "dialog", text \},/);
     expect(overlay).toMatch(/globalThis\.confirm = native\.confirm;\s*globalThis\.alert = native\.alert;/);
   });
   test("wiring: the stage keeps the words, shows them in the chrome row, and drops them when the dialog closes, the page leaves or the demo ends", () => {
-    expect(stage).toMatch(/const \[nativeAsk, setNativeAsk\] = useState<string \| null>\(null\);/);
-    expect(stage).toMatch(/case "dialog":\s*(?:\/\/[^\n]*\n\s*)*setNativeAsk\(m\.text\);\s*break;/);
+    expect(stage).toMatch(/const \[nativeAsk, setNativeAsk\] = useState<\s*\{ text: string; kind\?: "alert" \} \| null\s*>\(null\);/);
+    expect(stage).toMatch(/case "dialog":\s*(?:\/\/[^\n]*\n\s*)*setNativeAsk\(\s*m\.text === null\s*\? null\s*: m\.kind \? \{ text: m\.text, kind: m\.kind \} : \{ text: m\.text \},?\s*\);\s*break;/);
     expect(stage).toMatch(/case "leave":\s*customerRef\.current = null;\s*glide\.hide\(\);\s*setNativeAsk\(null\);/);
     expect(stage).toMatch(/onEnded: \(by, reason, pid\) => \{[\s\S]{0,400}?setNativeAsk\(null\);/);
     expect(stage).toMatch(/\{badges && nativeAsk !== null && tabNote === null && \(\s*<div\s*data-cy="demo-native-dialog"/);
-    expect(stage).toMatch(/t\("demoMode\.nativeDialog", \{ text: nativeAsk \}\)/);
+    // REQ-827 AMENDMENT REVISION (dm17, p2) — an alert() is a notice, a confirm() a question
+    expect(stage).toMatch(/nativeAsk\.kind === "alert"\s*\? "demoMode\.nativeAlert"\s*: "demoMode\.nativeDialog",\s*\{ text: nativeAsk\.text \},?/);
     // the picker chip yields the row to it (a blocked page is the more important news)
     expect(stage).toMatch(/\{badges && pickerOut !== null && tabNote === null && nativeAsk === null && \(/);
     expect(stage).toMatch(/\{badges && off && pickerOut === null && tabNote === null && nativeAsk === null && \(/);
@@ -245,6 +249,29 @@ describe("REQ-827 AMENDMENT (run 16, m3): a native confirm()/alert() on the cust
   test("the words exist in both languages and carry the text", () => {
     expect(en["demoMode.nativeDialog"]).toMatch(/\{text\}/);
     expect(es["demoMode.nativeDialog"]).toMatch(/\{text\}/);
-    expect(es["demoMode.nativeDialog"]).toMatch(/navegador/);
+    expect(es["demoMode.nativeDialog"]).toMatch(/Pregunta del navegador/);
+    expect(en["demoMode.nativeAlert"]).toMatch(/notice[\s\S]*\{text\}/);
+    expect(es["demoMode.nativeAlert"]).toMatch(/Aviso del navegador[\s\S]*\{text\}/);
+  });
+});
+
+describe("run 17 re-checks (demo-loop run 17, by hand): three of the run-16 rules were too narrow", () => {
+  test("REQ-820 AMENDMENT 5 REVISION: the question closing places the pill in the same layout pass — no wait at the old spot (the VMs held the shrunk pill 150–1200 ms where the question sat, then jumped)", () => {
+    expect(overlay).toMatch(
+      /useLayoutEffect\(\(\) => \{\s*const wasAsking = wasAskingRef\.current;\s*wasAskingRef\.current = asking;\s*if \(wasAsking && !asking && pillRef\.current\) \{[\s\S]{0,900}?placeRef\.current\(\);/,
+    );
+  });
+  test("REQ-890 AMENDMENT 6 REVISION: Keep going's guard is cleared by the mouse moving on even while the pill is whole (no peek: the document listener was the peek's alone)", () => {
+    expect(overlay).toMatch(
+      /if \(wasAsking && !asking && pillRef\.current\) \{[\s\S]{0,900}?const move = \(e: PointerEvent\) => \{\s*if \(e\.pointerType === "touch"\) return;\s*pointRef\.current = \{ x: e\.clientX, y: e\.clientY \};\s*approachRef\.current = approachMoved\(\s*approachRef\.current,\s*pointRef\.current,\s*Date\.now\(\),?\s*\);\s*if \(!approachRef\.current\) \{\s*document\.removeEventListener\("pointermove", move, opts\);\s*\}\s*\};/,
+    );
+  });
+  test("REQ-890 AMENDMENT 6 REVISION: the pill keeps the pointer's position current while it is on it (a whole pill had only the entering point)", () => {
+    expect(overlay).toMatch(/onPointerMove=\{\(e\) => \{\s*if \(e\.pointerType !== "touch"\) \{\s*pointRef\.current = \{ x: e\.clientX, y: e\.clientY \};\s*\}\s*\}\}/);
+  });
+  test("REQ-890 AMENDMENT 4 REVISION: the tab's click on ANY part of the peek (the guide text at the left dock, not only End) shows the controls — a document click in the capture phase", () => {
+    expect(overlay).toMatch(
+      /const tabClick = \(e: MouseEvent\) => \{\s*(?:\/\/[^\n]*\n\s*)*const el = pillRef\.current;\s*if \(\s*!el \|\|\s*!hoverClickIsTab\(approachRef\.current\?\.at \?\? null, \{ x: e\.clientX, y: e\.clientY \}\)\s*\) return;\s*const r = el\.getBoundingClientRect\(\);\s*if \(\s*e\.clientX < r\.left \|\| e\.clientX > r\.right \|\| e\.clientY < r\.top \|\|\s*e\.clientY > r\.bottom\s*\) return;\s*e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*approachRef\.current = null;\s*toggleOpenRef\.current\(\);\s*\};\s*document\.addEventListener\("click", tabClick, \{ capture: true \}\);/,
+    );
   });
 });

@@ -64,6 +64,7 @@ async function setUp(
   path: string,
   view: { width: number; height: number },
   lang: "en" | "es" = "en",
+  folded = true,
 ) {
   await page.setViewportSize({ width: 1280, height: 800 });
   const userPhone = `+1512${digits()}`;
@@ -107,9 +108,16 @@ async function setUp(
   await page.locator("[data-cy='adm-demo']").first().click();
   await page.locator("[data-cy='demo-pill']").waitFor({ timeout: 15_000 });
   await tab.locator("[data-cy='demo-pill']").waitFor({ timeout: 20_000 });
-  await tab.locator("[data-cy='demo-pill'][data-tucked]").waitFor({
-    timeout: 30_000,
-  });
+  if (folded) {
+    await tab.locator("[data-cy='demo-pill'][data-tucked]").waitFor({
+      timeout: 30_000,
+    });
+  } else {
+    await tab.locator("[data-cy='demo-pill'] [data-cy='demo-end']").waitFor({
+      timeout: 30_000,
+    });
+    await tab.waitForTimeout(1_500);
+  }
   await tab.waitForTimeout(500);
   return { userCtx, tab };
 }
@@ -261,6 +269,97 @@ Deno.test("REQ-890 AMENDMENT 6 (demo-loop run 16, p4): 1024×768, ES /settings, 
       await tab.locator("[data-cy='demo-end-ask']").waitFor({
         timeout: 5_000,
       });
+      await tab.locator("[data-cy='demo-end-cancel']").click();
+    } finally {
+      await userCtx.close();
+    }
+  }));
+
+/** the pill sampled every ~8 ms for `ms` */
+// deno-lint-ignore no-explicit-any
+async function sampleBoxes(tab: any, ms: number) {
+  const out: { at: number; box: number[] | null; asking: boolean }[] = [];
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const s = await tab.evaluate(() => {
+      const pill = document.querySelector<HTMLElement>("[data-cy='demo-pill']");
+      const r = pill?.getBoundingClientRect();
+      return {
+        box: r ? [r.left, r.top, r.width, r.height].map(Math.round) : null,
+        asking: !!document.querySelector("[data-cy='demo-end-ask']"),
+      };
+    }).catch(() => null);
+    if (s) out.push({ at: Date.now() - t0, ...s });
+    await tab.waitForTimeout(8);
+  }
+  return out;
+}
+
+Deno.test("REQ-890 AMENDMENT 6 REVISION + REQ-820 AMENDMENT 5 REVISION (demo-loop run 17, m1 + m2): 1280×800, ES /dashboard, the WHOLE pill at its home — End asks, 'Seguir' shrinks it: every frame of the shrunk pill is at its final box (no wait at the question's spot), the click in place is not End's, and after the mouse has gone away and come back onto End, the click asks", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    const { userCtx, tab } = await setUp(page, http, baseUrl, "/dashboard", {
+      width: 1280,
+      height: 800,
+    }, "es", false);
+    try {
+      const before = await tab.evaluate(state, [0, 0] as [number, number]);
+      expect(before.tucked === false, `the pill is whole at 1280 (${JSON.stringify(before)})`);
+      const endBox = await tab.locator("[data-cy='demo-end']").boundingBox();
+      if (!endBox) throw new Error("no End on the whole pill");
+      await tab.mouse.move(endBox.x - 100, endBox.y + 60);
+      await tab.mouse.move(endBox.x + endBox.width / 2, endBox.y + endBox.height / 2, { steps: 4 });
+      await tab.waitForTimeout(400);
+      await tab.mouse.down();
+      await tab.mouse.up();
+      await tab.locator("[data-cy='demo-end-ask']").waitFor({ timeout: 5_000 });
+      await tab.waitForTimeout(600);
+      const no = await tab.locator("[data-cy='demo-end-cancel']").boundingBox();
+      if (!no) throw new Error("no Seguir");
+      const nx = no.x + no.width / 2, ny = no.y + no.height / 2;
+      await tab.mouse.move(nx, ny, { steps: 3 });
+      const run = sampleBoxes(tab, 1_500);
+      await tab.mouse.down();
+      await tab.mouse.up();
+      const seen = await run;
+      await Deno.writeTextFile(`${folder}/whole-shrink-samples.json`, JSON.stringify(seen));
+      const shrunk = seen.filter((s) => !s.asking && s.box);
+      expect(shrunk.length >= 10, `the shrunk pill was sampled (${seen.length})`);
+      const last = shrunk[shrunk.length - 1];
+      const away = shrunk.filter((s) =>
+        Math.abs(s.box![0] - last.box![0]) > 4 || Math.abs(s.box![1] - last.box![1]) > 4
+      );
+      expect(
+        away.length === 0,
+        `m1 (run 17): every frame of the shrunk pill is at its box ${JSON.stringify(last.box)} — no wait where the question sat: ${
+          JSON.stringify(away.slice(0, 6).map((s) => [s.at, s.box]))
+        }`,
+      );
+      // the click in place: not End's
+      await tab.mouse.down();
+      await tab.mouse.up();
+      await tab.waitForTimeout(400);
+      const inPlace = await tab.evaluate(state, [nx, ny] as [number, number]);
+      expect(!inPlace.asking, `the click where the mouse rests after Seguir is not End's (${JSON.stringify(inPlace)})`);
+      // away and back onto End (tester 5's four runs): the question. The pill may have folded
+      // to its tab meanwhile (1280 /dashboard docks it on the right): the tab is hovered first
+      await tab.mouse.move(700, 300, { steps: 3 });
+      await tab.waitForTimeout(1_500);
+      const tab2 = await tab.locator("[data-cy='demo-pill-tab']").boundingBox({
+        timeout: 2_000,
+      }).catch(() => null);
+      if (tab2) {
+        await tab.mouse.move(tab2.x + 20, tab2.y + 16, { steps: 3 });
+        await tab.waitForTimeout(700);
+      }
+      const end2 = await tab.locator("[data-cy='demo-end']").boundingBox({
+        timeout: 5_000,
+      });
+      if (!end2) throw new Error("no End after Seguir");
+      await tab.mouse.move(end2.x + end2.width / 2, end2.y + end2.height / 2, { steps: 5 });
+      await tab.waitForTimeout(1_200);
+      await tab.mouse.down();
+      await tab.mouse.up();
+      await tab.locator("[data-cy='demo-end-ask']").waitFor({ timeout: 5_000 });
       await tab.locator("[data-cy='demo-end-cancel']").click();
     } finally {
       await userCtx.close();

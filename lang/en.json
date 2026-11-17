@@ -4460,6 +4460,7 @@
   "demoMode.pickerDate": "Choosing a date…",
   "demoMode.pickerFile": "Customer is choosing a file…",
   "demoMode.nativeDialog": "Browser question on the customer’s screen: “{text}”",
+  "demoMode.nativeAlert": "Browser notice on the customer’s screen: “{text}”",
   "demoMode.behind": "Behind {n} s",
   "nav.workOrders": "Work orders",
   "quotes.ledger.title": "Documents",

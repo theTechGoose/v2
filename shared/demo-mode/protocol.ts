@@ -132,7 +132,7 @@ export type PeerMessage =
   // REQ-827 AMENDMENT (demo-loop run 16, m3) — a native confirm()/alert() is up on the customer's
   // screen (its words, cut to DIALOG_TEXT_MAX), or was just answered (null): the stage says so in
   // its chrome row — the page under it is blocked and nothing else tells the presenter why
-  | { k: "dialog"; text: string | null }
+  | { k: "dialog"; text: string | null; kind?: "alert" }
   // REQ-836 (demo-loop cycle dm2, m1) — the customer just saved their name on this page: the stage
   // asks `active` at once (it names them by it), not on its next ACTIVE_NAME_REFRESH_MS tick
   | { k: "renamed" }
@@ -558,9 +558,11 @@ export function parsePeerMessage(x: unknown): PeerMessage | null {
     case "dialog":
       // REQ-827 AMENDMENT (dm16, m3) — the words of a native dialog, cut; null: it closed
       if (o.text === null) return { k: "dialog", text: null };
-      return typeof o.text === "string"
-        ? { k: "dialog", text: o.text.slice(0, DIALOG_TEXT_MAX) }
-        : null;
+      if (typeof o.text !== "string") return null;
+      // REQ-827 AMENDMENT REVISION (dm17, p2) — an alert() is a notice, not a question
+      return o.kind === "alert"
+        ? { k: "dialog", text: o.text.slice(0, DIALOG_TEXT_MAX), kind: "alert" }
+        : { k: "dialog", text: o.text.slice(0, DIALOG_TEXT_MAX) };
     default:
       return null;
   }

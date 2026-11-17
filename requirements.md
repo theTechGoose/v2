@@ -7879,3 +7879,35 @@ Tests:
 ## Demo-loop lane at 847c7ec1 — all green (by hand)
 
 **Raphael (2026-11-17):** the full demo-mode lane on the revised run-16 fixes: 128 pass · 0 fail (73 files, SHOTS_JOBS=4, fresh KV), REQ-648's latency story among them.
+
+## REQ-820 AMENDMENT 5 — REVISION 2: the question closing places the pill in the same layout pass (demo-loop run 17, m1; by hand)
+
+**Raphael (2026-11-17):** run 17 (r6fcfba7b, f0b1d575): testers 1 and 2 saw the shrunk pill painted where the question sat for 150 ms (1024×768) to 1.2 s (1280×800, at its home: left 12 → 204) and THEN jump — no glide any more, but a wait: place() ran only at the next check (the ResizeObserver, the 700 ms interval), not when `asking` turned false. Testers 3 and 5 saw no bad frame; the Mac never did. The Keep going effect is a layout effect that calls place() at once: the pill is measured shrunk and painted at its box before the frame shows.
+**Tests:** unit `demo-run16-polish` (run 17 block: the layout effect runs `placeRef.current()`); e2e `demo-pill-approach-guard` (the 1280×800 whole-pill story samples the shrink every ~8 ms: every frame at the final box).
+**Evidence (2026-11-17):** unit RED 3 failed → GREEN; story GREEN (130 shrunk samples all at `[823,418,444,43]` from 45 ms). The wait did not reproduce on the Mac (the story's shrink check passed at 9e649768 too): fixed from the cause, guarded by the story.
+
+## REQ-890 AMENDMENT 6 — REVISION: Keep going's guard goes with the mouse on a whole pill too (demo-loop run 17, m2; by hand)
+
+**Raphael (2026-11-17):** tester 5 (×4) and tester 3: after Seguir the first click on End was swallowed even after the mouse had left the pill and come back — on a WHOLE pill (1280 px, no peek). Two causes: the pointer-move listener that clears the approach was the peek's alone, and the pointer's position (`pointRef`) on a whole pill was only the one seen entering it, so the guard's point was stale (on the Mac the in-place click asked again instead). The Keep going effect now installs its own document pointermove listener until the approach ends, and the pill keeps `pointRef` current on every pointer move over it.
+**Tests:** unit (run 17 block: the listener; `onPointerMove` on the pill); e2e `demo-pill-approach-guard` (1280×800 ES /dashboard, the whole pill: Seguir → the click in place does not ask; away to (700,300), back onto End in 5 steps, 1.2 s rest, click → asks).
+**Evidence (2026-11-17):** story ✗ at 9e649768 (scratch worktree :5611): `the click where the mouse rests after Seguir is not End's ({"box":[597,418,671,43],…,"under":"demo-end-cancel","asking":true})` → GREEN at the fix (3 pass).
+
+## REQ-890 AMENDMENT 4 — REVISION: the tab's click is the tab's wherever it lands on the peek (demo-loop run 17, m3; by hand)
+
+**Raphael (2026-11-17):** tester 2: at the LEFT dock (390 px /dashboard ES, tab at (0,564)) the resting mouse opened the peek under it, and the click showed nothing — it landed on the guide text ("Alex te está guiando"), which lets clicks through to the page (M28); the guard was End's alone. A document click listener (capture) during the peek: a click within the guard's point that lands inside the pill's box shows the controls and nothing else hears it.
+**Tests:** unit (run 17 block: `tabClick`); e2e `demo-pill-peek-under-pointer` (ES /dashboard 390: the click shows the controls whichever edge the tab docks on).
+**Evidence (2026-11-17):** unit RED → GREEN; the story is GREEN at the fix and at 9e649768 — on this Mac /dashboard docks the tab on the RIGHT, so the left-dock case is not reproduced here; fixed from the cause (the guard was End's button only), guarded by the unit test.
+
+## REQ-827 AMENDMENT — REVISION: an alert() is a notice, not a question (demo-loop run 17, p2; by hand)
+
+**Raphael (2026-11-17):** tester 3: `alert('Guardado')` read "Pregunta del navegador…" on the stage. The dialog message carries `kind: "alert"`; the stage says "Aviso del navegador en la pantalla del cliente: “…”" / "Browser notice on the customer's screen: “…”" (`demoMode.nativeAlert`) for it, "Pregunta…" for a confirm().
+**Tests:** unit (REQ-827 block: parse `kind`, the overlay's `say(…, "alert")`, the stage's key choice, both lang keys). E2E: n/a — the chip's words are the key's; the confirm() story covers the path.
+**Evidence (2026-11-17):** unit RED → GREEN; 582 suites green.
+
+## Demo-loop run 17 (r6fcfba7b, f0b1d575) — closed without change
+
+- **p1** the presenter's arrow shown then gone ~1.2 s after her tab came back, under a still mouse — REQ-645 (no re-anchor under a still mouse after a page change); owner call, logged before.
+- **p3** the arrow's ~0.3 s glide on a 600 px jump — REQ-180's glide, by design (the tester said so).
+- **p4** the stage's pill ghost "Conectando…" for ~80 ms during her reload — REQ-430's connecting face while her app is away; pedantic, by design.
+- VM 3 (demo 4, navigation stress) never came back — a lost VM; its focus is re-run in run 18.
+- Tester 5 at 390 px never saw the pill fold on /reports or /dashboard (it found a clear spot) — not a defect; the re-check says what to do then.

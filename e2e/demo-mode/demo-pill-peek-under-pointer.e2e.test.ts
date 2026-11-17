@@ -35,13 +35,19 @@ async function verify(http: StoryTools["http"], phone: string) {
   return { body, cookie, auth: { ...JSON_HEADERS, cookie } };
 }
 // deno-lint-ignore no-explicit-any
-async function useCookie(ctx: any, baseUrl: string, cookie: string) {
+async function useCookie(
+  // deno-lint-ignore no-explicit-any
+  ctx: any,
+  baseUrl: string,
+  cookie: string,
+  lang: "en" | "es" = "en",
+) {
   const [name, value] = cookie.split("=");
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
   await ctx.clearCookies();
   await ctx.addCookies([...hosts].flatMap((domain) => [
     { name, value, domain, path: "/" },
-    { name: "pm_lang", value: "en", domain, path: "/" },
+    { name: "pm_lang", value: lang, domain, path: "/" },
   ]));
 }
 
@@ -52,6 +58,7 @@ async function setUp(
   http: StoryTools["http"],
   baseUrl: string,
   path: string,
+  lang: "en" | "es" = "en",
 ) {
   await page.setViewportSize({ width: 1280, height: 800 });
   const userPhone = `+1512${digits()}`;
@@ -60,7 +67,7 @@ async function setUp(
   await (await http("/api/me", {
     method: "PUT",
     headers: user.auth,
-    body: JSON.stringify({ language: "en", name: "Maria Lopez" }),
+    body: JSON.stringify({ language: lang, name: "Maria Lopez" }),
   })).body?.cancel();
   await answerQuestions(http, user.auth, {
     name: "Maria Lopez",
@@ -70,7 +77,7 @@ async function setUp(
   await (await http("/api/me", {
     method: "PUT",
     headers: admin.auth,
-    body: JSON.stringify({ language: "en", name: "Alex" }),
+    body: JSON.stringify({ language: lang, name: "Alex" }),
   })).body?.cancel();
   const boot = await http("/api/admin/bootstrap", {
     method: "POST",
@@ -85,10 +92,10 @@ async function setUp(
     viewport: { width: 390, height: 844 },
   });
   const tab = await userCtx.newPage();
-  await useCookie(userCtx, baseUrl, user.cookie);
-  await tab.goto(`${baseUrl}${path}?lang=en`);
-  await useCookie(page.context(), baseUrl, admin.cookie);
-  await page.goto(`${baseUrl}/admin?lang=en`);
+  await useCookie(userCtx, baseUrl, user.cookie, lang);
+  await tab.goto(`${baseUrl}${path}?lang=${lang}`);
+  await useCookie(page.context(), baseUrl, admin.cookie, lang);
+  await page.goto(`${baseUrl}/admin?lang=${lang}`);
   await page.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
   await page.locator("[data-cy='adm-search']").click();
   await page.locator("[data-cy='adm-demo']").first().waitFor({
@@ -197,6 +204,33 @@ Deno.test("REQ-890 AMENDMENT 5 (demo-loop run 16, m2 + m1): on /reports at 390×
           })`,
         );
       }
+    } finally {
+      await userCtx.close();
+    }
+  }));
+
+Deno.test("REQ-890 AMENDMENT 4 REVISION (demo-loop run 17, m3): ES /dashboard at 390×844 — whichever edge the tab docks on, the click where the resting mouse opened the peek shows the controls (at the LEFT dock it landed on the guide text and showed nothing)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    const { userCtx, tab } = await setUp(page, http, baseUrl, "/dashboard", "es");
+    try {
+      const tb = (await tab.evaluate(state, [0, 0] as [number, number])).box!;
+      // on "Demo" (a left tab: 42 px in, past the dot; a right one: 20 px in)
+      const mx = tb[0] + (tb[0] < 100 ? 42 : 20), my = tb[1] + 16;
+      await tab.mouse.move(mx, my + 100);
+      await tab.mouse.move(mx, my);
+      await tab.waitForTimeout(700);
+      const hovered = await tab.evaluate(state, [mx, my] as [number, number]);
+      expect(hovered.peek === true && hovered.inPill, `the peek opened under the mouse (tab ${JSON.stringify(tb)}; ${JSON.stringify(hovered)})`);
+      await tab.mouse.down();
+      await tab.mouse.up();
+      await tab.waitForTimeout(500);
+      const clicked = await tab.evaluate(state, [mx, my] as [number, number]);
+      await tab.screenshot({ path: `${folder}/tab-click-controls-${tb[0] < 100 ? "left" : "right"}.png` });
+      expect(!clicked.asking, `never End's question (${JSON.stringify(clicked)})`);
+      expect(
+        clicked.peek === true && (clicked.more === "true" || clicked.details),
+        `m3 (run 17): the tab's click shows the controls whatever it landed on (${hovered.under}) — ${JSON.stringify(clicked)}`,
+      );
     } finally {
       await userCtx.close();
     }

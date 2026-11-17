@@ -1855,6 +1855,8 @@ export default function DemoModeOverlay(
     if (store) rememberPillOpen(store, next);
     setOpen(next);
   };
+  const toggleOpenRef = useRef(toggleOpen);
+  toggleOpenRef.current = toggleOpen;
   /** REQ-890 AMENDMENT 4 (dm15, m2) — End clicked where the pointer, resting on the right-edge
    *  tab, opened the peek (End sits where the tab was): that click was aimed at the tab's "Demo"
    *  — it shows the controls (the details) and never asks to end the demo. After the pointer has
@@ -1872,7 +1874,7 @@ export default function DemoModeOverlay(
   // End lands under the still mouse ("a second click only asks again"). A click where the mouse
   // rests, before it has moved on, is not End's — like the tab's click of AMENDMENT 4
   const wasAskingRef = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const wasAsking = wasAskingRef.current;
     wasAskingRef.current = asking;
     if (wasAsking && !asking && pillRef.current) {
@@ -1881,6 +1883,28 @@ export default function DemoModeOverlay(
         moved: 0,
         tab: pillRef.current.getBoundingClientRect(),
       };
+      // REQ-820 AMENDMENT 5 REVISION (dm17) — the shrunk pill is placed in this layout pass: the
+      // VMs painted it where the question sat for 150–1200 ms (until the next check) and then
+      // jumped; here it is measured shrunk and painted at its box before the frame shows
+      placeRef.current();
+      // REQ-890 AMENDMENT 6 REVISION (dm17) — the guard goes with the mouse moving on, whether
+      // the pill is a peek or whole (the peek's document listener was the peek's alone: on a
+      // whole pill the first click after moving away and back was still swallowed)
+      const opts = { capture: true, passive: true };
+      const move = (e: PointerEvent) => {
+        if (e.pointerType === "touch") return;
+        pointRef.current = { x: e.clientX, y: e.clientY };
+        approachRef.current = approachMoved(
+          approachRef.current,
+          pointRef.current,
+          Date.now(),
+        );
+        if (!approachRef.current) {
+          document.removeEventListener("pointermove", move, opts);
+        }
+      };
+      document.addEventListener("pointermove", move, opts);
+      return () => document.removeEventListener("pointermove", move, opts);
     }
   }, [asking]);
   // REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() blocks the customer's page, and the
@@ -1890,8 +1914,10 @@ export default function DemoModeOverlay(
   useEffect(() => {
     if (demo?.role !== "viewer") return;
     const native = { confirm: globalThis.confirm, alert: globalThis.alert };
-    const say = (text: string | null) => {
-      linkRef.current?.send({ k: "dialog", text });
+    const say = (text: string | null, kind?: "alert") => {
+      linkRef.current?.send(
+        kind ? { k: "dialog", text, kind } : { k: "dialog", text },
+      );
     };
     globalThis.confirm = (text?: string) => {
       say(String(text ?? ""));
@@ -1902,7 +1928,7 @@ export default function DemoModeOverlay(
       }
     };
     globalThis.alert = (text?: unknown) => {
-      say(String(text ?? ""));
+      say(String(text ?? ""), "alert"); // REQ-827 AMENDMENT REVISION (dm17, p2) — a notice
       try {
         native.alert.call(globalThis, text);
       } finally {
@@ -2583,7 +2609,30 @@ export default function DemoModeOverlay(
     };
     const opts = { capture: true, passive: true };
     document.addEventListener("pointermove", move, opts);
-    return () => document.removeEventListener("pointermove", move, opts);
+    // REQ-890 AMENDMENT 4 REVISION (dm17) — the tab's click is the tab's wherever it lands on the
+    // peek: at the LEFT dock the guide text sits where "Demo" was, and a click there fell through
+    // to the page (the guard was End's alone) — the controls show, nothing else hears the click
+    const tabClick = (e: MouseEvent) => {
+      const el = pillRef.current;
+      if (
+        !el ||
+        !hoverClickIsTab(approachRef.current?.at ?? null, { x: e.clientX, y: e.clientY })
+      ) return;
+      const r = el.getBoundingClientRect();
+      if (
+        e.clientX < r.left || e.clientX > r.right || e.clientY < r.top ||
+        e.clientY > r.bottom
+      ) return;
+      e.preventDefault();
+      e.stopPropagation();
+      approachRef.current = null;
+      toggleOpenRef.current();
+    };
+    document.addEventListener("click", tabClick, { capture: true });
+    return () => {
+      document.removeEventListener("pointermove", move, opts);
+      document.removeEventListener("click", tabClick, { capture: true });
+    };
   }, [peek]);
   // REQ-820 — the whole pill is painted where it is: from the next move on, it glides again
   useEffect(() => {
@@ -3006,6 +3055,14 @@ export default function DemoModeOverlay(
           if (e.pointerType !== "touch") {
             overPillRef.current = true;
             pointRef.current = { x: e.clientX, y: e.clientY }; // REQ-820 AMENDMENT 4
+          }
+        }}
+        // REQ-890 AMENDMENT 6 REVISION (dm17, m2) — where the pointer is on the pill, kept current
+        // for Keep going's guard (a whole pill has no peek listener: the point was the one seen
+        // entering, and End under the still mouse asked again)
+        onPointerMove={(e) => {
+          if (e.pointerType !== "touch") {
+            pointRef.current = { x: e.clientX, y: e.clientY };
           }
         }}
         onPointerLeave={() => {

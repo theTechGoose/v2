@@ -560,7 +560,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   const [pickerOut, setPickerOut] = useState<string | null>(null);
   /** REQ-827 AMENDMENT (demo-loop run 16, m3) — the words of a native confirm()/alert() up on the
    *  customer's screen (their page is blocked by it), said in the chrome row; null: none */
-  const [nativeAsk, setNativeAsk] = useState<string | null>(null);
+  const [nativeAsk, setNativeAsk] = useState<
+    { text: string; kind?: "alert" } | null
+  >(null);
   /** REQ-823 (cycle dm1, M2) — the customer signed out in the tab the stage followed: the pill and
    *  the waiting banner say so, until a tab of theirs is followed again */
   const [signedOut, setSignedOut] = useState(false);
@@ -1657,7 +1659,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
           case "dialog":
             // REQ-827 AMENDMENT (dm16, m3) — a native confirm()/alert() blocks their page: its
             // words in the chrome row until it is answered
-            setNativeAsk(m.text);
+            setNativeAsk(
+              m.text === null
+                ? null
+                : m.kind ? { text: m.text, kind: m.kind } : { text: m.text },
+            );
             break;
           case "pill": {
             // REQ-636 (cycle 5, m8) — shown with the frame it went out with (held till then)
@@ -2485,7 +2491,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               <div
                 data-cy="demo-native-dialog"
                 role="status"
-                title={nativeAsk}
+                title={nativeAsk.text}
                 style={`position:absolute;left:${
                   fit.left + fit.width / 2
                 }px;top:${
@@ -2496,7 +2502,16 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   STAGE_BADGE_H - 2
                 }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:#1f1f1f;color:#fff;font-size:13px;font-weight:600`}
               >
-                {t("demoMode.nativeDialog", { text: nativeAsk })}
+                {
+                  /* REQ-827 AMENDMENT REVISION (dm17, p2) — an alert() is a notice ("Aviso"),
+                    a confirm() a question ("Pregunta") */
+                  t(
+                    nativeAsk.kind === "alert"
+                      ? "demoMode.nativeAlert"
+                      : "demoMode.nativeDialog",
+                    { text: nativeAsk.text },
+                  )
+                }
               </div>
             )}
             {badges && pickerOut !== null && tabNote === null && nativeAsk === null && (
