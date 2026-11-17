@@ -300,14 +300,20 @@ async function demoOn(
     y: fb.y + p.y * s,
   });
 
-  /** the customer's window scroll once it stops moving (End and Home scroll smoothly) */
+  /** the customer's window scroll once it stops moving (End, Home and a scripted scrollTo all
+   *  scroll smoothly: the move starts a frame or more after the call — under load, a few hundred
+   *  ms — so "settled" is the same figure for 400 ms, never two reads 100 ms apart) */
   const settledScrollY = async () => {
-    let last = await userPage.evaluate(() => globalThis.scrollY);
-    for (let i = 0; i < 40; i++) {
+    const read = () => userPage.evaluate(() => globalThis.scrollY);
+    let last = await read();
+    let same = 0;
+    for (let i = 0; i < 60; i++) {
       await new Promise((r) => setTimeout(r, 100));
-      const now = await userPage.evaluate(() => globalThis.scrollY);
-      if (now === last) return now;
+      const now = await read();
+      same = now === last ? same + 1 : 0;
       last = now;
+      // i >= 5: at least 600 ms for a smooth scroll to begin, then 400 ms of stillness
+      if (same >= 4 && i >= 5) return now;
     }
     return last;
   };
@@ -454,12 +460,22 @@ Deno.test("REQ-305 (demo M7, m16, setup-m6): the customer scrolls /q by window.s
       expect.eq(y3, 0, "Home scrolled back to the top");
       await customerPointerOnItsNode("after Home", cursor);
 
-      // 4. an in-page anchor link to the sign form's name field
-      const target = `sign-name-${d.quote.id}`;
-      expect.eq(
-        await userPage.locator(`[id="${target}"]`).count(),
-        1,
-        "the quote page has the sign form's name field to jump to",
+      // 4. an in-page anchor link to an element near the end of the page (the owner previewing
+      //    her own quote has no sign form — "signing … off" — so not its name field any more;
+      //    what is under test is an anchor link's scroll reaching the stage)
+      const target = await userPage.evaluate(() => {
+        const els = Array.from(
+          document.querySelectorAll("h2,h3,section,footer"),
+        )
+          .filter((e) => !e.closest("[data-demo-overlay]"));
+        const el = els[els.length - 1] as HTMLElement | undefined;
+        if (!el) return "";
+        if (!el.id) el.id = "pm-jump-target";
+        return el.id;
+      });
+      expect(
+        target !== "",
+        "the quote page has an element near its end to jump to",
       );
       await userPage.evaluate((id) => {
         const a = document.createElement("a");
@@ -630,13 +646,20 @@ Deno.test("REQ-305 (demo M2) + REQ-451 (demo M1) + REQ-645 (cycle 5 M1 + M2) + R
       if (!before) throw new Error("no presenter arrow before the scroll");
       const meant = await underCustomer(userPage, before.x, before.y);
       const from = await userPage.evaluate(() => globalThis.scrollY);
-      const to = from >= 250 ? from - 250 : from + 250;
+      // as far as the page goes: /customers with one customer is not 250 px taller than a phone
+      const max = await userPage.evaluate(() =>
+        (document.scrollingElement?.scrollHeight ?? 0) - innerHeight
+      );
+      const to = from >= 250 ? from - 250 : Math.min(from + 250, max);
       await userPage.evaluate((y) => globalThis.scrollTo(0, y), to);
       const after = await frameFollows(
         "the customer's scroll under the presenter's still mouse",
       );
       const delta = after - from;
-      expect(Math.abs(delta) >= 200, `the customer's page scrolled (${delta})`);
+      expect(
+        Math.abs(delta) >= Math.min(200, Math.abs(to - from) - 2),
+        `the customer's page scrolled (${delta}; asked ${from} → ${to}, the page scrolls to ${max})`,
+      );
       await until(
         `REQ-451: the presenter's arrow rides with its element (the page scrolled ${delta}px) and the stage's ghost is on it`,
         async () => {
