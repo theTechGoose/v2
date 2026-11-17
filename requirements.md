@@ -7875,3 +7875,7 @@ Tests:
 ## Demo-loop run 17 lane note — REQ-648's latency story is load-sensitive (by hand)
 
 **Raphael (2026-11-17):** `demo-stage-page-latency` (REQ-648) failed in the full lane at f0b1d575 and in a 4-file re-run (the stage showed her next page 36–45 ms AFTER her delayed islands hydrated), passed alone on the same server and passed against 709e8ca5 in a scratch worktree. Not a regression of the run-16 fixes (no change touches the mirror's pre-hydration path); a load flake under SHOTS_JOBS ≥ 2, like REQ-638's in the dm15 lane. Left as is; watched in the next lane.
+
+## Demo-loop lane at 847c7ec1 — all green (by hand)
+
+**Raphael (2026-11-17):** the full demo-mode lane on the revised run-16 fixes: 128 pass · 0 fail (73 files, SHOTS_JOBS=4, fresh KV), REQ-648's latency story among them.
