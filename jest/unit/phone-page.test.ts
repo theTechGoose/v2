@@ -232,4 +232,15 @@ describe("REQ-915 the Phone page", () => {
     ) expect(src).toContain(`data-cy="${cy}"`);
     expect(src).toContain("15_000");
   });
+
+  test("REQ-917 a provisioning failure whose reason is not_configured tells the truth: the line is not connected to Twilio", () => {
+    const src = read("front-end/islands/PhonePage.tsx");
+    expect(src).toContain('reason === "not_configured"');
+    expect(src).toContain('t("comms.err.not_configured")');
+    expect(src).toContain('t("comms.err.provisioning")');
+    for (const lang of ["en", "es"]) {
+      const d = JSON.parse(read(`lang/${lang}.json`));
+      expect(d["comms.err.not_configured"]).toMatch(/Twilio/);
+    }
+  });
 });

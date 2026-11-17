@@ -66,7 +66,14 @@ function friendly(e: unknown): string {
       return t("comms.err.line_exists");
     }
     if (code === "no_line") return t("comms.err.no_line");
-    if (e.status === 502) return t("comms.err.provisioning");
+    if (e.status === 502) {
+      // REQ-917: no Twilio keys on the server is not "pick another number"
+      const reason = e.body && typeof e.body === "object"
+        ? String((e.body as { reason?: unknown }).reason ?? "")
+        : "";
+      if (reason === "not_configured") return t("comms.err.not_configured");
+      return t("comms.err.provisioning");
+    }
     if (e.status === 400) {
       const msg = e.body && typeof e.body === "object"
         ? String((e.body as { message?: unknown }).message ?? "")
