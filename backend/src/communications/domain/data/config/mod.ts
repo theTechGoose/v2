@@ -36,38 +36,65 @@ export const DEFAULT_AGENT_PROMPT =
   "then say someone will call them back shortly and end the call by appending [END_CALL] to your last sentence. " +
   "Never invent prices, availability or promises. If the caller speaks Spanish or Portuguese, answer in that language.";
 
-export const DEFAULT_AGENT_GREETING = "Thanks for calling. I'm the assistant here. Who am I speaking with?";
+export const DEFAULT_AGENT_GREETING =
+  "Thanks for calling. I'm the assistant here. Who am I speaking with?";
 
-export function readCommsConfig(env: (k: string) => string | undefined = (k) => Deno.env.get(k)): CommsConfig {
-  const accountSid = env("COMMS_TWILIO_ACCOUNT_SID")?.trim() ?? "";
-  const identities = (env("COMMS_RING_IDENTITIES") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+export function readCommsConfig(
+  env: (k: string) => string | undefined = (k) => Deno.env.get(k),
+): CommsConfig {
+  // REQ-918: COMMS_TWILIO_* when it is set; else the account's plain TWILIO_* (the OTP sender's)
+  // — one trio or the other, never a SID from one and a token from the other.
+  const commsSid = env("COMMS_TWILIO_ACCOUNT_SID")?.trim() ?? "";
+  const pick = (comms: string, ...plain: string[]): string => {
+    if (commsSid) return env(comms)?.trim() ?? "";
+    for (const k of plain) {
+      const v = env(k)?.trim();
+      if (v) return v;
+    }
+    return "";
+  };
+  const accountSid = commsSid || (env("TWILIO_ACCOUNT_SID")?.trim() ?? "");
+  const identities = (env("COMMS_RING_IDENTITIES") ?? "").split(",").map((s) =>
+    s.trim()
+  ).filter(Boolean);
   return {
     accountSid,
-    authToken: env("COMMS_TWILIO_AUTH_TOKEN")?.trim() ?? "",
-    from: env("COMMS_TWILIO_FROM")?.trim() ?? "",
+    authToken: pick("COMMS_TWILIO_AUTH_TOKEN", "TWILIO_AUTH_TOKEN"),
+    from: pick("COMMS_TWILIO_FROM", "TWILIO_FROM", "TWILIO_PHONE_NUMBER"),
     apiKeySid: env("COMMS_TWILIO_API_KEY_SID")?.trim() ?? "",
     apiKeySecret: env("COMMS_TWILIO_API_KEY_SECRET")?.trim() ?? "",
     twimlAppSid: env("COMMS_TWILIO_TWIML_APP_SID")?.trim() ?? "",
-    publicUrl: (env("COMMS_PUBLIC_URL") ?? env("PUBLIC_BACKEND_URL") ?? "").trim().replace(/\/+$/, ""),
+    publicUrl: (env("COMMS_PUBLIC_URL") ?? env("PUBLIC_BACKEND_URL") ?? "")
+      .trim().replace(/\/+$/, ""),
     fallback: env("COMMS_FALLBACK")?.trim() ?? "",
     forwardTo: env("COMMS_FORWARD_TO")?.trim() ?? "",
     agentPrompt: env("COMMS_AGENT_PROMPT")?.trim() || DEFAULT_AGENT_PROMPT,
-    agentGreeting: env("COMMS_AGENT_GREETING")?.trim() || DEFAULT_AGENT_GREETING,
+    agentGreeting: env("COMMS_AGENT_GREETING")?.trim() ||
+      DEFAULT_AGENT_GREETING,
     ringTimeoutSec: Number(env("COMMS_RING_TIMEOUT_SEC") ?? 20) || 20,
     ringIdentities: identities.length ? identities : ["agent_default"],
     devMode: !accountSid,
-    baseUrl: (env("COMMS_TWILIO_BASE_URL") ?? "https://api.twilio.com").replace(/\/+$/, ""),
+    baseUrl: (env("COMMS_TWILIO_BASE_URL") ?? "https://api.twilio.com").replace(
+      /\/+$/,
+      "",
+    ),
     envLineOwner: env("COMMS_ENV_LINE_OWNER")?.trim() ?? "",
   };
 }
 
 /** the public https URL of one of our routes */
-export function publicUrl(cfg: Pick<CommsConfig, "publicUrl">, path: string): string {
+export function publicUrl(
+  cfg: Pick<CommsConfig, "publicUrl">,
+  path: string,
+): string {
   return `${cfg.publicUrl}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
 /** the same route as a websocket URL (https → wss) */
-export function wsUrl(cfg: Pick<CommsConfig, "publicUrl">, path: string): string {
+export function wsUrl(
+  cfg: Pick<CommsConfig, "publicUrl">,
+  path: string,
+): string {
   return publicUrl(cfg, path).replace(/^http/, "ws");
 }
 
@@ -96,7 +123,9 @@ export class CommsConfigSource {
 }
 
 /** a config built from an env-shaped map (tests): same derivations as production, nothing from the process env */
-export function configFromEnv(env: Record<string, string | undefined>): CommsConfigSource {
+export function configFromEnv(
+  env: Record<string, string | undefined>,
+): CommsConfigSource {
   const cfg = readCommsConfig((k) => env[k]);
   return { get: () => cfg } as CommsConfigSource;
 }
