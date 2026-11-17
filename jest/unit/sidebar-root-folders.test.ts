@@ -30,7 +30,7 @@ describe("REQ-176 the sidebar's root folders", () => {
     expect(nested).not.toContain("quotes");
   });
 
-  test("the root is Dashboard, Customers, Quotes, Outbox, Billing, Field, Admin, Reports (REQ-795) — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
+  test("the root is Dashboard, Customers, Quotes, Outbox, Billing, Field, Admin, HR (REQ-883), Reports (REQ-795) — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
     // REQ-773 (demo dv1-d1): Quotes is on the root, one click from anywhere
     expect(ids([])).toEqual([
       "home",
@@ -40,13 +40,20 @@ describe("REQ-176 the sidebar's root folders", () => {
       "billing",
       "field",
       "manage",
+      "hr", // REQ-883: the HR folder (new-hire onboarding)
       "reports", // REQ-795: the Reports (data export) row
+      "tools", // REQ-891: the Tools folder (Satellite measure, REQ-856) — specific tools live off the root
     ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
       "billing",
       "field",
       "manage",
+      "hr", // REQ-883
+      "tools",
     ]);
+    // REQ-891 (Raphael: "this tool is very specific, so stick it in a folder on the side called Tools")
+    expect(ids(["tools"])).toEqual(["satellite"]);
+    expect(folderPathTo(NAV, "satellite")).toEqual(["tools"]);
   });
 
   test("Billing holds Invoices, Payments, Work orders (REQ-773: Quotes left for the root); Field the four (REQ-361); Admin holds Workers, Timesheet and Admins (REQ-178, REQ-192)", () => {
@@ -57,6 +64,8 @@ describe("REQ-176 the sidebar's root folders", () => {
     // REQ-604 (demo m18): Workers is listed in Field too — the same node as in Roles
     expect(ids(["field"])).toEqual([
       "subscriptions",
+      "checklists", // REQ-811 — the service checklists a repeat visit references
+      "services", // REQ-839 — the service catalogue
       "assignments",
       "tasks",
       "batches",
@@ -71,9 +80,13 @@ describe("REQ-176 the sidebar's root folders", () => {
 
   test("the sidebar renders the tree module and shows the super-admin tab on the root and inside Roles (REQ-604) — labelled Admin (REQ-191)", () => {
     const src = read("front-end/islands/DashSidebar.tsx");
-    expect(src).toMatch(/import \{ NAV, superAdminTabAt \} from "\.\.\/lib\/nav-tree\.ts"/);
+    expect(src).toMatch(
+      /import \{ NAV, superAdminTabAt \} from "\.\.\/lib\/nav-tree\.ts"/,
+    );
     expect(src).not.toMatch(/const NAV\b/);
-    expect(src).toMatch(/superAdminTabAt\(s\.superAdmin, view\.folder\?\.id \?\? null\)/);
+    expect(src).toMatch(
+      /superAdminTabAt\(s\.superAdmin, view\.folder\?\.id \?\? null\)/,
+    );
     expect(src).toMatch(/<span class="nav-item__label">Admin<\/span>/); // REQ-191
     expect(src).not.toContain("Super admin");
   });

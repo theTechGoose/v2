@@ -62,6 +62,12 @@ export default define.page(function PaymentsRoute(ctx) {
           rel="stylesheet"
           href={asset("/payments.css")}
         />
+        {/* REQ-909: the Record-a-payment invoice picker is the SearchSelect */}
+        <link
+          key="css-search-select"
+          rel="stylesheet"
+          href={asset("/search-select.css")}
+        />
       </Head>
       <div class="app">
         <DashSidebar active="payments" />

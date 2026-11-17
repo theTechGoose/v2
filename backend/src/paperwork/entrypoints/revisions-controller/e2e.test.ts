@@ -643,3 +643,59 @@ Deno.test("REQ-686 (cycle 5, m45): a never-sent draft's version history carries 
     assertEquals(after[after.length - 1].publishedAt, sent.sentAt);
   });
 });
+
+// REQ-910 (A2Z, 2026-11-16: "le faltó agregar el 10%"): a sent invoice takes an
+// added line — it waits as the pending revision with the new total, publish
+// makes it version 2 and the customer's link shows it.
+Deno.test("REQ-910: an added Overhead line on a sent invoice is pending until published, then the customer sees version 2 with the new total", async () => {
+  await withServer(async () => {
+    const sid = await login();
+    const c = await mkCustomer(sid, "Robert Frakes");
+    const lines = [2, 9, 16, 23, 30].map((d) => ({
+      description: `Oct ${d} — Lawn`,
+      quantity: 1,
+      unit: "visit",
+      price: 7000,
+    }));
+    const inv = await post("/invoices", auth(sid), {
+      customerId: c.id,
+      jobName: "Maintenance 2026-10-01 → 2026-10-31",
+      lineItems: lines,
+      amount: 35000,
+      status: "sent",
+    }).then((r) => r.json());
+    assertEquals(inv.version, 1);
+    assertEquals(inv.amount, 35000);
+    const pending = await put(`/invoices/${inv.id}`, auth(sid), {
+      lineItems: [
+        ...lines,
+        {
+          description: "Overhead",
+          quantity: 1,
+          unit: "job",
+          price: 3500,
+          overhead: true,
+        },
+      ],
+      amount: 38500,
+    }).then((r) => r.json());
+    assertEquals(pending.amount, 35000, "the live invoice is unchanged");
+    assertEquals(pending.version, 1);
+    assertEquals(pending.pendingRevision?.lineItems?.length, 6);
+    assertEquals(pending.pendingRevision?.lineItems?.[5]?.overhead, true);
+    assertEquals(pending.pendingRevision?.amount, 38500);
+    const pub1 = await get(`/invoices/${inv.id}/public`);
+    assertEquals(pub1.amount, 35000, "the customer still sees $350");
+    const published = await post(`/invoices/${inv.id}/publish`, auth(sid), {
+      notify: false,
+    }).then((r) => r.json());
+    assertEquals(published.version, 2);
+    assertEquals(published.amount, 38500);
+    assertEquals(published.lineItems?.length, 6);
+    assertEquals(published.lineItems?.[5]?.overhead, true);
+    assertEquals(published.pendingRevision, undefined);
+    const pub2 = await get(`/invoices/${inv.id}/public`);
+    assertEquals(pub2.amount, 38500, "the customer now sees $385");
+    assertEquals(pub2.version, 2);
+  });
+});

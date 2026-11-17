@@ -1451,3 +1451,428 @@ Deno.test("REQ-810: a batch of two customers — × a line and the totals drop i
     expect.eq(await sent.locator("[data-cy='lt-remove']").count(), 0, "no Remove from batch on a sent invoice");
     expect.eq(await sent.getByRole("button", { name: "Remove this line" }).count(), 0, "no × on a sent invoice's lines");
   }));
+
+// REQ-811 — Raphael: "recurring has the same thing over and over … associate a checklist to recurring … a reference"
+Deno.test("REQ-811: a checklist made on /field/checklists → a repeat visit that picks it and adds no task type of its own → the card lists the checklist's services → today's tasks carry them", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const post = async (path: string, body: unknown) => {
+      const r = await http(path, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify(body),
+      });
+      return await r.json();
+    };
+    await post("/api/customers", {
+      name: "Ana Torres",
+      phoneNumber: `(843) 555-${digits().slice(0, 4)}`,
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    const worker = await post("/api/field/workers", {
+      name: "Luis Herrera",
+      phoneNumber: `843${digits()}`,
+      pin: "1234",
+    });
+
+    // 1. the checklist, on /field/checklists — two services with their prices
+    await page.goto("/field/checklists");
+    await page.locator("[data-cy='ckl-new']").click();
+    await page.locator("[data-cy='ckl-name']").fill("Full yard");
+    await page.locator("[data-cy='ckl-type-q']").fill("Lawn cut");
+    await page.locator("[data-cy='ckl-price']").fill("65");
+    await page.locator("[data-cy='ckl-add-item']").click();
+    await page.locator("[data-cy='ckl-type-q']").fill("Edging");
+    await page.locator("[data-cy='ckl-price']").fill("25");
+    await page.locator("[data-cy='ckl-add-item']").click();
+    expect.eq(
+      await page.locator("[data-cy='ckl-item']").count(),
+      2,
+      "two rows on the checklist form",
+    );
+    await page.locator("[data-cy='ckl-submit']").click();
+    const ckl = page.locator("[data-cy='ckl-card']").first();
+    await ckl.waitFor({ timeout: 20_000 });
+    await expect.see("Full yard");
+    await expect.see("$65.00");
+    await expect.see("$25.00");
+    await expect.see("Used by 0 repeat visits");
+
+    // 2. a repeat visit that picks the checklist and lists no task type of its own
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    await page.locator("[data-cy='subs-address']").fill(
+      "4601 Dick Pond Rd, Myrtle Beach, SC",
+    );
+    const select = page.locator("[data-cy='subs-checklist']");
+    await select.locator("option", { hasText: "Full yard" }).waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
+    await select.selectOption({ label: "Full yard" });
+    await expect.see("Extra task types");
+    await page.locator("[data-cy='subs-submit']").click();
+    const card = page.locator("[data-cy='subs-card']").first();
+    await card.waitFor({ timeout: 20_000 });
+    await card.locator("[data-cy='subs-card-checklist']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("Full yard");
+    expect.eq(
+      await card.locator("[data-cy='subs-item-from-checklist']").count(),
+      2,
+      "the card lists the checklist's two services, marked as the checklist's",
+    );
+    await expect.see("$65.00");
+    await expect.see("$25.00");
+
+    // the checklist page now says it is used once
+    await page.goto("/field/checklists");
+    await page.locator("[data-cy='ckl-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Used by 1 repeat visit");
+
+    // 3. the zone gets its worker (the API) — today's round, on /field/tasks, carries both services
+    const regions = await (await http("/api/field/regions", { headers: auth }))
+      .json();
+    expect(regions.length === 1, `one zone (${regions.length})`);
+    const staffed = await http(`/api/field/regions/${regions[0].id}/worker`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ workerId: worker.id }),
+    });
+    await staffed.body?.cancel();
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      2,
+      "both checklist services are today's tasks",
+    );
+    await expect.see("Lawn cut");
+    await expect.see("Edging");
+    await expect.see("Ana Torres");
+  }));
+
+// ---- REQ-839..842 — the service catalogue, crews, zones staffed by crews, who is out ----
+
+/** the owner's API, for the set-up a story is not about */
+function apiOf(http: StoryTools["http"], auth: Record<string, string>) {
+  return async (method: string, path: string, body?: unknown) => {
+    const r = await http(path, {
+      method,
+      headers: auth,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return await r.json();
+  };
+}
+
+// REQ-839 — Raphael: "a place to define line items … one of those tasks becomes an ID, a description, and then the price can be set wherever it's set"
+Deno.test("REQ-839: a service made on /field/services with a description → it is offered on the checklist form → the card counts the checklist → archived, it leaves the live list and the picker but a 'Show archived' toggle brings it back", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+
+    await page.goto("/field/services");
+    await page.locator("[data-cy='svc-new']").click();
+    await page.locator("[data-cy='svc-name']").fill("Mulching");
+    await page.locator("[data-cy='svc-description']").fill(
+      "Beds topped up, 2 inches",
+    );
+    await page.locator("[data-cy='svc-submit']").click();
+    const card = page.locator("[data-cy='svc-card']").first();
+    await card.waitFor({ timeout: 20_000 });
+    await expect.see("Mulching");
+    await expect.see("Beds topped up, 2 inches");
+    await expect.see("Used by 0 repeat visits · 0 checklists");
+
+    // the same name again is refused in the owner's words
+    await page.locator("[data-cy='svc-new']").click();
+    await page.locator("[data-cy='svc-name']").fill("mulching");
+    await page.locator("[data-cy='svc-submit']").click();
+    await page.locator("[data-cy='svc-error']").waitFor({ timeout: 15_000 });
+    await expect.see("already have a service");
+    await page.keyboard.press("Escape");
+
+    // offered on the checklist form; a checklist that picks it counts on the card
+    await page.goto("/field/checklists");
+    await page.locator("[data-cy='ckl-new']").click();
+    await page.locator("[data-cy='ckl-type-q']").fill("Mulching");
+    await page.locator("[data-cy='ckl-price']").fill("120");
+    await page.locator("[data-cy='ckl-add-item']").click();
+    expect.eq(
+      await page.locator("[data-cy='ckl-item']").count(),
+      1,
+      "the catalogue's service is on the checklist",
+    );
+    await page.locator("[data-cy='ckl-name']").fill("Spring beds");
+    await page.locator("[data-cy='ckl-submit']").click();
+    await page.locator("[data-cy='ckl-card']").first().waitFor({
+      timeout: 20_000,
+    });
+
+    await page.goto("/field/services");
+    await page.locator("[data-cy='svc-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='svc-card']").count(),
+      1,
+      "the checklist picked the catalogue's service — no second one was made",
+    );
+    await expect.see("Used by 0 repeat visits · 1 checklist");
+    // in use → Delete is refused; Archive hides it
+    await page.locator("[data-cy='svc-delete']").first().click();
+    await page.locator("[data-cy='svc-delete-confirm']").click();
+    await page.locator("[data-cy='svc-card-error']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("archive it instead");
+    await page.locator("[data-cy='svc-archive']").first().click();
+    await page.locator("[data-cy='svc-empty']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='svc-show-archived']").check();
+    await page.locator("[data-cy='svc-archived']").waitFor({ timeout: 15_000 });
+    await expect.see("Mulching");
+  }));
+
+// REQ-840 — Raphael: "the worker belongs to a crew … each crew has a foreman, and then however many workers … clearly shown and chosen inside the worker view"
+Deno.test("REQ-840: two workers → a crew made on /field/workers with both, Ana as foreman and one service → the crew card lists them → each worker row wears the crew → a third worker joins from his row's Crew select", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mk = (name: string) =>
+      api("POST", "/api/field/workers", {
+        name,
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      });
+    await mk("Ana Ruiz");
+    await mk("Luis Herrera");
+    await mk("Pedro Gil");
+    await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='crew-empty']").waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='crew-new']").click();
+    await page.locator("[data-cy='crew-name']").fill("Grass crew");
+    const picks = page.locator("[data-cy='crew-member-picks'] label");
+    await picks.filter({ hasText: "Ana Ruiz" }).click();
+    await picks.filter({ hasText: "Luis Herrera" }).click();
+    await page.locator("[data-cy='crew-foreman']").selectOption({
+      label: "Ana Ruiz",
+    });
+    await page.locator("[data-cy='crew-service-picks'] label").filter({
+      hasText: "Lawn cut",
+    }).click();
+    await page.locator("[data-cy='crew-submit']").click();
+    const crew = page.locator("[data-cy='crew-card']").first();
+    await crew.waitFor({ timeout: 20_000 });
+    await expect.see("Grass crew");
+    await expect.see("Foreman: Ana Ruiz");
+    expect.eq(
+      await crew.locator("[data-cy='crew-members'] .chip").count(),
+      2,
+      "two members on the crew card",
+    );
+    await expect.see("Staffs 0 zones");
+    // the worker rows wear it
+    expect.eq(
+      await page.locator("[data-cy='wk-row-crew']").count(),
+      2,
+      "Ana's and Luis's rows carry the crew chip",
+    );
+    // Pedro joins from his own row
+    const pedro = page.locator("[data-cy='wk-row']", { hasText: "Pedro Gil" });
+    await pedro.locator("[data-cy='wk-row-crew-select']").selectOption({
+      label: "Grass crew",
+    });
+    await pedro.locator("[data-cy='wk-row-crew']").waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("[data-cy='crew-card']").first().locator(
+        "[data-cy='crew-members'] .chip",
+      ).count(),
+      3,
+      "the crew card now lists three",
+    );
+  }));
+
+// REQ-841 — Raphael: "a mulching crew and a grass cutting crew … one house that they have in common"
+Deno.test("REQ-841: a grass crew and a mulch crew → a visit with Lawn cut + Mulching → both crews toggled on its zone on /field/assignments → today's round on /field/tasks has one group per crew, each with the service it does", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mk = (name: string) =>
+      api("POST", "/api/field/workers", {
+        name,
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      });
+    const [ana, pedro] = [await mk("Ana Ruiz"), await mk("Pedro Gil")];
+    const mow = await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    const mulch = await api("POST", "/api/field/task-types", {
+      name: "Mulching",
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Grass crew",
+      memberIds: [ana.id],
+      foremanId: ana.id,
+      taskTypeIds: [mow.id],
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Mulch crew",
+      memberIds: [pedro.id],
+      taskTypeIds: [mulch.id],
+    });
+    const customer = await api("POST", "/api/customers", {
+      name: "Ana Torres",
+      phoneNumber: `(843) 555-${digits().slice(0, 4)}`,
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    await api("POST", "/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: todayIso(),
+      items: [{ taskTypeId: mow.id, priceCents: 6500 }, {
+        taskTypeId: mulch.id,
+        priceCents: 12_000,
+      }],
+    });
+
+    await page.goto("/field/assignments");
+    const region = page.locator("[data-cy='asg-region']").first();
+    await region.waitFor({ timeout: 20_000 });
+    await expect.see("1 zones with no crew");
+    const toggles = region.locator("[data-cy='asg-region-crew']");
+    expect.eq(await toggles.count(), 2, "both crews offered on the zone");
+    // the toggles are controlled: they flip once the server has answered, so click + wait, not check()
+    await toggles.nth(0).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll("[data-cy='asg-region-crew']:checked")
+          .length === 1,
+      undefined,
+      { timeout: 15_000 },
+    );
+    await toggles.nth(1).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll("[data-cy='asg-region-crew']:checked")
+          .length === 2,
+      undefined,
+      { timeout: 15_000 },
+    );
+    await expect.notSee("zones with no crew");
+
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    expect.eq(
+      await page.locator("[data-cy='tk-task']").count(),
+      2,
+      "two tasks: one per service",
+    );
+    expect.eq(
+      await page.locator("[data-cy='tk-group']").count(),
+      2,
+      "one group per crew",
+    );
+    const chip = (name: string) =>
+      page.locator("[data-cy='tk-group-crew']", { hasText: name });
+    const grass = page.locator("[data-cy='tk-group']", { has: chip("Grass crew") });
+    expect(
+      (await grass.innerText()).includes("Lawn cut"),
+      "the grass crew's group holds Lawn cut",
+    );
+    const mulchGroup = page.locator("[data-cy='tk-group']", {
+      has: chip("Mulch crew"),
+    });
+    expect(
+      (await mulchGroup.innerText()).includes("Mulching"),
+      "the mulch crew's group holds Mulching",
+    );
+  }));
+
+// REQ-842 — Raphael: "what if so-and-so goes on vacation … change the assignment now or in advance"
+Deno.test("REQ-842: the grass crew is marked out today on /field/workers, covered by the mulch crew → Away lists it → today's tasks move to Pedro with 'Covering for Grass crew' → Remove brings them back to Ana", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mk = (name: string) =>
+      api("POST", "/api/field/workers", {
+        name,
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      });
+    const [ana, pedro] = [await mk("Ana Ruiz"), await mk("Pedro Gil")];
+    const mow = await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    const grass = await api("POST", "/api/field/crews", {
+      name: "Grass crew",
+      memberIds: [ana.id],
+      foremanId: ana.id,
+      taskTypeIds: [mow.id],
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Mulch crew",
+      memberIds: [pedro.id],
+    });
+    const customer = await api("POST", "/api/customers", {
+      name: "Ana Torres",
+      phoneNumber: `(843) 555-${digits().slice(0, 4)}`,
+      email: "ana@blackhole.postmarkapp.com",
+    });
+    const sub = await api("POST", "/api/field/subscriptions", {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: todayIso(),
+      items: [{ taskTypeId: mow.id, priceCents: 6500 }],
+    });
+    await api("PUT", `/api/field/regions/${sub.region.id}/worker`, {
+      crewIds: [grass.id],
+    });
+    // today's round, before: Ana's
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Ana Ruiz");
+    await expect.notSee("Covering for");
+
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='away-empty']").waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='crew-card']", { hasText: "Grass crew" })
+      .locator("[data-cy='crew-away']").click();
+    await expect.see("Grass crew is out");
+    await page.locator("[data-cy='away-disp-cover']").check();
+    await page.locator("[data-cy='away-cover']").selectOption({
+      label: "Crew: Mulch crew",
+    });
+    await page.locator("[data-cy='away-note']").fill("Vacation");
+    await page.locator("[data-cy='away-submit']").click();
+    const row = page.locator("[data-cy='away-row']").first();
+    await row.waitFor({ timeout: 20_000 });
+    await expect.see("covered by Mulch crew");
+    await expect.see("Vacation");
+
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-cover-for']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Pedro Gil");
+    await expect.see("Covering for Grass crew");
+
+    // the absence removed → the work is Ana's again
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='away-remove']").first().click();
+    await page.locator("[data-cy='away-empty']").waitFor({ timeout: 20_000 });
+    await page.goto("/field/tasks");
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see("Ana Ruiz");
+    await expect.notSee("Covering for");
+  }));

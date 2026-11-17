@@ -23,7 +23,7 @@
  * for them the page reads cleanly without empty sections.
  */
 import Backdrop from "../components/Backdrop.tsx";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   type Payment,
   type PaymentMethod,
@@ -51,9 +51,11 @@ import { creditedPayments } from "../lib/headline-counts.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
 import { paymentCardCtaHref } from "../lib/payment-card.ts";
 import {
+  recordIdFromSearch,
   recordOptionLabel,
   type RecordOptionInvoice,
 } from "../lib/payment-record-option.ts";
+import SearchSelect from "./SearchSelect.tsx"; // REQ-909
 
 /** Plural helper bound to an explicit language (the reactive `tn` reads the
  *  global lang signal; the logged-in app threads `lang` explicitly). */
@@ -291,6 +293,12 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   // optional `lang` prop is retained only as an ignored SSR seed.
   const lang = langSignal.value;
   const [s, setS] = useState<State>(INITIAL);
+  // REQ-909: /payments?record=<invoiceId> opens Record a payment on that
+  // invoice (read after hydration — the server renders no location).
+  const [wantRecord, setWantRecord] = useState("");
+  useEffect(() => {
+    setWantRecord(recordIdFromSearch(globalThis.location?.search ?? ""));
+  }, []);
 
   // One loader for mount AND the refresh after "Record a payment" (REQ-019).
   async function load(): Promise<void> {
@@ -427,6 +435,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
             ),
           }))}
         onRecorded={load}
+        initialRecordId={wantRecord}
       />
       <PaymentsKpis
         lang={lang}
@@ -539,6 +548,7 @@ function PaymentsHero(
     stubs,
     recordOptions,
     onRecorded,
+    initialRecordId = "",
   }: {
     lang: Lang;
     monthTotal: number;
@@ -552,12 +562,24 @@ function PaymentsHero(
       { id: string; label: string; amountCents?: number; paidCents?: number }
     >;
     onRecorded: () => Promise<void>;
+    /** REQ-909: the invoice a `/payments?record=<id>` link asks for. */
+    initialRecordId?: string;
   },
 ) {
   // REQ-019 (NW-33): "Record a payment" is an in-page picker, not a chat seed.
   const [recordOpen, setRecordOpen] = useState(false);
   const [recordId, setRecordId] = useState("");
   const recordInvoice = recordOptions.find((o) => o.id === recordId);
+  // REQ-909: the deep link opens the picker on its invoice — once, as soon as
+  // that invoice is among the unpaid options (they load after mount).
+  const appliedRef = useRef("");
+  useEffect(() => {
+    if (!initialRecordId || appliedRef.current === initialRecordId) return;
+    if (!recordOptions.some((o) => o.id === initialRecordId)) return;
+    appliedRef.current = initialRecordId;
+    setRecordId(initialRecordId);
+    setRecordOpen(true);
+  }, [initialRecordId, recordOptions]);
   const today = new Date();
   const exportHref =
     `/api/invoices/export.csv?year=${today.getFullYear()}&month=${
@@ -700,23 +722,27 @@ function PaymentsHero(
               <div style="font-size:18px;font-weight:800;color:var(--fg,#144852)">
                 {tFor(lang, "paymentsPage.record.title")}
               </div>
-              <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
-                {tFor(lang, "paymentsPage.record.invoiceLabel")}
-                <select
-                  data-cy="payments-record-invoice"
-                  value={recordId}
-                  onChange={(e) =>
-                    setRecordId((e.target as HTMLSelectElement).value)}
-                  style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;background:#fff"
-                >
-                  <option value="">
-                    {tFor(lang, "paymentsPage.record.pick")}
-                  </option>
-                  {recordOptions.map((o) => (
-                    <option key={o.id} value={o.id}>{o.label}</option>
-                  ))}
-                </select>
-              </label>
+              {/* REQ-909: type to find the invoice — customer, number or job
+                  (the REQ-136 SearchSelect, as the New invoice client field
+                  since REQ-801). A <div>, not a <label>: REQ-809. */}
+              <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+                <span>{tFor(lang, "paymentsPage.record.invoiceLabel")}</span>
+                <div data-cy="payments-record-invoice" data-value={recordId}>
+                  <SearchSelect
+                    options={recordOptions.map((o) => ({
+                      id: o.id,
+                      label: o.label,
+                    }))}
+                    value={recordId}
+                    placeholder={tFor(lang, "paymentsPage.record.search")}
+                    onSelect={(o) => setRecordId(o.id)}
+                    onQuery={(q) => {
+                      // the box was cleared or retyped: no invoice until the next pick
+                      if (recordId && q.trim() === "") setRecordId("");
+                    }}
+                  />
+                </div>
+              </div>
               {recordOptions.length === 0 && (
                 <div style="font-size:13px;color:var(--fg-muted,#6b7560)">
                   {tFor(lang, "paymentsPage.record.noneUnpaid")}

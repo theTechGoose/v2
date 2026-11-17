@@ -92,10 +92,17 @@ Deno.test("REQ-587 M27: the Spanish record-payment modal says 'Factura' (not 'In
 
     await page.goto("/payments");
     await page.locator("[data-cy='payments-record']").first().click();
-    const select = page.locator("[data-cy='payments-record-invoice']");
-    await select.waitFor({ timeout: 15_000 });
-    const option = select.locator(`option[value='${inv.id}']`);
-    const label = (await option.textContent())?.trim() ?? "";
+    // REQ-909: the picker is the SearchSelect — type the customer, read the row
+    const box = page.locator(
+      "[data-cy='payments-record-invoice'] [data-cy='search-select-input']",
+    );
+    await box.waitFor({ timeout: 15_000 });
+    await box.fill("María");
+    const option = page.locator(
+      "[data-cy='payments-record-invoice'] [data-cy='search-select-option']",
+    ).filter({ hasText: "María González" }).first();
+    await option.waitFor({ timeout: 15_000 });
+    const label = (await option.innerText()).trim();
     expect(!/Invoice/.test(label), `the option is Spanish (${label})`);
     expect(label.includes("María González"), `names the customer (${label})`);
     expect(label.includes("$450"), `shows the amount (${label})`);
@@ -105,7 +112,7 @@ Deno.test("REQ-587 M27: the Spanish record-payment modal says 'Factura' (not 'In
       expect(label.startsWith(inv.number), `the invoice number (${label})`);
     }
 
-    await select.selectOption(inv.id);
+    await option.click();
     const dateText = page.locator("[data-cy='pay-received-date-text']");
     await dateText.waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='pay-received-date']").fill("2026-11-12");

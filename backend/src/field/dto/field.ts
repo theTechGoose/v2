@@ -17,21 +17,80 @@ export interface FieldWorker {
   role?: "worker" | "foreman";
   /** REQ-155 — the language the worker is texted in (Spanish by default); absent on workers from before */
   language?: "en" | "es";
+  /** REQ-840: the ONE crew the worker is in */
+  crewId?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-/** REQ-139: a task type, created on the fly from the combobox. */
+/**
+ * REQ-840: a crew — a foreman and members who go out together, and the services it does
+ * (`taskTypeIds`; [] = any service). `coversAll`: it is staff on every zone, not only the
+ * zones that list it (REQ-841).
+ */
+export interface Crew {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  /** one of the members; leads the crew's tasks and sees every one of them */
+  foremanId?: string;
+  taskTypeIds: string[];
+  coversAll?: true;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** REQ-842: what happens to the work of someone who is out */
+export type AbsenceDisposition = "cover" | "defer" | "skip";
+export const DISPOSITIONS: readonly AbsenceDisposition[] = [
+  "cover",
+  "defer",
+  "skip",
+];
+
+/** REQ-842: a worker or a crew is out from `from` to `to` (inclusive) */
+export interface Absence {
+  id: string;
+  userId: string;
+  workerId?: string;
+  crewId?: string;
+  from: string;
+  to: string;
+  disposition: AbsenceDisposition;
+  /** cover: who takes the work — a crew or a worker */
+  coverCrewId?: string;
+  coverWorkerId?: string;
+  note?: string;
+  createdAt: string;
+}
+
+/** REQ-139: a task type, created on the fly from the combobox. REQ-839: the service catalogue's row — a description, archivable. */
 export interface TaskType {
   id: string;
   userId: string;
   name: string;
+  /** REQ-839: what the service is — the price lives where the type is used */
+  description?: string;
+  /** REQ-839: out of every combobox; history keeps the name */
+  archived?: true;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SubscriptionItem {
   taskTypeId: string;
   priceCents: number;
+}
+
+/** REQ-811: a named list of services (task types with a price each) a repeat visit references instead of listing the same items again */
+export interface Checklist {
+  id: string;
+  userId: string;
+  name: string;
+  items: SubscriptionItem[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type Cadence = "weekly" | "biweekly" | "monthly" | "annual";
@@ -51,7 +110,10 @@ export interface Subscription {
   /** geocoded once, kept with the subscription */
   lat: number;
   lng: number;
+  /** the visit's OWN rows; REQ-811: with a checklist, the effective services are the checklist's + these (an own row on the same type wins) */
   items: SubscriptionItem[];
+  /** REQ-811: the checklist referenced (ChecklistStore) — optional; a visit needs it or at least one own row */
+  checklistId?: string;
   cadence: Cadence;
   /** the first service day; cadence counts from here (defaults to createdAt's day) */
   startDate?: string;
@@ -90,6 +152,8 @@ export interface Region {
   lat: number;
   lng: number;
   workerId?: string;
+  /** REQ-841: the crews staffing the zone, in order — the first that does a service takes it */
+  crewIds?: string[];
 }
 
 export type TaskStatus = "assigned" | "complete" | "skipped" | "deferred";
@@ -109,6 +173,12 @@ export interface FieldTask {
   endDate?: string;
   /** REQ-785: the other workers on the job, besides `workerId` — they see it and may check it off */
   crewIds?: string[];
+  /** REQ-841: the crew doing it (its members are `workerId` + `crewIds` at generation time) */
+  crewId?: string;
+  /** REQ-842: made for someone who is out — the absent crew's or worker's id */
+  coverFor?: string;
+  /** REQ-842: the absence that decided this task (cover, defer, skip) — removing it re-derives the task */
+  byAbsence?: string;
   /** address snapshot, so a deleted subscription's history keeps it */
   address?: string;
   /** price snapshot at generation time */
@@ -161,7 +231,13 @@ export class FieldError extends Error {
 }
 
 /** free-text caps */
-export const CAP = { note: 2000, text: 300, taskType: 80 } as const;
+export const CAP = {
+  note: 2000,
+  text: 300,
+  taskType: 80,
+  checklist: 80,
+  crew: 80,
+} as const;
 
 export const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() ? v.trim() : undefined;

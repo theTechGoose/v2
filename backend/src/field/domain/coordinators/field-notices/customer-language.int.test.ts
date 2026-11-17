@@ -12,13 +12,7 @@
 import { assertEquals, assertStringIncludes } from "#std/assert";
 import { FieldNotices } from "./mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
-import {
-  FieldTaskStore,
-  FieldWorkerStore,
-  RegionStore,
-  SubscriptionStore,
-  TaskTypeStore,
-} from "@field/domain/data/field-stores/mod.ts";
+import { AbsenceStore, ChecklistStore, CrewStore, FieldTaskStore, FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import type { FieldTask } from "@field/dto/field.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -51,6 +45,10 @@ async function rig() {
       new SubscriptionStore(),
       new RegionStore(),
       new FieldTaskStore(),
+      new ChecklistStore(), // REQ-811
+      new CrewStore(), // REQ-841
+      new FieldWorkerStore(),
+      new AbsenceStore(), // REQ-842
     ),
     sms,
   );

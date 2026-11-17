@@ -36,3 +36,16 @@ export function recordOptionLabel(
     amount: fmtMoney(inv.amount ?? 0),
   });
 }
+
+/**
+ * REQ-909: `/payments?record=<invoiceId>` opens Record a payment on that
+ * invoice. The id, trimmed; "" when the query carries none.
+ */
+export function recordIdFromSearch(search: string): string {
+  try {
+    const q = search.startsWith("?") ? search.slice(1) : search;
+    return new URLSearchParams(q).get("record")?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}

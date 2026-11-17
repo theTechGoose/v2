@@ -284,3 +284,59 @@ Deno.test("REQ-805 render-invoice-pdf: the invoice PDF lists how to pay — the 
   assert(up.includes(hexOf("https://www.xpress-pay.com/a2z")), "and its URL");
   assert(up.includes(hexOf("pay@a2z.test")), "Zelle with its handle");
 });
+
+// REQ-906 — the customer's name is the biggest thing on the invoice: the PDF
+// draws the first Bill-to line at 11 pt (the From block stays 9 pt).
+Deno.test("REQ-906 render-invoice-pdf: the Bill-to name is drawn at 11pt", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const invoices = new InvoiceStore();
+  const customers = new CustomerStore();
+  const identities = new BusinessIdentityStore();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", { businessName: "A2Z Landscape LLC" });
+  const customer = await customers.create("u-1", {
+    name: "Robert Frakes",
+    email: "rf@acme.test",
+  });
+  const inv = await invoices.create("u-1", {
+    customerId: customer.id,
+    status: "draft",
+    jobName: "Maintenance 2026-10-01 → 2026-10-31",
+    amount: 35000,
+  });
+  const render = new RenderInvoicePdf(
+    invoices,
+    new QuoteStore(),
+    customers,
+    new UserStore(),
+    identities,
+  );
+  const bytes = await render.run(inv.id);
+  const doc = await PDFDocument.load(bytes);
+  let drawn = "";
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (obj instanceof PDFRawStream) {
+      try {
+        drawn += new TextDecoder("latin1").decode(
+          decodePDFRawStream(obj).decode(),
+        );
+      } catch { /* an image or font stream */ }
+    }
+  }
+  const up = drawn.toUpperCase();
+  const hex = (s: string) =>
+    [...s].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("")
+      .toUpperCase();
+  assert(up.includes(hex("Robert Frakes")), "the customer's name is drawn");
+  // pdf-lib emits "/F<n> <size> Tf" right before the text it sizes
+  assert(
+    new RegExp(`11 TF[\\s\\S]{0,200}?${hex("Robert Frakes")}`).test(up),
+    "the name follows an 11 Tf (the Bill-to first line is 11 pt)",
+  );
+  assert(
+    new RegExp(`9 TF[\\s\\S]{0,200}?${hex("A2Z Landscape LLC")}`).test(up),
+    "the From block's business line is still 9 pt",
+  );
+  await resetKv();
+});

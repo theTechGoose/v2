@@ -584,6 +584,7 @@ function InvoiceDoc(
           >
             <PartyCard
               role={tFor(lang, "publicInvoice.billTo")}
+              nameSize={18}
               name={invoice.customer?.name}
               businessName={invoice.customer?.businessName}
               email={invoice.customer?.email}
