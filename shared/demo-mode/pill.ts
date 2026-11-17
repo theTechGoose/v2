@@ -25,6 +25,19 @@ export { PILL_LABEL_MAX } from "./protocol.ts";
 export const PILL_MARGIN = 12;
 /** at or below this width the customer's pill shows only its status and End (details on tap) */
 export const PILL_COMPACT_MAX_W = 640;
+/** REQ-379 AMENDMENT 2 (REQ-890 lane, by hand) — and above it, when the WHOLE pill would be wider
+ *  than this share of the window (a 501 px pill in a 700 px window: 72 %), it is compact too: no
+ *  row of such a window has room for the whole beside the page's controls, so its folded chip
+ *  must be placed for the form the peek will show */
+export const PILL_WHOLE_MAX_SHARE = 2 / 3;
+/** REQ-379 / REQ-379 AMENDMENT 2 — the form the pill takes: compact at or under PILL_COMPACT_MAX_W,
+ *  or when the whole pill (`whole`, its measured size; null until it has rendered once) is wider
+ *  than PILL_WHOLE_MAX_SHARE of the window. Judged on the WHOLE's size only — judged on the compact's
+ *  it would flip back and forth */
+export function pillCompactForm(viewW: number, whole: Size | null): boolean {
+  return viewW <= PILL_COMPACT_MAX_W ||
+    (whole !== null && whole.w > viewW * PILL_WHOLE_MAX_SHARE);
+}
 /** REQ-548 (demo-loop cycle 4, p4-p3e) — the customer's pill takes a second row only on the
  *  phone's compact form, while its details are open or End is asking: the question then gets its
  *  own row, so it never squeezes the guide's name (REQ-373) to "A..". At rest the pill stays one
@@ -382,6 +395,27 @@ export const PEEK_TRAVEL_MS = 1500;
  *  control-free box and this is the row's fewest */
 export type PeekBox = Rect & { compact?: boolean; crowded?: boolean };
 
+/**
+ * REQ-890 AMENDMENT 2 — the peek's box flush with a tab spot: its foot on the tab's foot, at the
+ * left margin for a left-edge tab, the right margin for a right-edge one, centred over a tab along
+ * the bottom; inside the window (a pill wider than that: at the left margin). The same box
+ * `peekBox` tries first, so `placePill` can judge a spot by what its peek would cover there.
+ */
+export function peekFlushBox(tab: Rect, view: Size, size: Size): Rect {
+  const min = PILL_MARGIN;
+  const max = Math.max(min, view.w - PILL_MARGIN - size.w);
+  const top = tab.top + tab.height - size.h;
+  const left = tab.left <= 0
+    ? min
+    : tab.left + tab.width >= view.w
+    ? max
+    : Math.max(
+      min,
+      Math.min(Math.round(tab.left + (tab.width - size.w) / 2), max),
+    );
+  return { left, top, width: size.w, height: size.h };
+}
+
 export function peekBox(o: {
   home: Rect;
   view: Size;
@@ -401,20 +435,16 @@ export function peekBox(o: {
   /** the search for one form of the pill (`home` is its box): the tab's row along x, flush with
    *  the tab first; then (`more`) the other rows, nearest first, and the pill's spots */
   function search(home: Rect) {
-    const w = home.width;
-    // REQ-849 — inside the margins (a pill wider than that: at the left margin)
+    // REQ-849 — inside the margins (a pill wider than that: at the left margin); at the left
+    // edge's margin, or the right one's; a tab along the bottom: centred over it (`peekFlushBox`)
     const min = PILL_MARGIN;
-    const max = Math.max(min, o.view.w - PILL_MARGIN - w);
-    const top = o.tab.top + o.tab.height - home.height;
-    // at the left edge's margin, or the right one's; a tab along the bottom: centred over it
-    const flush = o.tab.left <= 0
-      ? min
-      : o.tab.left + o.tab.width >= o.view.w
-      ? max
-      : Math.max(
-        min,
-        Math.min(Math.round(o.tab.left + (o.tab.width - w) / 2), max),
-      );
+    const max = Math.max(min, o.view.w - PILL_MARGIN - home.width);
+    const first = peekFlushBox(o.tab, o.view, {
+      w: home.width,
+      h: home.height,
+    });
+    const top = first.top;
+    const flush = first.left;
     const at = (x: number): Rect => ({
       ...home,
       top,
@@ -607,6 +637,11 @@ export function placePill(o: {
   /** REQ-897 (cycle dm6, p5) — the page is scrolling: the kept spot stays (what passes under it
    *  is judged once the scroll has settled, PILL_SCROLL_SETTLE_MS after its last event) */
   scrolling?: boolean;
+  /** REQ-890 AMENDMENT 2 — the sizes the peek out of the folded chip could show (the whole pill,
+   *  and its compact form once known): among equally clear tab spots, one whose flush peek box
+   *  (`peekFlushBox`) covers no control for some size is preferred, so a hover opens the pill
+   *  flush with the chip instead of rows away. Absent (or during a peek): no preference */
+  peek?: Size[];
 }): { box: Rect; tucked: boolean; band: boolean } {
   // REQ-818 — each box is measured once (the last resort asks of every spot again)
   const counted = new Map<string, number>();
@@ -643,15 +678,30 @@ export function placePill(o: {
   // judged once the scroll has settled — a finger on the page is scrolling, not tapping
   const kept = o.keep &&
     tabs.find((r) => r.left === o.keep!.left && r.top === o.keep!.top);
+  // REQ-890 AMENDMENT 2 — a spot its peek can open flush from: some form's flush box covers no
+  // control there (no sizes offered: every spot is). Asked only as far as the search needs
+  const peekable = (r: Rect) =>
+    !o.peek || o.peek.length === 0 ||
+    o.peek.some((s) => controls(peekFlushBox(r, o.view, s)) === 0);
   const tab = () => {
     if (o.scrolling && kept) return kept;
-    if (kept && blocked(kept) === 0) return kept;
-    const clear = tabs.find((r) => blocked(r) === 0);
-    if (clear) return clear;
+    const clear = tabs.filter((r) => blocked(r) === 0);
+    // REQ-853 — the kept spot while it is clear; REQ-890 AMENDMENT 2 — unless its peek cannot
+    // open flush and another clear spot's can
+    if (
+      kept && blocked(kept) === 0 &&
+      (peekable(kept) || !clear.some(peekable))
+    ) return kept;
+    const first = clear.find(peekable) ?? clear[0];
+    if (first) return first;
     const open = tabs.filter((r) => controls(r) === 0);
     if (open.length === 0) return undefined;
-    const least = fewest(open, blocked);
-    return kept && controls(kept) === 0 && blocked(kept) <= blocked(least)
+    // REQ-897 — the least of the page under it; REQ-890 AMENDMENT 2 — among the peekable ones
+    // when there are any
+    const flush = open.filter(peekable);
+    const least = fewest(flush.length ? flush : open, blocked);
+    return kept && controls(kept) === 0 && blocked(kept) <= blocked(least) &&
+        (peekable(kept) || !peekable(least))
       ? kept
       : least;
   };

@@ -247,7 +247,6 @@ import {
   peekTimer,
   PILL_BAND_GAP,
   PILL_BOX_METRICS,
-  PILL_COMPACT_MAX_W,
   PILL_FONT,
   PILL_MARGIN,
   PILL_MOVE_MS,
@@ -256,6 +255,7 @@ import {
   PILL_STATUS_CHIP,
   PILL_TAB,
   PILL_UNDER_DIALOG_OPACITY,
+  pillCompactForm,
   pillDetailsShown,
   pillHome,
   pillOverflows,
@@ -520,9 +520,6 @@ const bannerH = () =>
     getComputedStyle(document.documentElement).getPropertyValue("--banner-h"),
   ) || 0;
 
-const narrow = () =>
-  typeof globalThis.innerWidth === "number" &&
-  globalThis.innerWidth <= PILL_COMPACT_MAX_W;
 /** REQ-188 — this side's layout viewport as a box */
 const viewportBox = () => ({
   left: 0,
@@ -635,6 +632,14 @@ export default function DemoModeOverlay(
   /** REQ-545 — the pill's own size when last shown whole (folded to its tab, its home is still
    *  where the whole pill would sit) */
   const fullRef = useRef<{ w: number; h: number } | null>(null);
+  /** REQ-379 AMENDMENT 2 — the WHOLE pill's size when last measured (null until it has rendered
+   *  once): the compact form is taken when it would be wider than PILL_WHOLE_MAX_SHARE of the
+   *  window. Only the whole writes it (judged on the compact's size the form would flip back) */
+  const wholeSizeRef = useRef<{ w: number; h: number } | null>(null);
+  /** REQ-379 / REQ-379 AMENDMENT 2 — the form the window asks for now */
+  const isNarrow = () =>
+    typeof globalThis.innerWidth === "number" &&
+    pillCompactForm(globalThis.innerWidth, wholeSizeRef.current);
   /** REQ-820 (demo-loop cycle dm1, m6) — a mouse or pen pointer is on the pill (folded or whole).
    *  Tracked on the persistent pill div, so a tab swapped for the whole pill under a resting
    *  pointer keeps it; a touch never counts (its :hover sticks after a tap) */
@@ -684,7 +689,10 @@ export default function DemoModeOverlay(
   const floatsRef = useRef(false);
   /** REQ-379 — the phone's compact form from the first render: a full-size first measure is what
    *  grew to a 400 px pill on a 390 px phone (M6) */
-  const [compactBase, setCompact] = useState(narrow);
+  const [compactBase, setCompact] = useState(isNarrow);
+  /** REQ-379 AMENDMENT 2 — the base form as RENDERED (place() compares the window's ask with it) */
+  const compactBaseRef = useRef(compactBase);
+  compactBaseRef.current = compactBase;
   /** REQ-890 — a peek on a crowded row shows the compact form (whole again when it folds) */
   const [peekCompact, setPeekCompact] = useState(false);
   const compact = compactBase || (peek && peekCompact);
@@ -992,6 +1000,8 @@ export default function DemoModeOverlay(
       setTabAt(at.tabAt);
       setDock(at.dock);
       if (at.full) fullRef.current = at.full;
+      // REQ-379 AMENDMENT 2 — the whole's size: this page's form before its first paint
+      if (at.whole) wholeSizeRef.current = at.whole;
     }
     if (!carried.connected) return;
     setCarrying(true);
@@ -1950,8 +1960,17 @@ export default function DemoModeOverlay(
         sendPill();
         return;
       }
-      // REQ-379 — the compact form follows the window across PILL_COMPACT_MAX_W, both ways
-      setCompact(narrow());
+      // REQ-379 — the compact form follows the window across PILL_COMPACT_MAX_W, both ways;
+      // REQ-379 AMENDMENT 2 — and the whole's share of it. A pill not yet in the form the window
+      // asks for is not placed (nor folded) as it is: the switch renders first, and that render
+      // places it (the [compact] effect) — measured in its new form while it is still out. Folded
+      // in the old form, the compact form's size was never learnt (the whole's 514 px stood for
+      // it on every page after), and the chip's spot was chosen for a peek that cannot open there
+      const n = isNarrow();
+      if (n !== compactBaseRef.current) {
+        setCompact(n);
+        return;
+      }
       // the visible bottom: above an iOS keyboard, like the shells' --vvh (MobileViewport)
       const vv = globalThis.visualViewport;
       const view = {
@@ -1968,13 +1987,15 @@ export default function DemoModeOverlay(
       // `peekCompact` are the mount's (stale), and the compact peek's size went into the whole
       // pill's slot (a 282 px "whole" pill on /customers)
       const compactNow = el.hasAttribute("data-compact");
-      const peekCompactNow = compactNow && !narrow();
+      const peekCompactNow = compactNow && !isNarrow();
       if (!folded) {
         const r = el.getBoundingClientRect();
         const size = { w: Math.ceil(r.width), h: el.offsetHeight };
         // REQ-890 — the compact form shown only for a peek: its size kept apart, the whole's stays
         if (peekCompactNow) compactSizeRef.current = size;
         else fullRef.current = size;
+        // REQ-379 AMENDMENT 2 — the whole's own size, for the share rule
+        if (!compactNow) wholeSizeRef.current = size;
       }
       const home = pillHome({
         view,
@@ -2002,11 +2023,20 @@ export default function DemoModeOverlay(
           top: keptEdge.top + was.tabAt.y,
         }
         : undefined;
+      // REQ-890 AMENDMENT 2 — the forms a peek out of the chip could show (its base form, and
+      // the compact one once a crowded row has shown it): the chip's spot is one whose flush
+      // peek covers no control, when such a clear spot exists. Not offered during a peek: the
+      // open pill's tab never hops from under the pointer
+      const peekSizes = () =>
+        [fullRef.current, compactSizeRef.current].filter(
+          (s): s is { w: number; h: number } => s !== null,
+        );
       const p = placePill({
         home: home.box,
         view,
         top: bannerH(),
         keep: kept,
+        peek: peekRef.current ? undefined : peekSizes(),
         dialog,
         // REQ-637 (cycle 5, m5) — docked just above the dialog's own box first
         dialogBox: dialog ? dialogPanel() : undefined,
@@ -2106,6 +2136,7 @@ export default function DemoModeOverlay(
           y: Math.round(box.top - home.box.top),
         },
         ...(fullRef.current ? { full: { ...fullRef.current } } : {}),
+        ...(wholeSizeRef.current ? { whole: { ...wholeSizeRef.current } } : {}),
       };
       if (JSON.stringify(next) !== JSON.stringify(lastPlaceRef.current)) {
         lastPlaceRef.current = next;
@@ -2150,7 +2181,7 @@ export default function DemoModeOverlay(
     // REQ-379 — across PILL_COMPACT_MAX_W the form switches at once (a tap right after the
     // resize finds the phone's pill), then the band is measured again
     const onResize = () => {
-      setCompact(narrow());
+      setCompact(isNarrow());
       // REQ-835 (dm2, M2) — End asking: measured again once the compact form has rendered, and
       // pulled back inside the narrowed window
       requestAnimationFrame(() => {

@@ -493,6 +493,23 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       await page.locator("[data-cy='demo-pointer']").waitFor({
         timeout: 10_000,
       });
+      // the pointer glides from where the click left it (to the RIGHT of the sweep's start) to the
+      // start: let that glide settle, or the recorder reads it as the sweep stepping back (the
+      // headless lane's ~6 fps stretches the 250 ms glide past the recorder's start)
+      await until(
+        "the user's pointer has settled at the sweep's start",
+        async () => {
+          const a = await page.locator("[data-cy='demo-pointer']").evaluate(
+            (el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m41,
+          );
+          await new Promise((r) => setTimeout(r, 120));
+          const b = await page.locator("[data-cy='demo-pointer']").evaluate(
+            (el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m41,
+          );
+          return Math.abs(a - b) < 0.1;
+        },
+        5_000,
+      );
       await page.evaluate(() => {
         const w = globalThis as unknown as {
           __pmXs: number[];

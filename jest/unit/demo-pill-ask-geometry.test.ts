@@ -248,7 +248,7 @@ describe("REQ-835 (demo-loop cycle dm2, m2 + M2) — the open End question: one 
       const place = between(
         o,
         "const place = () => {",
-        "setCompact(narrow());",
+        "setCompact(isNarrow());",
       );
       expect(place).toMatch(
         /querySelector\('\[data-cy="demo-end-ask"\]'\)\) \{\s*clampAsk\(\);\s*sendPill\(\);\s*return;/,

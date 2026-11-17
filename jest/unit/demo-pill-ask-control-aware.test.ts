@@ -156,7 +156,7 @@ describe("REQ-852 (demo-loop cycle dm3, p4) — the asking pill is placed where 
 
     test("REQ-300: place()'s asking branch still only clamps — no re-choosing while End asks", () => {
       const i = o.indexOf("const place = () => {");
-      const branch = o.slice(i, o.indexOf("setCompact(narrow());", i));
+      const branch = o.slice(i, o.indexOf("setCompact(isNarrow());", i));
       expect(branch).not.toMatch(/placeAsk\(/);
       expect(branch).toMatch(/clampAsk\(\);\s*sendPill\(\);\s*return;/);
     });

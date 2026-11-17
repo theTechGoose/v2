@@ -223,8 +223,9 @@ describe("REQ-379 — the overlay keeps the pill home", () => {
 
   test("the phone's compact form from the first render, and again whenever the window crosses the line", () => {
     expect(PILL_COMPACT_MAX_W).toBe(640);
-    expect(o).toMatch(/useState\(narrow\)/);
-    expect(o).toMatch(/setCompact\(narrow\(\)\)/);
+    // REQ-379 AMENDMENT 2 — `isNarrow` (pillCompactForm over the whole's size), the same switch
+    expect(o).toMatch(/useState\(isNarrow\)/);
+    expect(o).toMatch(/setCompact\(isNarrow\(\)\)/);
   });
 
   test("a dialog is no longer a freeze: place() docks instead of returning early", () => {

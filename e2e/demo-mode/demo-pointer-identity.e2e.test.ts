@@ -416,10 +416,19 @@ Deno.test("REQ-645 (demo c4-M6): on a phone, what he points at scrolled up under
         content.append(room);
         scrollTo(0, 0);
       });
-      const bar = await userPage.evaluate(() => {
-        const r = document.querySelector(".topbar")?.getBoundingClientRect();
-        return r ? { top: r.top, bottom: r.bottom } : null;
-      });
+      // the topbar's entrance (REQ-195's motion) is still sliding for a few frames in the headless
+      // lane (~6 fps with two pages open: a 0.7–1.4 px translateY at 1.6 s): wait for it to settle
+      const readBar = () =>
+        userPage.evaluate(() => {
+          const r = document.querySelector(".topbar")?.getBoundingClientRect();
+          return r ? { top: r.top, bottom: r.bottom } : null;
+        });
+      let bar = await readBar();
+      const settleT0 = Date.now();
+      while ((!bar || bar.top !== 0) && Date.now() - settleT0 < 4_000) {
+        await new Promise((r) => setTimeout(r, 100));
+        bar = await readBar();
+      }
       if (!bar || bar.top !== 0) {
         throw new Error(`the topbar is not at the top: ${JSON.stringify(bar)}`);
       }

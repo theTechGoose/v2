@@ -46,6 +46,10 @@ export interface PillPlace {
   tabAt: { x: number; y: number };
   dock: { x: number; y: number };
   full?: { w: number; h: number };
+  /** REQ-379 AMENDMENT 2 — the WHOLE pill's size when last measured (the base form on a desktop;
+   *  on a window that asks for the compact form the whole never renders, so it must be carried):
+   *  the next page judges its form from it before paint */
+  whole?: { w: number; h: number };
 }
 
 export interface Carried {
@@ -171,6 +175,11 @@ function readPlace(v: unknown): PillPlace | undefined {
     const f = p.full as Record<string, unknown> | null;
     if (!f || !isNum(f.w) || !isNum(f.h)) return undefined;
     out.full = { w: f.w, h: f.h };
+  }
+  if (p.whole !== undefined) {
+    const f = p.whole as Record<string, unknown> | null;
+    if (!f || !isNum(f.w) || !isNum(f.h)) return undefined;
+    out.whole = { w: f.w, h: f.h };
   }
   return out;
 }

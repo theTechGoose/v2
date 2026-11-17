@@ -63,6 +63,13 @@ describe("REQ-830 (demo-loop dm2, p6) — the pill's placement is carried to the
     expect(carriedDemo(s, 1_400)?.place).toEqual(whole);
   });
 
+  test("REQ-379 AMENDMENT 2: the whole pill's size rides along (a window that asks for the compact form never renders the whole, so the next page needs it before paint)", () => {
+    const s = new MemStore();
+    const p = { ...place, full: { w: 282, h: 43 }, whole: { w: 501, h: 43 } };
+    keepDemo(s, demo, true, 1_000, p);
+    expect(carriedDemo(s, 1_400)?.place).toEqual(p);
+  });
+
   test("REQ-830: no placement kept → none carried (the demo still is)", () => {
     const s = new MemStore();
     keepDemo(s, demo, true, 1_000);
@@ -82,6 +89,12 @@ describe("REQ-830 (demo-loop dm2, p6) — the pill's placement is carried to the
         tabAt: { x: 0, y: 0 },
         dock: { x: 0, y: 0 },
         full: { w: "a", h: 1 },
+      },
+      {
+        tucked: true,
+        tabAt: { x: 0, y: 0 },
+        dock: { x: 0, y: 0 },
+        whole: { w: 1, h: null },
       },
       "nope",
     ];
