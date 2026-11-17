@@ -23,7 +23,7 @@ import { FieldWorkerStore, RegionStore } from "@field/domain/data/field-stores/m
 import { newWorkerLang, workerSignInUrl, workerWelcome } from "@field/domain/business/worker-welcome/mod.ts";
 import type { FieldWorker } from "@field/dto/field.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
-import { SendText } from "@communications/domain/coordinators/send-text/mod.ts";
+import { A2pUnregisteredError, SendText } from "@communications/domain/coordinators/send-text/mod.ts";
 import { LineContext, NoLineError } from "@communications/domain/coordinators/line-context/mod.ts";
 import { DepartmentStore, HireStore, HrSettingsStore, HrSystemStore } from "@hr/domain/data/hr-stores/mod.ts";
 import { aggregateProvisioning, armMode, type BuiltinKey, fullName, provisionPlan } from "@hr/domain/business/onboarding/mod.ts";
@@ -264,7 +264,14 @@ export class Provisioner {
       throw e;
     }
     const copy = await this.copyFor(hire);
-    const r = await this.sendText.send({ to: hire.phone, body: copy.text }, line);
+    let r;
+    try {
+      r = await this.sendText.send({ to: hire.phone, body: copy.text }, line);
+    } catch (e) {
+      // REQ-920a: the line's texting registration is not approved yet
+      if (e instanceof A2pUnregisteredError) return { manual: true, detail: "this number's texting registration isn't approved yet — finish it on the Phone page, or send the welcome by hand" };
+      throw e;
+    }
     return r.ok ? { ok: true, detail: `welcome text sent from ${line.number}` } : { ok: false, detail: `welcome text failed: ${r.reason ?? "unknown"}` };
   }
 

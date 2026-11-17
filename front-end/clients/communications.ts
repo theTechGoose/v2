@@ -94,7 +94,8 @@ export interface ThreadDetail {
 export interface PublicLine {
   id: string;
   userId: string;
-  kind: "subaccount";
+  /** REQ-920b: "main" once it moved to the main account (the house path) */
+  kind: "subaccount" | "main";
   subaccountSid: string;
   number: string;
   numberSid: string;
@@ -126,6 +127,48 @@ export interface VoiceToken {
   identity: string;
   ttlSec: number;
   expiresAt: string;
+}
+
+/** REQ-920 — a line's texting registration (A2P 10DLC), as GET /communications/a2p answers it */
+export type A2pState =
+  | "none"
+  | "needs_isv_primary"
+  | "profile_pending"
+  | "profile_failed"
+  | "brand_pending"
+  | "brand_failed"
+  | "campaign_pending"
+  | "campaign_failed"
+  | "registered";
+
+export interface A2pError {
+  step: string;
+  message: string;
+  code?: number;
+  field?: string;
+}
+
+export interface A2pRegistration {
+  lineId: string;
+  userId: string;
+  subaccountSid: string;
+  form: Record<string, unknown>;
+  profileSid?: string;
+  profileStatus?: string;
+  profileSubmitted?: boolean;
+  needsIsvPrimary?: boolean;
+  trustProductSid?: string;
+  trustProductStatus?: string;
+  brandSid?: string;
+  brandStatus?: string;
+  brandFailureReason?: string;
+  serviceSid?: string;
+  campaignSid?: string;
+  campaignStatus?: string;
+  state: A2pState;
+  errors: A2pError[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export const commsClient = {
@@ -166,6 +209,16 @@ export const commsClient = {
     api.post<{ line: PublicLine }>("/communications/house/adopt", {
       serviceSid,
     }),
+  // REQ-920 — texting registration
+  a2p: (opts?: ApiOptions) =>
+    api.get<{ registration: A2pRegistration | null }>(
+      "/communications/a2p",
+      opts,
+    ),
+  a2pSubmit: (form: Record<string, unknown>) =>
+    api.post<A2pRegistration>("/communications/a2p", form),
+  a2pRefresh: () =>
+    api.post<A2pRegistration | null>("/communications/a2p/refresh", {}),
 };
 
 /** REQ-920b — a main-account messaging service with a VERIFIED A2P campaign */

@@ -10,17 +10,25 @@
  * says "Not registered: …" in one line when the Voice SDK cannot load from
  * the CDN while the rest of the page works; Release returns the page to the
  * shop and the stand-in sees the number freed and the subaccount closed.
+ * REQ-920a: a customer line texts only once its A2P campaign is VERIFIED, so
+ * right after the buy the story files the registration through the API (the
+ * same port answers TrustHub / Messaging; a2p.e2e.test.ts drives the panel).
  *
  * The served app reads COMMS_* at boot and `shots run` passes its own env to
  * the server, so run it as:
  *
  *   COMMS_TWILIO_ACCOUNT_SID=ACphoneE2E COMMS_TWILIO_AUTH_TOKEN=phone-e2e-token \
  *   COMMS_TWILIO_BASE_URL=http://127.0.0.1:9148 COMMS_PUBLIC_URL=https://phone-e2e.test/api \
+ *   COMMS_TRUSTHUB_BASE_URL=http://127.0.0.1:9148 COMMS_MESSAGING_BASE_URL=http://127.0.0.1:9148 \
  *   deno task test:e2e e2e/communications/phone.e2e.test.ts
  *
  * Without COMMS_TWILIO_BASE_URL the story records itself skipped with that reason.
  */
 import { story, type StoryTools } from "#shots";
+import {
+  A2pStandIn,
+  VALID_A2P_FORM,
+} from "../../backend/src/communications/domain/coordinators/_test-support/a2p-stand-in.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -173,26 +181,35 @@ Deno.test("REQ-915/916: no line → the shop → buy → text out, signed text i
     const twilioBase = Deno.env.get("COMMS_TWILIO_BASE_URL");
     const account = Deno.env.get("COMMS_TWILIO_ACCOUNT_SID");
     const publicUrl = Deno.env.get("COMMS_PUBLIC_URL")?.replace(/\/+$/, "");
-    if (!twilioBase || !account || !publicUrl) {
+    const a2pHosts = Deno.env.get("COMMS_TRUSTHUB_BASE_URL") &&
+      Deno.env.get("COMMS_MESSAGING_BASE_URL");
+    if (!twilioBase || !account || !publicUrl || !a2pHosts) {
       skip(
-        "needs COMMS_TWILIO_BASE_URL (a local port), COMMS_TWILIO_ACCOUNT_SID, COMMS_TWILIO_AUTH_TOKEN and COMMS_PUBLIC_URL in the env of `deno task test:e2e` — the served app reads them at boot",
+        "needs COMMS_TWILIO_BASE_URL, COMMS_TRUSTHUB_BASE_URL and COMMS_MESSAGING_BASE_URL (one local port), COMMS_TWILIO_ACCOUNT_SID, COMMS_TWILIO_AUTH_TOKEN and COMMS_PUBLIC_URL in the env of `deno task test:e2e` — the served app reads them at boot",
       );
     }
 
-    // Twilio, stood in
+    // Twilio, stood in — REQ-920: TrustHub / Messaging approve at once, so the line registers in one call
+    const a2p = new A2pStandIn();
+    a2p.brandStatus = "APPROVED";
+    a2p.campaignStatus = "VERIFIED";
     const seen: { method: string; path: string; form: URLSearchParams }[] = [];
     const twilio = Deno.serve(
       { port: Number(new URL(twilioBase!).port), onListen() {} },
       async (req) => {
         const u = new URL(req.url);
         const form = new URLSearchParams(await req.text());
-        seen.push({ method: req.method, path: u.pathname, form });
-        const { status, body } = twilioStandIn(
-          account!,
+        // TrustHub / Messaging traffic (the panel refreshes on open) stays in `a2p.calls`, out of `seen`
+        const registration = a2p.handle(
           req.method,
-          u.pathname,
+          u.pathname + u.search,
           form,
         );
+        if (!registration) {
+          seen.push({ method: req.method, path: u.pathname, form });
+        }
+        const { status, body } = registration ??
+          twilioStandIn(account!, req.method, u.pathname, form);
         return body === null
           ? new Response(null, { status })
           : new Response(JSON.stringify(body), {
@@ -269,6 +286,18 @@ Deno.test("REQ-915/916: no line → the shop → buy → text out, signed text i
           `/2010-04-01/Accounts/${SUB_SID}/IncomingPhoneNumbers.json`,
         ].join(" | "),
         "subaccount → key → TwiML App → number, on the stand-in",
+      );
+
+      // 2b. REQ-920a — texting waits for the line's registration: file it (the panel's own story is a2p.e2e.test.ts)
+      const registered = await http("/api/communications/a2p", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify(VALID_A2P_FORM),
+      });
+      expect.eq(
+        (await registered.json()).state,
+        "registered",
+        "the line's texting registration reached VERIFIED on the stand-in",
       );
 
       // 3. the softphone: one line, the reason (REQ-916c)
