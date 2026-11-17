@@ -461,3 +461,91 @@
   gap: 8px;
   justify-content: center;
 }
+
+/* REQ-920 — the Texting registration panel (A2P 10DLC) */
+.a2p {
+  margin-bottom: 14px;
+  text-align: left;
+}
+.a2p__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.a2p-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+}
+.a2p-strip__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.a2p-strip__step + .a2p-strip__step::before {
+  content: "→";
+  color: var(--fg-muted);
+  margin-right: 4px;
+}
+.a2p-strip__label {
+  font-weight: 700;
+  font-size: 13px;
+}
+.a2p-errors {
+  border: 1px solid #e3b3b3;
+  background: #fdf3f3;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  font-size: 13.5px;
+}
+.a2p-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.a2p-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+.a2p-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px 14px;
+  margin: 0;
+}
+.a2p-group legend {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 13px;
+  padding: 0 6px;
+}
+.a2p-group textarea,
+.a2p-field[data-cy="a2p-field-samples"],
+.a2p-field[data-cy="a2p-field-description"],
+.a2p-field[data-cy="a2p-field-messageFlow"] {
+  grid-column: 1 / -1;
+}
+.a2p-field[data-cy="a2p-field-samples"] textarea {
+  margin-top: 6px;
+}
+.a2p-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+}
+.a2p-fees {
+  margin: 0;
+}

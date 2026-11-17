@@ -1,4 +1,4 @@
-/** REQ-912c — GET /me/systems: what DocuMonster is wired to for this account, in one call. */
+/** REQ-912c — GET /me/systems: what DocuMonster is wired to for this account, in one call. REQ-920d: the line's texting registration. */
 import "#reflect-metadata";
 import { assert, assertEquals } from "#std/assert";
 import { Module } from "#danet/core";
@@ -7,6 +7,7 @@ import { HrModule } from "@hr/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
 import { LineStore } from "@communications/domain/data/line-store/mod.ts";
+import { A2pStore } from "@communications/domain/data/a2p-store/mod.ts";
 
 @Module({ imports: [HrModule] })
 class TestApp {}
@@ -50,7 +51,7 @@ Deno.test("REQ-912c /me/systems: email (Postmark), the line, card payments, e-si
     assertEquals(s0.body.hr.catalog.map((c: { key: string }) => c.key), ["dm-worker", "dm-admin", "dm-email", "dm-text"]);
 
     // a bought line shows as the account's
-    await new LineStore().create({
+    const bought = await new LineStore().create({
       userId,
       subaccountSid: "ACsub912",
       number: "+18435550912",
@@ -62,9 +63,36 @@ Deno.test("REQ-912c /me/systems: email (Postmark), the line, card payments, e-si
     });
     await call("POST", "/hr/systems", { key: "dm-worker" }, H);
     const s1 = await call("GET", "/me/systems", undefined, H);
-    assertEquals(s1.body.line, { status: "active", number: "+18435550912", kind: "subaccount" });
+    // REQ-920d: a customer line carries its texting registration — not registered until the form is in
+    assertEquals(s1.body.line, { status: "active", number: "+18435550912", kind: "subaccount", a2p: "none" });
     assertEquals(s1.body.hr.systems.map((s: { key: string }) => s.key), ["dm-worker"]);
     assertEquals(s1.body.hr.catalog.map((c: { key: string }) => c.key), ["dm-admin", "dm-email", "dm-text"]);
+
+    // REQ-920d: in review while the brand / campaign wait, registered once the campaign is VERIFIED, failed when one fails
+    const now = new Date().toISOString();
+    const reg = { lineId: bought.id, userId, subaccountSid: "ACsub912", form: {} as never, assigned: [], errors: [], createdAt: now, updatedAt: now };
+    const a2p = new A2pStore();
+    for (
+      const [state, word] of [["brand_pending", "pending"], ["campaign_failed", "failed"], ["registered", "registered"]] as const
+    ) {
+      await a2p.save({ ...reg, state });
+      assertEquals((await call("GET", "/me/systems", undefined, H)).body.line.a2p, word);
+    }
+
+    // REQ-920d: the house path (REQ-920b) moved the number to the main account under a VERIFIED campaign → registered (house)
+    await new LineStore().markMain(bought.id, {
+      apiKeySid: "SKmain912",
+      apiKeySecret: "sec",
+      twimlAppSid: "APmain912",
+      messagingServiceSid: "MGhouse912",
+      campaignUsecase: "MIXED",
+    });
+    assertEquals((await call("GET", "/me/systems", undefined, H)).body.line, {
+      status: "active",
+      number: "+18435550912",
+      kind: "main",
+      a2p: "house",
+    });
   } finally {
     await server.stop();
     await resetKv();

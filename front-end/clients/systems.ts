@@ -4,7 +4,16 @@ import type { CatalogEntry, HrSystem } from "./hr.ts";
 
 export type LineSummary =
   | { status: "none" }
-  | { status: "active"; number: string; kind: "env" | "subaccount" }
+  | { status: "active"; number: string; kind: "env" }
+  | {
+    status: "active";
+    number: string;
+    kind: "subaccount";
+    /** REQ-920d — the line's texting registration */
+    a2p: "none" | "pending" | "registered" | "failed";
+  }
+  /** REQ-920d — a house line (REQ-920b): registered through the platform's verified campaign */
+  | { status: "active"; number: string; kind: "main"; a2p: "house" }
   | { status: "released"; number: string; kind: "subaccount" };
 
 export interface SystemsSummary {
