@@ -3115,6 +3115,15 @@ const PILL_KEY = {
   paidOnce: "billing.pill.paidOnce",
 } as const;
 
+/** REQ-912 — the non-account tabs: Billing, or Systems (what DocuMonster runs on) */
+function OtherTab(
+  { tab, snapshot }: { tab: SettingsTab; snapshot: ProfileSnapshot },
+) {
+  return tab === "systems"
+    ? <SystemsTab />
+    : <BillingTab snapshot={snapshot} />;
+}
+
 function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
   const lang: Lang = langSignal.value === "es" ? "es" : "en"; // REQ-254
   const plan = snapshot.plan ?? null;
@@ -3855,88 +3864,82 @@ export default function SettingsPage() {
         </button>
       </nav>
 
-      {tab === "billing"
-        ? <BillingTab snapshot={p} />
-        : tab === "systems"
-        ? <SystemsTab />
-        : (
-          <>
-            <div class="grid">
-              <Card
-                title={t.account}
-                empty={t.nothingSet}
-                rows={[
-                  [t.name, personName(p.user, p.actor)], // REQ-624: the person signed in
-                  [
-                    t.phone,
-                    // REQ-220: the phone is the sign-in, so it is not a field — it moves by
-                    // "Transfer account" (owner only; an admin acting never sees the button)
-                    // REQ-624: an editor acting for the account sees her own number here
-                    (p.actor?.phoneNumber ?? p.user.phoneNumber)
-                      ? (
-                        <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
-                          <span data-cy="settings-phone">
-                            {fmtPhone(
-                              p.actor?.phoneNumber ?? p.user.phoneNumber,
-                            )}
-                          </span>
-                          {!acting && <TransferAccount lang={lang} />}
+      {tab !== "account" ? <OtherTab tab={tab} snapshot={p} /> : (
+        <>
+          <div class="grid">
+            <Card
+              title={t.account}
+              empty={t.nothingSet}
+              rows={[
+                [t.name, personName(p.user, p.actor)], // REQ-624: the person signed in
+                [
+                  t.phone,
+                  // REQ-220: the phone is the sign-in, so it is not a field — it moves by
+                  // "Transfer account" (owner only; an admin acting never sees the button)
+                  // REQ-624: an editor acting for the account sees her own number here
+                  (p.actor?.phoneNumber ?? p.user.phoneNumber)
+                    ? (
+                      <span style="display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <span data-cy="settings-phone">
+                          {fmtPhone(p.actor?.phoneNumber ?? p.user.phoneNumber)}
                         </span>
-                      )
-                      : undefined,
-                  ],
-                  // UX-35: the email lives on ONE surface — the editable form
-                  // below. Repeating it read-only here competed with the form and
-                  // clipped long addresses at the card edge.
-                  [t.language, lang === "es" ? t.spanish : t.english],
-                ]}
-              />
-              <Card
-                title={t.businessIdentity}
-                empty={t.nothingSet}
-                rows={[
-                  [
-                    t.businessName,
-                    p.identity?.businessName || p.identity?.displayName,
-                  ],
-                  [t.legalName, p.identity?.legalName],
-                  [t.license, p.identity?.businessLicense],
-                ]}
-              />
-            </div>
+                        {!acting && <TransferAccount lang={lang} />}
+                      </span>
+                    )
+                    : undefined,
+                ],
+                // UX-35: the email lives on ONE surface — the editable form
+                // below. Repeating it read-only here competed with the form and
+                // clipped long addresses at the card edge.
+                [t.language, lang === "es" ? t.spanish : t.english],
+              ]}
+            />
+            <Card
+              title={t.businessIdentity}
+              empty={t.nothingSet}
+              rows={[
+                [
+                  t.businessName,
+                  p.identity?.businessName || p.identity?.displayName,
+                ],
+                [t.legalName, p.identity?.legalName],
+                [t.license, p.identity?.businessLicense],
+              ]}
+            />
+          </div>
 
-            <EditCard snapshot={p} onSaved={onSaved} />
+          <EditCard snapshot={p} onSaved={onSaved} />
 
-            <div class="grid">
-              <AddressEditCard snapshot={p} onSaved={onSaved} />
-              <InsuranceEditCard snapshot={p} onSaved={onSaved} />
-            </div>
+          <div class="grid">
+            <AddressEditCard snapshot={p} onSaved={onSaved} />
+            <InsuranceEditCard snapshot={p} onSaved={onSaved} />
+          </div>
 
-            {
-              /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
+          {
+            /* REQ-622 (demo cycle 4, p4-p6c): no Contract defaults card — its
             payment terms / deposit / warranty days were read by nothing; the
             payment terms are "Days to pay an invoice" in Edit details. */
-            }
-            <TaxEditCard snapshot={p} onSaved={onSaved} />
+          }
+          <TaxEditCard snapshot={p} onSaved={onSaved} />
 
-            {/* REQ-198/199: the account number and the starting numbers */}
-            <NumberingCard refreshKey={numberingKey} />
+          {/* REQ-198/199: the account number and the starting numbers */}
+          <NumberingCard refreshKey={numberingKey} />
 
-            <PaymentsEditCard snapshot={p} onSaved={onSaved} />
-            {/* REQ-808 — Square | Stripe | Custom button, one section */}
-            <CardPaymentsTabs snapshot={p} onSaved={onSaved} />
+          <PaymentsEditCard snapshot={p} onSaved={onSaved} />
+          {/* REQ-808 — Square | Stripe | Custom button, one section */}
+          <CardPaymentsTabs snapshot={p} onSaved={onSaved} />
 
-            {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
-            <RemindersEditCard snapshot={p} onSaved={onSaved} />
+          {/* REQ-623 (demo cycle 4, M26): automatic payment reminders */}
+          <RemindersEditCard snapshot={p} onSaved={onSaved} />
 
-            {!acting && (
-              <DangerZoneCard
-                snapshot={p}
-                onReset={() => setNumberingKey((k) => k + 1)}
-              />
-            )}
-          </>
-        )}
+          {!acting && (
+            <DangerZoneCard
+              snapshot={p}
+              onReset={() => setNumberingKey((k) => k + 1)}
+            />
+          )}
+        </>
+      )}
     </>
   );
 }

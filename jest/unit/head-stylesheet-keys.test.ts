@@ -11,7 +11,9 @@ const ROUTES = path.resolve(__dirname, "../../front-end/routes");
 const FRONT = path.resolve(__dirname, "../../front-end");
 // REQ-858 (dm4 m7 + setup-4) — a component or island renders <Head> as much as a route does
 // (AdminGuideGate is the /admin gate's whole page), so the guard reads all three.
-const DIRS = ["routes", "components", "islands"].map((d) => path.join(FRONT, d));
+const DIRS = ["routes", "components", "islands"].map((d) =>
+  path.join(FRONT, d)
+);
 
 function walk(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -28,7 +30,9 @@ describe("REQ-055 every stylesheet link in a route's Head carries its own key", 
       const links = src.match(/<link\b[^>]*rel="stylesheet"[^>]*>/g) ?? [];
       if (links.length < 2) continue;
       for (const link of links) {
-        if (!/\bkey="[^"]+"/.test(link)) offenders.push(`${path.relative(FRONT, file)}: ${link}`);
+        if (!/\bkey="[^"]+"/.test(link)) {
+          offenders.push(`${path.relative(FRONT, file)}: ${link}`);
+        }
       }
     }
     expect(offenders).toEqual([]);
@@ -48,7 +52,8 @@ describe("REQ-055 every stylesheet link in a route's Head carries its own key", 
       const src = fs.readFileSync(path.join(ROUTES, rel), "utf8");
       const links = src.match(/<link\b[^>]*rel="stylesheet"[^>]*>/g) ?? [];
       expect(links.some((l) => l.includes("/plan-cards.css"))).toBe(true); // REQ-158: href={asset("/plan-cards.css")}
-      expect(links.length).toBe(2);
+      // REQ-912: settings also links /hr.css for the Systems tab's cards
+      expect(links.length).toBe(rel === "settings/index.tsx" ? 3 : 2);
     }
   });
 });
