@@ -7809,3 +7809,9 @@ Tests:
 - **p7** her "ML" cursor tag over field words — the stage draws her cursor where it is; owner call, logged before.
 - Ctrl+click following a background tab — headless Chromium reports every tab visible and focused; harness.
 - REVISIONs this run: `demo-run14-polish` (pillJumps regex; the peek-end effect), `demo-stage-ghost-rest` (delay), `demo-end-ask-compact` (guard prop), `demo-pill-text` (wraps), `demo-pill-peek-hold`, `demo-pill-peek-edge-margin` (held's new first clause).
+
+## REQ-540 / REQ-228 story REVISION — the ghost says the form on screen (demo-loop run 15 follow-up; by hand)
+
+**Raphael (2026-11-17):** the full lane at 56fbc468 (122 pass · 1 fail): `e2e/demo-mode/demo-pill-clear.e2e.test.ts` brings the folded pill out of its tab with a hover (`pillUp`) and then expected the desktop words ("Demo mode · Hans from DocuMonster is guiding you · Connected · End demo") on the pill and its stage ghost. On the dashboard's crowded row that peek is REQ-890's compact form (the guide's short name, the status, End; no title). The same story fails the same way on a fresh server at 7d301116 (3 of 3 runs) although the 04:40 lane at 7d301116 passed it — not a regression of 56fbc468; the cause of the earlier pass is not pinned. The check now follows the pill's form (`data-compact`): compact → "Hans · Connected · End demo" and no ghost title; else the desktop words. No code change.
+**Tests:** the story as revised.
+**Evidence (2026-11-17):** ✗ `the pill itself lacks "Demo mode": "Hans Connected End demo" {… data-peek= data-compact= …}` at 56fbc468 and at 7d301116 (fresh server, port 5611, ×3) → revised story 1 pass.
