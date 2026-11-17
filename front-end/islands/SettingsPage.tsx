@@ -67,6 +67,7 @@ import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-2
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
 import { squareClient, type SquareStatus } from "../clients/square.ts"; // REQ-803
 import { squareTokenInfo } from "../../shared/payments/square.ts"; // REQ-803
+import SystemsTab from "../components/SystemsTab.tsx"; // REQ-912
 
 /** REQ-803 — one card provider at a time: the Stripe and Square cards tell each other when
  *  either connects or disconnects, so the other one re-reads its status. */
@@ -3114,6 +3115,15 @@ const PILL_KEY = {
   paidOnce: "billing.pill.paidOnce",
 } as const;
 
+/** REQ-912 — the non-account tabs: Billing, or Systems (what DocuMonster runs on) */
+function OtherTab(
+  { tab, snapshot }: { tab: SettingsTab; snapshot: ProfileSnapshot },
+) {
+  return tab === "systems"
+    ? <SystemsTab />
+    : <BillingTab snapshot={snapshot} />;
+}
+
 function BillingTab({ snapshot }: { snapshot: ProfileSnapshot }) {
   const lang: Lang = langSignal.value === "es" ? "es" : "en"; // REQ-254
   const plan = snapshot.plan ?? null;
@@ -3746,8 +3756,8 @@ export default function SettingsPage() {
   const pickTab = (next: SettingsTab) => {
     setTab(next);
     const u = new URL(location.href);
-    if (next === "billing") u.searchParams.set("tab", "billing");
-    else u.searchParams.delete("tab");
+    if (next === "account") u.searchParams.delete("tab");
+    else u.searchParams.set("tab", next); // billing | systems (REQ-912)
     u.searchParams.delete("plan");
     history.replaceState(null, "", u.pathname + u.search);
   };
@@ -3841,9 +3851,20 @@ export default function SettingsPage() {
         >
           {tFor(lang, "settings.tabBilling")}
         </button>
+        {/* REQ-912 — Systems: what DocuMonster runs on for this account */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "systems"}
+          class={`settings-tab${tab === "systems" ? " settings-tab--on" : ""}`}
+          data-cy="settings-tab-systems"
+          onClick={() => pickTab("systems")}
+        >
+          {tFor(lang, "settings.tabSystems")}
+        </button>
       </nav>
 
-      {tab === "billing" ? <BillingTab snapshot={p} /> : (
+      {tab !== "account" ? <OtherTab tab={tab} snapshot={p} /> : (
         <>
           <div class="grid">
             <Card

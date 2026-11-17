@@ -1,0 +1,24 @@
+/** REQ-912c — GET /me/systems: what DocuMonster runs on for this account, in one call. */
+import { api, type ApiOptions } from "../lib/api.ts";
+import type { CatalogEntry, HrSystem } from "./hr.ts";
+
+export type LineSummary =
+  | { status: "none" }
+  | { status: "active"; number: string; kind: "env" | "subaccount" }
+  | { status: "released"; number: string; kind: "subaccount" };
+
+export interface SystemsSummary {
+  email: { provider: "postmark"; configured: boolean; from: string };
+  line: LineSummary;
+  payments: { stripe: { connected: boolean }; square: { connected: boolean } };
+  esign: { provider: "documonster"; on: true };
+  hr: { systems: HrSystem[]; catalog: CatalogEntry[] };
+}
+
+export const systemsClient = {
+  summary: (opts?: ApiOptions) => api.get<SystemsSummary>("/me/systems", opts),
+};
+
+/** REQ-913 — the arms DocuMonster runs itself (no webhook to set) */
+export const BUILTIN_KEYS = ["dm-worker", "dm-admin", "dm-email", "dm-text"];
+export const isBuiltin = (key: string) => BUILTIN_KEYS.includes(key);

@@ -149,25 +149,39 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
       assertEquals(s1.body.companyName, "Monster Reservations Group");
 
       // ---- REQ-888a systems: the catalog, attach, a webhook on one
+      // REQ-913: the catalog is DocuMonster's own four arms; the prototype's third parties are gone
       const sys0 = await call("GET", "/hr/systems", undefined, H);
       assertEquals(sys0.status, 200);
       assertEquals(sys0.body.systems, []);
-      assert(
-        sys0.body.catalog.some((c: { key: string }) => c.key === "quickbase"),
+      assertEquals(
+        sys0.body.catalog.map((c: { key: string }) => c.key),
+        ["dm-worker", "dm-admin", "dm-email", "dm-text"],
       );
-      assert(
-        sys0.body.catalog.some((c: { key: string }) => c.key === "readymode"),
-      );
-      const crm = await call("POST", "/hr/systems", { key: "quickbase" }, H);
+      const quickbase = await call("POST", "/hr/systems", { key: "quickbase" }, H);
+      assertEquals(quickbase.status, 400, "Quickbase is not a system of ours any more");
+      assertEquals(quickbase.body.code, "unknown_system");
+      // anything outside DocuMonster is a custom system with a webhook (REQ-888b stands)
+      const crm = await call("POST", "/hr/systems", { name: "CRM", kind: "crm", desc: "Record of record" }, H);
       assertEquals(crm.status, 201, crm.text);
-      assertEquals(crm.body.name, "Quickbase CRM");
+      assertEquals(crm.body.name, "CRM");
+      assertEquals(crm.body.key, "custom");
       assertEquals(crm.body.status, "connected");
       assertEquals(
-        (await call("POST", "/hr/systems", { key: "quickbase" }, H)).status,
+        (await call("POST", "/hr/systems", { name: "crm" }, H)).status,
         409,
       );
-      const dialer = await call("POST", "/hr/systems", { key: "readymode" }, H);
-      const mail = await call("POST", "/hr/systems", { key: "gmail" }, H);
+      const dialer = await call("POST", "/hr/systems", { name: "Dialer", kind: "dialer" }, H);
+      // the welcome text from the account's line: built in — and this account has no line yet
+      const mail = await call("POST", "/hr/systems", { key: "dm-text" }, H);
+      assertEquals(mail.status, 201, mail.text);
+      assertEquals(mail.body.name, "Welcome text (your line)");
+      assertEquals(
+        (await call("POST", "/hr/systems", { key: "dm-text" }, H)).status,
+        409,
+      );
+      const noHook = await call("PUT", `/hr/systems/${mail.body.id}`, { webhookUrl: hook.url("/x") }, H);
+      assertEquals(noHook.status, 400, "a built-in arm takes no webhook");
+      assertEquals(noHook.body.code, "builtin_no_webhook");
       const custom = await call("POST", "/hr/systems", {
         name: "Badge printer",
         kind: "other",
@@ -189,7 +203,7 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
       const sys1 = await call("GET", "/hr/systems", undefined, H);
       assertEquals(sys1.body.systems.length, 4);
       assert(
-        !sys1.body.catalog.some((c: { key: string }) => c.key === "quickbase"),
+        !sys1.body.catalog.some((c: { key: string }) => c.key === "dm-text"),
         "attached ones leave the catalog",
       );
 
@@ -552,12 +566,15 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
         systemId: string;
         state: string;
         name: string;
+        detail: string | null;
       }[];
       assertEquals(
         arms.map((a) => a.state),
         ["ok", "ok", "manual"],
         "the available (disconnected) custom system is not in the plan",
       );
+      // REQ-913: the built-in text arm says WHY it is manual — this account has no line yet
+      assertStringIncludes(arms[2].detail ?? "", "line");
       assertEquals(hook.calls.map((c) => c.path), ["/crm", "/dialer"]);
       assertEquals(hook.calls[0].body.event, "hire.provision");
       assertEquals(
@@ -704,6 +721,101 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
         "hire.offboard",
       ]);
 
+      // ---- REQ-913 the built-in arms: a worker account, an editor, the welcome email — in DocuMonster
+      const worker = await call("POST", "/hr/systems", { key: "dm-worker" }, H);
+      const editor = await call("POST", "/hr/systems", { key: "dm-admin" }, H);
+      const emailSys = await call("POST", "/hr/systems", { key: "dm-email" }, H);
+      assertEquals([worker.status, editor.status, emailSys.status], [201, 201, 201]);
+      const crew = await call("POST", "/hr/departments", { name: "Crew", division: "outbound" }, H);
+      await call("PUT", `/hr/departments/${crew.body.id}`, {
+        docIds: [welcome.body.id],
+        systemIds: [worker.body.id, editor.body.id, emailSys.body.id],
+      }, H);
+      const wren = await call("POST", "/hr/hires", {
+        firstName: "Wren",
+        lastName: "Ortiz",
+        phone: "7025551199",
+        email: "wren@example.com",
+        departmentId: crew.body.id,
+        startDate: "2026-07-01",
+      }, H);
+      assertEquals(wren.status, 201, wren.text);
+      await call(
+        "POST",
+        `/hr/sign/${wren.body.token}/docs/${welcome.body.id}`,
+        { printedName: "Wren Ortiz", consent: true, signaturePng: PNG },
+      );
+      log.lines.length = 0;
+      const built = await call("POST", `/hr/hires/${wren.body.id}/provision`, {}, H);
+      assertEquals(built.status, 200, built.text);
+      assertEquals(
+        built.body.provisioning.map((a: { name: string; state: string }) => [a.name, a.state]),
+        [["DocuMonster worker account", "ok"], ["DocuMonster editor", "ok"], ["Welcome email (Postmark)", "ok"]],
+        JSON.stringify(built.body.provisioning),
+      );
+      assertEquals(built.body.status, "active");
+      const crewList = await call("GET", "/field/workers", undefined, H);
+      const wrenWorker = crewList.body.find((w: { phoneNumber: string }) => w.phoneNumber === "7025551199");
+      assert(wrenWorker, `Wren is a worker now: ${crewList.text}`);
+      assertEquals(wrenWorker.name, "Wren Ortiz");
+      const editors = await call("GET", "/me/admins", undefined, H);
+      assert(
+        editors.body.some((a: { phoneNumber: string }) => a.phoneNumber === "+17025551199"),
+        `Wren is an editor now: ${editors.text}`,
+      );
+      assert(
+        log.lines.some((l) => l.includes("[email:dev-mode]") && l.includes("wren@example.com")),
+        `the welcome email went to Wren: ${log.lines.join(" | ")}`,
+      );
+      // a second run rebuilds nothing: one worker, one editor
+      await call("POST", `/hr/hires/${wren.body.id}/provision`, {}, H);
+      assertEquals(
+        (await call("GET", "/field/workers", undefined, H)).body.filter((w: { phoneNumber: string }) => w.phoneNumber === "7025551199").length,
+        1,
+      );
+      // offboarding takes the worker and the editor back out
+      const wrenGone = await call("POST", `/hr/hires/${wren.body.id}/offboard`, {}, H);
+      assertEquals(
+        wrenGone.body.provisioning.map((a: { state: string }) => a.state),
+        ["torn_down", "torn_down", "torn_down"],
+      );
+      assertEquals(
+        (await call("GET", "/field/workers", undefined, H)).body.some((w: { phoneNumber: string }) => w.phoneNumber === "7025551199"),
+        false,
+        "the worker account is gone",
+      );
+      assertEquals(
+        (await call("GET", "/me/admins", undefined, H)).body.some((a: { phoneNumber: string }) => a.phoneNumber === "+17025551199"),
+        false,
+        "the editor is gone",
+      );
+      // a cell that is already a worker in ANOTHER account is a fault, not a takeover
+      const { FieldWorkerStore } = await import("@field/domain/data/field-stores/mod.ts");
+      await new FieldWorkerStore().put({
+        id: "w-elsewhere",
+        userId: "someone-else",
+        name: "Zed Elsewhere",
+        phoneNumber: "7025551198",
+        pin: "1234",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+      const zed = await call("POST", "/hr/hires", {
+        firstName: "Zed",
+        phone: "7025551198",
+        email: "zed@example.com",
+        departmentId: crew.body.id,
+      }, H);
+      await call(
+        "POST",
+        `/hr/sign/${zed.body.token}/docs/${welcome.body.id}`,
+        { printedName: "Zed", consent: true, signaturePng: PNG },
+      );
+      const zedRun = await call("POST", `/hr/hires/${zed.body.id}/provision`, {}, H);
+      assertEquals(zedRun.body.provisioning[0].state, "fault");
+      assertStringIncludes(zedRun.body.provisioning[0].detail, "another account");
+      assertEquals(zedRun.body.status, "provisioning");
+
       // ---- REQ-884c lazy expiry and re-issue with a rotated token
       const marcus = await call("POST", "/hr/hires", {
         firstName: "Marcus",
@@ -768,10 +880,12 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
       await call("GET", "/hr/hires", undefined, H);
       assertEquals(log.lines.length, 0, "only once");
 
-      // ---- REQ-884c the roster's order: unfinished first
+      // ---- REQ-884c the roster's order: unfinished first (REQ-913 added Zed, still provisioning, and Wren, offboarded)
       assertEquals(roster.body.map((h: { status: string }) => h.status), [
         "opened",
+        "provisioning",
         "active",
+        "offboarded",
         "offboarded",
       ]);
       const byName = await call(
@@ -784,15 +898,18 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
         "Casey",
         "Marcus",
         "Priya",
+        "Wren",
+        "Zed",
       ]);
 
       // ---- REQ-889c the overview
       const dash = await call("GET", "/hr/dashboard", undefined, H);
       assertEquals(dash.status, 200);
-      assertEquals(dash.body.sent, 3);
-      assertEquals(dash.body.completed, 2);
+      // REQ-913 added Wren (offboarded) and Zed (provisioning) to the five
+      assertEquals(dash.body.sent, 5);
+      assertEquals(dash.body.completed, 4);
       assertEquals(dash.body.awaiting, 1);
-      assertEquals(dash.body.accounts, 2);
+      assertEquals(dash.body.accounts, 3);
       assertEquals(dash.body.byDay.length, 7);
       assertEquals(dash.body.recent.length, 3);
 

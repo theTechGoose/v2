@@ -1,8 +1,10 @@
 /**
- * REQ-888 — /hr/systems: the connected systems (each with its webhook URL — set, it is called
- * on provisioning and offboarding; blank, the account is a manual step on the hire), Connect /
- * Disconnect / Remove, the catalog to attach from, and a custom system. Data: /hr/systems.
- * Strings: hr.systems.*.
+ * REQ-912 — Settings → Systems: the one place that lists what DocuMonster runs on for this
+ * account — email (Postmark), the phone line (REQ-903/904), card payments (Stripe / Square, as
+ * Billing has them), e-signature (DocuMonster's own, always on) — and the HR provisioning
+ * registry (REQ-888, REQ-913) that used to be /hr/systems: Connect / Disconnect / webhook /
+ * Remove, the catalog, a custom system. Data: GET /me/systems; writes go through hrClient.
+ * Strings: settings.systems.* and the hr.systems.* it inherited.
  */
 import { useEffect, useState } from "preact/hooks";
 import {
@@ -11,8 +13,12 @@ import {
   type HrSystem,
   type SystemKind,
 } from "../clients/hr.ts";
-import FieldHead from "../components/FieldHead.tsx";
-import { friendlyHr, Toast, useToast } from "../components/hr/bits.tsx";
+import {
+  isBuiltin,
+  systemsClient,
+  type SystemsSummary,
+} from "../clients/systems.ts";
+import { friendlyHr, Toast, useToast } from "./hr/bits.tsx";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { t } from "../lib/i18n.ts";
 
@@ -27,9 +33,8 @@ const KINDS: SystemKind[] = [
   "other",
 ];
 
-export default function HrSystemsPage() {
-  const [systems, setSystems] = useState<HrSystem[] | null>(null);
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+export default function SystemsTab() {
+  const [sum, setSum] = useState<SystemsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [custom, setCustom] = useState({
@@ -40,9 +45,7 @@ export default function HrSystemsPage() {
   const [toast, say] = useToast();
 
   async function load() {
-    const r = await hrClient.systems();
-    setSystems(r.systems);
-    setCatalog(r.catalog);
+    setSum(await systemsClient.summary());
   }
   useEffect(() => {
     load().catch(() => setErr(t("hr.common.error")));
@@ -62,32 +65,95 @@ export default function HrSystemsPage() {
     }
   }
 
-  const attachedKeys = new Set((systems ?? []).map((s) => s.key));
-  const available = catalog.filter((c) => !attachedKeys.has(c.key));
+  const systems: HrSystem[] = sum?.hr.systems ?? [];
+  const catalog: CatalogEntry[] = sum?.hr.catalog ?? [];
+  const line = sum?.line;
 
   return (
     <>
-      <FieldHead
-        eyebrow={t("hr.systems.eyebrow")}
-        title={t("hr.systems.title")}
-        sub={t("hr.systems.sub")}
-      />
       {err && <p class="alert" data-cy="hr-sys-err">{err}</p>}
-      <section class="panel">
-        <h2 class="panel__title">{t("hr.systems.connected")}</h2>
-        {systems && systems.length === 0 && (
+      <section class="panel" data-cy="sys-summary">
+        <h2 class="panel__title">{t("settings.systems.title")}</h2>
+        <p class="hint">{t("settings.systems.sub")}</p>
+        <div class="hr-sys-grid">
+          <SummaryCard
+            cy="sys-email"
+            name={t("settings.systems.email")}
+            kind={t("hr.systems.kind.email")}
+            desc={sum ? sum.email.from : ""}
+            on={Boolean(sum?.email.configured)}
+            onLabel={sum?.email.configured
+              ? t("settings.systems.connected")
+              : t("settings.systems.emailDev")}
+          />
+          <SummaryCard
+            cy="sys-line"
+            name={t("settings.systems.line")}
+            kind={t("hr.systems.kind.comms")}
+            desc={line && line.status !== "none"
+              ? line.number
+              : t("settings.systems.lineNone")}
+            on={line?.status === "active"}
+            onLabel={line?.status === "active"
+              ? t("settings.systems.connected")
+              : line?.status === "released"
+              ? t("settings.systems.lineReleased")
+              : t("settings.systems.notConnected")}
+            action={{
+              href: "/communications",
+              label: line?.status === "active"
+                ? t("settings.systems.lineOpen")
+                : t("settings.systems.lineGet"),
+            }}
+          />
+          <SummaryCard
+            cy="sys-payments"
+            name={t("settings.systems.payments")}
+            kind={t("settings.systems.paymentsKind")}
+            desc={sum?.payments.stripe.connected
+              ? "Stripe"
+              : sum?.payments.square.connected
+              ? "Square"
+              : t("settings.systems.paymentsNone")}
+            on={Boolean(
+              sum?.payments.stripe.connected || sum?.payments.square.connected,
+            )}
+            onLabel={sum?.payments.stripe.connected ||
+                sum?.payments.square.connected
+              ? t("settings.systems.connected")
+              : t("settings.systems.notConnected")}
+            action={{
+              href: "/settings?tab=billing#payments",
+              label: t("settings.systems.manage"),
+            }}
+          />
+          <SummaryCard
+            cy="sys-esign"
+            name={t("settings.systems.esign")}
+            kind={t("hr.systems.kind.esign")}
+            desc={t("settings.systems.esignDesc")}
+            on
+            onLabel={t("settings.systems.esignOn")}
+          />
+        </div>
+      </section>
+
+      <section class="panel" data-cy="sys-hr">
+        <h2 class="panel__title">{t("settings.systems.hr")}</h2>
+        <p class="hint">{t("settings.systems.hrSub")}</p>
+        {sum && systems.length === 0 && (
           <p class="hr-empty" data-cy="hr-sys-empty">{t("hr.systems.empty")}</p>
         )}
         <div class="hr-sys-grid" data-cy="hr-sys-grid">
-          {(systems ?? []).map((s) => (
+          {systems.map((s) => (
             <SystemCard key={s.id} s={s} busy={busy} run={run} />
           ))}
         </div>
-      </section>
-      <section class="panel">
-        <h2 class="panel__title">{t("hr.systems.catalog")}</h2>
+        <h3 class="panel__title" style="margin-top:18px">
+          {t("hr.systems.catalog")}
+        </h3>
         <div class="hr-sys-grid" data-cy="hr-catalog">
-          {available.map((c) => (
+          {catalog.map((c) => (
             <div
               class="hr-sys"
               key={c.key}
@@ -107,6 +173,9 @@ export default function HrSystemsPage() {
               </div>
               <div class="hr-sys__desc">{c.desc}</div>
               <div class="hr-sys__foot">
+                <span class="chip chip--muted">
+                  {t("settings.systems.builtin")}
+                </span>
                 <button
                   type="button"
                   class="btn btn--teal btn--sm"
@@ -137,6 +206,7 @@ export default function HrSystemsPage() {
             }}
           >
             <div class="hr-sys__name">{t("hr.systems.custom")}</div>
+            <div class="hr-sys__desc">{t("settings.systems.customHint")}</div>
             <input
               placeholder={t("hr.systems.custom.name")}
               value={custom.name}
@@ -187,6 +257,41 @@ export default function HrSystemsPage() {
   );
 }
 
+function SummaryCard({ cy, name, kind, desc, on, onLabel, action }: {
+  cy: string;
+  name: string;
+  kind: string;
+  desc: string;
+  on: boolean;
+  onLabel: string;
+  action?: { href: string; label: string };
+}) {
+  return (
+    <div class="hr-sys" data-cy={cy} data-on={on ? "1" : "0"}>
+      <div class="hr-sys__head">
+        <span class="hr-sys__icon">
+          <I d={ICN.plug} size={14} />
+        </span>
+        <div>
+          <div class="hr-sys__name">{name}</div>
+          <div class="hr-sys__kind">{kind}</div>
+        </div>
+      </div>
+      <div class="hr-sys__desc">{desc}</div>
+      <div class="hr-sys__foot">
+        <span class={`chip ${on ? "chip--green" : "chip--muted"}`}>
+          {onLabel}
+        </span>
+        {action && (
+          <a class="btn btn--ghost btn--sm" href={action.href}>
+            {action.label}
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SystemCard(
   { s, busy, run }: {
     s: HrSystem;
@@ -196,6 +301,7 @@ function SystemCard(
 ) {
   const [url, setUrl] = useState(s.webhookUrl ?? "");
   const connected = s.status === "connected";
+  const builtin = isBuiltin(s.key);
   return (
     <div
       class="hr-sys"
@@ -213,23 +319,32 @@ function SystemCard(
         </div>
       </div>
       {s.desc && <div class="hr-sys__desc">{s.desc}</div>}
-      <label class="hint">{t("hr.systems.webhook")}</label>
-      <input
-        placeholder="https://…"
-        value={url}
-        data-cy="hr-sys-webhook"
-        onInput={(e) => setUrl((e.target as HTMLInputElement).value)}
-        onBlur={() => {
-          if ((s.webhookUrl ?? "") !== url.trim()) {
-            run(
-              () =>
-                hrClient.saveSystem(s.id, { webhookUrl: url.trim() || null }),
-              t("hr.common.saved"),
-            );
-          }
-        }}
-      />
-      <span class="hint">{t("hr.systems.webhookHint")}</span>
+      {builtin
+        ? (
+          <span class="hint" data-cy="hr-sys-builtin">
+            {t("settings.systems.builtinHint")}
+          </span>
+        )
+        : (
+          <>
+            <label class="hint">{t("hr.systems.webhook")}</label>
+            <input
+              placeholder="https://…"
+              value={url}
+              data-cy="hr-sys-webhook"
+              onInput={(e) => setUrl((e.target as HTMLInputElement).value)}
+              onBlur={() => {
+                if ((s.webhookUrl ?? "") !== url.trim()) {
+                  run(() =>
+                    hrClient.saveSystem(s.id, {
+                      webhookUrl: url.trim() || null,
+                    }), t("hr.common.saved"));
+                }
+              }}
+            />
+            <span class="hint">{t("hr.systems.webhookHint")}</span>
+          </>
+        )}
       <div class="hr-sys__foot">
         <span
           class={`chip ${connected ? "chip--green" : "chip--muted"}`}

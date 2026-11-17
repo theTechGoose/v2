@@ -125,32 +125,35 @@ export class HrSettingsStore {
   }
 }
 
-/** REQ-888a — what the System integrator offers */
+/**
+ * REQ-913 — what a department can build for a hire: DocuMonster's own four arms. The prototype's
+ * third parties (Quickbase, Readymode, Five9, Paychex, Google email, DocuSign, Salesforce, Slack,
+ * ADP, Twilio, Okta) are gone — DocuMonster is the source of truth; anything outside it is a
+ * custom system with a webhook (REQ-888b). E-signature needs no system: the hire signs here.
+ */
 export const SYSTEM_CATALOG: CatalogEntry[] = [
   {
-    key: "quickbase",
-    name: "Quickbase CRM",
+    key: "dm-worker",
+    name: "DocuMonster worker account",
     kind: "crm",
-    desc: "CRM record of record",
+    desc: "The hire becomes a Worker in Field, by their cell, and is texted their PIN",
   },
   {
-    key: "readymode",
-    name: "Readymode",
-    kind: "dialer",
-    desc: "Predictive dialer",
+    key: "dm-admin",
+    name: "DocuMonster editor",
+    kind: "sso",
+    desc: "The hire is invited as an editor of this account",
   },
-  { key: "five9", name: "Five9", kind: "dialer", desc: "Cloud contact center" },
-  { key: "paychex", name: "Paychex", kind: "payroll", desc: "Payroll & HR" },
   {
-    key: "gmail",
-    name: "Email (Google)",
+    key: "dm-email",
+    name: "Welcome email (Postmark)",
     kind: "email",
-    desc: "Account provisioning",
+    desc: "A welcome note with the handbook portal's login, from DocuMonster",
   },
-  { key: "docusign", name: "DocuSign", kind: "esign", desc: "E-signature" },
-  { key: "salesforce", name: "Salesforce", kind: "crm", desc: "CRM" },
-  { key: "slack", name: "Slack", kind: "comms", desc: "Team comms" },
-  { key: "adp", name: "ADP", kind: "payroll", desc: "Payroll & HR" },
-  { key: "twilio", name: "Twilio", kind: "comms", desc: "SMS delivery" },
-  { key: "okta", name: "Okta", kind: "sso", desc: "SSO & identity" },
+  {
+    key: "dm-text",
+    name: "Welcome text (your line)",
+    kind: "comms",
+    desc: "The same welcome by text, from this account's phone line",
+  },
 ];

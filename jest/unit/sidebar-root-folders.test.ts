@@ -30,13 +30,13 @@ describe("REQ-176 the sidebar's root folders", () => {
     expect(nested).not.toContain("quotes");
   });
 
-  test("the root is Dashboard, Customers, Quotes, Outbox, Billing, Field, Admin, HR (REQ-883), Reports (REQ-795) — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
+  test("the root is Dashboard, Customers, Quotes, Communications (REQ-914), Billing, Field, Admin, HR (REQ-883), Reports (REQ-795) — nothing else (REQ-176 amendment: the field folder is not nested; REQ-361: Field, was Recurring; REQ-773: Quotes; REQ-784: the Outbox row)", () => {
     // REQ-773 (demo dv1-d1): Quotes is on the root, one click from anywhere
     expect(ids([])).toEqual([
       "home",
       "customers",
       "quotes",
-      "outbox", // REQ-784 (demo-loop dv1, d12): every email and text sent to customers
+      "communications", // REQ-914: the Communications folder — the Outbox (REQ-784) and the Phone (REQ-915)
       "billing",
       "field",
       "manage",
@@ -45,6 +45,7 @@ describe("REQ-176 the sidebar's root folders", () => {
       "tools", // REQ-891: the Tools folder (Satellite measure, REQ-856) — specific tools live off the root
     ]);
     expect(viewAt(NAV, []).items.filter(isFolder).map((n) => n.id)).toEqual([
+      "communications", // REQ-914
       "billing",
       "field",
       "manage",

@@ -27,7 +27,7 @@ const dict = (rel: string) => JSON.parse(read(rel)) as Record<string, string>;
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 describe("REQ-883 the HR module", () => {
-  test("REQ-883a the HR folder sits on the root between Roles and Reports with Overview, New hires, Documents, Departments, Systems, HR settings", () => {
+  test("REQ-883a the HR folder sits on the root between Roles and Reports with Overview, New hires, Documents, Departments, HR settings (REQ-912: Systems moved under Account)", () => {
     const root = viewAt(NAV, []).items.map((n) => n.id);
     expect(root.indexOf("hr")).toBe(root.indexOf("manage") + 1);
     expect(root.indexOf("reports")).toBe(root.indexOf("hr") + 1);
@@ -35,12 +35,12 @@ describe("REQ-883 the HR module", () => {
     expect(isFolder(hr)).toBe(true);
     expect((hr as { icon: string }).icon).toBe("badge");
     const items = viewAt(NAV, ["hr"]).items;
+    // REQ-912: Systems moved to Settings → Systems; the folder has five entries
     expect(items.map((n) => n.id)).toEqual([
       "hrHome",
       "hires",
       "hrDocuments",
       "departments",
-      "hrSystems",
       "hrSettings",
     ]);
     expect(items.map((n) => (n as { href?: string }).href)).toEqual([
@@ -48,10 +48,9 @@ describe("REQ-883 the HR module", () => {
       "/hr/hires",
       "/hr/documents",
       "/hr/departments",
-      "/hr/systems",
       "/hr/settings",
     ]);
-    for (const id of ["hires", "hrDocuments", "departments", "hrSystems"]) {
+    for (const id of ["hires", "hrDocuments", "departments"]) {
       expect(folderPathTo(NAV, id)).toEqual(["hr"]);
     }
     // the icons exist
@@ -188,7 +187,7 @@ describe("REQ-883 the HR module", () => {
         "HrDepartmentsPage",
         "departments",
       ],
-      ["front-end/routes/hr/systems.tsx", "HrSystemsPage", "hrSystems"],
+      // REQ-912: /hr/systems is a 302 to /settings?tab=systems now — no island of its own
       ["front-end/routes/hr/settings.tsx", "HrSettingsPage", "hrSettings"],
     ];
     for (const [rel, island, active] of pages) {
