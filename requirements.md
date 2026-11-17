@@ -7911,3 +7911,7 @@ Tests:
 - **p4** the stage's pill ghost "Conectando…" for ~80 ms during her reload — REQ-430's connecting face while her app is away; pedantic, by design.
 - VM 3 (demo 4, navigation stress) never came back — a lost VM; its focus is re-run in run 18.
 - Tester 5 at 390 px never saw the pill fold on /reports or /dashboard (it found a clear spot) — not a defect; the re-check says what to do then.
+
+### Lane at 5b9c8f1e (demo-loop run 17 hand fixes, 2026-11-17): 127 pass · 3 fail → test race fixed, 2 load flakes
+- REQ-644 (demo-signature-live) and REQ-222+REQ-298 (demo-restart) failed in the lane and pass alone against the same server: load flakes (the stage's pad clip empty for one screenshot; "Yes, end it" still disabled at the 15 s click).
+- REQ-242's REQ-309 (m26) check "the pill never says Live over 'Connecting to…'" failed in the lane AND alone against the lane's :5601 server, and passed at 9e649768 and at 5b9c8f1e on a fresh scratch server (:5611). Cause, in the story: the connecting panel (`stageFrameLook`: hidden ⇔ `!mirrored || !styled`) and the pill's "Live" (`stageStatus`: needs `mirrored && styled`) flip in ONE render, and the story read them in two Playwright round trips 120 ms apart; on a slow server the one commit landed between the reads. Revision (test only, `e2e/demo-mode/demo-mirror.e2e.test.ts`): the three facts are read in one `page.evaluate`. Evidence: ✓ against the same :5601 server that failed it twice. No app change.

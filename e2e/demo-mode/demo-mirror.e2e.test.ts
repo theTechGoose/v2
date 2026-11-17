@@ -274,19 +274,33 @@ Deno.test("REQ-242: the stage mirrors the customer's actual screen — connectin
       // while the frame still says it is connecting; both turn with the first snapshot
       const STATUS = "[data-cy='demo-status']";
       const liveWhileConnecting: string[] = [];
+      // the three facts are read in ONE evaluate: the panel hides and the pill turns in the same
+      // render (both are `mirrored && styled`, stageFrameLook / stageStatus), and two round trips
+      // straddling that one commit read a stale "connecting" against the new "Live" — a false
+      // positive that showed on a slow dev server (dm18 lane) and never on a fresh one
       await until(
         "the frame is in",
         async () => {
-          const connecting = await page.locator("[data-cy='demo-connecting']")
-            .isVisible().catch(() => false);
-          const status = (await page.locator(STATUS).innerText().catch(() =>
-            ""
-          ))
-            .trim();
-          if (connecting && /^(Live|En vivo)$/.test(status)) {
-            liveWhileConnecting.push(status);
+          const seen = await page.evaluate(
+            ([c, s, f]: string[]) => {
+              const vis = (sel: string) => {
+                const el = document.querySelector<HTMLElement>(sel);
+                return !!el && el.getClientRects().length > 0 &&
+                  getComputedStyle(el).visibility !== "hidden";
+              };
+              return {
+                connecting: vis(c),
+                status: (document.querySelector<HTMLElement>(s)?.innerText ?? "")
+                  .trim(),
+                frame: vis(f),
+              };
+            },
+            ["[data-cy='demo-connecting']", STATUS, FRAME],
+          ).catch(() => ({ connecting: false, status: "", frame: false }));
+          if (seen.connecting && /^(Live|En vivo)$/.test(seen.status)) {
+            liveWhileConnecting.push(seen.status);
           }
-          return await page.locator(FRAME).isVisible().catch(() => false);
+          return seen.frame;
         },
         25_000,
       );
