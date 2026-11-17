@@ -7757,3 +7757,9 @@ Tests:
 
 **Raphael (2026-11-17):** p2 (tester 2: the settled pill at /welcome step 2 overlapping the footer's box by 6 px, no link or text under it) — REQ-866 AMENDMENT 2: a painted container alone is not a hit; the band is the least of the page in that layout. p3 (tester 2: the frame's `data-path` one 250 ms sample ahead of its content) — the path is known when the load begins, the DOM follows within a frame interval; devtools-only, by design. p4 (tester 5: two pointer-hint wordings) — two states (REQ-539: no mouse seen yet; REQ-393: the mouse beside the frame), by design. Item 9 of the recheck (run 12's dead folded pill) — tester 4 ran the exact steps once more: "live, not dead"; closed. The "backend up: 404" status line is the probe hitting `/` on the backend (no route), not the app: every tester's /login was 200.
 **Tests:** no tests — docs only.
+
+## REQ-890 AMENDMENT 3 — REVISION of the REQ-379 story's phone step (demo-loop run 14 follow-up; by hand)
+
+**Raphael (2026-11-17):** the full lane at 116b1b87 (117 pass · 2 fail): `e2e/demo-mode/demo-pill-home.e2e.test.ts` (REQ-379) tapped "more" on the phone's pill — which is OUT OF ITS MINI-PILL there (a peek) — and expected the details open after a reload (REQ-440's tab memory). Under REQ-890 AMENDMENT 3 a peek's "more" is that peek's alone and nothing is remembered; the step now branches: a whole pill keeps REQ-440's check, a peek expects the details closed after the reload. The other failure (REQ-638, a click timeout) passed alone — a load flake under SHOTS_JOBS=4.
+**Tests:** the story as revised; no other change.
+**Evidence (2026-11-17):** ✗ `timed out: the opened details are still open after a reload — aria-expanded false, details visible false`; REQ-638 alone → 2 pass; `shots run demo-pill-home` → 0 pass · 1 fail · 0 skipped (1 page).
