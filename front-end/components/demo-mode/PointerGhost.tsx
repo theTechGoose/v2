@@ -136,6 +136,23 @@ export default function PointerGhost(
     initial?: string;
   },
 ) {
+  // REQ-877 AMENDMENT 2 — a hook: it runs on every render, so it comes before the off branch's
+  // return (a ghost going off→in rendered with a different hook count — lint rules-of-hooks)
+  // REQ-789 AMENDMENT (dm12, p1) — fades in where it settles: a spot that moves mid-fade restarts
+  // the fade there (a new key remounts the element and its animation)
+  // REQ-789 AMENDMENT 2 (dm15, m3) — `delay`: a fade waits GHOST_SETTLE_MS unseen first — the
+  // first one too: a ghost first drawn while her page still scrolls began fading at a spot on the
+  // way (0 → 0.2 at y 461, then the restart at 436)
+  const fadeRef = useRef<
+    { x: number; y: number; since: number; key: number; delay?: number }
+  >({
+    x: at.x,
+    y: at.y,
+    since: performance.now(),
+    key: 0,
+    delay: GHOST_SETTLE_MS,
+  });
+  fadeRef.current = ghostFade(fadeRef.current, at, performance.now());
   if (off) {
     // REQ-877 (demo dm5 m1) — the off marker their screen has: chevron + initial, no tag, the
     // same fade (DemoPointer's off branch, drawn faint)
@@ -190,21 +207,6 @@ export default function PointerGhost(
       </div>
     );
   }
-  // REQ-789 AMENDMENT (dm12, p1) — fades in where it settles: a spot that moves mid-fade restarts
-  // the fade there (a new key remounts the element and its animation)
-  // REQ-789 AMENDMENT 2 (dm15, m3) — `delay`: a fade waits GHOST_SETTLE_MS unseen first — the
-  // first one too: a ghost first drawn while her page still scrolls began fading at a spot on the
-  // way (0 → 0.2 at y 461, then the restart at 436)
-  const fadeRef = useRef<
-    { x: number; y: number; since: number; key: number; delay?: number }
-  >({
-    x: at.x,
-    y: at.y,
-    since: performance.now(),
-    key: 0,
-    delay: GHOST_SETTLE_MS,
-  });
-  fadeRef.current = ghostFade(fadeRef.current, at, performance.now());
   const cue = dir && cueText ? cueText : null;
   const words = cue ? `${label} · ${cue}` : label;
   const box = outside || cue ? null : rect ?? null;

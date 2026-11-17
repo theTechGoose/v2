@@ -7980,3 +7980,8 @@ First run with no fix-category item: 0 blockers, 0 major, 0 minor, 3 polish. All
 - **p2** the whole pill never folding on /customers at 1280×800 — REQ-890/REQ-897: the pill folds only where something of the page is under it; a clear row keeps it whole (the tester said as much). By design.
 - **p3** no 'Back to admin' button after End — the stage goes to /admin by itself with the "You/{name} ended the demo" notice (REQ-235/REQ-537); 'Back to admin' is the EMPTY stage's link (REQ-541). The tester brief (demo5.sh) said "'The demo ended' and 'Back to admin'" — the brief corrected, no app change.
 - Lost coverage: demo 4 (navigation stress, special pages) was killed mid-run by a customer-side browser call that hung on a closed page; only its re-check draft survived. Run 21 covers that area again.
+
+### REQ-877 AMENDMENT 2 — PointerGhost's fade hook runs on every render (demo-fixes lint, 2026-11-17)
+Found reconciling demo-fixes with develop: `deno lint` (react-rules-of-hooks) on `front-end/components/demo-mode/PointerGhost.tsx` — the REQ-789 AMENDMENT fade ref (`useRef`) sat after REQ-877's off-marker branch returned, so a ghost going off→in (or back) rendered with a different hook count. The hook now comes before the branch; the first-render value is unchanged.
+- Unit: `jest/unit/demo-pointer-ghost-hooks.test.ts` (the hook precedes `if (off)`; its first value kept). RED (hook after the branch) → GREEN; `deno lint` front-end: "Found 1 problem" → clean (551 files); `deno check` green.
+- Integration: n/a. E2E: the REQ-877 AMENDMENT story (run-19 m2) re-run GREEN after the move.
