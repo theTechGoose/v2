@@ -8,8 +8,12 @@
  *   any → error (one-line reason); register again from error retries.
  */
 
-/** Twilio's browser Voice SDK, loaded at page open with a dynamic import — never bundled, never in a deno.json */
-export const VOICE_SDK_URL = "https://esm.sh/@twilio/voice-sdk@2.19.0";
+/**
+ * Twilio's browser Voice SDK, loaded at page open with a dynamic import — never bundled into our
+ * build, never in a deno.json. REQ-919: esm.sh's `?bundle` build — the plain one ships the SDK's
+ * `loglevel` dependency as a broken shim and `new Device()` throws `reading 'ERROR'`.
+ */
+export const VOICE_SDK_URL = "https://esm.sh/@twilio/voice-sdk@2.19.0?bundle";
 
 export type PhonePhase =
   | "idle"
@@ -30,13 +34,15 @@ export interface PhoneState {
   muted: boolean;
   /** why it is not registered: sdk | noKey | noLine | mic | twilio */
   reason?: string;
+  /** REQ-919: Twilio's own code and message when the reason is the generic one */
+  detail?: string;
 }
 
 export type PhoneEvent =
   | { type: "register" }
   | { type: "registered" }
   | { type: "unregistered" }
-  | { type: "failed"; reason: string }
+  | { type: "failed"; reason: string; detail?: string }
   | { type: "dial"; to: string }
   | { type: "incoming"; from: string }
   | { type: "accepted"; at: number }
@@ -62,7 +68,12 @@ export function phoneReducer(s: PhoneState, e: PhoneEvent): PhoneState {
     case "unregistered":
       return initialPhone();
     case "failed":
-      return { phase: "error", muted: false, reason: e.reason };
+      return {
+        phase: "error",
+        muted: false,
+        reason: e.reason,
+        ...(e.detail ? { detail: e.detail } : {}),
+      };
     case "dial":
       return s.phase === "ready"
         ? { phase: "dialing", muted: false, peer: e.to, direction: "outbound" }
@@ -112,6 +123,25 @@ export function reasonKey(err: unknown, stage?: "sdk"): string {
     e.code === 31402 || e.code === 31208 || e.code === 31401
   ) return "comms.phone.reason.mic";
   return "comms.phone.reason.twilio";
+}
+
+/**
+ * REQ-919 — what to append when the reason is the generic "didn't answer": Twilio's
+ * `code: message`, or an Error's `name: message`; "" for every reason the page can name.
+ */
+export function reasonDetail(err: unknown, stage?: "sdk"): string {
+  if (reasonKey(err, stage) !== "comms.phone.reason.twilio") return "";
+  const e = (err ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+  const msg = typeof e.message === "string" ? e.message.trim() : "";
+  if (typeof e.code === "number") {
+    return msg ? `${e.code}: ${msg}` : String(e.code);
+  }
+  if (err instanceof Error) return `${err.name}: ${msg}`;
+  return msg;
 }
 
 /** ms until the token should be re-minted: 60 s before expiry, or at half its remaining life when under a minute is left; never negative */
