@@ -1021,3 +1021,61 @@ Deno.test("REQ-826 AMENDMENT 6 (demo-loop run 12, p2): while the tab notice is s
       await userCtx.close();
     }
   }));
+
+Deno.test("REQ-862 AMENDMENT 7 (demo-loop run 13, m1): his mouse resting on the dark stage BESIDE the frame (the pointer-off hint up), she switches to her other tab — the stage says 'Now showing … other tab' at once and the hint yields the row; the notice stays until he moves, then the hint is back", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { userCtx, tab2 } = await twoTabs(
+      page,
+      http,
+      baseUrl,
+      { width: 1000, height: 760 },
+      "/customers",
+      ["/customers"],
+    );
+    const offCount = () => page.locator("[data-cy='demo-pointer-off']").count();
+    const noticeCount = () => page.locator("[data-cy='demo-tab-switched']").count();
+    try {
+      // his mouse rests left of the frame: the pointer-off hint has the row
+      await page.mouse.move(600, 400);
+      await page.mouse.move(30, 400);
+      await page.mouse.move(28, 402);
+      await until("the pointer-off hint is up", async () => (await offCount()) === 1, 10_000);
+      await record(page);
+      // she uses her other tab: the stage follows it
+      await tab2.keyboard.press("Shift");
+      await until(
+        "the stage follows tab 2 (640 × 760)",
+        async () => (await screenOf(page)).includes("640 × 760"),
+      );
+      let noticed: number | null = null;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 10_000) {
+        if ((await noticeCount()) === 1) {
+          noticed = Date.now() - t0;
+          break;
+        }
+        await sleep(100);
+      }
+      await page.screenshot({ path: `${folder}/stage-notice-mouse-off.png` });
+      const seen = await recorded(page);
+      expect(
+        noticed !== null,
+        `m1: the notice shows with his mouse beside the frame (${JSON.stringify(seen.slice(-4))})`,
+      );
+      const notice = (await page.locator("[data-cy='demo-tab-switched']").innerText() as string).trim();
+      expect(/other tab/.test(notice), `it says her other tab is shown — got "${notice}"`);
+      expect.eq(await offCount(), 0, "the pointer-off hint yields the row to the notice");
+      // he has not moved: the notice is still there a moment later
+      await sleep(1_500);
+      expect.eq(await noticeCount(), 1, "the notice stays until he moves");
+      expect.eq(await offCount(), 0, "…and the hint waits meanwhile");
+      // he moves (still beside the frame): read — and the hint has the row again
+      await page.mouse.move(40, 420);
+      await page.mouse.move(60, 440);
+      await until("read on his move", async () => (await noticeCount()) === 0, 5_000);
+      await until("the pointer-off hint is back", async () => (await offCount()) === 1, 5_000);
+    } finally {
+      await userCtx.close();
+    }
+  }));

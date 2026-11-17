@@ -184,12 +184,19 @@ export function joinGrace(o: {
 export function startedText(
   presenters: Presenter[],
   presenterName: string | undefined,
+  /** REQ-298 AMENDMENT (dm13, p2) — the phone's compact pill: "{name} · new demo" (the full line
+   *  with "Connected" and "End demo" wrapped to two lines in a 366 px row; the 54 px pill then fit
+   *  no band and sat on "Step 2 of 10") */
+  compact = false,
 ): { key: string; vars?: { name: string } } {
   const names = presenters.length > 0
     ? presenters.map((p) => p.name).join(", ")
     : (presenterName ?? "").trim();
   return names
-    ? { key: "demoMode.startedBy", vars: { name: names } }
+    ? {
+      key: compact ? "demoMode.startedByCompact" : "demoMode.startedBy",
+      vars: { name: names },
+    }
     : { key: "demoMode.started" };
 }
 

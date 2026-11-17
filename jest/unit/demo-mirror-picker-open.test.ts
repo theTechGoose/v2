@@ -1894,7 +1894,8 @@ describe("REQ-862 AMENDMENT 6 / REQ-878 AMENDMENT 6 (demo-loop run 12, m2 + m3) 
     );
     expect(src).not.toMatch(/pickerOut !== null && tabNote === null && !off/);
     expect(src).toMatch(
-      /badges && off && pickerOut === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
+      // REQ-862 AMENDMENT 7 (dm13, m1) — and after the tab notice
+      /badges && off && pickerOut === null && tabNote === null && \(\s*<div\s+data-cy="demo-pointer-off"/,
     );
   });
 });

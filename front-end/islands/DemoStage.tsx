@@ -2294,7 +2294,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   Z + 2
                 };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
                   STAGE_BADGE_H - 2
-                }px;max-width:${fit.width}px;overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:rgba(18,26,22,.92);color:#fff;font:inherit;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.85);background:rgba(18,26,22,.92);color:#fff;font:inherit;font-size:12.5px;box-shadow:0 2px 10px rgba(0,0,0,.45)`}
               >
                 <strong>
                   {signedOut
@@ -2402,7 +2402,11 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
               /* REQ-393 (demo M8) — his mouse is beside the frame: said, on its outline; REQ-642 —
                 in the chrome row above the frame, never over the replica */
             }
-            {badges && off && pickerOut === null && (
+            {
+              /* REQ-862 AMENDMENT 7 (dm13, m1) — and after the tab notice: his mouse resting
+                beside the frame must not hide that her screen is another tab now */
+            }
+            {badges && off && pickerOut === null && tabNote === null && (
               <div
                 data-cy="demo-pointer-off"
                 role="status"
@@ -2424,7 +2428,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                 moves. REQ-826 (dm2 p10) — it names the page (never its URL) and sits in REQ-642's
                 chrome row above the frame, never over the replica */
             }
-            {badges && tabNote !== null && !off && (
+            {badges && tabNote !== null && (
               <div
                 data-cy="demo-tab-switched"
                 role="status"

@@ -793,7 +793,8 @@ describe("REQ-391 the wiring", () => {
     expect(block).not.toMatch(/place-items:center/);
     expect(block).not.toMatch(/\$\{box\}/); // never the whole frame's box
     expect(block).toContain("stageBadgeTop(fit.top - bannerH)");
-    expect(block).toMatch(/max-width:\$\{\s*fit\.width\s*\}px/);
+    // REQ-846 AMENDMENT (dm13, p3) — clipped to the window, never to a phone-sized frame
+    expect(block).toContain("max-width:calc(100vw - 16px)");
     expect(block).toMatch(/pointer-events:none/);
     expect(block).toContain('t("demoMode.waitingFor", { name })');
     expect(block).toContain('t("demoMode.waitingKeep")');

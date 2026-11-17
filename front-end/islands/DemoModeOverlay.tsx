@@ -669,6 +669,10 @@ export default function DemoModeOverlay(
   /** REQ-820 — the frame that turns the tab into the whole pill: no transform glide, so it never
    *  slides in from the tab's translate (half off-screen on the right edge) */
   const [noGlide, setNoGlide] = useState(false);
+  /** REQ-820 AMENDMENT (dm13, p1) — the whole pill shown out of its tab with no whole size known
+   *  yet (the first join): hidden for the frame that measures it, so it is never painted at a
+   *  tab-sized spot (the top-right corner, over the language buttons) before its own placement */
+  const [measuring, setMeasuring] = useState(false);
   /** REQ-545 — the peek's fold timer. REQ-820 — it waits again while the pill is held: a pointer
    *  resting on it, or End's question up (that stays until it is answered) */
   const foldTimer = useRef<ReturnType<typeof peekTimer> | null>(null);
@@ -2009,7 +2013,12 @@ export default function DemoModeOverlay(
       // pill's slot (a 282 px "whole" pill on /customers)
       const compactNow = el.hasAttribute("data-compact");
       const peekCompactNow = compactNow && !isNarrow();
-      if (!folded) {
+      // REQ-820 AMENDMENT (dm13, p1) — the element on screen is still the TAB while the pill is
+      // about to show whole (a join's grace just undid the fold): its 96 px box is no size for the
+      // whole pill — the whole size known is used; none known, the whole is measured next frame
+      const tabOnScreen = el.hasAttribute("data-tucked");
+      const measureAgain = !folded && tabOnScreen && !fullRef.current;
+      if (!folded && !tabOnScreen) {
         const r = el.getBoundingClientRect();
         const size = { w: Math.ceil(r.width), h: el.offsetHeight };
         // REQ-890 — the compact form shown only for a peek: its size kept apart, the whole's stays
@@ -2100,6 +2109,17 @@ export default function DemoModeOverlay(
         ? dialogDim(getComputedStyle(backdrop).backgroundColor)
         : null;
       setUnderDim(dim !== null);
+      // REQ-820 AMENDMENT (dm13, p1 + p4) — the placement that turns the tab into the whole pill
+      // (a join's grace, a carried tab's next page) jumps to its box too: it glided 520 px down
+      // the welcome page across its controls, and in from a right-edge tab's x, half off-screen
+      if (tuckedRef.current && !p.tucked) {
+        setNoGlide(true);
+        if (measureAgain) {
+          setMeasuring(true);
+          requestAnimationFrame(() => placeRef.current());
+        }
+      }
+      if (!measureAgain) setMeasuring(false);
       setTucked(p.tucked);
       if (!p.tucked) setPeek(false);
       const shownTab = p.tucked && !peekRef.current;
@@ -2435,7 +2455,9 @@ export default function DemoModeOverlay(
       // REQ-545 — shown whole from its tab, it takes the pointer, so leaving it folds it again
       tucked ? "pointer-events:auto" : "pointer-events:none"};${
       // REQ-765 (cycle 5v2, p18-3d) — under a dialog's dim: softened, never hidden, still clickable
-      underDim ? `opacity:${PILL_UNDER_DIALOG_OPACITY}` : "opacity:1"}`;
+      underDim ? `opacity:${PILL_UNDER_DIALOG_OPACITY}` : "opacity:1"}${
+      // REQ-820 AMENDMENT (dm13, p1) — the frame that measures the whole out of its tab
+      measuring ? ";visibility:hidden" : ""}`;
   // REQ-545 (demo-loop cycle 4, m2) — the pill folded on the window's left edge, its foot on the
   // home's foot: only its buttons take a click. REQ-637 (cycle 5, m5) — a labelled mini-pill
   // ("● Demo" and an × that is End), never a bare 16 px sliver
@@ -2705,7 +2727,7 @@ export default function DemoModeOverlay(
     : t("demoMode.guiding", { name: names });
   // REQ-298 — just restarted: the line says so (and the pill pulses) before "is guiding you"
   const started = fresh
-    ? startedText(demo.presenters, demo.presenterName)
+    ? startedText(demo.presenters, demo.presenterName, compact)
     : null;
   const line = started ? t(started.key, started.vars) : guidingText;
   const statusLabel = pillStatus === "ended"

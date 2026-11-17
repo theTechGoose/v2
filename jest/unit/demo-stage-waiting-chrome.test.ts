@@ -55,7 +55,8 @@ describe("REQ-846 (demo-loop cycle dm3, p11) the waiting / signed-out banner sit
     expect(b).toContain("text-overflow:ellipsis");
     expect(b).toContain("overflow:hidden");
     expect(b).toContain("transform:translateX(-50%)");
-    expect(b).toMatch(/max-width:\$\{\s*fit\.width\s*\}px/);
+    // REQ-846 AMENDMENT (dm13, p3) — clipped to the window, not to a phone-sized frame
+    expect(b).toContain("max-width:calc(100vw - 16px)");
     expect(b).not.toContain("flex-wrap:wrap");
     expect(b).toContain("pointer-events:none");
   });

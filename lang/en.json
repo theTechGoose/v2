@@ -4396,6 +4396,7 @@
   "demoMode.expired": "The demo expired after two hours",
   "demoMode.dismiss": "Dismiss",
   "demoMode.startedBy": "{name} started a new demo",
+  "demoMode.startedByCompact": "{name} · new demo",
   "demoMode.started": "A new demo started",
   "demoMode.returnAskAlone": "You are the only presenter — leaving ends the demo for {name}.",
   "demoMode.connectingTo": "Connecting to {name}'s screen…",
