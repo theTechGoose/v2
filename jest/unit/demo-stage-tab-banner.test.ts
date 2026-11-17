@@ -153,7 +153,7 @@ describe("REQ-826 (demo-loop cycle dm2, p10) DemoStage: the banner is wired to p
     expect(src).toMatch(/from "\.\.\/\.\.\/shared\/demo-mode\/page-label\.ts"/);
     expect(src).toMatch(
       // REQ-826 AMENDMENT 3 (dm9, p1) — the mirrored document's title names an unknown page
-      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*frameRef\.current\?\.contentDocument\?\.title,(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
+      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*mirroredTitle\(\),(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
     );
     expect(src).not.toContain("path: tabNote");
   });
@@ -252,5 +252,49 @@ describe("REQ-826 AMENDMENT 4 (demo-loop run 10: m2, m3, p3) — an error page u
     expect(stage).toMatch(
       /const mirroredErrorPage = \(\)[^;]*contentDocument\?\.querySelector\(\s*"\[data-error-page\]",?\s*\)/s,
     );
+  });
+});
+
+describe("REQ-826 AMENDMENT 5 (demo-loop run 11: demo 5 #2, demo 4 #1) — the stage names a mirrored page by its title in the STAGE's language (the DocTitle's data-title-es/en), and a dead public invoice or change-order link is an error page named by its heading", () => {
+  test("wiring: DemoStage reads the mirrored title through liveTitle(doc, langSignal.value), falling back to document.title, and passes it to pageLabel", () => {
+    const stage = read("front-end/islands/DemoStage.tsx");
+    expect(stage).toMatch(
+      /import \{[^}]*\bliveTitle\b[^}]*\} from "\.\.\/lib\/doc-title\.ts"/s,
+    );
+    expect(stage).toMatch(
+      /const mirroredTitle = \(\) => \{[\s\S]{0,200}?liveTitle\(\s*d,\s*langSignal\.value,?\s*\)\s*\?\?\s*d\.title/,
+    );
+    expect(stage).toMatch(
+      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*mirroredTitle\(\),(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
+    );
+  });
+  test("a dead /i/<id> or /co/<id> link: the DocTitle is the error heading and the page carries data-error-page, so the notice says '(Mmm, no se puede abrir esto)', not '(Factura)'", () => {
+    const inv = read("front-end/routes/i/[id].tsx");
+    expect(inv).toMatch(
+      /err\s*\?\s*tFor\(l,\s*"publicInvoice\.error\.heading"\)/,
+    );
+    expect(inv).toMatch(/data-error-page=\{err \? "" : undefined\}/);
+    const co = read("front-end/routes/co/[id].tsx");
+    expect(co).toMatch(
+      /!co\s*\?\s*tFor\(l,\s*"changeOrderPublic\.error\.title"\)/,
+    );
+    expect(co).toMatch(/data-error-page=\{co \? undefined : ""\}/);
+    // and pageLabel names it off that title
+    expect(
+      pl().pageLabel(
+        "/i/nonexistent123",
+        trOf(es),
+        "Mmm, no se puede abrir esto · Ruiz Remodelación",
+        true,
+      ),
+    ).toBe("Mmm, no se puede abrir esto");
+    expect(
+      pl().pageLabel(
+        "/i/nonexistent123",
+        trOf(es),
+        "Factura · Ruiz Remodelación",
+        false,
+      ),
+    ).toBe("Factura");
   });
 });

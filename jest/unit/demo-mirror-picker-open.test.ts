@@ -472,8 +472,11 @@ describe("REQ-862 (cycle dm4, p7) — the picker chip covers no frame text and u
     sync();
     // REQ-862 AMENDMENT 2 put it under the button (its top + height + 4) — ON the next field's
     // input there; REQ-862 AMENDMENT 3 (dm10, m1) — the nearest clear band instead: one chip's
-    // height plus the gap further, under that field, at the button's left edge
-    expect(chip(stage)!.style).toMatch(/left:10px;top:170px;/);
+    // height plus the gap further, under that field, at the button's left edge. REQ-862
+    // AMENDMENT 4 (dm11, m1) — a 238 px chip on a 300 px frame wraps inside 150 px (two lines,
+    // 44.2 px tall), so that band is one such chip plus the gap under the button
+    expect(chip(stage)!.style).toMatch(/max-width:150px;white-space:normal;/);
+    expect(chip(stage)!.style).toMatch(/left:10px;top:188.2px;/);
   });
 
   test("the chip is set in the app's font: the frame body's family, Inter when it has none — never the system-ui stack", () => {
@@ -1287,5 +1290,292 @@ describe("REQ-862 AMENDMENT 3 / REQ-878 AMENDMENT 3 (demo-loop run 10: m1, m5) �
     expect(Math.abs(c.top - (rows.to.top + rows.to.height)))
       .toBeLessThanOrEqual(5);
     expect(c.text).toBe("Choosing a date…");
+  });
+});
+
+describe("REQ-862 AMENDMENT 4 / REQ-878 AMENDMENT 4 (demo-loop run 11, m1) — on a narrow frame the chip wraps to at most half the frame's width, so a dense 390 px form has room for it beside the thumbnail row (never the old 'under the button, on the thumbnail' fallback)", () => {
+  const DATE_W = 156;
+  const FILE_W = 249; // the Spanish "El cliente está eligiendo un archivo…"
+  /** the chip's box as a browser would lay it out: one line at its natural width, or wrapped
+   *  inside the `max-width` its style carries (13 px / 1.4 lines, 4 px padding top and bottom) */
+  const sizeOf = (text: string, style: string) => {
+    const base = text.startsWith("Choosing a date") ? DATE_W : FILE_W;
+    const name = text.includes(" · ") ? text.split(" · ")[1] : "";
+    const natural = base + (name ? name.length * 7.5 + 12 : 0);
+    const m = /max-width:\s*([\d.]+)px/.exec(style);
+    const max = m ? Number(m[1]) : Infinity;
+    if (natural <= max) return { width: natural, height: 26 };
+    const lines = Math.ceil((natural - 20) / (max - 20));
+    return { width: max, height: 26 + 18.2 * (lines - 1) };
+  };
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    const orig = FElement.prototype.getBoundingClientRect;
+    spy = jest.spyOn(FElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: FElement) {
+        if (this.hasAttribute("data-mirror-picker")) {
+          const { width, height } = sizeOf(
+            this.textContent ?? "",
+            this.getAttribute("style") ?? "",
+          );
+          return {
+            left: 0,
+            top: 0,
+            width,
+            height,
+            x: 0,
+            y: 0,
+            right: width,
+            bottom: height,
+          };
+        }
+        return orig.call(this);
+      });
+  });
+  afterEach(() => spy.mockRestore());
+
+  type R = { left: number; top: number; width: number; height: number };
+  const hits = (a: R, b: R) =>
+    a.left < b.left + b.width && b.left < a.left + a.width &&
+    a.top < b.top + b.height && b.top < a.top + a.height;
+
+  function page(
+    body: (d: FDocument) => FElement,
+    rows: Record<string, R>,
+    view: { w: number; h: number },
+  ) {
+    const doc = docWith(
+      (d) => h(d, "html", {}, h(d, "head"), body(d)),
+      "https://app.test/x",
+      view.w,
+      view.h,
+    );
+    const cys = Object.keys(rows);
+    const by = (cy: string) =>
+      find(doc, (e) => e.getAttribute("data-cy") === cy)!;
+    for (const cy of cys) by(cy).rect = { ...rows[cy] };
+    const frames: MirrorFrame[] = [];
+    const rec = createRecorder(doc as unknown as Document, {
+      emit: (f) => frames.push(JSON.parse(JSON.stringify(f))),
+      Observer: FakeMutationObserver as unknown as typeof MutationObserver,
+      manual: true,
+    });
+    const stage = new FDocument("about:srcdoc", view.w, view.h);
+    stage.appendChild(h(stage, "html", {}, h(stage, "head"), h(stage, "body")));
+    const boxes = () => {
+      for (const cy of cys) {
+        const s = find(stage, (e) => e.getAttribute("data-cy") === cy);
+        if (s) s.rect = { ...rows[cy] };
+      }
+    };
+    const rep = createReplayer(stage as unknown as Document, {
+      schedule: (fn) => fn(),
+      Resize: null,
+    });
+    rec.snapshot();
+    expect(rep.apply(frames[0])).toBe(true);
+    boxes();
+    let at = 1;
+    const drawn = () => {
+      rec.flush();
+      for (; at < frames.length; at++) {
+        expect(rep.apply(frames[at])).toBe(true);
+        boxes();
+      }
+      expect(rep.apply({ t: "ops", ops: [] } as unknown as MirrorFrame)).toBe(
+        true,
+      );
+      const c = chip(stage)!;
+      const left = Number(/left:(-?[\d.]+)px/.exec(c.style)![1]);
+      const top = Number(/top:(-?[\d.]+)px/.exec(c.style)![1]);
+      const text = c.text ?? "";
+      const { width, height } = sizeOf(text, c.style);
+      return { left, top, width, height, text, style: c.style };
+    };
+    return {
+      file: (btn: string, input: string) => {
+        doc.fire("mousedown", by(btn));
+        doc.fire("click", by(btn));
+        doc.fire("click", by(input));
+        return drawn();
+      },
+    };
+  }
+
+  /** /settings at 390×844 (es) with a logo uploaded, as run 11's tester 3 measured it: the
+   *  "Reemplazar logo" button is 159 px wide, so the thumbnail + "Logo cargado" wrap to their
+   *  own line right under it; the two-line hint under that; the language field next; the
+   *  overhead field's hint right above the button */
+  const settings = () => {
+    const rows = {
+      // the fields above (a dense form: no band within 8 chip heights is clear)
+      "head": { left: 0, top: 0, width: 390, height: 26 },
+      "top-label": { left: 43, top: 30, width: 200, height: 12 },
+      "top-input": { left: 43, top: 50, width: 304, height: 41 },
+      "top-hint": { left: 43, top: 100, width: 304, height: 60 },
+      "prev-label": { left: 43, top: 170, width: 200, height: 12 },
+      "prev-input": { left: 43, top: 188, width: 304, height: 41 },
+      "prev-hint": { left: 43, top: 233, width: 304, height: 14 },
+      "overhead-input": { left: 43, top: 262, width: 304, height: 41 },
+      "overhead-hint": { left: 43, top: 311, width: 304, height: 74 },
+      "logo-row": { left: 43, top: 399, width: 304, height: 137 },
+      "logo-btn": { left: 43, top: 399, width: 159, height: 43 },
+      "logo-img": { left: 43, top: 455, width: 53, height: 32 },
+      "logo-set": { left: 104, top: 463, width: 73, height: 14 },
+      "logo-hint": { left: 43, top: 499, width: 304, height: 37 },
+      "lang-label": { left: 43, top: 550, width: 116, height: 12 },
+      "lang-select": { left: 43, top: 572, width: 304, height: 40 },
+      // and the fields below, to the frame's foot
+      "next-label": { left: 43, top: 628, width: 200, height: 12 },
+      "next-input": { left: 43, top: 646, width: 304, height: 41 },
+      "next-hint": { left: 43, top: 691, width: 304, height: 28 },
+      "next2-label": { left: 43, top: 735, width: 200, height: 12 },
+      "next2-input": { left: 43, top: 753, width: 304, height: 41 },
+      "next2-hint": { left: 43, top: 798, width: 304, height: 46 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(d, "header", { "data-cy": "head" }, "DocuMonster"),
+          h(d, "span", { "data-cy": "top-label" }, "Tarifa por hora"),
+          h(d, "input", { type: "text", "data-cy": "top-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "top-hint" },
+            "Lo que cobras por hora de trabajo; se usa en las cotizaciones.",
+          ),
+          h(d, "span", { "data-cy": "prev-label" }, "Margen"),
+          h(d, "input", { type: "text", "data-cy": "prev-input" }),
+          h(d, "span", { "data-cy": "prev-hint" }, "% sobre los materiales"),
+          h(d, "input", { type: "text", "data-cy": "overhead-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "overhead-hint" },
+            "Un cargo fijo por visita que se suma a cada cotización. $ = una cantidad en dólares por visita. 0 = ninguno.",
+          ),
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(d, "button", {
+              type: "button",
+              "data-cy": "logo-btn",
+              "aria-label": "Reemplazar logo",
+            }, "Reemplazar logo"),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              {},
+              h(d, "img", {
+                "data-cy": "logo-img",
+                src: "/api/files/x",
+                alt: "Logo cargado",
+              }),
+              h(d, "span", { "data-cy": "logo-set" }, "Logo cargado"),
+            ),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+          h(
+            d,
+            "label",
+            {},
+            h(d, "span", { "data-cy": "lang-label" }, "Idioma de la app"),
+            h(d, "select", { "data-cy": "lang-select" }),
+          ),
+          h(d, "span", { "data-cy": "next-label" }, "Zona horaria"),
+          h(d, "input", { type: "text", "data-cy": "next-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "next-hint" },
+            "Para las fechas de tus documentos",
+          ),
+          h(d, "span", { "data-cy": "next2-label" }, "Moneda"),
+          h(d, "input", { type: "text", "data-cy": "next2-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "next2-hint" },
+            "Se muestra en cotizaciones y facturas. Cambiarla no convierte montos.",
+          ),
+        ),
+      rows,
+      { w: 390, h: 844 },
+    ).file("logo-btn", "logo-file");
+    return { c, rows };
+  };
+
+  test("m1: the 249 px chip wraps to ≤ 195 px (half of 390) and sits right of the thumbnail row, under the button's end — clear of the thumbnail, 'Logo cargado', the hint, the next label and the button; inside the frame", () => {
+    const { c, rows } = settings();
+    // clear of everything the customer reads (the row's box itself holds the chip's spot)
+    for (const k of Object.keys(rows) as (keyof typeof rows)[]) {
+      if (k === "logo-row") continue;
+      expect([k, hits(c, rows[k]), c]).toEqual([k, false, c]);
+    }
+    expect(c.style).toMatch(/max-width:\s*195px/);
+    expect(c.style).toMatch(/white-space:\s*normal/);
+    expect(c.width).toBeLessThanOrEqual(195);
+    expect(c.left).toBeGreaterThanOrEqual(0);
+    expect(c.left + c.width).toBeLessThanOrEqual(390);
+    expect(c.top + c.height).toBeLessThanOrEqual(844);
+  });
+
+  test("the chip on a 1280 px frame is one line as before: no max-width, no wrap", () => {
+    const rows = {
+      "logo-row": { left: 271, top: 408, width: 965, height: 43 },
+      "logo-btn": { left: 271, top: 408, width: 123, height: 43 },
+      "logo-hint": { left: 406, top: 422, width: 400, height: 14 },
+    };
+    const c = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(
+              d,
+              "button",
+              { type: "button", "data-cy": "logo-btn" },
+              "Subir logo",
+            ),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+        ),
+      rows,
+      { w: 1280, h: 800 },
+    ).file("logo-btn", "logo-file");
+    expect(c.style).not.toMatch(/max-width/);
+    expect(c.height).toBe(26);
+    expect(hits(c, rows["logo-hint"])).toBe(false);
+    expect(hits(c, rows["logo-btn"])).toBe(false);
   });
 });

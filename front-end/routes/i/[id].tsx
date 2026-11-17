@@ -274,11 +274,17 @@ export default define.page(async function PublicInvoice(ctx) {
     <>
       <Head>
         {/* REQ-628: the tab names the business, never DocuMonster */}
+        {
+          /* REQ-826 AMENDMENT 5 (demo-loop run 11) — a dead link's tab says so ("Mmm, no se
+            puede abrir esto"), never "Factura": the demo stage names the page by its title */
+        }
         <DocTitle
           lang={lang}
           title={(l) =>
             publicDocTitle(
-              tFor(l, "publicInvoice.docTitle"),
+              err
+                ? tFor(l, "publicInvoice.error.heading")
+                : tFor(l, "publicInvoice.docTitle"),
               publicBusinessLabel(invoice?.contractor),
             )}
         />
@@ -290,6 +296,7 @@ export default define.page(async function PublicInvoice(ctx) {
         />
       </Head>
       <div
+        data-error-page={err ? "" : undefined}
         style={`min-height:100dvh;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};display:flex;flex-direction:column;scroll-padding-bottom:var(--kb-inset, 0px)`}
       >
         <div style="flex:1;width:100%;max-width:712px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">

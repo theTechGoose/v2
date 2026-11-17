@@ -320,3 +320,147 @@ Deno.test("REQ-878 (cycle dm5, p2): a file chooser opened from a SIBLING button 
       );
     }
   }));
+
+/** REQ-862 AMENDMENT 4 (dm11, m1) — the file chip and what it must be clear of, in the frame */
+const narrowLogoChip = () => {
+  const d = (document.getElementById("stage") as HTMLIFrameElement)
+    .contentDocument!;
+  const c = d.querySelector('[data-mirror-picker="file"]');
+  if (!c) return null;
+  const r = c.getBoundingClientRect();
+  const box = (sel: string) => d.querySelector(sel)!.getBoundingClientRect();
+  const textOf = (sel: string) => {
+    const range = d.createRange();
+    range.selectNodeContents(d.querySelector(sel)!);
+    return Array.from(range.getClientRects());
+  };
+  const clearOf = (rs: DOMRect[]) =>
+    rs.every((t) =>
+      !(r.left < t.right && t.left < r.right && r.top < t.bottom &&
+        t.top < r.bottom)
+    );
+  return {
+    visible: r.width > 0 && r.height > 0,
+    inFrame: r.left >= 0 && r.right <= d.defaultView!.innerWidth,
+    wrapped: r.width <= 195 && r.height > 30,
+    clearOfButton: clearOf([box("#logo-btn")]),
+    clearOfThumbnail: clearOf([box("#logo-img")]),
+    clearOfCaption: clearOf(textOf("#logo-set")),
+    clearOfHint: clearOf(textOf("#logo-hint")),
+    clearOfNextLabel: clearOf(textOf("#lang-label")),
+    clearOfSelect: clearOf([box("#lang")]),
+    chip: [r.left, r.top, r.width, r.height].map(Math.round).join(","),
+    text: c.textContent,
+  };
+};
+
+Deno.test("REQ-862 AMENDMENT 4 (demo-loop run 11, m1): at 390 px the logo row with a logo uploaded (the thumbnail and 'Logo cargado' wrap under the 'Reemplazar logo' button, the hint under that, the language field next) — the file chip wraps to at most half the frame and sits clear of the button, the thumbnail, its caption, the hint and the next label, inside the frame", (t) =>
+  story(t, async ({ page, expect, folder }) => {
+    const js = await mirrorBundle();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/clients.css");
+    await page.addScriptTag({ content: js });
+    await page.evaluate(async () => {
+      document.body.style.fontFamily = '"Inter", Arial, sans-serif';
+      document.body.style.margin = "0";
+      const logo = "data:image/svg+xml;utf8," +
+        encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="106" height="64"><rect width="106" height="64" fill="#345"/></svg>',
+        );
+      // SettingsPage.tsx at 390 px as run 11's tester measured it: the 159 px button, then the
+      // thumbnail + caption on their own line, the two-line hint, the language field
+      document.body.innerHTML =
+        `<div style="padding:16px 43px;font-size:14px;display:grid;grid-template-columns:1fr;gap:16px">` +
+        `<label style="display:block"><span style="display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6b7560;margin-bottom:6px">Gastos generales por visita</span>` +
+        `<input id="overhead" style="width:100%;box-sizing:border-box;padding:10px;font-size:14px" value="0.00">` +
+        `<span style="display:block;margin-top:4px;font-size:12px;color:#6b7560">Un cargo fijo por visita que se suma a cada cotización. $ = una cantidad en dólares por visita. 0 = ninguno.</span></label>` +
+        `<div id="logo" style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px">` +
+        `<button id="logo-btn" type="button" aria-label="Reemplazar logo" style="padding:12px 25px;font-size:14px;font-family:inherit">Reemplazar logo</button>` +
+        `<input id="logo-file" type="file" style="display:none">` +
+        `<span id="logo-set" style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#6b7560">` +
+        `<img id="logo-img" src="${logo}" alt="Logo cargado" style="max-height:32px;max-width:96px;object-fit:contain;border-radius:4px">Logo cargado</span>` +
+        `<span id="logo-hint" style="font-size:12px;color:#6b7560">PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas</span>` +
+        `</div>` +
+        `<label style="display:block"><span id="lang-label" style="display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6b7560;margin-bottom:6px">Idioma de la app</span>` +
+        `<select id="lang" style="width:100%;padding:10px;font-size:14px"><option>Español</option></select></label>` +
+        `</div>` +
+        `<div data-demo-overlay style="position:fixed;left:0;top:0;opacity:0.01;pointer-events:none">` +
+        `<iframe id="stage" sandbox="allow-same-origin" style="width:390px;height:844px;border:0"></iframe></div>`;
+      document.getElementById("logo-btn")!.addEventListener(
+        "click",
+        () =>
+          (document.getElementById("logo-file") as HTMLInputElement).click(),
+      );
+      // deno-lint-ignore no-explicit-any
+      const mm = (globalThis as any).__mm;
+      const f = document.getElementById("stage") as HTMLIFrameElement;
+      const loaded = new Promise((r) => f.addEventListener("load", r));
+      f.srcdoc = mm.rep.MIRROR_SRCDOC;
+      await loaded;
+      // the Spanish stage's words (REQ-827's pickerLabel): the 249 px chip the tester saw
+      const replay = mm.rep.createReplayer(f.contentDocument!, {
+        pickerLabel: () => "El cliente está eligiendo un archivo…",
+      });
+      const recorder = mm.rec.createRecorder(document, {
+        emit: (fr: unknown) => replay.apply(JSON.parse(JSON.stringify(fr))),
+      });
+      recorder.snapshot();
+    });
+    expect.eq(
+      await within(
+        page,
+        1_000,
+        () =>
+          !!(document.getElementById("stage") as HTMLIFrameElement)
+            .contentDocument!.querySelector("#lang-label"),
+        undefined,
+      ),
+      true,
+      "the stage mirrors the page",
+    );
+    // the row wrapped as on the tester's phone: the thumbnail under the button, not beside it
+    const wrapped = await page.evaluate(() => {
+      const b = document.getElementById("logo-btn")!.getBoundingClientRect();
+      const i = document.getElementById("logo-img")!.getBoundingClientRect();
+      return i.top >= b.bottom;
+    });
+    expect(wrapped, "the thumbnail row wraps under the button at 390 px");
+    const chooser = page.waitForEvent("filechooser");
+    await page.locator("#logo-btn").click();
+    const fc = await chooser;
+    const want = {
+      visible: true,
+      inFrame: true,
+      wrapped: true,
+      clearOfButton: true,
+      clearOfThumbnail: true,
+      clearOfCaption: true,
+      clearOfHint: true,
+      clearOfNextLabel: true,
+      clearOfSelect: true,
+    };
+    const keys = Object.keys(want) as (keyof typeof want)[];
+    const t0 = Date.now();
+    let got = await page.evaluate(narrowLogoChip);
+    while (
+      !(got && keys.every((k) => got![k] === want[k])) &&
+      Date.now() - t0 < 1_500
+    ) {
+      await page.waitForTimeout(50);
+      got = await page.evaluate(narrowLogoChip);
+    }
+    await page.screenshot({ path: `${folder}/logo-chip-390.png` });
+    expect.eq(
+      JSON.stringify(
+        got && Object.fromEntries(keys.map((k) => [k, got![k]])),
+      ),
+      JSON.stringify(want),
+      `m1: the wrapped chip clear of the row at 390 px (${
+        JSON.stringify(got)
+      })`,
+    );
+    const png = await Deno.makeTempFile({ suffix: ".png" });
+    await Deno.writeFile(png, new Uint8Array([137, 80, 78, 71]));
+    await fc.setFiles(png);
+    await Deno.remove(png).catch(() => {});
+  }));

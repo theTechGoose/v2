@@ -237,6 +237,7 @@ import {
   stagePillH,
 } from "../../shared/demo-mode/stage-chrome.ts";
 import { pageLabel } from "../../shared/demo-mode/page-label.ts";
+import { liveTitle } from "../lib/doc-title.ts";
 import {
   ADMIN_PATH,
   endedHref,
@@ -1826,6 +1827,14 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
    *  (`_error.tsx` marks its root `data-error-page`): named by its title, whatever its path */
   const mirroredErrorPage = () =>
     !!frameRef.current?.contentDocument?.querySelector("[data-error-page]");
+  /** REQ-826 AMENDMENT 5 (demo-loop run 11) — the mirrored page's title in the STAGE's language
+   *  (a DocTitle carries every language's: `data-title-es` / `data-title-en`), else the title as
+   *  the customer's tab shows it: an EN customer's 404 is "(No encontramos esa página)" on an ES
+   *  stage, like every other name in the notice */
+  const mirroredTitle = () => {
+    const d = frameRef.current?.contentDocument;
+    return d ? liveTitle(d, langSignal.value) ?? d.title : undefined;
+  };
 
   /** REQ-541 (cycle 4, M22) — the demo went without this stage hearing who ended it: back to
    *  the presenter's own account, once */
@@ -2422,7 +2431,7 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                   page: pageLabel(
                     tabNote,
                     t,
-                    frameRef.current?.contentDocument?.title,
+                    mirroredTitle(),
                     // REQ-826 AMENDMENT 4 (dm10, m2) — the error page, even under a known path
                     mirroredErrorPage(),
                   ),

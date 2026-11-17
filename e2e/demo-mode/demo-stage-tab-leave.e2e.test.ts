@@ -79,7 +79,7 @@ async function until(
 }
 
 /** a customer (Ana Torres) and a super admin (Hans), signed up fresh */
-async function people(http: StoryTools["http"]) {
+async function people(http: StoryTools["http"], adminLang: "en" | "es" = "en") {
   const userPhone = `+1512${digits()}`;
   const adminPhone = `+1843${digits()}`;
   const user = await verify(http, userPhone);
@@ -97,7 +97,7 @@ async function people(http: StoryTools["http"]) {
   await (await http("/api/me", {
     method: "PUT",
     headers: admin.auth,
-    body: JSON.stringify({ language: "en", name: "Hans" }),
+    body: JSON.stringify({ language: adminLang, name: "Hans" }),
   })).body?.cancel();
   const boot = await http("/api/admin/bootstrap", {
     method: "POST",
@@ -113,8 +113,13 @@ async function people(http: StoryTools["http"]) {
 type Page = any;
 
 /** on /admin: find the customer and click Demo; the page lands on the stage */
-async function openDemo(pg: Page, baseUrl: string, userPhone: string) {
-  await pg.goto(`${baseUrl}/admin`);
+async function openDemo(
+  pg: Page,
+  baseUrl: string,
+  userPhone: string,
+  lang: "en" | "es" = "en",
+) {
+  await pg.goto(`${baseUrl}/admin${lang === "es" ? "?lang=es" : ""}`);
   await pg.locator("[data-cy='adm-q']").fill(userPhone.slice(2));
   await pg.locator("[data-cy='adm-search']").click();
   await pg.locator("[data-cy='adm-demo']").first().waitFor({ timeout: 15_000 });
@@ -185,8 +190,10 @@ async function twoTabs(
   size1: { width: number; height: number },
   path2: string,
   warm: string[] = [],
+  // REQ-826 AMENDMENT 5 (dm11) — the stage's language (the admin's): "es" for a Spanish stage
+  adminLang: "en" | "es" = "en",
 ) {
-  const who = await people(http);
+  const who = await people(http, adminLang);
   const browser = page.context().browser();
   if (!browser) throw new Error("no browser behind the story page");
   const userCtx = await browser.newContext({ viewport: size1 });
@@ -197,7 +204,7 @@ async function twoTabs(
   for (const p of warm) await tab1.goto(`${baseUrl}${p}`);
   await tab1.goto(`${baseUrl}/dashboard`);
   await useCookie(page.context(), baseUrl, who.admin.cookie);
-  await openDemo(page, baseUrl, who.userPhone);
+  await openDemo(page, baseUrl, who.userPhone, adminLang);
   await tab1.reload();
   await pillUp(tab1);
   const one = `${size1.width} × ${size1.height}`;
@@ -223,7 +230,7 @@ async function twoTabs(
   );
   await until(
     "Live on tab 1",
-    async () => (await statusOf(page)) === "Live",
+    async () => ["Live", "En vivo"].includes(await statusOf(page)),
   );
   // that was a real switch, and the stage said so ("Now showing … other tab"): he moves on the
   // stage, so it is read — what the story records next is only what comes after
@@ -750,4 +757,93 @@ Deno.test("REQ-826 AMENDMENT 4 (demo-loop run 10, m2): the customer's other tab 
     } finally {
       await userCtx.close();
     }
+  }));
+
+/** REQ-826 AMENDMENT 5 (dm11) — the notice's page name, on a Spanish stage, for a customer whose
+ *  app is in English and whose other tab is `path2` */
+async function spanishNoticeFor(
+  page: Page,
+  http: StoryTools["http"],
+  baseUrl: string,
+  path2: string,
+  expectedTitle: string,
+  expect: StoryTools["expect"],
+) {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const { userCtx, tab2 } = await twoTabs(
+    page,
+    http,
+    baseUrl,
+    { width: 1000, height: 760 },
+    path2,
+    [],
+    "es",
+  );
+  try {
+    expect.eq(await tab2.title(), expectedTitle, "the tab's own (EN) title");
+    await record(page);
+    await tab2.keyboard.press("Shift");
+    await until(
+      "the stage follows tab 2 (640 × 760) again",
+      async () => (await screenOf(page)).includes("640 × 760"),
+    );
+    await until(
+      "the stage says it shows her other tab",
+      async () =>
+        (await page.locator("[data-cy='demo-tab-switched']").count()) === 1,
+      10_000,
+    );
+    const banner = (await page.locator("[data-cy='demo-tab-switched']")
+      .innerText() as string).trim();
+    const said = (await recorded(page)).filter((s) => s.banner).map((s) =>
+      s.banner
+    );
+    return { banner, said };
+  } finally {
+    await userCtx.close();
+  }
+}
+
+Deno.test("REQ-826 AMENDMENT 5 (demo-loop run 11, demo 5 #2): a SPANISH stage, the customer's app in English, her other tab a 404 — the notice names the page in the STAGE's language, '(No encontramos esa página)', never the English title", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { banner, said } = await spanishNoticeFor(
+      page,
+      http,
+      baseUrl,
+      "/quotes/zz-not-a-quote",
+      "We couldn't find that page · DocuMonster",
+      expect,
+    );
+    expect(
+      /\(No encontramos esa página\)/.test(banner),
+      `the notice names the 404 in Spanish — got "${banner}"`,
+    );
+    expect(
+      [banner, ...said].every((b) =>
+        !/couldn't find|\((Quote|Cotización)/.test(b)
+      ),
+      `never the English title or the prefix's name (${JSON.stringify(said)})`,
+    );
+  }));
+
+Deno.test("REQ-826 AMENDMENT 5 (demo-loop run 11, demo 4 #1): the customer's other tab is a DEAD public invoice link (/i/<unknown>) — the notice says '(Mmm, no se puede abrir esto)', never '(Factura)'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { banner, said } = await spanishNoticeFor(
+      page,
+      http,
+      baseUrl,
+      "/i/nonexistent123",
+      "Hmm, can't open this",
+      expect,
+    );
+    expect(
+      /\(Mmm, no se puede abrir esto\)/.test(banner),
+      `the notice names the dead link by its error heading — got "${banner}"`,
+    );
+    expect(
+      [banner, ...said].every((b) => !/\((Factura|Invoice)\)/.test(b)),
+      `never "(Factura)" for a link that opens nothing (${
+        JSON.stringify(said)
+      })`,
+    );
   }));

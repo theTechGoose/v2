@@ -931,20 +931,44 @@ export function createReplayer(
     sel: Element,
   ): { left: number; top: number; w: number; h: number } | null {
     const r = sel.getBoundingClientRect();
-    const base = box.getAttribute("style") ?? "";
-    let w = 0, h = 0;
-    try {
-      const b = box.getBoundingClientRect();
-      w = b.width;
-      h = b.height;
-    } catch {
-      // no layout here
-    }
-    // no layout (a detached or fake document): 13px 600-weight text, 10px padding each side
-    if (!(w > 0)) w = (box.textContent ?? "").length * 7.5 + 20;
-    if (!(h > 0)) h = 26;
+    // REQ-862 AMENDMENT 4 (dm11, m1) — measured one line first: a chip wider than half the
+    // frame (the 249 px Spanish file chip on a 390 px phone) wraps inside half of it, so a dense
+    // form has room for it (right of the thumbnail row, under the button's end) instead of the
+    // last fallback over the thumbnail. The wrap rides on the chip's style; measured again
+    let base = (box.getAttribute("style") ?? "").replace(
+      /max-width:[^;]*;white-space:normal;/,
+      "",
+    );
     const vw = doc.defaultView?.innerWidth ?? 0;
     const vh = doc.defaultView?.innerHeight ?? 0;
+    const measure = () => {
+      let w = 0, h = 0;
+      try {
+        const b = box.getBoundingClientRect();
+        w = b.width;
+        h = b.height;
+      } catch {
+        // no layout here
+      }
+      // no layout (a detached or fake document): 13px 600-weight text, 10px padding each side
+      if (!(w > 0)) w = (box.textContent ?? "").length * 7.5 + 20;
+      if (!(h > 0)) h = 26;
+      return { w, h };
+    };
+    box.setAttribute("style", base);
+    let { w, h } = measure();
+    if (vw && w > vw / 2) {
+      const max = Math.floor(vw / 2);
+      base += `max-width:${max}px;white-space:normal;`;
+      box.setAttribute("style", base);
+      const again = measure();
+      if (again.w > max) {
+        // no layout to wrap it: as many 13 px lines as the text needs inside `max`
+        const lines = Math.max(1, Math.ceil((again.w - 20) / (max - 20)));
+        w = max;
+        h = 26 + 18.2 * (lines - 1);
+      } else ({ w, h } = again);
+    }
     const fits = (x: number) => !vw || (x >= 0 && x + w <= vw);
     const fitsY = (y: number) => !vh || (y >= 0 && y + h <= vh);
     const right = r.left + r.width + CHIP_GAP;

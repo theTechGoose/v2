@@ -1146,7 +1146,7 @@ describe("REQ-645 the stage: the print rides with his anchor; a dead one is re-f
     // REQ-826 AMENDMENT (dm2 p10): the page's name, never its raw path
     expect(stage).toMatch(
       // REQ-826 AMENDMENT 3 (dm9, p1) — with the mirrored document's title for an unknown page
-      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*frameRef\.current\?\.contentDocument\?\.title,(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
+      /t\("demoMode\.tabSwitched", \{\s*name,(?:\s*\/\/[^\n]*)*\s*page: pageLabel\(\s*tabNote,\s*t,\s*mirroredTitle\(\),(?:\s*\/\/[^\n]*)*\s*mirroredErrorPage\(\),?\s*\),?\s*\}\)/,
     );
     const en = JSON.parse(read("lang/en.json")) as Record<string, string>;
     const es = JSON.parse(read("lang/es.json")) as Record<string, string>;
