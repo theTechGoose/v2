@@ -594,3 +594,53 @@ Deno.test("REQ-838 p8 (demo-loop cycle dm2): the presenter leaves the stage — 
       await userCtx.close();
     }
   }));
+
+Deno.test("REQ-645 AMENDMENT 2 (demo-loop run 8, p2): the customer closes her only tab and opens a new one — the stage goes Live on it with no 'Now showing her other tab' notice (she has one tab)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { userCtx, tab } = await demoOn(
+      page,
+      http,
+      baseUrl,
+      { user: "en", admin: "en" },
+      { width: 1000, height: 760 },
+      "Live",
+    );
+    try {
+      // her only tab closes; the stage holds, then waits for her app
+      await tab.close();
+      await until(
+        "the stage waits for her app",
+        async () => /Waiting for/.test(await statusOf(page)),
+        SILENT_GRACE_MS + 15_000,
+      );
+      // a new tab of hers: her first, not "the other" one
+      const next = await userCtx.newPage();
+      await next.goto(`${baseUrl}/dashboard`);
+      await pillUp(next, { live: true });
+      await until(
+        "the stage is Live on her new tab",
+        async () => (await statusOf(page)) === "Live",
+        30_000,
+      );
+      const t0 = Date.now();
+      while (Date.now() - t0 < 6_000) {
+        if ((await page.locator("[data-cy='demo-tab-switched']").count()) > 0) {
+          throw new Error(
+            `p2: the stage called her only tab 'the other tab': ${await text(
+              page,
+              "[data-cy='demo-tab-switched']",
+            )}`,
+          );
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      expect.eq(
+        await page.locator("[data-cy='demo-tab-switched']").count(),
+        0,
+        "no 'other tab' notice for a new tab after her only one closed",
+      );
+    } finally {
+      await userCtx.close();
+    }
+  }));

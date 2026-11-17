@@ -200,6 +200,10 @@ Deno.test("REQ-235 / REQ-300: End asks first — Keep going, or a click outside,
         await held;
         await route.continue();
       }, { times: 1 });
+      // REQ-898 AMENDMENT (dm8, p4) — at 420 px the welcome page's whole-pill spots each graze a
+      // link (1 px of the brand link at the top, 9 px of the footer's phone number), so after Keep
+      // going the pill folds to its edge tab (REQ-545): brought out again, as a person would
+      await pillUp(userPage, { live: true });
       await userPage.locator("[data-cy='demo-end']").click();
       // REQ-895 (dm6, m6) — sample the stage every ~50 ms from her Yes until the hop to /admin
       type Frame = {
