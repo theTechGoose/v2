@@ -12,6 +12,7 @@
  * Every guarded call is enforced server-side; the client gating is cosmetic.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import { clearDashCache } from "../lib/dash-cache.ts";
 import type { FeatureKey, Features } from "../../shared/features.ts";
 
 export interface AdminUserView {
@@ -47,18 +48,26 @@ export const adminClient = {
     api.post<AdminUserView>(`/admin/users/${id}/grant`, undefined, opts),
   revoke: (id: string, opts: ApiOptions = {}) =>
     api.post<AdminUserView>(`/admin/users/${id}/revoke`, undefined, opts),
+  // REQ-908 (dm7, m4) — the tab's dash cache (REQ-624) is the last person's profile: cleared when
+  // an impersonation starts or ends, so the next page is the next person's from its first paint
   impersonate: (id: string, opts: ApiOptions = {}) =>
     api.post<ImpersonationResponse>(
       `/admin/impersonate/${id}`,
       undefined,
       opts,
-    ),
+    ).then((r) => {
+      clearDashCache();
+      return r;
+    }),
   stopImpersonating: (opts: ApiOptions = {}) =>
     api.post<ImpersonationResponse>(
       "/admin/stop-impersonating",
       undefined,
       opts,
-    ),
+    ).then((r) => {
+      clearDashCache();
+      return r;
+    }),
   /** REQ-177 */
   setFeature: (
     id: string,

@@ -1921,10 +1921,12 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   // p4) — nor while the customer is signed out: their pill went with their session
   // REQ-896 (dm6, p7) — nor while waiting after her page closed (or went without a word): the
   // ghost would only say "Connecting…" for a page that is gone; after a navigation, as before
-  const pillShown =
-    look.elsewhere || signedOut || (look.waiting && leaveWhy !== "navigating")
-      ? null
-      : pillBox;
+  // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…", pageGone):
+  // the ghost would say "{name} is guiding you · End" of a page that is gone
+  const pillShown = look.elsewhere || signedOut ||
+      (look.waiting && leaveWhy !== "navigating") || live.key === "pageGone"
+    ? null
+    : pillBox;
   // REQ-854 (demo-loop cycle dm3, p6) — the ghost is the folded tab when their pill is, and while
   // awaiting a new page in the tab's box: never the whole pill's words in a tab-sized box
   const pillTab = pillShown !== null &&

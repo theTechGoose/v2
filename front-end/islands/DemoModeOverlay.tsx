@@ -658,6 +658,9 @@ export default function DemoModeOverlay(
   /** REQ-897 (cycle dm6, p5) — the page is scrolling (its last scroll event under
    *  PILL_SCROLL_SETTLE_MS ago): the folded chip holds its spot until the scroll has settled */
   const scrollingRef = useRef(false);
+  /** REQ-897 AMENDMENT (dm7, m3) — has the pill been placed on this page yet? Before that, a
+   *  kept spot is the last page's: no scroll hold for it */
+  const placedHereRef = useRef(false);
   /** REQ-545 — only the customer's live pill yields to the page; the ended notice (a message to
    *  read and dismiss), Opening… and the presenter's way back stay home (a dialog still docks) */
   const yieldsRef = useRef(false);
@@ -1990,7 +1993,10 @@ export default function DemoModeOverlay(
         minimal,
         blocked: can ? (r) => pageUnder(r, backdrop) : () => 0,
         controls: can ? (r) => countControls(r, backdrop) : () => 0,
-        scrolling: scrollingRef.current,
+        // REQ-897 AMENDMENT (dm7, m3) — the hold is for a spot placed on THIS page: a spot carried
+        // from the last page (REQ-830) is judged on arrival, even while the page's own hash scroll
+        // is still running (it held the chip over /settings' email field for 1.5 s)
+        scrolling: scrollingRef.current && placedHereRef.current,
         yields: yieldsRef.current,
         floats,
       });
@@ -2083,6 +2089,7 @@ export default function DemoModeOverlay(
       };
       if (JSON.stringify(next) !== JSON.stringify(lastPlaceRef.current)) {
         lastPlaceRef.current = next;
+        placedHereRef.current = true;
         const d = demoRef.current;
         if (d?.role === "viewer" && !goneRef.current) {
           keepDemo(
@@ -2199,6 +2206,7 @@ export default function DemoModeOverlay(
       clearTimeout(settle);
       clearTimeout(scrollSettle);
       scrollingRef.current = false;
+      placedHereRef.current = false;
       ro?.disconnect();
       pageRo?.disconnect();
       mo?.disconnect();

@@ -217,8 +217,9 @@ describe("REQ-896 (dm6, p1 + p7) the stage knows why the customer's page went", 
     expect(stage).toMatch(
       /const loadingNext = live\.key === "loadingNext" \|\|\s*live\.key === "pageGone";/,
     );
+    // REQ-896 AMENDMENT (dm7, p2) — nor while a closed page is held ("One moment…")
     expect(stage).toMatch(
-      /const pillShown =\s*look\.elsewhere \|\| signedOut \|\|\s*\(look\.waiting && leaveWhy !== "navigating"\)\s*\?\s*null\s*:\s*pillBox;/,
+      /const pillShown = look\.elsewhere \|\| signedOut \|\|\s*\(look\.waiting && leaveWhy !== "navigating"\) \|\| live\.key === "pageGone"\s*\?\s*null\s*:\s*pillBox;/,
     );
   });
 });

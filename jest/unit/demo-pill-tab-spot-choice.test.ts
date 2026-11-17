@@ -190,6 +190,19 @@ describe("REQ-897 (dm6, p5) — scrolling: the kept chip holds its spot until th
     expect(overlay).toMatch(
       /addEventListener\("scroll", onScroll, \{ capture: true, passive: true \}\)/,
     );
-    expect(overlay).toMatch(/scrolling: scrollingRef\.current,/);
+    // REQ-897 AMENDMENT (dm7, m3) — the hold is only for a spot placed on THIS page
+    expect(overlay).toMatch(
+      /scrolling: scrollingRef\.current && placedHereRef\.current,/,
+    );
+    expect(overlay).toMatch(/const placedHereRef = useRef\(false\);/);
+    expect(overlay).toMatch(
+      /lastPlaceRef\.current = next;\s*placedHereRef\.current = true;/,
+    );
+  });
+
+  test("REQ-897 AMENDMENT (dm7, m3) wiring: a new page starts with no spot placed here — the kept spot is judged on arrival", () => {
+    const overlay = read("front-end/islands/DemoModeOverlay.tsx");
+    // reset wherever the page's own kept-spot bookkeeping resets (the path change)
+    expect(overlay).toMatch(/placedHereRef\.current = false;/);
   });
 });

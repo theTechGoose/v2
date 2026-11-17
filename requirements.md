@@ -7429,3 +7429,28 @@ Tests:
 **Requirement:** `bounceToLogin({ status, api, authed, signingOut })` (`front-end/lib/signout-bounce.ts`) bounces only when no sign-out has been announced in this tab: client.ts hears `pm:logout` (DashSidebar fires it BEFORE the session dies — its logout and its account switch) and from then on lets every 401 through; the sign-out owns the navigation. An expired session's 401 bounces as before.
 **Tests:** unit `jest/unit/signout-no-login-bounce.test.ts` ("REQ-907 bounceToLogin …", "REQ-907 wiring …") · integration n/a — one tab's fetch patch, no server part · e2e `demo-stage-tab-leave.e2e.test.ts` "REQ-834 / REQ-823 AMENDMENT (dm2, M1)" (red → green: tab 1 rests on "/" after the sign-out).
 **Evidence (2026-11-16):** RED — `npx jest unit/signout-no-login-bounce` → Cannot find module `lib/signout-bounce`; the REQ-834 story red at `waitForURL("/")` (20 s), the probe's tab on `/login?next=%2Fdashboard`. GREEN — jest 2 passed; `shots run demo-stage-tab-leave --filter REQ-834` 23 s ✓ on :5601; the probe's tab rests on `http://localhost:5601/` with the stage saying "Ana Torres signed out".
+
+## REQ-908 — Starting or ending an impersonation clears the tab's dash cache
+
+**Source:** Raphael (2026-11-16, demo loop run 7, m4): "you personally go fix the polish problems" — the dm7 testers saw the staff member's own name/profile flash on the first paint of the customer's pages after Demo started (and the customer's on the staff's pages after End), before the real profile replaced it.
+**Cause:** `front-end/lib/dash-cache.ts` (REQ-624) keeps the signed-in person's profile in sessionStorage so a page paints from it before `/api/me` answers; an impersonation (`adminClient.impersonate`) and its end (`stopImpersonating`) swap the session but left the previous person's cache in place, so the next page's first paint was the last person's.
+**Requirement:** `adminClient.impersonate` and `adminClient.stopImpersonating` (`front-end/clients/admin.ts`) call `clearDashCache()` once the server has answered, so the next page paints the next person's profile from its first frame. Nothing else of REQ-624 changes.
+**Tests:** unit `jest/unit/impersonation-dash-cache.test.ts` ("REQ-908 wiring …") · integration n/a — one tab's client cache, no server part · e2e: covered by the demo-mode lane's stage stories (the staff's /admin after End shows the staff's own name — `demo-viewers` M21, re-run green).
+**Evidence (2026-11-16):** RED — `npx jest unit/impersonation-dash-cache` → 1 failed (admin.ts imports no `clearDashCache`); GREEN — 1 passed; `deno lint` / `deno check` clean on clients/admin.ts.
+
+## REQ-896 AMENDMENT — no ghost of the customer's pill while a closed page is held ("One moment…")
+
+**Raphael (2026-11-16, demo loop run 7, p2):** "you personally go fix the polish problems" — the dm7 testers saw the stage's dimmed ghost of her pill under the "One moment…" notice (REQ-896's `pageGone` hold) after she closed her tab; REQ-896 hid it only once the stage was WAITING. Requirement: `pillShown` (DemoStage.tsx) is null while `live.key === "pageGone"` as well — the hold after a close, or a page gone without a word, draws no pill of hers (a navigation's "Loading their next page…" keeps the ghost, as before).
+**Tests:** unit `jest/unit/demo-stage-leave-reason.test.ts` ("REQ-896 wiring …", the `pillShown` regex amended) · integration n/a · e2e: the REQ-896 stories unchanged (the ghost is a frame-level detail the stories do not read).
+**Evidence (2026-11-16):** `npx jest unit/demo-stage-leave-reason` → 5 passed after the edit (the regex red against the old form first).
+
+## REQ-826 AMENDMENT — the demo stage's Spanish page label for /welcome is "Bienvenido"
+
+**Raphael (2026-11-16, demo loop run 7, p5):** "you personally go fix the polish problems" — the stage's page chip read "Bienvenida" while the page's own title (`welcome.docTitle`) is "Bienvenido"; the two labels for the same page disagreed in gender. `lang/es.json` `demoMode.page.welcome` is "Bienvenido". No tests — a dictionary word; the REQ-826 label tests read the key, not its value.
+
+## REQ-897 AMENDMENT — the scroll hold is only for a spot the chip was placed in on THIS page
+
+**Raphael (2026-11-16, demo loop run 7, m3):** "you personally go fix the polish problems" — on /settings at 390 px the folded chip sat over the email field for ~1.5 s after the page opened at an anchor (`#…`). The spot (0,324) was the one KEPT from the previous page (REQ-830); REQ-897's hold (`scrolling: scrollingRef.current`) kept it through the page's own smooth hash scroll, so the first judgement of what was under it waited for PILL_SCROLL_SETTLE_MS after that scroll ended.
+**Requirement:** the overlay holds a kept spot during a scroll only once the pill has been placed on this page (`placedHereRef`, set after the first placement, reset with the placement effect); a spot carried from the last page is judged on arrival, scroll or no scroll. REQ-897's hold for a spot placed here is unchanged.
+**Tests:** unit `jest/unit/demo-pill-tab-spot-choice.test.ts` ("REQ-897 wiring …" amended: `scrolling: scrollingRef.current && placedHereRef.current`, the ref, its set and reset; "REQ-897 AMENDMENT (dm7, m3) wiring …") · integration n/a · e2e: `e2e/demo-mode/demo-pill-tab-spot-choice.e2e.test.ts` (REQ-897's /settings scroll, unchanged) in the lane.
+**Evidence (2026-11-16):** RED — the amended regexes failed against the old overlay; GREEN — `npx jest unit/demo-pill-tab-spot-choice` 12 passed; `deno lint` / `deno check` clean on DemoModeOverlay.tsx.

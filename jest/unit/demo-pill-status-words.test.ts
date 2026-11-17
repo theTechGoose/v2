@@ -482,7 +482,7 @@ describe("REQ-838 p4 — the customer signed out: the stage draws nothing of a s
   test("no ghost of their pill (open or tucked): pillShown is null while they are signed out", () => {
     expect(s).toMatch(
       // REQ-896 — and while waiting after anything but a navigation
-      /const pillShown =\s*look\.elsewhere \|\| signedOut \|\|[\s\S]{0,80}\? null\s*: pillBox;/,
+      /const pillShown =\s*look\.elsewhere \|\| signedOut \|\|[\s\S]{0,160}\? null\s*: pillBox;/,
     );
   });
 
