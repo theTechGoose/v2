@@ -135,6 +135,7 @@ import {
 } from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623, REQ-704
 import {
   type DocState,
+  isInvoiceIssued,
   isInvoiceLocked,
   workingCopy,
 } from "../../shared/documents/versions.ts";
@@ -154,6 +155,7 @@ import {
   centsToDollars,
   computeTotals,
   defaultInvoiceNetDays,
+  percentOfLinesCents, // REQ-910
   defaultPaymentInstructions,
   dollarsToCents,
   dueDateFrom,
@@ -1895,6 +1897,8 @@ interface EditableLine {
   price: string;
   quantity: number;
   unit?: string;
+  /** REQ-788/REQ-910: an overhead line — the batch's, or one added by hand. */
+  overhead?: boolean;
 }
 
 function lineItemsOf(inv: Invoice): EditableLine[] {
@@ -1907,6 +1911,7 @@ function lineItemsOf(inv: Invoice): EditableLine[] {
       price: typeof row.price === "number" ? String(row.price / 100) : "",
       quantity: typeof row.quantity === "number" ? row.quantity : 1,
       ...(typeof row.unit === "string" ? { unit: row.unit } : {}),
+      ...(row.overhead === true ? { overhead: true } : {}),
     };
   });
 }
@@ -2208,6 +2213,28 @@ function InvoiceDetail(
     });
     setEditAmount(centsToDollars(totals.totalCents));
   }
+  // REQ-910: "10 % of the lines above" → one more line, priced now, flagged
+  // overhead (the same flag the batch's REQ-788 line carries).
+  const [pctInput, setPctInput] = useState("10");
+  function addPercentLine() {
+    const cents = percentOfLinesCents(
+      editItems.map((li) => ({
+        description: li.description,
+        quantity: li.quantity,
+        price: dollarsToCents(li.price),
+      })),
+      Number(pctInput),
+    );
+    updateLines([
+      ...editItems,
+      {
+        description: tFor(lang, "invoicesPage.detail.overheadLine"),
+        quantity: 1,
+        price: centsToDollars(cents),
+        overhead: true,
+      },
+    ]);
+  }
 
   // REQ-201: publish the pending revision — version + 1 on the same link.
   const [publishBusy, setPublishBusy] = useState(false);
@@ -2289,6 +2316,7 @@ function InvoiceDetail(
             description: li.description,
             quantity: li.quantity,
             ...(li.unit ? { unit: li.unit } : {}),
+            ...(li.overhead ? { overhead: true } : {}), // REQ-910
             price: Math.round(Number(li.price) * 100) || 0,
           })),
         );
@@ -2304,6 +2332,13 @@ function InvoiceDetail(
         return;
       }
       setMode("none");
+      // REQ-910: an issued invoice's edit is a pending revision (REQ-201) —
+      // say so, next to the publish buttons, instead of a quiet badge.
+      if (isInvoiceIssued(inv)) {
+        setPublishNote(
+          tFor(lang, "invoices.savedUnpublished", { customer: inv.client }),
+        );
+      }
       await onChanged();
     } finally {
       setBusy(false);
@@ -2774,67 +2809,143 @@ function InvoiceDetail(
               style={`${fieldStyle};resize:vertical`}
             />
           </label>
-          {editItems.length > 0 && (
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <div style="font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
-                {tFor(lang, "invoicesPage.detail.lineItemsLabel")}
-              </div>
-              {editItems.map((li, i) => (
-                <div key={i} style="display:flex;gap:6px">
+          {/* REQ-910: lines can be added and removed on a sent invoice; a
+              percentage of the lines above becomes a plain Overhead line */}
+          <div
+            style="display:flex;flex-direction:column;gap:6px"
+            data-cy="invoice-edit-lines"
+          >
+            <div style="font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
+              {tFor(lang, "invoicesPage.detail.lineItemsLabel")}
+            </div>
+            {editItems.map((li, i) => (
+              <div
+                key={i}
+                style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"
+              >
+                <input
+                  type="text"
+                  data-cy={`invoice-edit-line-desc-${i}`}
+                  value={li.description}
+                  disabled={busy}
+                  onInput={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    setEditItems((items) =>
+                      items.map((it, j) =>
+                        j === i ? { ...it, description: v } : it
+                      )
+                    );
+                  }}
+                  style={`${fieldStyle};flex:1;min-width:120px`}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  data-cy={`invoice-edit-line-qty-${i}`}
+                  value={li.quantity}
+                  disabled={busy}
+                  onInput={(e) => {
+                    const v = Number((e.target as HTMLInputElement).value);
+                    updateLines(
+                      editItems.map((it, j) =>
+                        j === i
+                          ? { ...it, quantity: Number.isFinite(v) ? v : 0 }
+                          : it
+                      ),
+                    );
+                  }}
+                  style={`${fieldStyle};width:70px;flex:none`}
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  data-cy={`invoice-edit-line-price-${i}`}
+                  value={li.price}
+                  disabled={busy}
+                  onInput={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    updateLines(
+                      editItems.map((it, j) =>
+                        j === i ? { ...it, price: v } : it
+                      ),
+                    );
+                  }}
+                  style={`${fieldStyle};width:110px;flex:none`}
+                />
+                <label
+                  data-cy={`invoice-edit-line-overhead-${i}`}
+                  style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--fg-muted,#6b7560);white-space:nowrap"
+                >
                   <input
-                    type="text"
-                    data-cy={`invoice-edit-line-desc-${i}`}
-                    value={li.description}
+                    type="checkbox"
+                    checked={!!li.overhead}
                     disabled={busy}
-                    onInput={(e) => {
-                      const v = (e.target as HTMLInputElement).value;
+                    onChange={(e) => {
+                      const on = (e.target as HTMLInputElement).checked;
                       setEditItems((items) =>
                         items.map((it, j) =>
-                          j === i ? { ...it, description: v } : it
+                          j === i ? { ...it, overhead: on } : it
                         )
                       );
                     }}
-                    style={`${fieldStyle};flex:1;min-width:0`}
                   />
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    data-cy={`invoice-edit-line-qty-${i}`}
-                    value={li.quantity}
-                    disabled={busy}
-                    onInput={(e) => {
-                      const v = Number((e.target as HTMLInputElement).value);
-                      updateLines(
-                        editItems.map((it, j) =>
-                          j === i
-                            ? { ...it, quantity: Number.isFinite(v) ? v : 0 }
-                            : it
-                        ),
-                      );
-                    }}
-                    style={`${fieldStyle};width:70px;flex:none`}
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    data-cy={`invoice-edit-line-price-${i}`}
-                    value={li.price}
-                    disabled={busy}
-                    onInput={(e) => {
-                      const v = (e.target as HTMLInputElement).value;
-                      updateLines(
-                        editItems.map((it, j) =>
-                          j === i ? { ...it, price: v } : it
-                        ),
-                      );
-                    }}
-                    style={`${fieldStyle};width:110px;flex:none`}
-                  />
-                </div>
-              ))}
+                  {tFor(lang, "invoicesPage.detail.overheadFlag")}
+                </label>
+                <button
+                  type="button"
+                  data-cy={`invoice-edit-line-remove-${i}`}
+                  aria-label={tFor(lang, "invoices.form.removeLine")}
+                  title={tFor(lang, "invoices.form.removeLine")}
+                  disabled={busy}
+                  onClick={() => updateLines(editItems.filter((_, j) => j !== i))}
+                  style="appearance:none;cursor:pointer;background:none;border:0;padding:4px;color:var(--fg-muted,#6b7560)"
+                >
+                  <I d={ICN.x} size={14} sw={2.5} />
+                </button>
+              </div>
+            ))}
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button
+                type="button"
+                data-cy="invoice-edit-line-add"
+                disabled={busy}
+                onClick={() =>
+                  updateLines([
+                    ...editItems,
+                    { description: "", quantity: 1, price: "" },
+                  ])}
+                style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
+              >
+                {tFor(lang, "invoices.form.addLine")}
+              </button>
+              <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  data-cy="invoice-edit-pct"
+                  value={pctInput}
+                  disabled={busy}
+                  onInput={(e) =>
+                    setPctInput((e.target as HTMLInputElement).value)}
+                  style={`${fieldStyle};width:70px`}
+                />
+                {tFor(lang, "invoicesPage.detail.pctOfLines")}
+                <button
+                  type="button"
+                  data-cy="invoice-edit-pct-add"
+                  disabled={busy || !(Number(pctInput) > 0) ||
+                    editItems.length === 0}
+                  onClick={addPercentLine}
+                  style={secondaryBtn}
+                >
+                  {tFor(lang, "invoicesPage.detail.pctAdd")}
+                </button>
+              </span>
             </div>
-          )}
+          </div>
           <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
             {tFor(lang, "invoicesPage.new.amount")}
             <input

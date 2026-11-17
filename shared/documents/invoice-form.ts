@@ -116,6 +116,18 @@ export function computeTotals(input: TotalsInput): Totals {
   };
 }
 
+/**
+ * REQ-910 (A2Z, 2026-11-16: "le faltó agregar el 10%"): a percentage of the
+ * lines so far, in integer cents — what a hand-added Overhead line is priced
+ * at. A plain number, computed now: the line does not follow later edits
+ * (the batch's own overhead, REQ-788, is computed when the batch is pulled).
+ */
+export function percentOfLinesCents(lines: FormLine[], pct: number): number {
+  if (!Number.isFinite(pct) || pct <= 0) return 0;
+  const subtotal = lines.reduce((sum, l) => sum + lineTotalCents(l), 0);
+  return Math.max(0, Math.round(subtotal * pct / 100));
+}
+
 /* ---------------- terms ---------------- */
 
 export const NET_DAYS_OPTIONS = [0, 7, 15, 30] as const;

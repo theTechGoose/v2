@@ -16,6 +16,7 @@ import { langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import {
   bestHit,
   groupHits,
+  recordPaymentUrl,
   searchHitLine,
 } from "../../shared/documents/search.ts";
 
@@ -250,6 +251,8 @@ export default function GlobalSearch() {
                 const title = h.customerName ?? h.label;
                 // REQ-713: dates are typed on the hit and spelled in `lang`
                 const line = searchHitLine(h, lang);
+                // REQ-909: an unpaid invoice can take a payment from here
+                const pay = recordPaymentUrl(h);
                 return (
                   <div
                     key={`${h.type}-${h.id}`}
@@ -307,6 +310,17 @@ export default function GlobalSearch() {
                           "search.counts.invoices",
                           h.counts.invoices,
                         )}
+                      </div>
+                    )}
+                    {pay && (
+                      <div class="gsearch__related">
+                        <a
+                          href={pay}
+                          data-cy="global-search-record"
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          {tFor(lang, "search.recordPayment")}
+                        </a>
                       </div>
                     )}
                     {h.related.length > 0 && (
