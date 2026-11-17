@@ -464,3 +464,160 @@ Deno.test("REQ-862 AMENDMENT 4 (demo-loop run 11, m1): at 390 px the logo row wi
     await fc.setFiles(png);
     await Deno.remove(png).catch(() => {});
   }));
+
+Deno.test("REQ-862 AMENDMENT 5 (demo-loop run 11, m1 — the dense page): at 390 px with the thumbnail's caption as wide as the row, not even the wrapped chip has a clear spot — the frame's chip is hidden and the replayer tells the stage the chip's words (named) with inside:false; the chooser closing tells it null", (t) =>
+  story(t, async ({ page, expect }) => {
+    const js = await mirrorBundle();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/clients.css");
+    await page.addScriptTag({ content: js });
+    await page.evaluate(async () => {
+      document.body.style.fontFamily = '"Inter", Arial, sans-serif';
+      document.body.style.margin = "0";
+      const logo = "data:image/svg+xml;utf8," +
+        encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="106" height="64"><rect width="106" height="64" fill="#345"/></svg>',
+        );
+      const field = (label: string, hint: string) =>
+        `<label style="display:block"><span style="display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6b7560;margin-bottom:6px">${label}</span>` +
+        `<input style="width:100%;box-sizing:border-box;padding:10px;font-size:14px" value="0.00">` +
+        `<span style="display:block;margin-top:4px;font-size:12px;color:#6b7560">${hint}</span></label>`;
+      document.body.innerHTML =
+        `<div style="padding:16px 43px;font-size:14px;display:grid;grid-template-columns:1fr;gap:16px">` +
+        field(
+          "Tarifa por hora",
+          "Lo que cobras por hora de trabajo; se usa en las cotizaciones y en los acuerdos que firma el cliente.",
+        ) +
+        field(
+          "Margen",
+          "% sobre los materiales. Se suma a cada partida de la cotización.",
+        ) +
+        field(
+          "Gastos generales por visita",
+          "Un cargo fijo por visita que se suma a cada cotización. $ = una cantidad en dólares por visita. 0 = ninguno.",
+        ) +
+        `<div id="logo" style="grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:12px">` +
+        `<button id="logo-btn" type="button" aria-label="Reemplazar logo" style="padding:12px 25px;font-size:14px;font-family:inherit">Reemplazar logo</button>` +
+        `<input id="logo-file" type="file" style="display:none">` +
+        `<span id="logo-set" style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#6b7560">` +
+        `<img id="logo-img" src="${logo}" alt="Logo cargado" style="max-height:32px;max-width:96px;object-fit:contain;border-radius:4px">Logo cargado · Ruiz Remodelación y Construcción</span>` +
+        `<span id="logo-hint" style="font-size:12px;color:#6b7560">PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas</span>` +
+        `</div>` +
+        field(
+          "Idioma de la app",
+          "El idioma de los menús y los mensajes. Los documentos siguen el idioma del cliente.",
+        ) +
+        field(
+          "Zona horaria",
+          "Para las fechas de tus documentos y recordatorios.",
+        ) +
+        field(
+          "Moneda",
+          "Se muestra en cotizaciones y facturas. Cambiarla no convierte montos.",
+        ) +
+        field(
+          "Impuesto",
+          "El porcentaje que se aplica a las partidas gravables.",
+        ) +
+        field(
+          "Días de pago",
+          "Cuántos días tiene el cliente para pagar una factura.",
+        ) +
+        field("Prefijo de factura", "Va delante del número de cada factura.") +
+        `</div>` +
+        `<div data-demo-overlay style="position:fixed;left:0;top:0;opacity:0.01;pointer-events:none">` +
+        `<iframe id="stage" sandbox="allow-same-origin" style="width:390px;height:844px;border:0"></iframe></div>`;
+      document.getElementById("logo-btn")!.addEventListener(
+        "click",
+        () =>
+          (document.getElementById("logo-file") as HTMLInputElement).click(),
+      );
+      // deno-lint-ignore no-explicit-any
+      const mm = (globalThis as any).__mm;
+      const f = document.getElementById("stage") as HTMLIFrameElement;
+      const loaded = new Promise((r) => f.addEventListener("load", r));
+      f.srcdoc = mm.rep.MIRROR_SRCDOC;
+      await loaded;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).__told = [];
+      const replay = mm.rep.createReplayer(f.contentDocument!, {
+        pickerLabel: () => "El cliente está eligiendo un archivo…",
+        // deno-lint-ignore no-explicit-any
+        onPicker: (p: unknown) => (globalThis as any).__told.push(p),
+      });
+      const recorder = mm.rec.createRecorder(document, {
+        emit: (fr: unknown) => replay.apply(JSON.parse(JSON.stringify(fr))),
+      });
+      recorder.snapshot();
+    });
+    expect.eq(
+      await within(
+        page,
+        1_000,
+        () =>
+          !!(document.getElementById("stage") as HTMLIFrameElement)
+            .contentDocument!.querySelector("#logo-hint"),
+        undefined,
+      ),
+      true,
+      "the stage mirrors the page",
+    );
+    const chooser = page.waitForEvent("filechooser");
+    await page.locator("#logo-btn").click();
+    const fc = await chooser;
+    const read = () => {
+      const d = (document.getElementById("stage") as HTMLIFrameElement)
+        .contentDocument!;
+      const c = d.querySelector('[data-mirror-picker="file"]');
+      const rect = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height].map(Math.round);
+      };
+      return {
+        chip: c ? rect(c) : null,
+        set: rect(d.querySelector("#logo-set")),
+        hint: rect(d.querySelector("#logo-hint")),
+        btn: rect(d.querySelector("#logo-btn")),
+        hidden: !!c && /display:none/.test(c.getAttribute("style") ?? ""),
+        // deno-lint-ignore no-explicit-any
+        told: (globalThis as any).__told as unknown[],
+      };
+    };
+    const t0 = Date.now();
+    let got = await page.evaluate(read);
+    while (!(got.hidden && got.told.length) && Date.now() - t0 < 1_500) {
+      await page.waitForTimeout(50);
+      got = await page.evaluate(read);
+    }
+    expect(
+      got.hidden,
+      `the frame's chip is hidden on the dense page (${JSON.stringify(got)})`,
+    );
+    expect.eq(
+      JSON.stringify(got.told[0]),
+      JSON.stringify({
+        kind: "file",
+        text: "El cliente está eligiendo un archivo… · Reemplazar logo",
+        inside: false,
+      }),
+      "the stage is told the chip's words, named, outside",
+    );
+    const png = await Deno.makeTempFile({ suffix: ".png" });
+    await Deno.writeFile(png, new Uint8Array([137, 80, 78, 71]));
+    await fc.setFiles(png);
+    await Deno.remove(png).catch(() => {});
+    const t1 = Date.now();
+    let last = await page.evaluate(read);
+    while (
+      last.told[last.told.length - 1] !== null && Date.now() - t1 < 1_500
+    ) {
+      await page.waitForTimeout(50);
+      last = await page.evaluate(read);
+    }
+    expect.eq(
+      last.told[last.told.length - 1],
+      null,
+      `the chooser closing tells the stage null (${JSON.stringify(last.told)})`,
+    );
+  }));

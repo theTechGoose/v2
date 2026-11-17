@@ -109,3 +109,90 @@ describe("REQ-874 (demo-loop cycle dm5, p9) — a pill that does not fold takes 
     expect(p.tucked).toBe(true);
   });
 });
+
+describe("REQ-866 AMENDMENT (demo-loop run 11, m2) — a pill that may not fold takes a clear band the page's blocks leave, not only a row a whole pill-height apart from home: /welcome step 2 at 390×844 during the join grace", () => {
+  // the page as the probe mapped it (x,y,w,h; * = a control)
+  const pieces: { r: Rect; control: boolean }[] = [
+    { r: { left: 117, top: 28, width: 156, height: 34 }, control: true }, // logo link
+    { r: { left: 293, top: 86, width: 73, height: 25 }, control: true }, // EN | ES
+    { r: { left: 20, top: 143, width: 350, height: 20 }, control: false }, // Paso 2 de 10
+    { r: { left: 45, top: 212, width: 300, height: 28 }, control: false }, // h1
+    { r: { left: 45, top: 246, width: 300, height: 43 }, control: false }, // hint
+    { r: { left: 45, top: 306, width: 300, height: 56 }, control: true }, // input
+    { r: { left: 45, top: 392, width: 125, height: 20 }, control: false }, // legend
+    { r: { left: 45, top: 420, width: 197, height: 39 }, control: true }, // labels
+    { r: { left: 45, top: 479, width: 309, height: 49 }, control: true }, // Atrás Omitir Continuar
+    { r: { left: 91, top: 581, width: 209, height: 36 }, control: true }, // Omitir configuración
+    { r: { left: 16, top: 690, width: 358, height: 48 }, control: true }, // footer links
+    { r: { left: 16, top: 746, width: 358, height: 24 }, control: true }, // more links
+    { r: { left: 148, top: 778, width: 94, height: 24 }, control: true }, // phone link
+    { r: { left: 62, top: 802, width: 265, height: 24 }, control: false }, // address
+  ];
+  const hits = (a: Rect, b: Rect) =>
+    a.left < b.left + b.width && b.left < a.left + a.width &&
+    a.top < b.top + b.height && b.top < a.top + a.height;
+  const blocked390 = (r: Rect) => pieces.filter((p) => hits(r, p.r)).length;
+  const controls390 = (r: Rect) =>
+    pieces.filter((p) => p.control && hits(r, p.r)).length;
+  const view390 = { w: 390, h: 844 };
+  const home390: Rect = {
+    left: PILL_MARGIN,
+    top: view390.h - PILL_MARGIN - 54,
+    width: 366,
+    height: 54,
+  };
+
+  test("the fixture: no pillSpot and no whole-step row is clear; the band between 'Omitir configuración' (617) and the footer links (690) is 73 px tall", () => {
+    expect(
+      pillSpots({ home: home390, view: view390 }).every((r) =>
+        blocked390(r) > 0
+      ),
+    ).toBe(true);
+    const step = 54 + PILL_BAND_GAP;
+    for (let t = home390.top - step; t > PILL_MARGIN; t -= step) {
+      expect([t, blocked390({ ...home390, top: t })]).not.toEqual([t, 0]);
+    }
+    expect(blocked390({ ...home390, top: 623 })).toBe(0);
+  });
+
+  test("REQ-866 AMENDMENT: pillRows comes every half step (a pill height + gap over two), nearest home first, so the band shows up", () => {
+    const rows = pillRows({ home: home390, view: view390 });
+    const tops = [...new Set(rows.map((r) => r.top))];
+    const half = (54 + PILL_BAND_GAP) / 2;
+    expect(tops[0]).toBe(home390.top - half);
+    expect(tops[1]).toBe(home390.top - 2 * half);
+    expect(tops).toContain(623);
+    // descending from home, all above the top margin
+    for (let i = 1; i < tops.length; i++) {
+      expect(tops[i]).toBeLessThan(tops[i - 1]);
+    }
+    expect(tops[tops.length - 1]).toBeGreaterThan(PILL_MARGIN);
+  });
+
+  test("the join grace's whole pill on /welcome at 390: in the clear band, never over the question and its hint", () => {
+    const p = placePill({
+      home: home390,
+      view: view390,
+      dialog: false,
+      yields: false,
+      blocked: blocked390,
+      controls: controls390,
+    });
+    expect(p.tucked).toBe(false);
+    expect(blocked390(p.box)).toBe(0);
+    expect(p.box.top).toBeGreaterThanOrEqual(617);
+    expect(p.box.top + p.box.height).toBeLessThanOrEqual(690);
+  });
+
+  test("the ended notice (floats) on the same page: the same band", () => {
+    const p = placePill({
+      home: home390,
+      view: view390,
+      dialog: false,
+      floats: true,
+      blocked: blocked390,
+      controls: controls390,
+    });
+    expect(blocked390(p.box)).toBe(0);
+  });
+});

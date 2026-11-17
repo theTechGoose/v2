@@ -1579,3 +1579,315 @@ describe("REQ-862 AMENDMENT 4 / REQ-878 AMENDMENT 4 (demo-loop run 11, m1) — o
     expect(hits(c, rows["logo-btn"])).toBe(false);
   });
 });
+
+import * as fs from "fs";
+import * as path from "path";
+const read = (rel: string) =>
+  fs.readFileSync(path.join(path.resolve(__dirname, "../.."), rel), "utf8");
+
+describe("REQ-862 AMENDMENT 5 / REQ-878 AMENDMENT 5 (demo-loop run 11, m1 — the dense page) — a chip with NO clear spot in the frame (even wrapped) is not drawn over the page: the replayer hides it and tells the stage (`onPicker`), which shows the chip's words in its chrome row above the frame", () => {
+  const FILE_W = 249;
+  const sizeOf = (text: string, style: string) => {
+    const name = text.includes(" · ") ? text.split(" · ")[1] : "";
+    const natural = FILE_W + (name ? name.length * 7.5 + 12 : 0);
+    const m = /max-width:\s*([\d.]+)px/.exec(style);
+    const max = m ? Number(m[1]) : Infinity;
+    if (natural <= max) return { width: natural, height: 26 };
+    const lines = Math.ceil((natural - 20) / (max - 20));
+    return { width: max, height: 26 + 18.2 * (lines - 1) };
+  };
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    const orig = FElement.prototype.getBoundingClientRect;
+    spy = jest.spyOn(FElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: FElement) {
+        if (this.hasAttribute("data-mirror-picker")) {
+          const { width, height } = sizeOf(
+            this.textContent ?? "",
+            this.getAttribute("style") ?? "",
+          );
+          return {
+            left: 0,
+            top: 0,
+            width,
+            height,
+            x: 0,
+            y: 0,
+            right: width,
+            bottom: height,
+          };
+        }
+        return orig.call(this);
+      });
+  });
+  afterEach(() => spy.mockRestore());
+
+  type R = { left: number; top: number; width: number; height: number };
+  type Picker = { kind: string; text: string; inside: boolean } | null;
+
+  function page(
+    body: (d: FDocument) => FElement,
+    rows: Record<string, R>,
+    view: { w: number; h: number },
+  ) {
+    const doc = docWith(
+      (d) => h(d, "html", {}, h(d, "head"), body(d)),
+      "https://app.test/x",
+      view.w,
+      view.h,
+    );
+    const cys = Object.keys(rows);
+    const by = (cy: string) =>
+      find(doc, (e) => e.getAttribute("data-cy") === cy)!;
+    for (const cy of cys) by(cy).rect = { ...rows[cy] };
+    const frames: MirrorFrame[] = [];
+    const rec = createRecorder(doc as unknown as Document, {
+      emit: (f) => frames.push(JSON.parse(JSON.stringify(f))),
+      Observer: FakeMutationObserver as unknown as typeof MutationObserver,
+      manual: true,
+    });
+    const stage = new FDocument("about:srcdoc", view.w, view.h);
+    stage.appendChild(h(stage, "html", {}, h(stage, "head"), h(stage, "body")));
+    const boxes = () => {
+      for (const cy of cys) {
+        const s = find(stage, (e) => e.getAttribute("data-cy") === cy);
+        if (s) s.rect = { ...rows[cy] };
+      }
+    };
+    const told: Picker[] = [];
+    const rep = createReplayer(
+      stage as unknown as Document,
+      {
+        schedule: (fn) => fn(),
+        Resize: null,
+        onPicker: (p: Picker) => told.push(p),
+      } as unknown as Parameters<typeof createReplayer>[1],
+    );
+    rec.snapshot();
+    expect(rep.apply(frames[0])).toBe(true);
+    boxes();
+    let at = 1;
+    const sync = () => {
+      rec.flush();
+      for (; at < frames.length; at++) {
+        expect(rep.apply(frames[at])).toBe(true);
+        boxes();
+      }
+      expect(rep.apply({ t: "ops", ops: [] } as unknown as MirrorFrame)).toBe(
+        true,
+      );
+    };
+    return {
+      told,
+      chip: () => chip(stage),
+      open: (btn: string, input: string) => {
+        doc.fire("mousedown", by(btn));
+        doc.fire("click", by(btn));
+        doc.fire("click", by(input));
+        sync();
+      },
+      close: (input: string) => {
+        doc.fire("change", by(input));
+        sync();
+      },
+      dispose: () => rep.dispose(),
+    };
+  }
+
+  /** the tester's /settings at 390×844 with a logo uploaded, and the caption as wide as the row
+   *  (a longer business name beside the thumbnail): not even a wrapped chip has a spot */
+  const dense = () => {
+    const rows = {
+      "head": { left: 0, top: 0, width: 390, height: 26 },
+      "top-label": { left: 43, top: 30, width: 200, height: 12 },
+      "top-input": { left: 43, top: 50, width: 304, height: 41 },
+      "top-hint": { left: 43, top: 100, width: 304, height: 60 },
+      "prev-label": { left: 43, top: 170, width: 200, height: 12 },
+      "prev-input": { left: 43, top: 188, width: 304, height: 41 },
+      "prev-hint": { left: 43, top: 233, width: 304, height: 14 },
+      "overhead-input": { left: 43, top: 262, width: 304, height: 41 },
+      "overhead-hint": { left: 43, top: 311, width: 304, height: 74 },
+      "logo-row": { left: 43, top: 399, width: 304, height: 137 },
+      "logo-btn": { left: 43, top: 399, width: 159, height: 43 },
+      "logo-img": { left: 43, top: 455, width: 53, height: 32 },
+      "logo-set": { left: 104, top: 463, width: 243, height: 14 },
+      "logo-hint": { left: 43, top: 499, width: 304, height: 37 },
+      "lang-label": { left: 43, top: 550, width: 116, height: 12 },
+      "lang-select": { left: 43, top: 572, width: 304, height: 40 },
+      "next-label": { left: 43, top: 628, width: 200, height: 12 },
+      "next-input": { left: 43, top: 646, width: 304, height: 41 },
+      "next-hint": { left: 43, top: 691, width: 304, height: 28 },
+      "next2-label": { left: 43, top: 735, width: 200, height: 12 },
+      "next2-input": { left: 43, top: 753, width: 304, height: 41 },
+      "next2-hint": { left: 43, top: 798, width: 304, height: 46 },
+    };
+    return page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(d, "header", { "data-cy": "head" }, "DocuMonster"),
+          h(d, "span", { "data-cy": "top-label" }, "Tarifa por hora"),
+          h(d, "input", { type: "text", "data-cy": "top-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "top-hint" },
+            "Lo que cobras por hora de trabajo; se usa en las cotizaciones.",
+          ),
+          h(d, "span", { "data-cy": "prev-label" }, "Margen"),
+          h(d, "input", { type: "text", "data-cy": "prev-input" }),
+          h(d, "span", { "data-cy": "prev-hint" }, "% sobre los materiales"),
+          h(d, "input", { type: "text", "data-cy": "overhead-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "overhead-hint" },
+            "Un cargo fijo por visita que se suma a cada cotización. $ = una cantidad en dólares por visita. 0 = ninguno.",
+          ),
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(d, "button", {
+              type: "button",
+              "data-cy": "logo-btn",
+              "aria-label": "Reemplazar logo",
+            }, "Reemplazar logo"),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              {},
+              h(d, "img", {
+                "data-cy": "logo-img",
+                src: "/api/files/x",
+                alt: "Logo cargado",
+              }),
+              h(
+                d,
+                "span",
+                { "data-cy": "logo-set" },
+                "Logo cargado · Ruiz Remodelación y Construcción",
+              ),
+            ),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+          h(
+            d,
+            "label",
+            {},
+            h(d, "span", { "data-cy": "lang-label" }, "Idioma de la app"),
+            h(d, "select", { "data-cy": "lang-select" }),
+          ),
+          h(d, "span", { "data-cy": "next-label" }, "Zona horaria"),
+          h(d, "input", { type: "text", "data-cy": "next-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "next-hint" },
+            "Para las fechas de tus documentos",
+          ),
+          h(d, "span", { "data-cy": "next2-label" }, "Moneda"),
+          h(d, "input", { type: "text", "data-cy": "next2-input" }),
+          h(
+            d,
+            "span",
+            { "data-cy": "next2-hint" },
+            "Se muestra en cotizaciones y facturas. Cambiarla no convierte montos.",
+          ),
+        ),
+      rows,
+      { w: 390, h: 844 },
+    );
+  };
+
+  test("the dense page: the in-frame chip is hidden (display:none), and the stage is told the chip's words, named, with inside:false; the chooser closing tells it null", () => {
+    const pg = dense();
+    pg.open("logo-btn", "logo-file");
+    const c = pg.chip()!;
+    expect(c.style).toMatch(/display:none/);
+    expect(pg.told).toEqual([
+      {
+        kind: "file",
+        text: "Customer is choosing a file… · Reemplazar logo",
+        inside: false,
+      },
+    ]);
+    pg.close("logo-file");
+    expect(pg.told[pg.told.length - 1]).toBeNull();
+  });
+
+  test("a page with room (1280 px): the chip is drawn in the frame as before and the stage is told inside:true", () => {
+    const rows = {
+      "logo-row": { left: 271, top: 408, width: 965, height: 43 },
+      "logo-btn": { left: 271, top: 408, width: 123, height: 43 },
+      "logo-hint": { left: 406, top: 422, width: 400, height: 14 },
+    };
+    const pg = page(
+      (d) =>
+        h(
+          d,
+          "body",
+          {},
+          h(
+            d,
+            "div",
+            { "data-cy": "logo-row" },
+            h(
+              d,
+              "button",
+              { type: "button", "data-cy": "logo-btn" },
+              "Subir logo",
+            ),
+            h(d, "input", {
+              type: "file",
+              "data-cy": "logo-file",
+              style: "display:none",
+            }),
+            h(
+              d,
+              "span",
+              { "data-cy": "logo-hint" },
+              "PNG, JPG, GIF o WebP · máx. 8 MB · aparece en cotizaciones y facturas",
+            ),
+          ),
+        ),
+      rows,
+      { w: 1280, h: 800 },
+    );
+    pg.open("logo-btn", "logo-file");
+    expect(pg.chip()!.style).not.toMatch(/display:none/);
+    // past the row's hint (REQ-878 AMENDMENT: named), inside the frame
+    expect(pg.told.length).toBe(1);
+    expect(pg.told[0]).toMatchObject({ kind: "file", inside: true });
+    expect(pg.told[0]!.text.startsWith("Customer is choosing a file…")).toBe(
+      true,
+    );
+    pg.dispose();
+    expect(pg.told[pg.told.length - 1]).toBeNull();
+  });
+
+  test("wiring: DemoStage passes onPicker to its replayer, keeps the words of a chip that is outside, and draws them in the chrome row (data-cy demo-picker-outside) when no tab notice is up", () => {
+    const stage = read("front-end/islands/DemoStage.tsx");
+    expect(stage).toMatch(
+      /const \[pickerOut, setPickerOut\] = useState<string \| null>\(null\)/,
+    );
+    expect(stage).toMatch(
+      /onPicker:\s*\(p\) =>\s*setPickerOut\(p && !p\.inside \? p\.text : null\)/,
+    );
+    expect(stage).toMatch(
+      /pickerOut !== null && tabNote === null && !off && \(\s*<div\s+data-cy="demo-picker-outside"/,
+    );
+  });
+});

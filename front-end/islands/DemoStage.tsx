@@ -555,6 +555,9 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
   }, []);
   /** REQ-645 (m36) — the stage follows another of their tabs now: its page, said until he moves */
   const [tabNote, setTabNote] = useState<string | null>(null);
+  /** REQ-862 AMENDMENT 5 (demo-loop run 11, m1) — the picker chip's words when the frame has no
+   *  spot clear of the page for it (a dense phone form): shown in the chrome row instead */
+  const [pickerOut, setPickerOut] = useState<string | null>(null);
   /** REQ-823 (cycle dm1, M2) — the customer signed out in the tab the stage followed: the pill and
    *  the waiting banner say so, until a tab of theirs is followed again */
   const [signedOut, setSignedOut] = useState(false);
@@ -1253,6 +1256,8 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
       // REQ-827 — the chip under an open date picker / file chooser, in the presenter's language
       pickerLabel: (k) =>
         t(k === "date" ? "demoMode.pickerDate" : "demoMode.pickerFile"),
+      // REQ-862 AMENDMENT 5 (dm11, m1) — a chip with no clear spot in the frame: its words here
+      onPicker: (p) => setPickerOut(p && !p.inside ? p.text : null),
     });
     const q = queueRef.current;
     queueRef.current = [];
@@ -2436,6 +2441,27 @@ export default function DemoStage({ initialLang }: { initialLang?: Lang }) {
                     mirroredErrorPage(),
                   ),
                 })}
+              </div>
+            )}
+            {
+              /* REQ-862 AMENDMENT 5 (dm11, m1) — the picker chip the frame had no clear spot
+                for: its words in the chrome row (the tab notice, when up, has the row) */
+            }
+            {badges && pickerOut !== null && tabNote === null && !off && (
+              <div
+                data-cy="demo-picker-outside"
+                role="status"
+                style={`position:absolute;left:${
+                  fit.left + fit.width / 2
+                }px;top:${
+                  stageBadgeTop(fit.top - bannerH)
+                }px;transform:translateX(-50%);z-index:${
+                  Z + 2
+                };pointer-events:none;white-space:nowrap;box-sizing:border-box;height:${STAGE_BADGE_H}px;line-height:${
+                  STAGE_BADGE_H - 2
+                }px;max-width:calc(100vw - 16px);overflow:hidden;text-overflow:ellipsis;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:#1f1f1f;color:#fff;font-size:13px;font-weight:600`}
+              >
+                {pickerOut}
               </div>
             )}
             {

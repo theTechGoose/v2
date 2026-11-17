@@ -190,6 +190,13 @@ export interface ReplayerOptions {
   /** REQ-827 — the chip's words for an open date picker or file chooser (read at every draw, so
    *  a language switch shows; English by default) */
   pickerLabel?(kind: PickerKind): string;
+  /** REQ-862 AMENDMENT 5 (demo-loop run 11, m1) — the chip as drawn: its words and whether it
+   *  found a spot inside the frame. `inside` false: the frame has no spot clear of the page's
+   *  text (a dense phone form) — the chip is hidden there and the stage shows the words in its
+   *  own chrome. null: no chip (the chooser closed, the replayer disposed) */
+  onPicker?(
+    p: { kind: PickerKind; text: string; inside: boolean } | null,
+  ): void;
 }
 
 /** REQ-827 — what an open-marked input's chip says the customer has open */
@@ -682,11 +689,12 @@ export function createReplayer(
     drawnLists = [];
     const at = doc.documentElement;
     if (!at) return;
+    let told: { kind: PickerKind; text: string; inside: boolean } | null = null;
     for (const { sel, key, kind } of want) {
       const box = kind ? drawChip(kind) : drawList(sel);
       at.appendChild(box);
       if (kind) {
-        const spot = placeChip(box, sel);
+        let spot = placeChip(box, sel);
         // REQ-878 AMENDMENT (dm8, m3) — a chip that is not beside its control (past the row's
         // hint, 370 px from "Subir logo") names it, so the presenter knows what the customer has
         // open; placed again with its longer text
@@ -695,10 +703,39 @@ export function createReplayer(
           : "";
         if (name) {
           box.textContent = `${pickerText(kind)} · ${name}`;
-          placeChip(box, sel);
+          spot = placeChip(box, sel);
         }
+        // REQ-862 AMENDMENT 5 (dm11, m1) — no spot clear of the page's text, even wrapped (a
+        // dense 390 px form): never over the thumbnail or the hint — hidden here, named, and the
+        // stage shows the words in its chrome row (`onPicker`)
+        const inside = !spot || spot.clear;
+        if (!inside) {
+          const text = `${pickerText(kind)} · ${controlName(sel) || ""}`
+            .replace(/ · $/, "");
+          box.textContent = text;
+          box.setAttribute(
+            "style",
+            `${box.getAttribute("style") ?? ""}display:none;`,
+          );
+        }
+        if (!told) told = { kind, text: box.textContent ?? "", inside };
       } else place(box, sel);
       drawnLists.push({ box, key });
+    }
+    tellPicker(told);
+  }
+  /** REQ-862 AMENDMENT 5 — the stage hears of the chip once per change */
+  let toldPicker: string | null = null;
+  function tellPicker(
+    p: { kind: PickerKind; text: string; inside: boolean } | null,
+  ) {
+    const k = p ? `${p.kind}\u0001${p.text}\u0001${p.inside}` : null;
+    if (k === toldPicker) return;
+    toldPicker = k;
+    try {
+      opts.onPicker?.(p);
+    } catch {
+      // the stage's handler failed: the frame's own chip stands
     }
   }
 
@@ -929,7 +966,9 @@ export function createReplayer(
   function placeChip(
     box: Element,
     sel: Element,
-  ): { left: number; top: number; w: number; h: number } | null {
+  ):
+    | { left: number; top: number; w: number; h: number; clear: boolean }
+    | null {
     const r = sel.getBoundingClientRect();
     // REQ-862 AMENDMENT 4 (dm11, m1) — measured one line first: a chip wider than half the
     // frame (the 249 px Spanish file chip on a 390 px phone) wraps inside half of it, so a dense
@@ -938,7 +977,7 @@ export function createReplayer(
     let base = (box.getAttribute("style") ?? "").replace(
       /max-width:[^;]*;white-space:normal;/,
       "",
-    );
+    ).replace(/display:none;/, "");
     const vw = doc.defaultView?.innerWidth ?? 0;
     const vh = doc.defaultView?.innerHeight ?? 0;
     const measure = () => {
@@ -1117,7 +1156,7 @@ export function createReplayer(
     if (vw) left = Math.max(0, Math.min(left, vw - w));
     if (vh) top = Math.max(0, Math.min(top, vh - h));
     box.setAttribute("style", base + `left:${left}px;top:${top}px;`);
-    return { left, top, w, h };
+    return { left, top, w, h, clear: free !== null };
   }
 
   /** REQ-547 — the still rule into the frame (again: a snapshot replaced the page, an op its head) */
@@ -1849,6 +1888,7 @@ export function createReplayer(
     held: () => pending !== null,
     dispose() {
       disposed = true;
+      tellPicker(null);
       dropPending();
       cancelCap?.();
       cancelCap = null;

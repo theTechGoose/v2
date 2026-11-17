@@ -26,6 +26,8 @@ const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 /** past the presence grace (PRESENCE_GRACE_MS, 5 s): a fallback would have come by then */
 const PAST_GRACE_MS = 6_500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** past REQ-821's join grace (JOIN_SAY_MS 5 s) and a check: the pill has yielded */
+const JOIN_PAST_MS = 6_500;
 
 async function verify(http: StoryTools["http"], phone: string) {
   const r = await http("/api/auth/verify", {
@@ -846,4 +848,81 @@ Deno.test("REQ-826 AMENDMENT 5 (demo-loop run 11, demo 4 #1): the customer's oth
         JSON.stringify(said)
       })`,
     );
+  }));
+
+Deno.test("REQ-821 AMENDMENT (demo-loop run 11, p2): she signs out mid-demo (POST /api/auth/logout) and signs in again through /login in the SAME tab — the first page of the new session joins as a first join: the whole pill, '{name} is guiding you', held through the grace (no 200 ms flash and fold)", (t) =>
+  story(t, async ({ page, expect, http, baseUrl, folder }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const who = await people(http);
+    const browser = page.context().browser();
+    if (!browser) throw new Error("no browser behind the story page");
+    const userCtx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+    });
+    try {
+      const tab1 = await userCtx.newPage();
+      await useCookie(userCtx, baseUrl, who.user.cookie);
+      await tab1.goto(`${baseUrl}/dashboard`);
+      await useCookie(page.context(), baseUrl, who.admin.cookie);
+      await openDemo(page, baseUrl, who.userPhone);
+      await tab1.reload();
+      await pillUp(tab1);
+      // past the join grace: the pill has yielded on this crowded phone page
+      await tab1.waitForTimeout(JOIN_PAST_MS);
+      // the tester's sign-out: the API, then /login by hand
+      await tab1.evaluate(() =>
+        fetch("/api/auth/logout", { method: "POST" }).then(() => undefined)
+      );
+      await tab1.goto(`${baseUrl}/login?lang=en`);
+      await until(
+        "the stage says she signed out",
+        async () => (await statusOf(page)) === "Ana Torres signed out",
+        10_000,
+      );
+      // she signs in again through the app: the phone, then the code
+      await tab1.locator("input[type='tel']").fill(who.userPhone.slice(2));
+      await tab1.locator("button[type='submit']").click();
+      await tab1.waitForURL((u: URL) => u.pathname === "/verify", {
+        timeout: 20_000,
+      });
+      await tab1.locator("input[inputmode='numeric']").first().focus();
+      await tab1.keyboard.type("000000", { delay: 40 });
+      await tab1.waitForURL((u: URL) => u.pathname !== "/verify", {
+        timeout: 20_000,
+      });
+      // the new session's first page: the pill arrives as a first join — whole, guiding, held
+      await tab1.locator("[data-cy='demo-pill']").waitFor({
+        state: "attached",
+        timeout: 20_000,
+      });
+      const seen: { tucked: boolean; text: string }[] = [];
+      const t0 = Date.now();
+      while (Date.now() - t0 < 2_500) {
+        seen.push(
+          await tab1.evaluate(() => {
+            const p = document.querySelector("[data-cy='demo-pill']")!;
+            return {
+              tucked: p.hasAttribute("data-tucked"),
+              text: (p.textContent ?? "").trim().slice(0, 50),
+            };
+          }),
+        );
+        await tab1.waitForTimeout(100);
+      }
+      await tab1.screenshot({ path: `${folder}/relogin-pill.png` });
+      expect(
+        seen.every((s) => !s.tucked),
+        `p2: the pill stays whole through the first 2.5 s of the new session, never folded (${
+          JSON.stringify(seen.filter((s) => s.tucked).slice(0, 3))
+        } of ${seen.length})`,
+      );
+      expect(
+        seen.some((s) => /guiding/.test(s.text)),
+        `p2: it says "Hans is guiding you" (${
+          JSON.stringify([...new Set(seen.map((s) => s.text))])
+        })`,
+      );
+    } finally {
+      await userCtx.close();
+    }
   }));

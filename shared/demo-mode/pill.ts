@@ -565,9 +565,12 @@ export function pillSpots(o: {
 
 /**
  * REQ-866 (demo-loop cycle dm4, m2b) — the whole pill's rows between its home row and the top
- * one, a pill height plus a gap apart (as `tabSpots`), from home's row up; each at the left edge
- * (home's), the right edge, then centred. Tried only when every `pillSpots` box holds a control
- * and the pill may not fold.
+ * one, from home's row up; each at the left edge (home's), the right edge, then centred. Tried
+ * only when every `pillSpots` box holds a control and the pill may not fold.
+ * REQ-866 AMENDMENT (demo-loop run 11, m2) — every HALF of a pill height plus a gap (they were a
+ * whole one apart, as `tabSpots`): on /welcome at 390 px no whole-step row was clear and the join
+ * grace's pill sat on the question and its hint, while the 73 px band between the skip button and
+ * the footer's links — between two of those rows — was clear.
  */
 export function pillRows(o: {
   home: Rect;
@@ -578,7 +581,7 @@ export function pillRows(o: {
   const margin = o.margin ?? PILL_MARGIN;
   const top = (o.top ?? 0) + margin;
   const w = o.home.width;
-  const step = o.home.height + PILL_BAND_GAP;
+  const step = (o.home.height + PILL_BAND_GAP) / 2;
   const lefts = [
     o.home.left,
     o.view.w - margin - w,
