@@ -32,9 +32,18 @@ export const NAV: NavNode<IconName>[] = [
   // REQ-773 (demo dv1-d1) — Raphael: "I don't understand what quotes inside the billing folder
   // is ... Change that." Quotes is a root row, one click from anywhere; Billing keeps the rest.
   { id: "quotes", icon: "quote", href: "/quotes", countKey: "quotes" },
-  // REQ-784 (demo-loop dv1, d12; Raphael: "And yes to a sent message outbox."): every email
-  // and text that went to a customer — /messages, which used to 302 to the assistant.
-  { id: "outbox", icon: "send", href: "/messages" },
+  // REQ-914 (Raphael: "make a tab for Communications, in which we put the outbox in"): the
+  // Communications folder, where the Outbox row stood. REQ-784's Outbox (every email and text that
+  // went to a customer — /messages, URL unchanged) is its first entry; the Phone (REQ-915/916: the
+  // account's Twilio line — inbox, softphone, call log, getting a number) its second.
+  {
+    id: "communications",
+    icon: "send",
+    items: [
+      { id: "outbox", icon: "send", href: "/messages" },
+      { id: "phone", icon: "phone", href: "/communications" },
+    ],
+  },
   {
     id: "billing",
     icon: "pay",
@@ -82,8 +91,8 @@ export const NAV: NavNode<IconName>[] = [
     ],
   },
   // REQ-883 — HR: new-hire onboarding (the Monster Onboarding prototype folded in): the overview,
-  // the roster, the document library, the departments that drive the packet, the connected
-  // systems, the HR settings.
+  // the roster, the document library, the departments that drive the packet, the HR settings.
+  // REQ-912: the connected systems moved to Settings → Systems (/hr/systems 302s there).
   {
     id: "hr",
     icon: "badge",
@@ -92,7 +101,6 @@ export const NAV: NavNode<IconName>[] = [
       { id: "hires", icon: "user", href: "/hr/hires" },
       { id: "hrDocuments", icon: "doc", href: "/hr/documents" },
       { id: "departments", icon: "batch", href: "/hr/departments" },
-      { id: "hrSystems", icon: "plug", href: "/hr/systems" },
       { id: "hrSettings", icon: "cog", href: "/hr/settings" },
     ],
   },

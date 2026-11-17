@@ -53,6 +53,7 @@ import {
   type SortDir,
   sortHires,
   type SortKey,
+  isBuiltin,
 } from "@hr/domain/business/onboarding/mod.ts";
 import {
   type Department,
@@ -408,6 +409,10 @@ export class HrController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const sys = await ownSystem(this, user.id, id);
     const b = body(raw);
+    // REQ-913 — a built-in arm runs in DocuMonster itself; it takes no webhook
+    if (b.webhookUrl !== undefined && b.webhookUrl !== null && isBuiltin(sys.key)) {
+      throw new HrError("builtin_no_webhook", 400, "a built-in system takes no webhook");
+    }
     const next = { ...sys, updatedAt: nowIso() };
     if (b.status !== undefined) {
       if (b.status !== "connected" && b.status !== "available") {

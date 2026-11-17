@@ -5752,5 +5752,7 @@
   "invoicesPage.detail.overheadLine": "Overhead",
   "invoicesPage.detail.pctOfLines": "% of the lines above",
   "invoicesPage.detail.pctAdd": "Add as Overhead line",
-  "invoices.savedUnpublished": "Saved. {customer} still sees the published version until you publish the revision."
+  "invoices.savedUnpublished": "Saved. {customer} still sees the published version until you publish the revision.",
+  "nav.communications": "Communications",
+  "nav.phone": "Phone"
 }

@@ -356,3 +356,27 @@ Deno.test("REQ-889 dashboardStats — the tiles, the last seven days, the status
   ]);
   assertEquals(s.recent.map((h) => h.id), ["2", "1", "3"]);
 });
+
+// ── REQ-913 — DocuMonster is the source of truth: the catalog is the four built-in arms ──────────
+import { SYSTEM_CATALOG } from "@hr/domain/data/hr-stores/mod.ts";
+import { armMode, BUILTIN_KEYS, isBuiltin } from "./mod.ts";
+
+Deno.test("REQ-913 the catalog is DocuMonster's four built-in arms — no Quickbase, Salesforce, Slack, ADP, Okta, DocuSign, Google, Readymode, Five9, Paychex, Twilio", () => {
+  assertEquals(SYSTEM_CATALOG.map((c) => c.key), ["dm-worker", "dm-admin", "dm-email", "dm-text"]);
+  assertEquals([...BUILTIN_KEYS], ["dm-worker", "dm-admin", "dm-email", "dm-text"]);
+  assertEquals(SYSTEM_CATALOG.map((c) => c.kind), ["crm", "sso", "email", "comms"]);
+  for (const gone of ["quickbase", "salesforce", "slack", "adp", "okta", "docusign", "gmail", "readymode", "five9", "paychex", "twilio"]) {
+    assertEquals(SYSTEM_CATALOG.some((c) => c.key === gone), false, gone);
+  }
+});
+
+Deno.test("REQ-913 armMode: a built-in key runs in-process; a webhook is a webhook; anything else is a manual step", () => {
+  const base = { id: "s", userId: "u", name: "x", kind: "other" as const, desc: "", status: "connected" as const, createdAt: "t", updatedAt: "t" };
+  assertEquals(armMode({ ...base, key: "dm-worker", webhookUrl: null }), "builtin");
+  assertEquals(armMode({ ...base, key: "dm-worker", webhookUrl: "https://x" }), "builtin");
+  assertEquals(armMode({ ...base, key: "custom", webhookUrl: "https://x" }), "webhook");
+  assertEquals(armMode({ ...base, key: "custom", webhookUrl: null }), "manual");
+  assertEquals(armMode({ ...base, key: "quickbase", webhookUrl: null }), "manual"); // an old attached one keeps working as what it is
+  assertEquals(isBuiltin("dm-text"), true);
+  assertEquals(isBuiltin("custom"), false);
+});

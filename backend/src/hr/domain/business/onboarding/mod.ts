@@ -177,6 +177,24 @@ export function provisionPlan(
     .filter((s): s is HrSystem => !!s && s.status === "connected");
 }
 
+/** REQ-913 — the arms DocuMonster runs itself, in-process */
+export const BUILTIN_KEYS: ReadonlySet<string> = new Set([
+  "dm-worker",
+  "dm-admin",
+  "dm-email",
+  "dm-text",
+]);
+export type BuiltinKey = "dm-worker" | "dm-admin" | "dm-email" | "dm-text";
+export function isBuiltin(key: string): key is BuiltinKey {
+  return BUILTIN_KEYS.has(key);
+}
+export type ArmMode = "builtin" | "webhook" | "manual";
+/** REQ-913 — how a system gets built: in-process, by webhook (REQ-888b), or by hand */
+export function armMode(sys: Pick<HrSystem, "key" | "webhookUrl">): ArmMode {
+  if (isBuiltin(sys.key)) return "builtin";
+  return sys.webhookUrl ? "webhook" : "manual";
+}
+
 /** REQ-888c — active only once every arm is ok or done */
 export function aggregateProvisioning(
   results: ProvisionResult[],

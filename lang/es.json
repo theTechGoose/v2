@@ -5752,5 +5752,7 @@
   "invoicesPage.detail.overheadLine": "Gastos generales",
   "invoicesPage.detail.pctOfLines": "% de las partidas de arriba",
   "invoicesPage.detail.pctAdd": "Agregar como Gastos generales",
-  "invoices.savedUnpublished": "Guardado. {customer} sigue viendo la versión publicada hasta que publiques la revisión."
+  "invoices.savedUnpublished": "Guardado. {customer} sigue viendo la versión publicada hasta que publiques la revisión.",
+  "nav.communications": "Comunicaciones",
+  "nav.phone": "Teléfono"
 }
