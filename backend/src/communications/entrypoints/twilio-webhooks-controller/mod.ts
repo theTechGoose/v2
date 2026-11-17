@@ -17,7 +17,10 @@ import { CallRecording } from "@communications/domain/coordinators/call-recordin
 import { emptyResponse } from "@communications/domain/business/twiml/mod.ts";
 
 function twiml(xml: string): Response {
-  return new Response(xml, { status: 200, headers: { "content-type": "text/xml; charset=utf-8" } });
+  return new Response(xml, {
+    status: 200,
+    headers: { "content-type": "text/xml; charset=utf-8" },
+  });
 }
 const ack = () => new Response(null, { status: 204 });
 
@@ -37,7 +40,9 @@ export class TwilioWebhooksController {
 
   @Post("sms")
   async sms(@Context() ctx: ExecutionContext): Promise<Response> {
-    await this.receiveText.receive((await this.verify.verify(ctx.req.raw)).params);
+    await this.receiveText.receive(
+      (await this.verify.verify(ctx.req.raw)).params,
+    );
     return twiml(emptyResponse());
   }
 
@@ -67,7 +72,11 @@ export class TwilioWebhooksController {
 
   @Post("voice/relay-done")
   async voiceRelayDone(@Context() ctx: ExecutionContext): Promise<Response> {
-    return twiml(await this.relayDone.handle((await this.verify.verify(ctx.req.raw)).params));
+    return twiml(
+      await this.relayDone.handle(
+        (await this.verify.verify(ctx.req.raw)).params,
+      ),
+    );
   }
 
   @Post("voice/status")
@@ -78,7 +87,9 @@ export class TwilioWebhooksController {
 
   @Post("voice/recording")
   async voiceRecording(@Context() ctx: ExecutionContext): Promise<Response> {
-    await this.callRecording.apply((await this.verify.verify(ctx.req.raw)).params);
+    await this.callRecording.apply(
+      (await this.verify.verify(ctx.req.raw)).params,
+    );
     return ack();
   }
 }

@@ -9,7 +9,12 @@ import { LineContext } from "@communications/domain/coordinators/line-context/mo
 
 @Controller("communications/threads")
 export class ThreadsController {
-  constructor(private threads: Threads, private lineContext: LineContext, private users: UserStore, private sessions: SessionStore) {}
+  constructor(
+    private threads: Threads,
+    private lineContext: LineContext,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
 
   @Get()
   async list(@Context() ctx: ExecutionContext) {
@@ -20,6 +25,9 @@ export class ThreadsController {
   @Get(":peer")
   async get(@Context() ctx: ExecutionContext, @Param("peer") peer: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.threads.get(decodeURIComponent(peer), await this.lineContext.forUser(user.id));
+    return await this.threads.get(
+      decodeURIComponent(peer),
+      await this.lineContext.forUser(user.id),
+    );
   }
 }

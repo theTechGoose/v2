@@ -9,13 +9,22 @@ import { LineContext } from "@communications/domain/coordinators/line-context/mo
 
 @Controller("communications/calls")
 export class CallsController {
-  constructor(private calls: Calls, private lineContext: LineContext, private users: UserStore, private sessions: SessionStore) {}
+  constructor(
+    private calls: Calls,
+    private lineContext: LineContext,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
 
   @Get()
   async list(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const limit = Number(new URL(ctx.req.raw.url).searchParams.get("limit") ?? 100) || 100;
-    return await this.calls.list(Math.min(limit, 500), await this.lineContext.forUser(user.id));
+    const limit =
+      Number(new URL(ctx.req.raw.url).searchParams.get("limit") ?? 100) || 100;
+    return await this.calls.list(
+      Math.min(limit, 500),
+      await this.lineContext.forUser(user.id),
+    );
   }
 
   @Get(":id")

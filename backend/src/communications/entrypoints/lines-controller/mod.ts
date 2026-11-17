@@ -16,16 +16,38 @@ import { Lines } from "@communications/domain/coordinators/lines/mod.ts";
 
 @Controller("communications")
 export class LinesController {
-  constructor(private lines: Lines, private users: UserStore, private sessions: SessionStore) {}
+  constructor(
+    private lines: Lines,
+    private users: UserStore,
+    private sessions: SessionStore,
+  ) {}
 
   @Get("numbers/available")
-  async available(@Context() ctx: ExecutionContext, @Query("areaCode") areaCode?: string, @Query("contains") contains?: string, @Query("limit") limit?: string) {
+  async available(
+    @Context() ctx: ExecutionContext,
+    @Query("areaCode") areaCode?: string,
+    @Query("contains") contains?: string,
+    @Query("limit") limit?: string,
+  ) {
     await requireUser(ctx, this.sessions, this.users);
     const area = parseAreaCode(areaCode);
-    if (areaCode && !area) throw new BadRequestError("areaCode must be three digits");
-    const pattern = (contains ?? "").trim().toUpperCase().replace(/[^A-Z0-9*]/g, "");
-    if (!area && !pattern) throw new BadRequestError("areaCode or contains is required");
-    return { numbers: await this.lines.search({ ...(area ? { areaCode: area } : {}), ...(pattern ? { contains: pattern } : {}), limit: Number(limit) || 20 }) };
+    if (areaCode && !area) {
+      throw new BadRequestError("areaCode must be three digits");
+    }
+    const pattern = (contains ?? "").trim().toUpperCase().replace(
+      /[^A-Z0-9*]/g,
+      "",
+    );
+    if (!area && !pattern) {
+      throw new BadRequestError("areaCode or contains is required");
+    }
+    return {
+      numbers: await this.lines.search({
+        ...(area ? { areaCode: area } : {}),
+        ...(pattern ? { contains: pattern } : {}),
+        limit: Number(limit) || 20,
+      }),
+    };
   }
 
   @Post("numbers")

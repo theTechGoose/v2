@@ -1,9 +1,20 @@
 /** REQ-899 — Twilio's delivery status callback onto the text it belongs to. */
 import { Injectable } from "#danet/core";
-import type { TextMessage, TextStatus as Status } from "@communications/dto/mod.ts";
+import type {
+  TextMessage,
+  TextStatus as Status,
+} from "@communications/dto/mod.ts";
 import { TextMessageStore } from "@communications/domain/data/text-message-store/mod.ts";
 
-const KNOWN: Set<string> = new Set(["queued", "sending", "sent", "delivered", "undelivered", "failed", "received"]);
+const KNOWN: Set<string> = new Set([
+  "queued",
+  "sending",
+  "sent",
+  "delivered",
+  "undelivered",
+  "failed",
+  "received",
+]);
 
 @Injectable()
 export class TextStatus {
@@ -17,6 +28,9 @@ export class TextStatus {
     const existing = await this.texts.findBySid(sid);
     if (!existing) return null;
     const errorCode = params.ErrorCode ? Number(params.ErrorCode) : undefined;
-    return await this.texts.patchStatus(existing.id, { status: status as Status, ...(errorCode ? { errorCode } : {}) });
+    return await this.texts.patchStatus(existing.id, {
+      status: status as Status,
+      ...(errorCode ? { errorCode } : {}),
+    });
   }
 }

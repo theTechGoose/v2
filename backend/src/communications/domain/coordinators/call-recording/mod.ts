@@ -9,12 +9,16 @@ export class CallRecording {
 
   async apply(params: Record<string, string>): Promise<Call | null> {
     if ((params.RecordingStatus ?? "completed") !== "completed") return null;
-    const call = params.CallSid ? await this.calls.findBySid(params.CallSid) : null;
+    const call = params.CallSid
+      ? await this.calls.findBySid(params.CallSid)
+      : null;
     if (!call) return null;
     return await this.calls.patch(call.id, {
       recordingSid: params.RecordingSid,
       recordingUrl: params.RecordingUrl,
-      ...(params.RecordingDuration ? { recordingDurationSec: Number(params.RecordingDuration) || 0 } : {}),
+      ...(params.RecordingDuration
+        ? { recordingDurationSec: Number(params.RecordingDuration) || 0 }
+        : {}),
     });
   }
 }

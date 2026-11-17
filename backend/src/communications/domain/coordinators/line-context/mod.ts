@@ -6,7 +6,14 @@
  */
 import { Injectable } from "#danet/core";
 import { CommsConfigSource } from "@communications/domain/data/config/mod.ts";
-import { envLine, lineRefForWebhook, ownsEnvLine, resolvedFromLine, type ResolvedLine } from "@communications/domain/business/line-resolution/mod.ts";
+import {
+  envLine,
+  lineRefForWebhook,
+  ownsEnvLine,
+  resolvedFromLine,
+  type ResolvedLine,
+  webhookTo,
+} from "@communications/domain/business/line-resolution/mod.ts";
 import { LineStore } from "@communications/domain/data/line-store/mod.ts";
 
 export class NoLineError extends Error {
@@ -35,16 +42,24 @@ export class LineContext {
     if (ownsEnvLine(userId, cfg)) return envLine(cfg);
     const line = await this.lines.findActiveByUser(userId);
     if (!line) throw new NoLineError();
-    return resolvedFromLine(line, await this.lines.open(line));
+    return resolvedFromLine(line, await this.lines.open(line), cfg);
   }
 
   async forWebhook(params: Record<string, string>): Promise<ResolvedLine> {
     const cfg = this.cfgSource.get();
     const ref = lineRefForWebhook(cfg.accountSid, params);
-    if (ref.kind === "env") return envLine(cfg);
+    if (ref.kind === "env") {
+      // REQ-920b: a bought number that moved to the main account is found by the number Twilio delivered to
+      const to = webhookTo(params);
+      const house = to ? await this.lines.findByNumber(to) : null;
+      if (house && house.kind === "main" && house.status === "active") {
+        return resolvedFromLine(house, await this.lines.open(house), cfg);
+      }
+      return envLine(cfg);
+    }
     if (ref.kind === "unknown") throw new UnknownLineError();
     const line = await this.lines.findBySubaccount(ref.subaccountSid);
     if (!line) throw new UnknownLineError();
-    return resolvedFromLine(line, await this.lines.open(line));
+    return resolvedFromLine(line, await this.lines.open(line), cfg);
   }
 }

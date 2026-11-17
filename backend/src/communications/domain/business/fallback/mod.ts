@@ -15,7 +15,10 @@ export interface FallbackConfig {
 /** Twilio's DialCallStatus values that mean the call was taken by the softphone */
 const TAKEN = new Set(["completed", "answered"]);
 
-export function selectFallback(config: FallbackConfig, dialCallStatus: string): FallbackArm {
+export function selectFallback(
+  config: FallbackConfig,
+  dialCallStatus: string,
+): FallbackArm {
   if (TAKEN.has(dialCallStatus)) return "hangup";
   switch (config.mode) {
     case "agent":

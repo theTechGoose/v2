@@ -8,8 +8,16 @@ Deno.test("REQ-900 voice-incoming int: rings u_1 and u_2 for 20 s with action â†
   const { restore, cfg } = await freshLine();
   try {
     const s = await stores();
-    const xml = await new VoiceIncoming(s.calls, s.threads, cfg).handle({ CallSid: "CAin", From: PEER, To: LINE, CallStatus: "ringing" });
-    assertStringIncludes(xml, `<Dial timeout="20" action="https://api.test/communications/twilio/voice/unanswered" callerId="${PEER}">`);
+    const xml = await new VoiceIncoming(s.calls, s.threads, cfg).handle({
+      CallSid: "CAin",
+      From: PEER,
+      To: LINE,
+      CallStatus: "ringing",
+    });
+    assertStringIncludes(
+      xml,
+      `<Dial timeout="20" action="https://api.test/communications/twilio/voice/unanswered" callerId="${PEER}">`,
+    );
     assertStringIncludes(xml, "<Client>u_1</Client><Client>u_2</Client>");
     const call = await s.calls.findBySid("CAin");
     assertEquals(call?.direction, "inbound");

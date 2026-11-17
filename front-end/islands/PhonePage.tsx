@@ -19,6 +19,7 @@ import {
   type Thread,
   type ThreadDetail,
 } from "../clients/communications.ts";
+import HouseLinePanel from "../components/comms/HouseLinePanel.tsx"; // REQ-920b
 import FieldHead from "../components/FieldHead.tsx";
 import { Toast, useToast } from "../components/hr/bits.tsx";
 import { ApiError } from "../lib/api.ts";
@@ -205,6 +206,7 @@ export default function PhonePage() {
               </button>
             )}
           </section>
+          {line && <HouseLinePanel line={line} onChanged={load} />}
           <div class="comms-grid">
             <div class="comms-main">
               <div class="comms-tabs" role="tablist">

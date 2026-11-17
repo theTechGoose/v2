@@ -4,13 +4,18 @@ import { mediaUrls, parseForm, signedUrl, webhookFromParts } from "./mod.ts";
 
 Deno.test("REQ-899 signedUrl: the public origin replaces whatever host the proxy handed us; path and query survive", () => {
   assertEquals(
-    signedUrl("https://api.documonster.com/", "http://0.0.0.0:3000/communications/twilio/sms?x=1"),
+    signedUrl(
+      "https://api.documonster.com/",
+      "http://0.0.0.0:3000/communications/twilio/sms?x=1",
+    ),
     "https://api.documonster.com/communications/twilio/sms?x=1",
   );
 });
 
 Deno.test("REQ-899 parseForm + mediaUrls: Twilio's urlencoded body, including MMS attachments", () => {
-  const params = parseForm("From=%2B15125551234&To=%2B18432588463&Body=hi+there&NumMedia=2&MediaUrl0=https%3A%2F%2Fa%2F1&MediaUrl1=https%3A%2F%2Fa%2F2");
+  const params = parseForm(
+    "From=%2B15125551234&To=%2B18432588463&Body=hi+there&NumMedia=2&MediaUrl0=https%3A%2F%2Fa%2F1&MediaUrl1=https%3A%2F%2Fa%2F2",
+  );
   assertEquals(params.From, "+15125551234");
   assertEquals(params.Body, "hi there");
   assertEquals(mediaUrls(params), ["https://a/1", "https://a/2"]);
@@ -25,5 +30,10 @@ Deno.test("REQ-899 webhookFromParts: one signed-request shape for the verifier",
     rawBody: "A=1&B=2",
     signature: "sig",
   });
-  assertEquals(w, { authToken: "t", url: "https://x.test/communications/twilio/sms", params: { A: "1", B: "2" }, signature: "sig" });
+  assertEquals(w, {
+    authToken: "t",
+    url: "https://x.test/communications/twilio/sms",
+    params: { A: "1", B: "2" },
+    signature: "sig",
+  });
 });

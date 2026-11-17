@@ -192,12 +192,120 @@ export class TwilioClient {
     return res.ok ? { ok: true } : res;
   }
 
+  // ── REQ-920b: the house path (main credentials throughout) ───────────────
+
+  /** move a number into another of our accounts (a subaccount → the main account); Twilio wants the main credentials */
+  async transferNumber(
+    input: { numberSid: string; toAccountSid: string },
+  ): Promise<{ ok: true } | Failure> {
+    const cfg = this.cfgSource.get();
+    const res = await this.call(
+      "POST",
+      `/2010-04-01/Accounts/${cfg.accountSid}/IncomingPhoneNumbers/${input.numberSid}.json`,
+      form({ AccountSid: input.toAccountSid }),
+    );
+    return res.ok ? { ok: true } : res;
+  }
+
+  /** point a number's webhooks at us (empty URLs are left alone: REQ-918b) */
+  async updateNumber(
+    input: {
+      accountSid: string;
+      numberSid: string;
+      voiceUrl: string;
+      smsUrl: string;
+      statusCallback: string;
+    },
+  ): Promise<{ ok: true } | Failure> {
+    const res = await this.call(
+      "POST",
+      `/2010-04-01/Accounts/${input.accountSid}/IncomingPhoneNumbers/${input.numberSid}.json`,
+      form({
+        ...(input.voiceUrl
+          ? { VoiceUrl: input.voiceUrl, VoiceMethod: "POST" }
+          : {}),
+        ...(input.smsUrl ? { SmsUrl: input.smsUrl, SmsMethod: "POST" } : {}),
+        ...(input.statusCallback
+          ? {
+            StatusCallback: input.statusCallback,
+            StatusCallbackMethod: "POST",
+          }
+          : {}),
+      }),
+    );
+    return res.ok ? { ok: true } : res;
+  }
+
+  async listMessagingServices(): Promise<
+    { ok: true; services: { sid: string; friendlyName: string }[] } | Failure
+  > {
+    const res = await this.call(
+      "GET",
+      "/v1/Services?PageSize=100",
+      undefined,
+      "messaging",
+    );
+    if (!res.ok) return res;
+    const rows = Array.isArray(res.json.services)
+      ? res.json.services as Record<string, unknown>[]
+      : [];
+    return {
+      ok: true,
+      services: rows.map((r) => ({
+        sid: str(r.sid),
+        friendlyName: str(r.friendly_name),
+      })),
+    };
+  }
+
+  async listCampaigns(
+    input: { serviceSid: string },
+  ): Promise<
+    | {
+      ok: true;
+      campaigns: { sid: string; usecase: string; status: string }[];
+    }
+    | Failure
+  > {
+    const res = await this.call(
+      "GET",
+      `/v1/Services/${input.serviceSid}/Compliance/Usa2p`,
+      undefined,
+      "messaging",
+    );
+    if (!res.ok) return res;
+    const rows = Array.isArray(res.json.compliance)
+      ? res.json.compliance as Record<string, unknown>[]
+      : [];
+    return {
+      ok: true,
+      campaigns: rows.map((r) => ({
+        sid: str(r.sid),
+        usecase: str(r.us_app_to_person_usecase),
+        status: str(r.campaign_status),
+      })),
+    };
+  }
+
+  async addNumberToService(
+    input: { serviceSid: string; numberSid: string },
+  ): Promise<{ ok: true } | Failure> {
+    const res = await this.call(
+      "POST",
+      `/v1/Services/${input.serviceSid}/PhoneNumbers`,
+      form({ PhoneNumberSid: input.numberSid }),
+      "messaging",
+    );
+    return res.ok ? { ok: true } : res;
+  }
+
   // ── the one HTTP path ──────────────────────────────────────────────────────
 
   private async call(
     method: "GET" | "POST" | "DELETE",
     path: string,
     body?: URLSearchParams,
+    host: "api" | "messaging" = "api",
   ): Promise<{ ok: true; json: TwilioJson } | Failure> {
     const cfg = this.cfgSource.get();
     if (cfg.devMode || !cfg.authToken) {
@@ -205,19 +313,22 @@ export class TwilioClient {
     }
     const f = this.fetchOverride ?? globalThis.fetch;
     try {
-      const res = await f(`${cfg.baseUrl}${path}`, {
-        method,
-        headers: {
-          "Authorization": `Basic ${
-            btoa(`${cfg.accountSid}:${cfg.authToken}`)
-          }`,
-          "Accept": "application/json",
-          ...(body
-            ? { "Content-Type": "application/x-www-form-urlencoded" }
-            : {}),
+      const res = await f(
+        `${host === "messaging" ? cfg.messagingBaseUrl : cfg.baseUrl}${path}`,
+        {
+          method,
+          headers: {
+            "Authorization": `Basic ${
+              btoa(`${cfg.accountSid}:${cfg.authToken}`)
+            }`,
+            "Accept": "application/json",
+            ...(body
+              ? { "Content-Type": "application/x-www-form-urlencoded" }
+              : {}),
+          },
+          ...(body ? { body: body.toString() } : {}),
         },
-        ...(body ? { body: body.toString() } : {}),
-      });
+      );
       const text = await res.text();
       let parsed: TwilioJson = {};
       try {

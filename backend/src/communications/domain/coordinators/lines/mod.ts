@@ -132,15 +132,21 @@ export class Lines {
     const line = await this.lines.findByUser(userId);
     if (!line) return null;
     if (line.status === "released") return redactLine(line);
+    // REQ-920b: a main-account line is released on the main account; there is no subaccount to close
+    const accountSid = line.kind === "main"
+      ? this.cfgSource.get().accountSid
+      : line.subaccountSid;
     const freed = await this.twilio.releaseNumber({
-      accountSid: line.subaccountSid,
+      accountSid,
       numberSid: line.numberSid,
     });
     if (!freed.ok) throw new ProvisioningError("release number", freed);
-    const closed = await this.twilio.closeSubaccount({
-      accountSid: line.subaccountSid,
-    });
-    if (!closed.ok) throw new ProvisioningError("close subaccount", closed);
+    if (line.kind !== "main") {
+      const closed = await this.twilio.closeSubaccount({
+        accountSid: line.subaccountSid,
+      });
+      if (!closed.ok) throw new ProvisioningError("close subaccount", closed);
+    }
     return redactLine(await this.lines.markReleased(line.id));
   }
 }

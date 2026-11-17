@@ -43,6 +43,8 @@ export function webhookFromParts(p: {
 export function mediaUrls(params: Record<string, string>): string[] {
   const n = Number(params.NumMedia ?? 0) || 0;
   const urls: string[] = [];
-  for (let i = 0; i < n; i++) if (params[`MediaUrl${i}`]) urls.push(params[`MediaUrl${i}`]);
+  for (let i = 0; i < n; i++) {
+    if (params[`MediaUrl${i}`]) urls.push(params[`MediaUrl${i}`]);
+  }
   return urls;
 }

@@ -6,9 +6,15 @@
 import { Injectable } from "#danet/core";
 import { CommsConfigSource } from "@communications/domain/data/config/mod.ts";
 import { verifyTwilioSignature } from "@communications/domain/business/twilio-signature/mod.ts";
-import { parseForm, webhookFromParts } from "@communications/domain/business/webhook-request/mod.ts";
+import {
+  parseForm,
+  webhookFromParts,
+} from "@communications/domain/business/webhook-request/mod.ts";
 import type { ResolvedLine } from "@communications/domain/business/line-resolution/mod.ts";
-import { LineContext, UnknownLineError } from "@communications/domain/coordinators/line-context/mod.ts";
+import {
+  LineContext,
+  UnknownLineError,
+} from "@communications/domain/coordinators/line-context/mod.ts";
 
 export class WebhookForbiddenError extends Error {
   readonly status: number = 403;
@@ -26,12 +32,17 @@ export interface VerifiedWebhook {
 
 @Injectable()
 export class VerifyWebhook {
-  constructor(private lineContext: LineContext, private cfgSource: CommsConfigSource) {}
+  constructor(
+    private lineContext: LineContext,
+    private cfgSource: CommsConfigSource,
+  ) {}
 
   async verify(req: Request): Promise<VerifiedWebhook> {
     const cfg = this.cfgSource.get();
     const rawBody = req.method === "GET" ? "" : await req.text();
-    const params = req.method === "GET" ? Object.fromEntries(new URL(req.url).searchParams) : parseForm(rawBody);
+    const params = req.method === "GET"
+      ? Object.fromEntries(new URL(req.url).searchParams)
+      : parseForm(rawBody);
     let line: ResolvedLine;
     try {
       line = await this.lineContext.forWebhook(params);
@@ -48,7 +59,9 @@ export class VerifyWebhook {
       rawBody,
       signature: req.headers.get("x-twilio-signature"),
     });
-    if (!(await verifyTwilioSignature(webhook))) throw new WebhookForbiddenError();
+    if (!(await verifyTwilioSignature(webhook))) {
+      throw new WebhookForbiddenError();
+    }
     return { params: webhook.params, line };
   }
 }

@@ -8,7 +8,11 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
-import { openSecret, sealSecret, secretsKey } from "@core/business/secret-box/mod.ts";
+import {
+  openSecret,
+  sealSecret,
+  secretsKey,
+} from "@core/business/secret-box/mod.ts";
 import type { Line } from "@communications/dto/mod.ts";
 
 const PREFIX = "comms_line";
@@ -102,12 +106,50 @@ export class LineStore {
     };
   }
 
+  /** REQ-920b: the number now sits on the main account with its own key and app; the subaccount index goes */
+  async markMain(
+    id: string,
+    input: {
+      apiKeySid: string;
+      apiKeySecret: string;
+      twimlAppSid: string;
+      messagingServiceSid: string;
+      campaignUsecase: string;
+    },
+  ): Promise<Line> {
+    const kv = await getKv();
+    const key = await secretsKey();
+    const line = await this.get(id);
+    const next: Line = {
+      ...line,
+      kind: "main",
+      subaccountSid: "",
+      apiKeySid: input.apiKeySid,
+      twimlAppSid: input.twimlAppSid,
+      messagingServiceSid: input.messagingServiceSid,
+      campaignUsecase: input.campaignUsecase,
+      authTokenSealed: await sealSecret("", key),
+      apiKeySecretSealed: await sealSecret(input.apiKeySecret, key),
+      updatedAt: new Date().toISOString(),
+    };
+    const tx = kv.atomic().set([PREFIX, id], next);
+    if (line.subaccountSid) tx.delete([BY_SUB, line.subaccountSid]);
+    const res = await tx.commit();
+    if (!res.ok) throw new Error("line write failed");
+    return next;
+  }
+
   async markReleased(id: string): Promise<Line> {
     const kv = await getKv();
     const line = await this.get(id);
     if (line.status === "released") return line;
     const now = new Date().toISOString();
-    const next: Line = { ...line, status: "released", releasedAt: now, updatedAt: now };
+    const next: Line = {
+      ...line,
+      status: "released",
+      releasedAt: now,
+      updatedAt: now,
+    };
     const res = await kv.atomic()
       .set([PREFIX, id], next)
       .delete([BY_NUMBER, line.number])

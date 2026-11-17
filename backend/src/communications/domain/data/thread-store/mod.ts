@@ -45,8 +45,12 @@ export class ThreadStore {
     const thread: Thread = existing
       ? {
         ...existing,
-        lastMessageAt: input.at > existing.lastMessageAt ? input.at : existing.lastMessageAt,
-        lastPreview: input.at >= existing.lastMessageAt ? input.preview : existing.lastPreview,
+        lastMessageAt: input.at > existing.lastMessageAt
+          ? input.at
+          : existing.lastMessageAt,
+        lastPreview: input.at >= existing.lastMessageAt
+          ? input.preview
+          : existing.lastPreview,
         unreadCount: existing.unreadCount + (input.unread ? 1 : 0),
         updatedAt: now,
       }
@@ -60,14 +64,22 @@ export class ThreadStore {
         createdAt: now,
         updatedAt: now,
       };
-    await kv.atomic().set([PREFIX, thread.id], thread).set([BY_PEER, thread.line, thread.peer], thread.id).commit();
+    await kv.atomic().set([PREFIX, thread.id], thread).set([
+      BY_PEER,
+      thread.line,
+      thread.peer,
+    ], thread.id).commit();
     return thread;
   }
 
   async markRead(id: string): Promise<Thread> {
     const kv = await getKv();
     const t = await this.get(id);
-    const updated = { ...t, unreadCount: 0, updatedAt: new Date().toISOString() };
+    const updated = {
+      ...t,
+      unreadCount: 0,
+      updatedAt: new Date().toISOString(),
+    };
     await kv.set([PREFIX, id], updated);
     return updated;
   }
@@ -76,7 +88,9 @@ export class ThreadStore {
   async list(line: string): Promise<Thread[]> {
     const kv = await getKv();
     const out: Thread[] = [];
-    for await (const e of kv.list<Thread>({ prefix: [PREFIX] })) if (e.value.line === line) out.push(e.value);
+    for await (const e of kv.list<Thread>({ prefix: [PREFIX] })) {
+      if (e.value.line === line) out.push(e.value);
+    }
     return out.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
   }
 }

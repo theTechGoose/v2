@@ -14,8 +14,15 @@ export async function twilioSignature(
   url: string,
   params: Record<string, string>,
 ): Promise<string> {
-  const data = url + Object.keys(params).sort().map((k) => k + params[k]).join("");
-  const key = await crypto.subtle.importKey("raw", enc.encode(authToken), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const data = url +
+    Object.keys(params).sort().map((k) => k + params[k]).join("");
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(authToken),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
   const mac = await crypto.subtle.sign("HMAC", key, enc.encode(data));
   return btoa(String.fromCharCode(...new Uint8Array(mac)));
 }
@@ -38,7 +45,9 @@ function sameString(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function verifyTwilioSignature(req: SignedRequest): Promise<boolean> {
+export async function verifyTwilioSignature(
+  req: SignedRequest,
+): Promise<boolean> {
   if (!req.signature || !req.authToken) return false;
   const expected = await twilioSignature(req.authToken, req.url, req.params);
   return sameString(expected, req.signature);

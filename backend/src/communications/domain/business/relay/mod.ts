@@ -25,7 +25,11 @@ export type RelayFrame =
     customParameters?: Record<string, string>;
   }
   | { type: "prompt"; voicePrompt: string; lang?: string; last: boolean }
-  | { type: "interrupt"; utteranceUntilInterrupt: string; durationUntilInterruptMs?: number }
+  | {
+    type: "interrupt";
+    utteranceUntilInterrupt: string;
+    durationUntilInterruptMs?: number;
+  }
   | { type: "dtmf"; digit: string }
   | { type: "error"; description: string };
 
@@ -55,7 +59,16 @@ export interface RelayState {
 }
 
 export function initialRelayState(): RelayState {
-  return { sessionId: null, callSid: null, from: null, to: null, callId: null, history: [], callerTurns: 0, ended: false };
+  return {
+    sessionId: null,
+    callSid: null,
+    from: null,
+    to: null,
+    callId: null,
+    history: [],
+    callerTurns: 0,
+    ended: false,
+  };
 }
 
 interface Step {
@@ -64,13 +77,25 @@ interface Step {
 }
 
 function callerTurn(state: RelayState, text: string, lang?: string): Step {
-  const history = [...state.history, { role: "user", content: text } as LLMTurn];
+  const history = [
+    ...state.history,
+    { role: "user", content: text } as LLMTurn,
+  ];
   const callerTurns = state.callerTurns + 1;
-  const effects: RelayEffect[] = [{ kind: "record", turn: { role: "caller", text, ...(lang ? { lang } : {}) } }];
+  const effects: RelayEffect[] = [{
+    kind: "record",
+    turn: { role: "caller", text, ...(lang ? { lang } : {}) },
+  }];
   if (callerTurns > RELAY_MAX_TURNS) {
-    return { state: { ...state, history, callerTurns, ended: true }, effects: [...effects, { kind: "end", reason: "turn-cap" }] };
+    return {
+      state: { ...state, history, callerTurns, ended: true },
+      effects: [...effects, { kind: "end", reason: "turn-cap" }],
+    };
   }
-  return { state: { ...state, history, callerTurns }, effects: [...effects, { kind: "ask-llm", history }] };
+  return {
+    state: { ...state, history, callerTurns },
+    effects: [...effects, { kind: "ask-llm", history }],
+  };
 }
 
 export function reduceRelay(state: RelayState, frame: RelayFrame): Step {
@@ -100,8 +125,17 @@ export function reduceRelay(state: RelayState, frame: RelayFrame): Step {
       const heard = frame.utteranceUntilInterrupt.trim();
       const last = state.history.at(-1);
       if (!last || last.role !== "assistant") return { state, effects: [] };
-      const history = [...state.history.slice(0, -1), { role: "assistant", content: heard } as LLMTurn];
-      return { state: { ...state, history }, effects: [{ kind: "record", turn: { role: "agent", text: heard, interrupted: true } }] };
+      const history = [
+        ...state.history.slice(0, -1),
+        { role: "assistant", content: heard } as LLMTurn,
+      ];
+      return {
+        state: { ...state, history },
+        effects: [{
+          kind: "record",
+          turn: { role: "agent", text: heard, interrupted: true },
+        }],
+      };
     }
     default:
       return { state, effects: [] };
@@ -112,12 +146,20 @@ export function reduceRelay(state: RelayState, frame: RelayFrame): Step {
 export function replyEffects(state: RelayState, reply: string): Step {
   const wantsEnd = reply.includes(END_CALL_MARKER);
   const text = reply.replaceAll(END_CALL_MARKER, "").trim();
-  const history = text ? [...state.history, { role: "assistant", content: text } as LLMTurn] : state.history;
+  const history = text
+    ? [...state.history, { role: "assistant", content: text } as LLMTurn]
+    : state.history;
   const effects: RelayEffect[] = [];
   if (text) {
-    effects.push({ kind: "send", message: { type: "text", token: text, last: true } });
+    effects.push({
+      kind: "send",
+      message: { type: "text", token: text, last: true },
+    });
     effects.push({ kind: "record", turn: { role: "agent", text } });
   }
   if (wantsEnd) effects.push({ kind: "end", reason: "agent-ended" });
-  return { state: { ...state, history, ended: state.ended || wantsEnd }, effects };
+  return {
+    state: { ...state, history, ended: state.ended || wantsEnd },
+    effects,
+  };
 }

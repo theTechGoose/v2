@@ -18,7 +18,14 @@ export interface Thread {
 }
 
 export type TextStatus =
-  | "queued" | "sending" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "dev";
+  | "queued"
+  | "sending"
+  | "sent"
+  | "delivered"
+  | "undelivered"
+  | "failed"
+  | "received"
+  | "dev";
 
 export interface TextMessage {
   id: string;
@@ -37,7 +44,15 @@ export interface TextMessage {
 }
 
 export type CallStatus =
-  | "queued" | "initiated" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+  | "queued"
+  | "initiated"
+  | "ringing"
+  | "in-progress"
+  | "completed"
+  | "busy"
+  | "no-answer"
+  | "failed"
+  | "canceled";
 export type HandledBy = "none" | "client" | "agent" | "voicemail" | "forward";
 
 export interface CallTranscriptTurn {
@@ -86,11 +101,19 @@ export class BadRequestError extends Error {
 
 export function parseSendText(body: unknown): SendTextInput {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (typeof b.to !== "string" || !b.to.trim()) throw new BadRequestError("to is required");
-  if (typeof b.body !== "string" || !b.body.trim()) throw new BadRequestError("body is required");
+  if (typeof b.to !== "string" || !b.to.trim()) {
+    throw new BadRequestError("to is required");
+  }
+  if (typeof b.body !== "string" || !b.body.trim()) {
+    throw new BadRequestError("body is required");
+  }
   const to = normalizePhone(b.to);
-  if (!/^\+[1-9]\d{1,14}$/.test(to)) throw new BadRequestError("to must be a valid phone number");
-  if (b.body.length > 1600) throw new BadRequestError("body is too long (1600 max)");
+  if (!/^\+[1-9]\d{1,14}$/.test(to)) {
+    throw new BadRequestError("to must be a valid phone number");
+  }
+  if (b.body.length > 1600) {
+    throw new BadRequestError("body is too long (1600 max)");
+  }
   return { to, body: b.body };
 }
 
@@ -119,7 +142,9 @@ export type LineStatus = "active" | "released";
 export interface Line {
   id: string;
   userId: string;
-  kind: "subaccount";
+  /** REQ-920b: "main" once the number moved to the main account under the platform's own A2P registration */
+  kind: "subaccount" | "main";
+  /** "" on a main-account line */
   subaccountSid: string;
   /** E.164 */
   number: string;
@@ -128,6 +153,9 @@ export interface Line {
   apiKeySid: string;
   twimlAppSid: string;
   friendlyName?: string;
+  /** REQ-920b: the main-account messaging service (MG…) the number texts through, and its verified campaign's use case */
+  messagingServiceSid?: string;
+  campaignUsecase?: string;
   status: LineStatus;
   authTokenSealed: string;
   apiKeySecretSealed: string;
@@ -159,9 +187,22 @@ export interface BuyNumberInput {
 
 export function parseBuyNumber(body: unknown): BuyNumberInput {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (typeof b.phoneNumber !== "string" || !b.phoneNumber.trim()) throw new BadRequestError("phoneNumber is required");
+  if (typeof b.phoneNumber !== "string" || !b.phoneNumber.trim()) {
+    throw new BadRequestError("phoneNumber is required");
+  }
   const phoneNumber = safePhone(b.phoneNumber);
-  if (!phoneNumber) throw new BadRequestError("phoneNumber must be a valid phone number");
-  const friendlyName = typeof b.friendlyName === "string" ? b.friendlyName.trim().slice(0, 64) : "";
+  if (!phoneNumber) {
+    throw new BadRequestError("phoneNumber must be a valid phone number");
+  }
+  const friendlyName = typeof b.friendlyName === "string"
+    ? b.friendlyName.trim().slice(0, 64)
+    : "";
   return { phoneNumber, ...(friendlyName ? { friendlyName } : {}) };
+}
+
+/** REQ-920b — a main-account messaging service with a VERIFIED A2P campaign */
+export interface HouseService {
+  sid: string;
+  friendlyName: string;
+  usecase: string;
 }

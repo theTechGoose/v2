@@ -26,6 +26,8 @@ export interface CommsConfig {
   devMode: boolean;
   /** Twilio REST origin (COMMS_TWILIO_BASE_URL; tests point it at a local server) */
   baseUrl: string;
+  /** REQ-920b: Twilio's Messaging host (services, campaigns); overridable for a stand-in */
+  messagingBaseUrl: string;
   /** the user id that owns the env line (COMMS_ENV_LINE_OWNER); empty → nobody does (REQ-904) */
   envLineOwner: string;
 }
@@ -74,6 +76,9 @@ export function readCommsConfig(
     ringTimeoutSec: Number(env("COMMS_RING_TIMEOUT_SEC") ?? 20) || 20,
     ringIdentities: identities.length ? identities : ["agent_default"],
     devMode: !accountSid,
+    messagingBaseUrl:
+      (env("COMMS_MESSAGING_BASE_URL") ?? "https://messaging.twilio.com")
+        .replace(/\/+$/, ""),
     baseUrl: (env("COMMS_TWILIO_BASE_URL") ?? "https://api.twilio.com").replace(
       /\/+$/,
       "",

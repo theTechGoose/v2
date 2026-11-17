@@ -22,7 +22,13 @@ export class ReceiveText {
     const media = mediaUrls(params);
     const at = new Date().toISOString();
     const preview = body || (media.length ? "📷 Photo" : "");
-    const thread = await this.threads.touch({ line, peer, at, preview: preview.slice(0, 140), unread: true });
+    const thread = await this.threads.touch({
+      line,
+      peer,
+      at,
+      preview: preview.slice(0, 140),
+      unread: true,
+    });
     return await this.texts.create({
       threadId: thread.id,
       line,

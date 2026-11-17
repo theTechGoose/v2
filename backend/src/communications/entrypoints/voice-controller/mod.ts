@@ -41,7 +41,9 @@ export class VoiceController {
     try {
       upgraded = Deno.upgradeWebSocket(req);
     } catch (err) {
-      return new Response(`upgrade failed: ${(err as Error).message}`, { status: 400 });
+      return new Response(`upgrade failed: ${(err as Error).message}`, {
+        status: 400,
+      });
     }
     const { socket, response } = upgraded;
     const session = this.relay.start();
@@ -57,12 +59,23 @@ export class VoiceController {
         if (step.end) {
           // Twilio closes after it has spoken the last token; give it a moment, then make sure
           setTimeout(() => {
-            if (socket.readyState === WebSocket.OPEN) socket.close(1000, "session ended");
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.close(1000, "session ended");
+            }
           }, 15_000);
         }
-      }).catch((err) => console.error("[communications/relay] frame failed:", (err as Error).message));
+      }).catch((err) =>
+        console.error(
+          "[communications/relay] frame failed:",
+          (err as Error).message,
+        )
+      );
     };
-    socket.onerror = (ev) => console.error("[communications/relay] socket error", (ev as ErrorEvent).message ?? "");
+    socket.onerror = (ev) =>
+      console.error(
+        "[communications/relay] socket error",
+        (ev as ErrorEvent).message ?? "",
+      );
     return response;
   }
 }

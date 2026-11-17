@@ -13,8 +13,22 @@ const PREFIX = "comms_call";
 const BY_SID = "comms_call_by_sid";
 const BY_PEER = "comms_call_by_peer";
 
-export type CreateCallInput = Omit<Call, "id" | "createdAt" | "updatedAt" | "transcript"> & { transcript?: CallTranscriptTurn[] };
-export type CallPatch = Partial<Omit<Call, "id" | "createdAt" | "updatedAt" | "transcript" | "providerSid" | "line" | "peer" | "direction">>;
+export type CreateCallInput =
+  & Omit<Call, "id" | "createdAt" | "updatedAt" | "transcript">
+  & { transcript?: CallTranscriptTurn[] };
+export type CallPatch = Partial<
+  Omit<
+    Call,
+    | "id"
+    | "createdAt"
+    | "updatedAt"
+    | "transcript"
+    | "providerSid"
+    | "line"
+    | "peer"
+    | "direction"
+  >
+>;
 
 @Injectable()
 export class CallStore {
@@ -22,7 +36,13 @@ export class CallStore {
     const kv = await getKv();
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
-    const call: Call = { transcript: [], ...input, id, createdAt, updatedAt: createdAt };
+    const call: Call = {
+      transcript: [],
+      ...input,
+      id,
+      createdAt,
+      updatedAt: createdAt,
+    };
     await kv.atomic()
       .set([PREFIX, id], call)
       .set([BY_SID, input.providerSid], id)
@@ -48,8 +68,14 @@ export class CallStore {
   async patch(id: string, patch: CallPatch): Promise<Call> {
     const kv = await getKv();
     const existing = await this.get(id);
-    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-    const updated: Call = { ...existing, ...defined, updatedAt: new Date().toISOString() };
+    const defined = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined),
+    );
+    const updated: Call = {
+      ...existing,
+      ...defined,
+      updatedAt: new Date().toISOString(),
+    };
     await kv.set([PREFIX, id], updated);
     return updated;
   }
@@ -58,10 +84,15 @@ export class CallStore {
     const kv = await getKv();
     const existing = await this.get(id);
     // an interrupted agent turn replaces the one it interrupted
-    const transcript = turn.interrupted && existing.transcript.at(-1)?.role === "agent"
-      ? [...existing.transcript.slice(0, -1), turn]
-      : [...existing.transcript, turn];
-    const updated: Call = { ...existing, transcript, updatedAt: new Date().toISOString() };
+    const transcript =
+      turn.interrupted && existing.transcript.at(-1)?.role === "agent"
+        ? [...existing.transcript.slice(0, -1), turn]
+        : [...existing.transcript, turn];
+    const updated: Call = {
+      ...existing,
+      transcript,
+      updatedAt: new Date().toISOString(),
+    };
     await kv.set([PREFIX, id], updated);
     return updated;
   }
@@ -77,7 +108,12 @@ export class CallStore {
   async list(line: string, limit = 100): Promise<Call[]> {
     const kv = await getKv();
     const out: Call[] = [];
-    for await (const e of kv.list<Call>({ prefix: [PREFIX] })) if (e.value.line === line) out.push(e.value);
-    return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+    for await (const e of kv.list<Call>({ prefix: [PREFIX] })) {
+      if (e.value.line === line) out.push(e.value);
+    }
+    return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(
+      0,
+      limit,
+    );
   }
 }

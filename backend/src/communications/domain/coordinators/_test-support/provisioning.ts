@@ -72,6 +72,70 @@ export class ProvisioningTwilio {
       }],
     });
   }
+  // ── REQ-920b: the house path ──────────────────────────────────────────────
+  verifiedServices: {
+    sid: string;
+    friendlyName: string;
+    usecase: string;
+    status: string;
+  }[] = [
+    {
+      sid: "MGsupport",
+      friendlyName: "Monster Support",
+      usecase: "CUSTOMER_CARE",
+      status: "VERIFIED",
+    },
+    {
+      sid: "MGmarketing",
+      friendlyName: "Marketing",
+      usecase: "MARKETING",
+      status: "FAILED",
+    },
+    { sid: "MGplain", friendlyName: "No campaign", usecase: "", status: "" },
+  ];
+  failTransferWith: { ok: false; reason: string; code?: number } | null = null;
+  transferNumber(input: { numberSid: string; toAccountSid: string }) {
+    this.calls.push({ op: "transferNumber", args: input });
+    if (this.failTransferWith) return Promise.resolve(this.failTransferWith);
+    return Promise.resolve({ ok: true as const });
+  }
+  updateNumber(
+    input: {
+      accountSid: string;
+      numberSid: string;
+      voiceUrl: string;
+      smsUrl: string;
+      statusCallback: string;
+    },
+  ) {
+    this.calls.push({ op: "updateNumber", args: input });
+    return Promise.resolve({ ok: true as const });
+  }
+  listMessagingServices() {
+    this.calls.push({ op: "listMessagingServices", args: {} });
+    return Promise.resolve({
+      ok: true as const,
+      services: this.verifiedServices.map((s) => ({
+        sid: s.sid,
+        friendlyName: s.friendlyName,
+      })),
+    });
+  }
+  listCampaigns(input: { serviceSid: string }) {
+    this.calls.push({ op: "listCampaigns", args: input });
+    const s = this.verifiedServices.find((x) => x.sid === input.serviceSid);
+    return Promise.resolve({
+      ok: true as const,
+      campaigns: s && s.usecase
+        ? [{ sid: `QE${s.sid}`, usecase: s.usecase, status: s.status }]
+        : [],
+    });
+  }
+  addNumberToService(input: { serviceSid: string; numberSid: string }) {
+    this.calls.push({ op: "addNumberToService", args: input });
+    return Promise.resolve({ ok: true as const });
+  }
+
   asClient(): TwilioClient {
     return this as unknown as TwilioClient;
   }

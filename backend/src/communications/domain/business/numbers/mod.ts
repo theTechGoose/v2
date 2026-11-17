@@ -18,7 +18,10 @@ export function availableNumbersQuery(search: NumberSearch): URLSearchParams {
   const q = new URLSearchParams();
   q.set("VoiceEnabled", "true");
   q.set("SmsEnabled", "true");
-  q.set("PageSize", String(Math.min(50, Math.max(1, Math.floor(search.limit ?? 20)))));
+  q.set(
+    "PageSize",
+    String(Math.min(50, Math.max(1, Math.floor(search.limit ?? 20)))),
+  );
   if (search.areaCode) q.set("AreaCode", search.areaCode);
   if (search.contains) q.set("Contains", search.contains);
   return q;
@@ -37,7 +40,8 @@ export function mapAvailable(rows: unknown[]): AvailableNumber[] {
     const row = (r ?? {}) as TwilioAvailableRow;
     if (!row.phone_number) return [];
     const caps = row.capabilities ?? {};
-    const cap = (k: string) => Boolean(caps[k] ?? caps[k.toUpperCase()] ?? caps[k.toLowerCase()]);
+    const cap = (k: string) =>
+      Boolean(caps[k] ?? caps[k.toUpperCase()] ?? caps[k.toLowerCase()]);
     return [{
       phoneNumber: row.phone_number,
       friendlyName: row.friendly_name ?? row.phone_number,
