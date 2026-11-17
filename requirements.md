@@ -7942,3 +7942,8 @@ The stage said "Cargando su siguiente página…" for ≤110 ms when the custome
 - **p4** the folded tab's dock differing between two visits of /customers (left after a goto, bottom-right after Back/Forward) — the tab docks where its row is clear of the page's controls and words at placement time; both spots were clear. By design (REQ-890 A3/A5).
 - **m3** unconfirmed (one sighting) — the same guard as m2; covered by REQ-890 A6 REVISION 2.
 - All four run-17 fixes (REQ-820 A5 REV 2, REQ-890 A6 REV, REQ-890 A4 REV, REQ-827 A REV) were re-checked FIXED by every tester who ran them; nobody saw the dead folded pill (item 16).
+
+### Lane at 33f80d5a (run-18 hand fixes): 129 pass · 4 fail → two conflicts revised, two load flakes
+- REQ-890 AMENDMENT 5 REVISION 2 (story): its /reports 390 story rested 2.5 s on the opened peek and expected the click to be the tab's; under REQ-890 AMENDMENT 6 REVISION 2 a second's rest ends the approach, so End under the rested mouse is End's (the question, dismissible) — the story now expects the question when End is under the mouse, the controls otherwise, and never the page.
+- REQ-890 AMENDMENT 6 REVISION (story): the whole-pill run-17 story sampled 1.5 s after Seguir before its in-place click; the click must come within PEEK_APPROACH_REST_MS to be "not End's" — it samples 700 ms now (the shrink jump is in the first frames). The p4 story (600–800 ms) already fit.
+- REQ-781 (demo-pill-no-gap) and REQ-638 (demo-select-open, send menu) failed in the lane and pass alone against the same server: load flakes. Re-run of the six affected stories: 6/6 green.

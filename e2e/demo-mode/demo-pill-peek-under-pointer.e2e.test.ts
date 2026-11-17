@@ -7,6 +7,8 @@
  * pointer on the tab's box. A peek opens UNDER the pointer that opens it (a box of the tab's row
  * that covers it, words or not), and a peek the pointer is on keeps its box while the pointer
  * stays on it. The click there is the tab's (REQ-890 AMENDMENT 4): it shows the controls.
+ * REVISION 2 (demo-loop run 18, m2 — REQ-890 AMENDMENT 6 REVISION 2): after a second's rest the
+ * approach is over; a click on End under the rested mouse asks (dismissible), never hits the page.
  */
 import { story, type StoryTools } from "#shots";
 import { answerQuestions } from "../_shared/onboarding-answers.ts";
@@ -186,22 +188,29 @@ Deno.test("REQ-890 AMENDMENT 5 (demo-loop run 16, m2 + m1): on /reports at 390×
           JSON.stringify(hovered.box)
         }: ${JSON.stringify(moved.slice(0, 3))}`,
       );
-      // the click aimed at "Demo": the tab's — the controls show, no question
+      // the click aimed at "Demo", after 2.5 s resting there: the pill's, never the page's.
+      // REQ-890 AMENDMENT 6 REVISION 2 (run 18, m2): the approach is over after a second's rest —
+      // End under the mouse is End's then (the question, which Keep going dismisses); anything
+      // else of the pill under it is the tab's (no question)
       await tab.mouse.down();
       await tab.mouse.up();
       await tab.waitForTimeout(500);
       const clicked = await tab.evaluate(state, [mx, my] as [number, number]);
       expect(
-        !clicked.asking,
-        `the click never asks to end the demo (${JSON.stringify(clicked)})`,
+        clicked.inPill || clicked.asking,
+        `the click is the pill's, never the page's (${JSON.stringify(clicked)})`,
       );
-      // a click on End where the tab was is the tab's (REQ-890 AMENDMENT 4): the controls show
       if (hovered.under === "demo-end") {
         expect(
-          clicked.peek === true && (clicked.more === "true" || clicked.details),
-          `the click was the tab's: the controls show (${
+          clicked.asking,
+          `REVISION 2: End under the rested mouse is End's — the question (${
             JSON.stringify(clicked)
           })`,
+        );
+      } else {
+        expect(
+          !clicked.asking,
+          `the click never asks to end the demo (${JSON.stringify(clicked)})`,
         );
       }
     } finally {

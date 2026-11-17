@@ -317,7 +317,9 @@ Deno.test("REQ-890 AMENDMENT 6 REVISION + REQ-820 AMENDMENT 5 REVISION (demo-loo
       if (!no) throw new Error("no Seguir");
       const nx = no.x + no.width / 2, ny = no.y + no.height / 2;
       await tab.mouse.move(nx, ny, { steps: 3 });
-      const run = sampleBoxes(tab, 1_500);
+      // 700 ms: the in-place click below must come within PEEK_APPROACH_REST_MS of Seguir
+      // (REQ-890 AMENDMENT 6 REVISION 2, run 18 — a second's rest makes the next click End's)
+      const run = sampleBoxes(tab, 700);
       await tab.mouse.down();
       await tab.mouse.up();
       const seen = await run;
