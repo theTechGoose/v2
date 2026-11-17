@@ -456,8 +456,7 @@ Deno.test("REQ-379: the customer's demo pill has one home in a band the page lea
       // REQ-890 AMENDMENT 3 (dm14, m2) — out of its mini-pill (a peek), "more" opens them for that
       // peek only: nothing is remembered, and the pill folds again
       const peeking =
-        (await userPage.locator("[data-cy='demo-pill'][data-tucked]").count()) >
-          0;
+        (await userPage.locator("[data-cy='demo-pill'][data-peek]").count()) > 0;
       await userPage.locator("[data-cy='demo-more']").click({ timeout: 5_000 });
       await userPage.locator("[data-cy='demo-details']").waitFor({
         state: "visible",

@@ -7763,3 +7763,9 @@ Tests:
 **Raphael (2026-11-17):** the full lane at 116b1b87 (117 pass · 2 fail): `e2e/demo-mode/demo-pill-home.e2e.test.ts` (REQ-379) tapped "more" on the phone's pill — which is OUT OF ITS MINI-PILL there (a peek) — and expected the details open after a reload (REQ-440's tab memory). Under REQ-890 AMENDMENT 3 a peek's "more" is that peek's alone and nothing is remembered; the step now branches: a whole pill keeps REQ-440's check, a peek expects the details closed after the reload. The other failure (REQ-638, a click timeout) passed alone — a load flake under SHOTS_JOBS=4.
 **Tests:** the story as revised; no other change.
 **Evidence (2026-11-17):** ✗ `timed out: the opened details are still open after a reload — aria-expanded false, details visible false`; REQ-638 alone → 2 pass; `shots run demo-pill-home` → 0 pass · 1 fail · 0 skipped (1 page).
+
+## REQ-890 AMENDMENT 3 — REVISION 2 of the REQ-379 story's phone step (same day; corrects the entry above)
+
+**Raphael (2026-11-17):** the revision above told a peek by `[data-tucked]` — which the pill carries only while FOLDED (`folded = tucked && !peek`), so a peek read as a whole pill and the step still expected REQ-440's memory (✗ `aria-expanded false, details visible false`). The pill now says a peek on itself: `data-peek` while `tucked && peek`; the story branches on that attribute. The unit test asserts the attribute's wiring.
+**Tests:** `jest/unit/demo-run14-polish.test.ts` (REQ-890 AMENDMENT 3 block, the `data-peek` line); the story.
+**Evidence (2026-11-17):** unit 11 pass; `shots run demo-pill-home` → 1 pass · 0 fail.

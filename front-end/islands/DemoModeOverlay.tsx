@@ -2881,6 +2881,9 @@ export default function DemoModeOverlay(
         data-cy="demo-pill"
         data-restarted={started ? "" : undefined}
         data-tucked={folded ? "" : undefined}
+        // REQ-890 AMENDMENT 3 — a peek: the whole pill shown out of its mini-pill (not where it
+        // was placed; its "more" is this peek's alone)
+        data-peek={tucked && peek ? "" : undefined}
         // REQ-890 — the compact form (the phone's, or a peek on a crowded row)
         data-compact={compact ? "" : undefined}
         // REQ-545 — the link's state, said even while the pill is folded to its tab

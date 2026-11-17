@@ -97,6 +97,8 @@ describe("REQ-890 AMENDMENT 3 (demo-loop run 14, m2): the peek takes a box clear
     // what the pill shows reads shownOpen, never the remembered `open` alone
     expect(overlay).toMatch(/pillWraps\(\{ compact, open: shownOpen, asking \}\)/);
     expect(overlay).toMatch(/aria-expanded=\{shownOpen\}/);
+    // the peek is said on the pill (a story tells a peek from the pill as placed by it)
+    expect(overlay).toMatch(/data-peek=\{tucked && peek \? "" : undefined\}/);
     expect(overlay).toMatch(/open: compact && shownOpen,/);
     expect(overlay).not.toMatch(/pillWraps\(\{ compact, open, asking \}\)/);
     expect(overlay).not.toMatch(/aria-expanded=\{open\}/);
