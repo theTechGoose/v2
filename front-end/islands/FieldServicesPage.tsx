@@ -2,20 +2,37 @@
  * REQ-839 — /field/services. The service catalogue: every task type with a name and
  * what it covers, where it is used, Edit, Archive / Restore and Delete (only when
  * nothing uses it). No price here — a price lives where the service is used.
+ * REQ-927 — Move to…: every record on a service moves to another as one move (a
+ * segment) that the Moves list can undo, redo or send on to another service.
  */
 import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useState } from "preact/hooks";
-import { fieldClient, type TaskType } from "../clients/field.ts";
+import {
+  fieldClient,
+  type ServiceMigrationView,
+  type TaskType,
+} from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { langSignal, t } from "../lib/i18n.ts";
+import { langSignal, t, tn } from "../lib/i18n.ts";
 import type { FieldServicesSeed } from "../lib/field-ssr.ts";
 
 interface Form {
   editId: string | null;
   name: string;
   description: string;
+  err: string | null;
+  saving: boolean;
+}
+
+/** REQ-927: Move to… — a whole service (`fromId`) or a move's records again (`segId`) */
+interface MoveForm {
+  fromId?: string;
+  segId?: string;
+  name: string;
+  toId: string;
+  deleteAfter: boolean;
   err: string | null;
   saving: boolean;
 }
@@ -28,6 +45,20 @@ const blankForm = (): Form => ({
   saving: false,
 });
 
+/** REQ-927: "1 repeat visit · 2 tasks" — only what the move holds, each in its own number */
+function moveCounts(m: ServiceMigrationView): string {
+  const n = {
+    subs: m.counts.subscriptions,
+    ckls: m.counts.checklists,
+    tasks: m.counts.tasks,
+    crews: m.counts.crews,
+  };
+  const parts = (Object.keys(n) as (keyof typeof n)[])
+    .filter((k) => n[k] > 0)
+    .map((k) => tn(`field.svc.mc.${k}`, n[k]));
+  return parts.length ? parts.join(" · ") : tn("field.svc.mc.subs", 0);
+}
+
 /** the server's refusal in the user's words: a stable code first (REQ-421), else its message */
 function errMsg(err: unknown): string {
   if (err instanceof ApiError) {
@@ -39,6 +70,8 @@ function errMsg(err: unknown): string {
         subscriptions?: unknown;
         checklists?: unknown;
         tasks?: unknown;
+        crew?: unknown;
+        name?: unknown;
       };
     } | null;
     if (b && typeof b === "object") {
@@ -48,6 +81,23 @@ function errMsg(err: unknown): string {
           subs: Number(b.detail?.subscriptions ?? 0),
           ckls: Number(b.detail?.checklists ?? 0),
           tasks: Number(b.detail?.tasks ?? 0),
+        });
+      }
+      // REQ-927: the move's refusals
+      const moveCodes: Record<string, string> = {
+        same_service: "field.svc.err.same",
+        nothing_to_migrate: "field.svc.err.nothing",
+        target_archived: "field.svc.err.archived",
+        migration_crew_conflict: "field.svc.err.crewConflict",
+        segment_superseded: "field.svc.err.superseded",
+        undo_name_taken: "field.svc.err.undoNameTaken",
+        segment_not_applied: "field.svc.err.notApplied",
+        segment_not_undone: "field.svc.err.notUndone",
+      };
+      if (typeof b.code === "string" && moveCodes[b.code]) {
+        return t(moveCodes[b.code], {
+          crew: String(b.detail?.crew ?? ""),
+          name: String(b.detail?.name ?? ""),
         });
       }
       if (typeof b.error === "string") return b.error;
@@ -71,16 +121,32 @@ export default function FieldServicesPage(
   const [cardErr, setCardErr] = useState<{ id: string; msg: string } | null>(
     null,
   );
+  const [moves, setMoves] = useState<ServiceMigrationView[]>([]); // REQ-927
+  const [moveForm, setMoveForm] = useState<MoveForm | null>(null);
+  const [moveErr, setMoveErr] = useState<{ id: string; msg: string } | null>(
+    null,
+  );
+
+  async function reloadMoves() {
+    try {
+      setMoves(await fieldClient.serviceMigrations());
+    } catch { /* the list stays as it was */ }
+  }
 
   async function reload() {
     try {
       setList(await fieldClient.allTaskTypes());
+      void reloadMoves();
       setLoadErr(null);
     } catch (err) {
       setLoadErr(errMsg(err));
       setList((prev) => prev ?? []);
     }
   }
+
+  useEffect(() => {
+    void reloadMoves();
+  }, []);
 
   useEffect(() => {
     if (seed) return;
@@ -135,6 +201,46 @@ export default function FieldServicesPage(
     } catch (err) {
       setConfirmId(null);
       setCardErr({ id: ty.id, msg: errMsg(err) });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** REQ-927: run the move form — a service's records, or a move's records again */
+  async function submitMove(e: Event) {
+    e.preventDefault();
+    if (!moveForm || moveForm.saving) return;
+    if (!moveForm.toId) {
+      setMoveForm({ ...moveForm, err: t("field.svc.movePick") });
+      return;
+    }
+    setMoveForm({ ...moveForm, saving: true, err: null });
+    try {
+      if (moveForm.segId) {
+        await fieldClient.moveServiceMigration(moveForm.segId, moveForm.toId);
+      } else {
+        await fieldClient.migrateTaskType(moveForm.fromId!, {
+          toId: moveForm.toId,
+          deleteAfter: moveForm.deleteAfter,
+        });
+      }
+      setMoveForm(null);
+      await reload();
+    } catch (err) {
+      setMoveForm((cur) =>
+        cur ? { ...cur, saving: false, err: errMsg(err) } : cur
+      );
+    }
+  }
+
+  async function actMove(m: ServiceMigrationView, fn: () => Promise<unknown>) {
+    setBusyId(m.id);
+    setMoveErr(null);
+    try {
+      await fn();
+      await reload();
+    } catch (err) {
+      setMoveErr({ id: m.id, msg: errMsg(err) });
     } finally {
       setBusyId(null);
     }
@@ -264,6 +370,25 @@ export default function FieldServicesPage(
                             <button
                               type="button"
                               class="btn btn--ghost btn--sm"
+                              data-cy="svc-migrate"
+                              disabled={busy}
+                              onClick={() => {
+                                setConfirmId(null);
+                                setMoveForm({
+                                  fromId: ty.id,
+                                  name: ty.name,
+                                  toId: "",
+                                  deleteAfter: true,
+                                  err: null,
+                                  saving: false,
+                                });
+                              }}
+                            >
+                              {t("field.svc.move")}
+                            </button>
+                            <button
+                              type="button"
+                              class="btn btn--ghost btn--sm"
                               data-cy="svc-edit"
                               disabled={busy}
                               onClick={() => {
@@ -324,6 +449,183 @@ export default function FieldServicesPage(
             )}
           </div>
         )}
+
+      {moves.length > 0 && (
+        <section data-cy="svc-moves" style="margin-top:28px">
+          <h2 style="margin:0 0 4px">{t("field.svc.moves")}</h2>
+          <p class="hint" style="margin:0 0 12px">{t("field.svc.movesSub")}</p>
+          <div class="subs">
+            {moves.map((m) => {
+              const busy = busyId === m.id;
+              return (
+                <div
+                  class="sub"
+                  data-cy="svc-move-row"
+                  data-id={m.id}
+                  data-state={m.state}
+                  key={m.id}
+                  style={m.state === "undone" ? "opacity:.65" : undefined}
+                >
+                  <div class="sub__client">
+                    <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+                      <span data-cy="svc-move-from">{m.fromName}</span>
+                      {m.fromDeleted && (
+                        <span class="chip chip--muted">
+                          {t("field.svc.moveDeleted")}
+                        </span>
+                      )}
+                      <span aria-hidden="true">→</span>
+                      <span data-cy="svc-move-to">{m.toName}</span>
+                    </span>
+                    {m.state === "undone" && (
+                      <span class="chip chip--muted" data-cy="svc-move-undone">
+                        {t("field.svc.moveUndone")}
+                      </span>
+                    )}
+                  </div>
+                  <div class="sub__addr" data-cy="svc-move-counts">
+                    {moveCounts(m)}
+                  </div>
+                  {moveErr?.id === m.id && (
+                    <p class="alert" style="margin:0" data-cy="svc-move-error">
+                      {moveErr.msg}
+                    </p>
+                  )}
+                  <div class="sub__foot">
+                    <span />
+                    <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                      {m.state === "applied"
+                        ? (
+                          <button
+                            type="button"
+                            class="btn btn--ghost btn--sm"
+                            data-cy="svc-move-undo"
+                            disabled={busy}
+                            onClick={() =>
+                              actMove(
+                                m,
+                                () => fieldClient.undoServiceMigration(m.id),
+                              )}
+                          >
+                            {t("field.svc.undo")}
+                          </button>
+                        )
+                        : (
+                          <button
+                            type="button"
+                            class="btn btn--ghost btn--sm"
+                            data-cy="svc-move-redo"
+                            disabled={busy}
+                            onClick={() =>
+                              actMove(
+                                m,
+                                () => fieldClient.redoServiceMigration(m.id),
+                              )}
+                          >
+                            {t("field.svc.redo")}
+                          </button>
+                        )}
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm"
+                        data-cy="svc-move-again"
+                        disabled={busy}
+                        onClick={() => {
+                          setMoveErr(null);
+                          setMoveForm({
+                            segId: m.id,
+                            name: m.fromName,
+                            toId: "",
+                            deleteAfter: false,
+                            err: null,
+                            saving: false,
+                          });
+                        }}
+                      >
+                        {t("field.svc.move")}
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {moveForm && (
+        <Backdrop class="modal-bg" onClose={() => setMoveForm(null)}>
+          <form class="modal" onSubmit={submitMove} data-cy="svc-move-form">
+            <div class="modal__head">
+              <h2>
+                {moveForm.segId
+                  ? t("field.svc.moveSegTitle", { from: moveForm.name })
+                  : t("field.svc.moveTitle", { name: moveForm.name })}
+              </h2>
+            </div>
+            <p class="hint" style="margin:0">
+              {moveForm.segId
+                ? t("field.svc.moveSegSub", { from: moveForm.name })
+                : t("field.svc.moveSub", { name: moveForm.name })}
+            </p>
+            <label class="field">
+              {t("field.svc.moveTo")}
+              <select
+                data-cy="svc-move-target"
+                value={moveForm.toId}
+                onChange={(e) => {
+                  const toId = (e.currentTarget as HTMLSelectElement).value;
+                  setMoveForm((f) => (f ? { ...f, toId, err: null } : f));
+                }}
+              >
+                <option value="">{t("field.svc.movePick")}</option>
+                {live
+                  .filter((x) => x.id !== moveForm.fromId)
+                  .map((x) => (
+                    <option value={x.id} key={x.id}>{x.name}</option>
+                  ))}
+              </select>
+            </label>
+            {!moveForm.segId && (
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input
+                  type="checkbox"
+                  data-cy="svc-move-delete"
+                  checked={moveForm.deleteAfter}
+                  onChange={(e) => {
+                    const deleteAfter =
+                      (e.currentTarget as HTMLInputElement).checked;
+                    setMoveForm((f) => (f ? { ...f, deleteAfter } : f));
+                  }}
+                />
+                {t("field.svc.moveDelete", { name: moveForm.name })}
+              </label>
+            )}
+            {moveForm.err && (
+              <p class="alert" data-cy="svc-move-error">{moveForm.err}</p>
+            )}
+            <div class="modal__foot">
+              <button
+                type="button"
+                class="btn--cancel"
+                onClick={() => setMoveForm(null)}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="submit"
+                class="btn--submit"
+                data-cy="svc-move-submit"
+                disabled={moveForm.saving}
+              >
+                {moveForm.saving
+                  ? t("field.common.loading")
+                  : t("field.svc.moveSubmit")}
+              </button>
+            </div>
+          </form>
+        </Backdrop>
+      )}
 
       {form && (
         <Backdrop class="modal-bg" onClose={() => setForm(null)}>

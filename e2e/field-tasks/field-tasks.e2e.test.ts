@@ -1916,7 +1916,7 @@ Deno.test("REQ-839: a service made on /field/services with a description → it 
     await page.locator("[data-cy='svc-card-error']").waitFor({
       timeout: 15_000,
     });
-    await expect.see("archive it instead");
+    await expect.see("or archive it"); // REQ-927: and Move to… comes first
     await page.locator("[data-cy='svc-archive']").first().click();
     await page.locator("[data-cy='svc-empty']").waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='svc-show-archived']").check();
@@ -2166,4 +2166,69 @@ Deno.test("REQ-842: the grass crew is marked out today on /field/workers, covere
     });
     await expect.see("Ana Ruiz");
     await expect.notSee("Covering for");
+  }));
+
+// REQ-927 — Raphael: "in services we need a way to migrate services to another and segment it out so we can undo redo or move that segment to another spot, this way we are able to delete services without fucking up the integrity of the system"
+Deno.test("REQ-927: Move to… moves Mowing's checklist onto Lawn cut and deletes Mowing → the Moves list shows the move → Undo brings Mowing back with its checklist → Redo → Move to… sends the same records on to Edging", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const mow = await api("POST", "/api/field/task-types", { name: "Mowing" });
+    await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    await api("POST", "/api/field/task-types", { name: "Edging" });
+    await api("POST", "/api/field/checklists", {
+      name: "Full yard",
+      items: [{ taskTypeId: mow.id, priceCents: 6500 }],
+    });
+    const checklistService = async () =>
+      (await api("GET", "/api/field/checklists"))[0].items[0].taskTypeName;
+    const cards = page.locator("[data-cy='svc-card']");
+    const row = page.locator("[data-cy='svc-move-row']").first();
+    // a click before the island hydrates does nothing: click until the form is up
+    const openForm = async (button: ReturnType<typeof page.locator>) => {
+      const form = page.locator("[data-cy='svc-move-form']");
+      for (let i = 0; i < 20 && !(await form.isVisible()); i++) {
+        await button.click();
+        await form.waitFor({ timeout: 1_000 }).catch(() => {});
+      }
+      await form.waitFor({ timeout: 5_000 });
+    };
+
+    await page.goto("/field/services");
+    await cards.first().waitFor({ timeout: 20_000 });
+    await openForm(
+      cards.filter({ hasText: "Mowing" }).locator("[data-cy='svc-migrate']"),
+    );
+    await expect.see("Move “Mowing” to another service");
+    expect.eq(
+      await page.locator("[data-cy='svc-move-delete']").isChecked(),
+      true,
+      "delete once empty is on by default",
+    );
+    await page.locator("[data-cy='svc-move-target']").selectOption({ label: "Lawn cut" });
+    await page.locator("[data-cy='svc-move-submit']").click();
+    await row.waitFor({ timeout: 20_000 });
+    expect.eq(await page.locator("[data-cy='svc-move-from']").first().textContent(), "Mowing", "the move names the old service");
+    expect.eq(await page.locator("[data-cy='svc-move-to']").first().textContent(), "Lawn cut", "and where it went");
+    expect.eq(await page.locator("[data-cy='svc-move-counts']").first().textContent(), "1 checklist", "what it moved");
+    await expect.see("deleted");
+    expect.eq(await cards.count(), 2, "Mowing is gone from the catalogue");
+    expect.eq(await checklistService(), "Lawn cut", "the checklist is on Lawn cut");
+
+    // Undo: Mowing is back, with its checklist
+    await page.locator("[data-cy='svc-move-undo']").first().click();
+    await page.locator("[data-cy='svc-move-row'][data-state='undone']").waitFor({ timeout: 20_000 });
+    await cards.filter({ hasText: "Mowing" }).first().waitFor({ timeout: 20_000 });
+    expect.eq(await cards.count(), 3, "Mowing is back in the catalogue");
+    expect.eq(await checklistService(), "Mowing", "the checklist is on Mowing again");
+
+    // Redo, then send the same records on to Edging
+    await page.locator("[data-cy='svc-move-redo']").first().click();
+    await page.locator("[data-cy='svc-move-row'][data-state='applied']").waitFor({ timeout: 20_000 });
+    expect.eq(await checklistService(), "Lawn cut", "redone");
+    await openForm(page.locator("[data-cy='svc-move-again']").first());
+    await page.locator("[data-cy='svc-move-target']").selectOption({ label: "Edging" });
+    await page.locator("[data-cy='svc-move-submit']").click();
+    await page.locator("[data-cy='svc-move-to']", { hasText: "Edging" }).waitFor({ timeout: 20_000 });
+    expect.eq(await checklistService(), "Edging", "the move went on to Edging");
   }));

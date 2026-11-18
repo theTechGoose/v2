@@ -9,7 +9,7 @@
 import { Injectable } from "#danet/core";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
-import type { Absence, Batch, Checklist, Crew, FieldTask, FieldWorker, Region, Subscription, TaskType } from "@field/dto/field.ts";
+import type { Absence, Batch, Checklist, Crew, FieldTask, FieldWorker, Region, ServiceMigration, Subscription, TaskType } from "@field/dto/field.ts";
 import { daysCovered, lastDayOf } from "@field/domain/business/job-span/mod.ts";
 
 interface Owned {
@@ -121,6 +121,14 @@ export class ChecklistStore extends OwnedStore<Checklist> {
 export class CrewStore extends OwnedStore<Crew> {
   constructor() {
     super("field_crew");
+  }
+}
+
+/** REQ-927: the account's service migrations — the segments that can be undone, redone or moved */
+@Injectable()
+export class ServiceMigrationStore extends OwnedStore<ServiceMigration> {
+  constructor() {
+    super("field_service_migration");
   }
 }
 

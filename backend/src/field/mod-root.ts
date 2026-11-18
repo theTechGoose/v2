@@ -3,9 +3,9 @@ import { UsersModule } from "@users/mod-root.ts";
 import { CrmModule } from "@crm/mod-root.ts";
 import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { CommunicationModule } from "@communication/mod-root.ts";
-import { FieldAbsencesController, FieldBatchesController, FieldChecklistsController, FieldCrewsController, FieldRegionsController, FieldSubscriptionsController, FieldTasksController, FieldTaskTypesController, FieldWorkersController } from "@field/entrypoints/field-controllers/mod.ts";
+import { FieldAbsencesController, FieldBatchesController, FieldChecklistsController, FieldCrewsController, FieldRegionsController, FieldServiceMigrationsController, FieldSubscriptionsController, FieldTasksController, FieldTaskTypesController, FieldWorkersController } from "@field/entrypoints/field-controllers/mod.ts";
 import { FieldWorkerController } from "@field/entrypoints/worker-controller/mod.ts";
-import { AbsenceStore, BatchStore, ChecklistStore, CrewStore, FieldTaskStore, FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
+import { AbsenceStore, BatchStore, ChecklistStore, CrewStore, FieldTaskStore, FieldWorkerStore, RegionStore, ServiceMigrationStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { WorkerSessionStore } from "@field/domain/data/worker-session-store/mod.ts";
 import { FieldGeocoder } from "@field/domain/data/geocoder/mod.ts";
 import { FieldZones } from "@field/domain/coordinators/field-zones/mod.ts";
@@ -24,6 +24,7 @@ import { FieldQuoteSubscriptions } from "@field/domain/coordinators/field-quote-
   controllers: [
     FieldWorkersController,
     FieldTaskTypesController,
+    FieldServiceMigrationsController, // REQ-927
     FieldSubscriptionsController,
     FieldChecklistsController, // REQ-811
     FieldCrewsController, // REQ-840
@@ -39,6 +40,7 @@ import { FieldQuoteSubscriptions } from "@field/domain/coordinators/field-quote-
     SubscriptionStore,
     ChecklistStore, // REQ-811
     CrewStore, // REQ-840
+    ServiceMigrationStore, // REQ-927
     AbsenceStore, // REQ-842
     RegionStore,
     FieldTaskStore,
