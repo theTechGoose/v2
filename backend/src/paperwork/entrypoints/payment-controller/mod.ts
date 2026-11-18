@@ -99,6 +99,17 @@ async function refuseOverpayment(
   return null;
 }
 
+/** REQ-926: the JSON body when one was sent, {} when none. */
+async function optionalJsonBody(ctx: ExecutionContext): Promise<unknown> {
+  const raw = await ctx.req.text().catch(() => "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
 /** REQ-926: another owner's / a missing payment → 404 (a module function:
  *  Danet routes every method of a controller class). */
 async function ownedOr404<T>(
@@ -228,9 +239,10 @@ export class PaymentController {
   async chargebackPayment(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
-    @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    // a bare POST is {} — never a 500 through @Body (REQ-627 AMENDMENT's rule)
+    const body = await optionalJsonBody(ctx);
     const b = (body && typeof body === "object" ? body : {}) as {
       feeCents?: unknown;
       reason?: unknown;
