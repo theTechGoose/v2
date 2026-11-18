@@ -42,7 +42,11 @@ import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.
 import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
 import { isInvoiceIssued } from "#documents/versions.ts";
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
-import { payOptionLines } from "@paperwork/domain/business/pay-options/mod.ts"; // REQ-805
+import {
+  businessAddressLine,
+  payOptionLines,
+} from "@paperwork/domain/business/pay-options/mod.ts"; // REQ-805
+import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
 import {
   drawBrandMark,
   embedLogo,
@@ -87,6 +91,8 @@ export class RenderInvoicePdf {
     /** REQ-679: the agreement's approved change orders (optional for direct test construction) */
     private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
+    /** REQ-923: where checks are sent when the check's own mail-to is blank */
+    private addresses: BusinessAddressStore = new BusinessAddressStore(),
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
@@ -95,24 +101,27 @@ export class RenderInvoicePdf {
     // customer / contractor / ident depend only on the invoice, so fan them
     // out concurrently with the quote fetch instead of awaiting serially
     // (this is an uncached, customer-facing "Download PDF" endpoint).
-    const [[quote, customer, contractor, ident], logo] = await Promise.all([
-      Promise.all([
-        invoice.quoteId
-          ? this.quotes.get(invoice.quoteId).catch(() =>
-            undefined as Quote | undefined
-          )
-          : Promise.resolve(undefined as Quote | undefined),
-        invoice.customerId
-          ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
-            () => undefined,
-          )
-          : Promise.resolve(undefined),
-        this.users.get(invoice.userId).catch(() => undefined),
-        this.identity.get(invoice.userId).catch(() => null),
-      ]).then((r) => winAnsiSafeDeep(r)),
-      // REQ-628: the business's own logo heads the bill
-      this.logos.run(invoice.userId),
-    ]);
+    const [[quote, customer, contractor, ident, addr], logo] = await Promise
+      .all([
+        Promise.all([
+          invoice.quoteId
+            ? this.quotes.get(invoice.quoteId).catch(() =>
+              undefined as Quote | undefined
+            )
+            : Promise.resolve(undefined as Quote | undefined),
+          invoice.customerId
+            ? this.customers.getOwned(invoice.customerId, invoice.userId).catch(
+              () => undefined,
+            )
+            : Promise.resolve(undefined),
+          this.users.get(invoice.userId).catch(() => undefined),
+          this.identity.get(invoice.userId).catch(() => null),
+          // REQ-923: where a check goes when its own mail-to is blank
+          this.addresses.get(invoice.userId).catch(() => null),
+        ]).then((r) => winAnsiSafeDeep(r)),
+        // REQ-628: the business's own logo heads the bill
+        this.logos.run(invoice.userId),
+      ]);
     const businessName = ident?.businessName ?? ident?.legalName;
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
@@ -469,9 +478,11 @@ export class RenderInvoicePdf {
     // switched on (its own payment links, "Xpress Pay", by name and URL),
     // then the invoice's own pay page. Not on a paid or cancelled bill.
     {
-      const ways = invoice.status === "void" || paid
-        ? []
-        : payOptionLines(ident?.acceptedPaymentMethods, lang);
+      const ways = invoice.status === "void" || paid ? [] : payOptionLines(
+        ident?.acceptedPaymentMethods,
+        lang,
+        businessAddressLine(addr),
+      );
       if (ways.length) {
         addPageIfNeeded(40 + ways.length * 16);
         page.drawText(t(lang, "printPdf.howToPay").toUpperCase(), {

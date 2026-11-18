@@ -4983,7 +4983,7 @@
   "printPdf.paidInFull": "PAID IN FULL",
   "printPdf.pay.cashAccepted": "Cash accepted",
   "printPdf.pay.checkAccepted": "Check accepted",
-  "printPdf.pay.mailTo": "Mail to: {address}",
+  "printPdf.pay.mailTo": "Send to: {address}",
   "printPdf.payOnline": "Pay online: {url}",
   "printPdf.qty": "Qty",
   "printPdf.scanToPay": "Scan to pay",

@@ -38,7 +38,10 @@ import {
   drawBrandMark,
   embedLogo,
 } from "@paperwork/domain/business/pdf-logo/mod.ts";
-import { payOptionLines } from "@paperwork/domain/business/pay-options/mod.ts";
+import {
+  businessAddressLine,
+  payOptionLines,
+} from "@paperwork/domain/business/pay-options/mod.ts";
 import {
   customerOnDocument,
   docRef,
@@ -177,7 +180,11 @@ export class RenderInvoicePrintPdf {
         contractor?.email,
       ].filter((v): v is string => !!v && v.trim().length > 0),
       lang,
-      pay: payOptionLines(ident?.acceptedPaymentMethods, lang),
+      pay: payOptionLines(
+        ident?.acceptedPaymentMethods,
+        lang,
+        businessAddressLine(addr), // REQ-923: checks "Send to" it
+      ),
     });
     biz.image = await embedLogo(pdf, logo);
     const reg = await pdf.embedFont(StandardFonts.Helvetica);
