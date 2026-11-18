@@ -9,6 +9,7 @@
  * not refused by the agreement cap (REQ-233) — the extra work is on purpose.
  */
 import { story, type StoryTools } from "#shots";
+import { ensureService, fillInvoiceLine } from "../_shared/service-lines.ts"; // REQ-921
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -141,6 +142,7 @@ Deno.test("REQ-655 p18-9c: a fully paid job's panel says 'Bill extra work' and o
 
     // 1) the panel offers "Bill extra work" before any click — no
     //    "New change order" that leads to a refusal
+    const hedge = await ensureService(http, auth, "Hedge trimming"); // REQ-921: in the catalogue before the form opens
     await page.goto(`/quotes?open=${quote.id}`);
     await page.locator("[data-cy='quote-lock-note']").waitFor({
       timeout: 15_000,
@@ -167,15 +169,21 @@ Deno.test("REQ-655 p18-9c: a fully paid job's panel says 'Bill extra work' and o
       "[data-cy='quote-bill-extra-work']",
       async () => (await modal.count()) > 0,
     );
-    const client = page.locator("[data-cy='new-invoice-client']");
+    // REQ-801: the client is a search box; the pick rides in its hidden input
+    const client = page.locator(
+      "[data-cy='new-invoice-client'] input[name='customerId']",
+    );
     for (let i = 0; i < 50 && (await client.inputValue()) !== ana.id; i++) {
       await page.waitForTimeout(200);
     }
     expect.eq(await client.inputValue(), ana.id, "the customer is prefilled");
-    await page.locator("[data-cy='new-invoice-jobname']").fill(
-      "Hedge trimming",
+    // REQ-921: extra work bills a service from the catalogue
+    await fillInvoiceLine(
+      page,
+      0,
+      hedge,
+      "45",
     );
-    await page.locator("[data-cy='new-invoice-amount']").fill("45");
     await page.locator("[data-cy='new-invoice-draft']").click();
     await modal.waitFor({ state: "detached", timeout: 15_000 });
 

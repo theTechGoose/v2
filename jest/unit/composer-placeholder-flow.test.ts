@@ -147,13 +147,14 @@ describe("REQ-450 p4 — the New-invoice job name fits the trade", () => {
     expect(es["invoicesPage.new.jobNamePlaceholder"]).not.toMatch(/grifo/i);
   });
 
-  it("REQ-450: the New-invoice form reads it off the profile's business name", () => {
+  // REQ-921 SUPERSEDES the island half of REQ-450: New invoice no longer asks
+  // "What's it for?" — lines are picked services — so no job-name example shows.
+  it("REQ-450/REQ-921: the New-invoice form has no job-name field, so no trade example", () => {
     const src = read("front-end/islands/InvoicesPage.tsx");
-    expect(src).toMatch(/invoiceJobNamePlaceholderKey\(businessName\)/);
+    expect(src).not.toMatch(/data-cy="new-invoice-jobname"/);
     expect(src).not.toMatch(
       /tFor\(lang, "invoicesPage\.new\.jobNamePlaceholder"\)/,
     );
-    expect(src).toMatch(/p\?\.identity\?\.businessName/);
   });
 });
 

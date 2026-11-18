@@ -1,9 +1,12 @@
 /**
  * REQ-486 (demo-loop cycle 3, issue m32) on the real shell — a New invoice
- * with "What's it for" + Amount and no line rows does not warn "No line
- * items", and the issued invoice carries that label as one itemized line.
+ * billing one amount does not warn "No line items", and the issued invoice
+ * carries one itemized line. REQ-921 AMENDS it: "What's it for" is gone — the
+ * one line is a service picked from the catalogue at that price.
  */
 import { story, type StoryTools } from "#shots";
+import { pickInvoiceClient } from "../_shared/invoice-client.ts"; // REQ-801
+import { ensureService, fillInvoiceLine } from "../_shared/service-lines.ts"; // REQ-921
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -94,10 +97,11 @@ async function mkCustomer(
   })).json();
 }
 
-Deno.test("REQ-486 m32: What's it for + $320, no line rows → no 'No line items' warning, and the invoice is issued with one line 'Gutter cleaning' × 1 @ $320", (t) =>
+Deno.test("REQ-486 m32 / REQ-921: one service line 'Gutter cleaning' @ $320 → no 'No line items' warning, and the invoice is issued with one line 'Gutter cleaning' × 1 @ $320", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const customer = await mkCustomer(http, auth);
+    const gutters = await ensureService(http, auth, "Gutter cleaning"); // REQ-921
 
     await page.goto("/invoices");
     await clickUntil(
@@ -106,19 +110,14 @@ Deno.test("REQ-486 m32: What's it for + $320, no line rows → no 'No line items
       async () =>
         await page.locator("[data-cy='new-invoice-modal']").isVisible(),
     );
-    await page.locator("[data-cy='new-invoice-client']").selectOption(
-      customer.id,
-    );
+    await pickInvoiceClient(page, "Ann Lee", customer.id);
     await page.waitForFunction(() =>
       (document.querySelector("[data-cy='new-invoice-bill-email']") as
         | HTMLInputElement
         | null)?.value ===
         "ann.lee@blackhole.postmarkapp.com"
     );
-    await page.locator("[data-cy='new-invoice-jobname']").fill(
-      "Gutter cleaning",
-    );
-    await page.locator("[data-cy='new-invoice-amount']").fill("320");
+    await fillInvoiceLine(page, 0, gutters, "320");
     await page.waitForFunction(() =>
       (document.querySelector("[data-cy='new-invoice-total']")?.textContent ??
         "").includes("$320.00")
@@ -161,6 +160,6 @@ Deno.test("REQ-486 m32: What's it for + $320, no line rows → no 'No line items
         quantity: 1,
         price: 32000,
       }]),
-      "What's it for + amount became one itemized line",
+      "the picked service + price is the one itemized line",
     );
   }));

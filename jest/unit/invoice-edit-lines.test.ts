@@ -50,7 +50,8 @@ describe("REQ-910 the sent-invoice edit form", () => {
     expect(form).toMatch(/data-cy=\{`invoice-edit-line-remove-\$\{i\}`\}/);
     expect(form).toMatch(/editItems\.filter\(\(_, j\) => j !== i\)/);
     expect(form).toMatch(/data-cy="invoice-edit-line-add"/);
-    expect(form).toMatch(/invoices\.form\.addLine/);
+    // REQ-921 AMENDS: the add button reads "Add a service" (a service line)
+    expect(form).toMatch(/serviceLines\.add/);
   });
   test("a percent of the lines above becomes an Overhead line, priced now", () => {
     expect(form).toMatch(/data-cy="invoice-edit-pct"/);

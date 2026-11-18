@@ -4,6 +4,7 @@
  * lock, and the quote-ledger deep link into the form.
  */
 import { story, type StoryTools } from "#shots";
+import { ensureService, fillInvoiceLine } from "../_shared/service-lines.ts"; // REQ-921
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -97,6 +98,8 @@ async function mkCustomer(
 Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, two lines + 8.25% tax + net 15 issue as 'INV-001 · Version 1 · Sent'; REQ-201: an edit waits as unpublished changes, publishing makes Version 2, a paid invoice is locked", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
+    const labor = await ensureService(http, auth, "Labor"); // REQ-921: in the catalogue before the form opens
+    const parts = await ensureService(http, auth, "Parts");
     const customer = await mkCustomer(http, auth);
 
     await page.goto("/invoices");
@@ -140,16 +143,10 @@ Deno.test("REQ-206: the standalone invoice form — customer prefills bill-to, t
       "1 Main St, Austin, TX 78701",
       "the service address starts as the customer's address",
     );
-    await page.locator("[data-cy='new-invoice-jobname']").fill("Fence repair");
-    // two line items
+    // REQ-921: two service lines (the form opens with one row; + adds the next)
+    await fillInvoiceLine(page, 0, labor, "300");
     await page.locator("[data-cy='new-invoice-line-add']").click();
-    await page.locator("[data-cy='new-invoice-line-desc-0']").fill("Labor");
-    await page.locator("[data-cy='new-invoice-line-qty-0']").fill("2");
-    await page.locator("[data-cy='new-invoice-line-price-0']").fill("150");
-    await page.locator("[data-cy='new-invoice-line-add']").click();
-    await page.locator("[data-cy='new-invoice-line-desc-1']").fill("Parts");
-    await page.locator("[data-cy='new-invoice-line-qty-1']").fill("1");
-    await page.locator("[data-cy='new-invoice-line-price-1']").fill("49.99");
+    await fillInvoiceLine(page, 1, parts, "49.99");
     await page.locator("[data-cy='new-invoice-tax']").fill("8.25");
     await page.locator("[data-cy='new-invoice-terms']").selectOption("15");
     // 34999 − 0 = 34999 · tax 2887 · total 37886
@@ -359,11 +356,7 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
       customer.id,
       "the quote's customer is picked",
     );
-    expect.eq(
-      await page.locator("[data-cy='new-invoice-jobname']").inputValue(),
-      "Roof",
-      "the quote's job name is carried",
-    );
+    // REQ-921: no job-name box any more — the quote's job name rides in the POST (checked below)
     // save it as a draft: the quote link travels in the POST body
     await page.locator("[data-cy='new-invoice-draft']").click();
     await page.locator("[data-cy='invoice-card-headline']").first().waitFor({
@@ -378,4 +371,5 @@ Deno.test("REQ-206: /invoices?new=1&quoteId=<id> prefills the form from the quot
     expect.eq(draft?.quoteId, quote.id, "the draft is linked to the quote");
     expect.eq(draft?.amount, 60000, "the draft bills the remaining $600");
     expect.eq(draft?.number, "INV-002", "the second invoice is INV-002");
+    expect.eq(draft?.jobName, "Roof", "the quote's job name is carried");
   }));

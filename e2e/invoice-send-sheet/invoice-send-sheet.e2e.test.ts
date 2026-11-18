@@ -24,6 +24,8 @@
  * POST /invoices/:id/{email,text}).
  */
 import { story, type StoryTools } from "#shots";
+import { pickInvoiceClient } from "../_shared/invoice-client.ts"; // REQ-801
+import { ensureService, fillInvoiceLine } from "../_shared/service-lines.ts"; // REQ-921
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 900_000) + 100_000);
@@ -306,19 +308,25 @@ async function issueFromForm(
   page: StoryTools["page"],
   customerId: string,
   job: string,
+  http: StoryTools["http"],
+  auth: Record<string, string>,
 ) {
+  // REQ-921: the line bills a service named for the job (the invoice's name)
+  const service = await ensureService(http, auth, job);
   await page.goto("/invoices?new=1");
   const select = page.locator("[data-cy='new-invoice-client']");
   await select.waitFor({ timeout: 15_000 });
   await page.waitForLoadState("networkidle").catch(() => {});
-  await select.selectOption(customerId);
+  const name = (await (await http(`/api/customers/${customerId}`, {
+    headers: auth,
+  })).json()).name as string;
+  await pickInvoiceClient(page, name, customerId);
   await page.waitForFunction(() =>
     ((document.querySelector("[data-cy='new-invoice-bill-email']") as
       | HTMLInputElement
       | null)?.value ?? "").length > 0
   );
-  await page.locator("[data-cy='new-invoice-jobname']").fill(job);
-  await page.locator("[data-cy='new-invoice-amount']").fill("320");
+  await fillInvoiceLine(page, 0, service, "320");
   await page.locator("[data-cy='new-invoice-submit']").click();
   await sheet(page).waitFor({ timeout: 20_000 });
 }
@@ -334,7 +342,7 @@ Deno.test("REQ-727 c4-M16: 'Issue invoice' creates the invoice as a draft and op
     const job = `Window washing ${digits()}`;
     const sends = watchSends(page);
 
-    await issueFromForm(page, customer.id, job);
+    await issueFromForm(page, customer.id, job, http, auth);
     await page.waitForTimeout(800);
     expect.eq(sends.length, 0, "Issue invoice sent nothing by itself");
     const list = await (await http("/api/invoices", { headers: auth }))
@@ -381,7 +389,7 @@ Deno.test("REQ-727 c4-M16: 'Issue invoice' → Cancel keeps the invoice as a dra
     const job = `Deck stain ${digits()}`;
     const sends = watchSends(page);
 
-    await issueFromForm(page, customer.id, job);
+    await issueFromForm(page, customer.id, job, http, auth);
     await page.locator("[data-cy='send-cancel']").click();
     const note = page.locator("[data-cy='invoice-not-sent']");
     await note.waitFor({ timeout: 20_000 });

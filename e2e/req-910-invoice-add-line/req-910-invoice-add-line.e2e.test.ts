@@ -105,7 +105,8 @@ Deno.test("REQ-910: a sent invoice takes a 10% Overhead line in Edit — pending
     await panel.locator("[data-cy='invoice-edit']").click();
     const form = panel.locator("[data-cy='invoice-edit-form']");
     await form.waitFor({ timeout: 15_000 });
-    const descs = form.locator("[data-cy^='invoice-edit-line-desc-']");
+    // REQ-921: a line is the service picker; a pre-REQ-921 line keeps its own name as its option
+    const descs = form.locator("[data-cy^='invoice-edit-line-service-']");
     await descs.nth(4).waitFor({ timeout: 15_000 });
     expect.eq(await descs.count(), 5, "the five visits are editable lines");
     expect.eq(
@@ -120,9 +121,13 @@ Deno.test("REQ-910: a sent invoice takes a 10% Overhead line in Edit — pending
     // 10 % of the lines above → a sixth line, $35.00, flagged Overhead
     await form.locator("[data-cy='invoice-edit-pct']").fill("10");
     await form.locator("[data-cy='invoice-edit-pct-add']").click();
-    const sixth = form.locator("[data-cy='invoice-edit-line-desc-5']");
+    const sixth = form.locator("[data-cy='invoice-edit-line-service-5']");
     await sixth.waitFor({ timeout: 15_000 });
-    expect.eq(await sixth.inputValue(), "Overhead", "the new line is Overhead");
+    expect.eq(
+      await sixth.locator("[data-cy='search-select-input']").inputValue(),
+      "Overhead",
+      "the new line is Overhead",
+    );
     expect.eq(
       Number(
         await form.locator("[data-cy='invoice-edit-line-price-5']")

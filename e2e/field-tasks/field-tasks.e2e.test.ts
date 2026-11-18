@@ -8,6 +8,7 @@
  * GET /api/invoices with its amount and the line "date — type — address".
  */
 import { story, type StoryTools } from "#shots";
+import { addVisitService, ensureService } from "../_shared/service-lines.ts"; // REQ-921
 
 /** REQ-152 — the customer field is a search box: type the name, click the match */
 async function pickCustomer(page: StoryTools["page"], name: string) {
@@ -155,8 +156,18 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     });
     await ident.body?.cancel();
     await page.goto("/field/subscriptions");
+    const svc170 = await ensureService(http, auth, "Lawn cut"); // REQ-921: the catalogue has it
     await page.locator("[data-cy='subs-new']").click();
     const netDays = page.locator("[data-cy='subs-net-days']");
+    // the form may open before Settings arrives; it then takes Settings' number (REQ-174)
+    await page.waitForFunction(
+      () =>
+        (document.querySelector("[data-cy='subs-net-days']") as
+          | HTMLInputElement
+          | null)?.value === "21",
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => {});
     expect.eq(
       await netDays.inputValue(),
       "21",
@@ -167,9 +178,7 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
     await page.locator("[data-cy='subs-address']").fill(
       "4601 Dick Pond Rd, Myrtle Beach, SC",
     );
-    await page.locator("[data-cy='subs-type-q']").fill("Lawn cut");
-    await page.locator("[data-cy='subs-price']").fill("65");
-    await page.locator("[data-cy='subs-add-item']").click();
+    await addVisitService(page, svc170, "65"); // REQ-921
     await page.locator("[data-cy='subs-submit']").click();
     await page.locator("[data-cy='subs-card']").first().waitFor({
       timeout: 20_000,
@@ -544,6 +553,7 @@ Deno.test("REQ-152: the customer field is a search box — typing narrows the li
     await mk("Bob Marshall", "6219 Forestbrook Rd, Myrtle Beach, SC");
     await mk("Carla Ortiz");
     await page.goto("/field/subscriptions");
+    const svc578 = await ensureService(http, auth, "Lawn cut"); // REQ-921: the catalogue has it
     await page.locator("[data-cy='subs-new']").click();
     const field = page.locator("[data-cy='subs-customer']");
     const box = field.locator("[data-cy='search-select-input']");
@@ -575,9 +585,7 @@ Deno.test("REQ-152: the customer field is a search box — typing narrows the li
     );
     await field.locator("[data-cy='search-select-clear']").click();
     expect.eq(await box.inputValue(), "", "the box is cleared");
-    await page.locator("[data-cy='subs-type-q']").fill("Lawn cut");
-    await page.locator("[data-cy='subs-price']").fill("65");
-    await page.locator("[data-cy='subs-add-item']").click();
+    await addVisitService(page, svc578, "65"); // REQ-921
     await page.locator("[data-cy='subs-submit']").click();
     await page.locator("[data-cy='subs-error']").waitFor({ timeout: 15_000 });
     expect.eq(
@@ -601,6 +609,7 @@ Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 cli
     });
     await r.body?.cancel();
     await page.goto("/field/subscriptions");
+    const svc639 = await ensureService(http, auth, "Lawn cut"); // REQ-921: the catalogue has it
     await page.locator("[data-cy='subs-new']").click();
     await pickCustomer(page, "Ana Torres");
     const cadence = page.locator("[data-cy='subs-cadence']");
@@ -636,9 +645,7 @@ Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 cli
       "15|31",
       "the two picks are on",
     );
-    await page.locator("[data-cy='subs-type-q']").fill("Lawn cut");
-    await page.locator("[data-cy='subs-price']").fill("65");
-    await page.locator("[data-cy='subs-add-item']").click();
+    await addVisitService(page, svc639, "65"); // REQ-921
     await page.locator("[data-cy='subs-submit']").click();
     await page.locator("[data-cy='subs-card']").first().waitFor({
       timeout: 20_000,
@@ -813,27 +820,50 @@ Deno.test("REQ-526 (demo m50, cycle 3): Add task for another day → Save moves 
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { worker } = await officeDay({ page, http, baseUrl });
     await page.goto("/field/tasks");
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
     const later = new Date(todayIso() + "T12:00:00Z");
     later.setUTCDate(later.getUTCDate() + 5);
     const day = later.toISOString().slice(0, 10);
     await page.locator("[data-cy='tk-add']").click();
     const form = page.locator("[data-cy='tk-add-form']");
     await form.waitFor({ timeout: 15_000 });
-    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']").fill("Ana");
-    await form.locator("[data-cy='tk-customer'] [data-cy='search-select-option']").filter({ hasText: "Ana Torres" }).first().click();
+    await form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-input']",
+    ).fill("Ana");
+    await form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-option']",
+    ).filter({ hasText: "Ana Torres" }).first().click();
     await form.locator("[data-cy='tk-add-type']").fill("Mulch");
     await form.locator("[data-cy='tk-add-price']").fill("120");
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
     await form.locator("[data-cy='tk-add-date']").fill(day);
     await form.locator("[data-cy='tk-add-save']").click();
     await form.waitFor({ state: "detached", timeout: 15_000 });
-    await page.waitForFunction((d) => (document.querySelector("[data-cy='tk-date']") as HTMLInputElement | null)?.value === d, day, { timeout: 15_000 });
-    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await page.waitForFunction(
+      (d) =>
+        (document.querySelector("[data-cy='tk-date']") as
+          | HTMLInputElement
+          | null)?.value === d,
+      day,
+      { timeout: 15_000 },
+    );
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first()
+      .waitFor({ timeout: 15_000 });
     await expect.see("Mulch");
-    const flash = (await page.locator("[data-cy='tk-flash']").innerText()).trim();
-    const label = later.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
-    expect(flash.toLowerCase().includes(label.toLowerCase()), `the flash names the task's day ${label} (got "${flash}")`);
+    const flash = (await page.locator("[data-cy='tk-flash']").innerText())
+      .trim();
+    const label = later.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    expect(
+      flash.toLowerCase().includes(label.toLowerCase()),
+      `the flash names the task's day ${label} (got "${flash}")`,
+    );
   }));
 
 Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and sends nothing; a new name is added as a customer from the form and the task saves", (t) =>
@@ -844,80 +874,149 @@ Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and send
       if (r.method() === "POST") posts.push(new URL(r.url()).pathname);
     });
     await page.goto("/field/tasks");
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
     await page.locator("[data-cy='tk-add']").click();
     const form = page.locator("[data-cy='tk-add-form']");
     await form.waitFor({ timeout: 15_000 });
-    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    const box = form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-input']",
+    );
     await box.fill("Jim Baker");
     await form.locator("[data-cy='tk-add-type']").fill("Mulch");
     await form.locator("[data-cy='tk-add-price']").fill("120");
     // 1. no customer picked — the form says which field, and no task is POSTed
     await form.locator("[data-cy='tk-add-save']").click();
     await expect.see("Pick a customer from the list, or add a new one.");
-    expect.eq(await box.getAttribute("aria-invalid"), "true", "the customer box is marked invalid");
-    expect.eq(posts.filter((p) => p.endsWith("/field/tasks")).length, 0, "no task POST");
+    expect.eq(
+      await box.getAttribute("aria-invalid"),
+      "true",
+      "the customer box is marked invalid",
+    );
+    expect.eq(
+      posts.filter((p) => p.endsWith("/field/tasks")).length,
+      0,
+      "no task POST",
+    );
     // 2. the box offers to add the typed name as a customer
     await box.click();
-    const create = form.locator("[data-cy='tk-customer'] [data-cy='search-select-create']");
+    const create = form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-create']",
+    );
     await create.waitFor({ timeout: 15_000 });
-    expect.eq((await create.textContent())?.trim(), '+ Add "Jim Baker" as a customer', "the create row");
+    expect.eq(
+      (await create.textContent())?.trim(),
+      '+ Add "Jim Baker" as a customer',
+      "the create row",
+    );
     await create.click();
-    await page.waitForFunction(() => document.querySelector("[data-cy='tk-customer'] input[name='customer']")?.getAttribute("value"));
+    await page.waitForFunction(() =>
+      document.querySelector("[data-cy='tk-customer'] input[name='customer']")
+        ?.getAttribute("value")
+    );
     // 3. a new customer has no staffed zone — the form asks for the worker by name, not "Something went wrong"
     await form.locator("[data-cy='tk-add-save']").click();
     await expect.see("Pick a worker — this customer has no zone with one yet.");
-    expect.eq(await form.locator("[data-cy='tk-add-worker']").getAttribute("aria-invalid"), "true", "the worker picker is marked invalid");
+    expect.eq(
+      await form.locator("[data-cy='tk-add-worker']").getAttribute(
+        "aria-invalid",
+      ),
+      "true",
+      "the worker picker is marked invalid",
+    );
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
     await form.locator("[data-cy='tk-add-save']").click();
-    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first()
+      .waitFor({ timeout: 15_000 });
     await expect.see("Jim Baker");
     const list = await http("/api/customers?q=Jim%20Baker", { headers: auth });
     const body = await list.json();
-    expect((body.items ?? []).some((c: { name: string }) => c.name === "Jim Baker"), "Jim Baker is a customer now");
+    expect(
+      (body.items ?? []).some((c: { name: string }) => c.name === "Jim Baker"),
+      "Jim Baker is a customer now",
+    );
   }));
 
 Deno.test("REQ-340 (demo M37): a new customer added from the form BEFORE the address is typed gets the task's address on file once the task saves", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth, worker } = await officeDay({ page, http, baseUrl });
     await page.goto("/field/tasks");
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
     await page.locator("[data-cy='tk-add']").click();
     const form = page.locator("[data-cy='tk-add-form']");
     await form.waitFor({ timeout: 15_000 });
-    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
+    const box = form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-input']",
+    );
     await box.fill("Dave Kowalski");
-    const create = form.locator("[data-cy='tk-customer'] [data-cy='search-select-create']");
+    const create = form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-create']",
+    );
     await create.waitFor({ timeout: 15_000 });
     await create.click(); // the demo's order: the customer is made with no address…
-    await page.waitForFunction(() => document.querySelector("[data-cy='tk-customer'] input[name='customer']")?.getAttribute("value"));
+    await page.waitForFunction(() =>
+      document.querySelector("[data-cy='tk-customer'] input[name='customer']")
+        ?.getAttribute("value")
+    );
     await form.locator("[data-cy='tk-add-type']").fill("Gutter clean");
     await form.locator("[data-cy='tk-add-price']").fill("150");
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
-    await form.locator("[data-cy='tk-add-address']").fill("8807 Spicewood Springs Rd, Austin, TX"); // …and the address is typed after
+    await form.locator("[data-cy='tk-add-address']").fill(
+      "8807 Spicewood Springs Rd, Austin, TX",
+    ); // …and the address is typed after
     await form.locator("[data-cy='tk-add-save']").click();
-    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-oneoff='true']").first()
+      .waitFor({ timeout: 15_000 });
     await expect.see("8807 Spicewood Springs Rd, Austin, TX");
-    const list = await http("/api/customers?q=Dave%20Kowalski", { headers: auth });
+    const list = await http("/api/customers?q=Dave%20Kowalski", {
+      headers: auth,
+    });
     const body = await list.json();
-    const dave = (body.items ?? []).find((c: { name: string }) => c.name === "Dave Kowalski");
+    const dave = (body.items ?? []).find((c: { name: string }) =>
+      c.name === "Dave Kowalski"
+    );
     expect(!!dave, "Dave Kowalski is a customer");
-    expect.eq(dave.address, "8807 Spicewood Springs Rd, Austin, TX", "the customer carries the task's address — not 'No address on file'");
+    expect.eq(
+      dave.address,
+      "8807 Spicewood Springs Rd, Austin, TX",
+      "the customer carries the task's address — not 'No address on file'",
+    );
   }));
 
 Deno.test("REQ-415 (demo p11, cycle 2): a fence builder's Add-task Service box shows its own services as the example, not lawn care", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
-    await officeDay({ page, http, baseUrl }, [{ taskTypeName: "Fence install", priceCents: 90000 }]);
+    await officeDay({ page, http, baseUrl }, [{
+      taskTypeName: "Fence install",
+      priceCents: 90000,
+    }]);
     await page.goto("/field/tasks");
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
     await page.locator("[data-cy='tk-add']").click();
     const form = page.locator("[data-cy='tk-add-form']");
     await form.waitFor({ timeout: 15_000 });
     const type = form.locator("[data-cy='tk-add-type']");
-    await page.waitForFunction(() => (document.querySelector("[data-cy='tk-add-type']")?.getAttribute("placeholder") ?? "").includes("Fence install"), undefined, { timeout: 15_000 });
+    await page.waitForFunction(
+      () =>
+        (document.querySelector("[data-cy='tk-add-type']")?.getAttribute(
+          "placeholder",
+        ) ?? "").includes("Fence install"),
+      undefined,
+      { timeout: 15_000 },
+    );
     const ph = (await type.getAttribute("placeholder")) ?? "";
-    expect(ph.includes("Fence install"), `the placeholder names the account's own service (got "${ph}")`);
-    expect(!/lawn|mulch|pool/i.test(ph), `no lawn-care example for a fence builder (got "${ph}")`);
+    expect(
+      ph.includes("Fence install"),
+      `the placeholder names the account's own service (got "${ph}")`,
+    );
+    expect(
+      !/lawn|mulch|pool/i.test(ph),
+      `no lawn-care example for a fence builder (got "${ph}")`,
+    );
   }));
 
 Deno.test("REQ-521 (demo m54, cycle 3): an account with no workers opens Add task — the Worker picker says so and links to /field/workers; an empty Save names Customer first, not Service", (t) =>
@@ -934,17 +1033,44 @@ Deno.test("REQ-521 (demo m54, cycle 3): an account with no workers opens Add tas
     // 1. no workers yet — a hint under the picker, with the way to add one
     const hint = form.locator("[data-cy='tk-add-no-workers']");
     await hint.waitFor({ timeout: 15_000 });
-    expect((await hint.textContent() ?? "").includes("No workers yet."), "the hint says there are no workers");
+    expect(
+      (await hint.textContent() ?? "").includes("No workers yet."),
+      "the hint says there are no workers",
+    );
     const link = hint.locator("a[href='/field/workers']");
-    expect.eq((await link.textContent())?.trim(), "Add a worker", "the hint links to /field/workers");
+    expect.eq(
+      (await link.textContent())?.trim(),
+      "Add a worker",
+      "the hint links to /field/workers",
+    );
     // 2. an empty Save — the form's own check runs (customer first), not the browser's bubble on Service
     await form.locator("[data-cy='tk-add-save']").click();
     await expect.see("Pick a customer from the list, or add a new one.");
-    const box = form.locator("[data-cy='tk-customer'] [data-cy='search-select-input']");
-    expect.eq(await box.getAttribute("aria-invalid"), "true", "the customer box is marked invalid");
-    expect.eq(await form.locator("[data-cy='tk-add-type']").getAttribute("aria-invalid"), null, "Service is not the field flagged");
-    expect.eq(await form.evaluate((f) => (f as HTMLFormElement).noValidate), true, "the browser's 'Please fill out this field.' bubble is off — the form's own check speaks");
-    expect.eq(posts.filter((p) => p.endsWith("/field/tasks")).length, 0, "no task POST");
+    const box = form.locator(
+      "[data-cy='tk-customer'] [data-cy='search-select-input']",
+    );
+    expect.eq(
+      await box.getAttribute("aria-invalid"),
+      "true",
+      "the customer box is marked invalid",
+    );
+    expect.eq(
+      await form.locator("[data-cy='tk-add-type']").getAttribute(
+        "aria-invalid",
+      ),
+      null,
+      "Service is not the field flagged",
+    );
+    expect.eq(
+      await form.evaluate((f) => (f as HTMLFormElement).noValidate),
+      true,
+      "the browser's 'Please fill out this field.' bubble is off — the form's own check speaks",
+    );
+    expect.eq(
+      posts.filter((p) => p.endsWith("/field/tasks")).length,
+      0,
+      "no task POST",
+    );
     // 3. the link goes to the workers page
     await link.click();
     await page.waitForURL(/\/field\/workers/, { timeout: 15_000 });
@@ -1041,7 +1167,8 @@ Deno.test("REQ-284: the day's only task checked off — the summary reads Comple
     const before = (await summary.innerText()).replace(/\s+/g, " "); // the chips are text-transform: uppercase
     expect.eq(/To do 1/i.test(before), true, `one to do before: ${before}`);
     await task.locator("[data-cy='tk-done']").click();
-    await page.locator("[data-cy='tk-task'][data-status='complete']").first().waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='tk-task'][data-status='complete']").first()
+      .waitFor({ timeout: 15_000 });
     await expect.see("1 of 1 complete");
     const text = (await summary.innerText()).replace(/\s+/g, " ");
     expect.eq(/Complete 1/i.test(text), true, `complete chip: ${text}`);
@@ -1053,17 +1180,32 @@ Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft in
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const post = async (path: string, body: unknown) => {
-      const r = await http(path, { method: "POST", headers: auth, body: JSON.stringify(body) });
+      const r = await http(path, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify(body),
+      });
       return r.json();
     };
     const put = async (path: string, body: unknown) => {
-      const r = await http(path, { method: "PUT", headers: auth, body: JSON.stringify(body) });
+      const r = await http(path, {
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify(body),
+      });
       await r.body?.cancel();
     };
     const customer = await post("/api/customers", { name: "Johnson" });
-    expect(!!customer.id, `Johnson created with no email or phone (${JSON.stringify(customer)})`);
+    expect(
+      !!customer.id,
+      `Johnson created with no email or phone (${JSON.stringify(customer)})`,
+    );
     const cell = `843${digits()}`;
-    const worker = await post("/api/field/workers", { name: "Luis Herrera", phoneNumber: cell, pin: "1234" });
+    const worker = await post("/api/field/workers", {
+      name: "Luis Herrera",
+      phoneNumber: cell,
+      pin: "1234",
+    });
     const today = todayIso();
     const sub = await post("/api/field/subscriptions", {
       customerId: customer.id,
@@ -1071,8 +1213,12 @@ Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft in
       startDate: today,
       items: [{ taskTypeName: "Repair 3 fence panels", priceCents: 9000 }],
     });
-    await put(`/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
-    const tasks = await (await http(`/api/field/tasks?date=${today}`, { headers: auth })).json();
+    await put(`/api/field/regions/${sub.region.id}/worker`, {
+      workerId: worker.id,
+    });
+    const tasks =
+      await (await http(`/api/field/tasks?date=${today}`, { headers: auth }))
+        .json();
     expect.eq(tasks.length, 1, "one task today");
     await put(`/api/field/tasks/${tasks[0].id}`, { status: "complete" });
 
@@ -1080,15 +1226,27 @@ Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft in
     await page.locator("[data-cy='lt-from']").fill(today);
     await page.locator("[data-cy='lt-to']").fill(today);
     await page.locator("[data-cy='lt-pull']").click();
-    await page.locator("[data-cy='lt-invoice']").first().waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='lt-invoice']").first().waitFor({
+      timeout: 20_000,
+    });
     const summary = await page.locator("[data-cy='lt-summary']").innerText();
-    expect(/1 completed, on draft invoices/.test(summary), `summary: ${summary}`);
-    expect(!/completed and invoiced/.test(summary), `no 'invoiced' for a draft: ${summary}`);
+    expect(
+      /1 completed, on draft invoices/.test(summary),
+      `summary: ${summary}`,
+    );
+    expect(
+      !/completed and invoiced/.test(summary),
+      `no 'invoiced' for a draft: ${summary}`,
+    );
     await expect.see("1 draft · 0 sent · 0 paid");
 
     await page.locator("[data-cy='lt-send']").click();
-    await page.locator("[data-cy='lt-send-failure']").first().waitFor({ timeout: 20_000 });
-    await expect.see("Johnson has no email or phone on file, so nothing was sent.");
+    await page.locator("[data-cy='lt-send-failure']").first().waitFor({
+      timeout: 20_000,
+    });
+    await expect.see(
+      "Johnson has no email or phone on file, so nothing was sent.",
+    );
     await expect.see("Add an email or phone to Johnson");
     await expect.notSee("each client got theirs");
     await expect.notSee("no recipient:");
@@ -1099,7 +1257,9 @@ Deno.test("REQ-401 (demo M30/m45, cycle 2): a pull onto drafts says 'on draft in
     await page.locator("[data-cy='w-cell']").fill(cell);
     await page.locator("[data-cy='w-pin']").fill("1234");
     await page.locator("[data-cy='w-login']").click();
-    await page.locator("[data-cy='w-visit']").first().waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='w-visit']").first().waitFor({
+      timeout: 20_000,
+    });
     await expect.see("on a draft invoice");
   }));
 
@@ -1107,26 +1267,62 @@ Deno.test("REQ-611 (demo p4-p8a, cycle 4): the /field/tasks day stepper's button
   story(t, async ({ page, expect, http, baseUrl }) => {
     await officeDay({ page, http, baseUrl });
     await page.goto("/field/tasks");
-    await page.locator("[data-cy='tk-task']").first().waitFor({ timeout: 15_000 });
-    const prev = page.getByRole("button", { name: "Previous day", exact: true });
+    await page.locator("[data-cy='tk-task']").first().waitFor({
+      timeout: 15_000,
+    });
+    const prev = page.getByRole("button", {
+      name: "Previous day",
+      exact: true,
+    });
     const next = page.getByRole("button", { name: "Next day", exact: true });
     expect.eq(await prev.count(), 1, "one button named Previous day");
     expect.eq(await next.count(), 1, "one button named Next day");
-    expect.eq(await prev.getAttribute("data-cy"), "tk-prev", "Previous day is the left chevron");
-    expect.eq(await next.getAttribute("data-cy"), "tk-next", "Next day is the right chevron");
-    expect.eq(await page.getByRole("button", { name: /^Day\b/ }).count(), 0, "no button is named after the 'Day' label");
-    expect.eq(await page.getByRole("button", { name: "+1", exact: true }).count(), 0, "no button named +1");
+    expect.eq(
+      await prev.getAttribute("data-cy"),
+      "tk-prev",
+      "Previous day is the left chevron",
+    );
+    expect.eq(
+      await next.getAttribute("data-cy"),
+      "tk-next",
+      "Next day is the right chevron",
+    );
+    expect.eq(
+      await page.getByRole("button", { name: /^Day\b/ }).count(),
+      0,
+      "no button is named after the 'Day' label",
+    );
+    expect.eq(
+      await page.getByRole("button", { name: "+1", exact: true }).count(),
+      0,
+      "no button named +1",
+    );
     // "Day" names exactly two things: the stepper group and the date input — never a button
-    expect.eq(await page.getByLabel("Day", { exact: true }).and(page.locator("input")).getAttribute("data-cy"), "tk-date", "'Day' labels the date input");
-    expect.eq(await page.getByRole("group", { name: "Day", exact: true }).count(), 1, "the stepper is a group named Day");
+    expect.eq(
+      await page.getByLabel("Day", { exact: true }).and(page.locator("input"))
+        .getAttribute("data-cy"),
+      "tk-date",
+      "'Day' labels the date input",
+    );
+    expect.eq(
+      await page.getByRole("group", { name: "Day", exact: true }).count(),
+      1,
+      "the stepper is a group named Day",
+    );
     const before = await page.locator("[data-cy='tk-date']").inputValue();
     await next.click();
     await page.waitForFunction(
-      (b) => (document.querySelector("[data-cy='tk-date']") as HTMLInputElement | null)?.value !== b,
+      (b) =>
+        (document.querySelector("[data-cy='tk-date']") as
+          | HTMLInputElement
+          | null)?.value !== b,
       before,
       { timeout: 15_000 },
     );
-    expect(await page.locator("[data-cy='tk-date']").inputValue() > before, "Next day moves the day forward");
+    expect(
+      await page.locator("[data-cy='tk-date']").inputValue() > before,
+      "Next day moves the day forward",
+    );
   }));
 
 Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; days are picked on it, February has its own length, the card reads Annual · March 5, and Edit opens it again on March 5", (t) =>
@@ -1143,6 +1339,7 @@ Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; day
     });
     await r.body?.cancel();
     await page.goto("/field/subscriptions");
+    const svc1212 = await ensureService(http, auth, "Gutter clean"); // REQ-921: the catalogue has it
     await page.locator("[data-cy='subs-new']").click();
     await pickCustomer(page, "Ana Torres");
     const start = await page.locator("[data-cy='subs-start']").inputValue();
@@ -1209,9 +1406,7 @@ Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; day
       "5",
       "March 5 is the pick",
     );
-    await page.locator("[data-cy='subs-type-q']").fill("Gutter clean");
-    await page.locator("[data-cy='subs-price']").fill("180");
-    await page.locator("[data-cy='subs-add-item']").click();
+    await addVisitService(page, svc1212, "180"); // REQ-921
     await page.locator("[data-cy='subs-submit']").click();
     await page.locator("[data-cy='subs-card']").first().waitFor({
       timeout: 20_000,
@@ -1366,17 +1561,22 @@ Deno.test("REQ-788: the overhead cost set in Settings; the form's upper-right ch
     await pctBox.fill("10");
     await pctBox.blur();
     await page.waitForTimeout(800);
-    const ident2 = await (await http("/api/profile/identity", { headers: auth })).json();
+    const ident2 =
+      await (await http("/api/profile/identity", { headers: auth })).json();
     expect.eq(
       [ident2.fieldOverheadMode, ident2.fieldOverheadPct].join("|"),
       "percent|10",
       "Settings saved the percent mode and 10%",
     );
     await page.goto("/field/subscriptions");
-    await page.locator("[data-cy='subs-card-overhead']").first().waitFor({ timeout: 20_000 });
+    await page.locator("[data-cy='subs-card-overhead']").first().waitFor({
+      timeout: 20_000,
+    });
     await expect.see("$6.50 · 10%");
     await page.locator("[data-cy='subs-edit']").first().click();
-    await page.locator("[data-cy='subs-overhead']").waitFor({ timeout: 15_000 });
+    await page.locator("[data-cy='subs-overhead']").waitFor({
+      timeout: 15_000,
+    });
     await expect.see("Overhead · 10%");
   }));
 
@@ -1386,44 +1586,103 @@ Deno.test("REQ-810: a batch of two customers — × a line and the totals drop i
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const call = async (method: string, path: string, body?: unknown) => {
-      const r = await http(path, { method, headers: auth, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      const r = await http(path, {
+        method,
+        headers: auth,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
       return r.json();
     };
     const today = todayIso();
-    const worker = await call("POST", "/api/field/workers", { name: "Luis Herrera", phoneNumber: `843${digits()}`, pin: "1234" });
-    for (const [name, address, items] of [
-      ["Ana Torres", "4601 Dick Pond Rd, Myrtle Beach, SC", [{ taskTypeName: "Lawn cut", priceCents: 6500 }, { taskTypeName: "Hedge trim", priceCents: 4000 }]],
-      ["Bob Reyes", "845 Frederick Rd, Rockingham, VA", [{ taskTypeName: "Lawn cut", priceCents: 6500 }]],
-    ] as const) {
-      const c = await call("POST", "/api/customers", { name, address, email: `${name.replace(/\W+/g, ".").toLowerCase()}@blackhole.postmarkapp.com` });
-      const sub = await call("POST", "/api/field/subscriptions", { customerId: c.id, address, startDate: today, items });
-      await call("PUT", `/api/field/regions/${sub.region.id}/worker`, { workerId: worker.id });
+    const worker = await call("POST", "/api/field/workers", {
+      name: "Luis Herrera",
+      phoneNumber: `843${digits()}`,
+      pin: "1234",
+    });
+    for (
+      const [name, address, items] of [
+        ["Ana Torres", "4601 Dick Pond Rd, Myrtle Beach, SC", [{
+          taskTypeName: "Lawn cut",
+          priceCents: 6500,
+        }, { taskTypeName: "Hedge trim", priceCents: 4000 }]],
+        ["Bob Reyes", "845 Frederick Rd, Rockingham, VA", [{
+          taskTypeName: "Lawn cut",
+          priceCents: 6500,
+        }]],
+      ] as const
+    ) {
+      const c = await call("POST", "/api/customers", {
+        name,
+        address,
+        email: `${
+          name.replace(/\W+/g, ".").toLowerCase()
+        }@blackhole.postmarkapp.com`,
+      });
+      const sub = await call("POST", "/api/field/subscriptions", {
+        customerId: c.id,
+        address,
+        startDate: today,
+        items,
+      });
+      await call("PUT", `/api/field/regions/${sub.region.id}/worker`, {
+        workerId: worker.id,
+      });
     }
     const tasks = await call("GET", `/api/field/tasks?date=${today}`);
     expect.eq(tasks.length, 3, "three tasks today");
-    for (const tk of tasks) await call("PUT", `/api/field/tasks/${tk.id}`, { status: "complete" });
+    for (const tk of tasks) {
+      await call("PUT", `/api/field/tasks/${tk.id}`, { status: "complete" });
+    }
 
     await page.goto("/field/batches");
     await page.locator("[data-cy='lt-from']").fill(today);
     await page.locator("[data-cy='lt-to']").fill(today);
     await page.locator("[data-cy='lt-pull']").click();
-    await page.locator("[data-cy='lt-invoice']").nth(1).waitFor({ timeout: 20_000 });
-    const card = (name: string) => page.locator("[data-cy='lt-invoice']").filter({ hasText: name });
+    await page.locator("[data-cy='lt-invoice']").nth(1).waitFor({
+      timeout: 20_000,
+    });
+    const card = (name: string) =>
+      page.locator("[data-cy='lt-invoice']").filter({ hasText: name });
     const total = page.locator("[data-cy='lt-batch-total']");
-    expect.eq((await total.innerText()).includes("$170.00"), true, `batch total $170.00 (${await total.innerText()})`);
-    await page.evaluate(() => ((window as unknown as { __noReload: number }).__noReload = 1));
+    expect.eq(
+      (await total.innerText()).includes("$170.00"),
+      true,
+      `batch total $170.00 (${await total.innerText()})`,
+    );
+    await page.evaluate(
+      () => ((window as unknown as { __noReload: number }).__noReload = 1),
+    );
 
     // × the Hedge line on Ana's card: the line leaves, her total and the batch total drop, no reload
     const ana = card("Ana Torres");
-    expect.eq(await ana.locator("[data-cy='lt-line']").count(), 2, "Ana has two lines");
-    const hedge = ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" });
+    expect.eq(
+      await ana.locator("[data-cy='lt-line']").count(),
+      2,
+      "Ana has two lines",
+    );
+    const hedge = ana.locator("[data-cy='lt-line']").filter({
+      hasText: "Hedge trim",
+    });
     const x = hedge.getByRole("button", { name: "Remove this line" });
     await x.click();
-    await ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" }).waitFor({ state: "detached", timeout: 20_000 });
-    expect.eq(await ana.locator("[data-cy='lt-line']").count(), 1, "one line left");
-    await ana.locator("[data-cy='lt-inv-total']").getByText("$65.00").waitFor({ timeout: 15_000 });
+    await ana.locator("[data-cy='lt-line']").filter({ hasText: "Hedge trim" })
+      .waitFor({ state: "detached", timeout: 20_000 });
+    expect.eq(
+      await ana.locator("[data-cy='lt-line']").count(),
+      1,
+      "one line left",
+    );
+    await ana.locator("[data-cy='lt-inv-total']").getByText("$65.00").waitFor({
+      timeout: 15_000,
+    });
     await total.getByText("$130.00").waitFor({ timeout: 15_000 });
-    expect.eq(await page.evaluate(() => (window as unknown as { __noReload?: number }).__noReload), 1, "the page updated in place");
+    expect.eq(
+      await page.evaluate(() =>
+        (window as unknown as { __noReload?: number }).__noReload
+      ),
+      1,
+      "the page updated in place",
+    );
 
     // Remove from batch on Bob's card: an inline confirm, then the card is gone and the counts update
     const bob = card("Bob Reyes");
@@ -1431,15 +1690,33 @@ Deno.test("REQ-810: a batch of two customers — × a line and the totals drop i
     await bob.locator("[data-cy='lt-remove-ask']").waitFor({ timeout: 10_000 });
     await bob.locator("[data-cy='lt-remove-confirm']").click();
     await card("Bob Reyes").waitFor({ state: "detached", timeout: 20_000 });
-    expect.eq(await page.locator("[data-cy='lt-invoice']").count(), 1, "one card left");
-    await page.locator("[data-cy='lt-count']").getByText("1 invoice").waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("[data-cy='lt-invoice']").count(),
+      1,
+      "one card left",
+    );
+    await page.locator("[data-cy='lt-count']").getByText("1 invoice").waitFor({
+      timeout: 15_000,
+    });
     await total.getByText("$65.00").waitFor({ timeout: 15_000 });
-    await page.locator("[data-cy='lt-past']").first().getByText("1 draft · 0 sent · 0 paid").waitFor({ timeout: 15_000 });
-    expect.eq(await page.evaluate(() => (window as unknown as { __noReload?: number }).__noReload), 1, "still no reload");
+    await page.locator("[data-cy='lt-past']").first().getByText(
+      "1 draft · 0 sent · 0 paid",
+    ).waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.evaluate(() =>
+        (window as unknown as { __noReload?: number }).__noReload
+      ),
+      1,
+      "still no reload",
+    );
 
     // the freed work is billable again: Bob's task is un-invoiced
     const after = await call("GET", `/api/field/tasks?date=${today}`);
-    expect.eq(after.filter((tk: { invoiceId?: string }) => !tk.invoiceId).length, 2, "Hedge trim and Bob's Lawn cut are un-invoiced");
+    expect.eq(
+      after.filter((tk: { invoiceId?: string }) => !tk.invoiceId).length,
+      2,
+      "Hedge trim and Bob's Lawn cut are un-invoiced",
+    );
 
     // a sent invoice is a real invoice: no remove buttons on its card
     const invId = await ana.getAttribute("data-id");
@@ -1448,8 +1725,16 @@ Deno.test("REQ-810: a batch of two customers — × a line and the totals drop i
     const sent = card("Ana Torres");
     await sent.waitFor({ timeout: 20_000 });
     await sent.getByText("Sent").first().waitFor({ timeout: 15_000 });
-    expect.eq(await sent.locator("[data-cy='lt-remove']").count(), 0, "no Remove from batch on a sent invoice");
-    expect.eq(await sent.getByRole("button", { name: "Remove this line" }).count(), 0, "no × on a sent invoice's lines");
+    expect.eq(
+      await sent.locator("[data-cy='lt-remove']").count(),
+      0,
+      "no Remove from batch on a sent invoice",
+    );
+    expect.eq(
+      await sent.getByRole("button", { name: "Remove this line" }).count(),
+      0,
+      "no × on a sent invoice's lines",
+    );
   }));
 
 // REQ-811 — Raphael: "recurring has the same thing over and over … associate a checklist to recurring … a reference"
@@ -1511,7 +1796,7 @@ Deno.test("REQ-811: a checklist made on /field/checklists → a repeat visit tha
       timeout: 15_000,
     });
     await select.selectOption({ label: "Full yard" });
-    await expect.see("Extra task types");
+    await expect.see("Extra services"); // REQ-921: the label names services
     await page.locator("[data-cy='subs-submit']").click();
     const card = page.locator("[data-cy='subs-card']").first();
     await card.waitFor({ timeout: 20_000 });
@@ -1712,7 +1997,9 @@ Deno.test("REQ-841: a grass crew and a mulch crew → a visit with Lawn cut + Mu
         pin: "1234",
       });
     const [ana, pedro] = [await mk("Ana Ruiz"), await mk("Pedro Gil")];
-    const mow = await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    const mow = await api("POST", "/api/field/task-types", {
+      name: "Lawn cut",
+    });
     const mulch = await api("POST", "/api/field/task-types", {
       name: "Mulching",
     });
@@ -1783,7 +2070,9 @@ Deno.test("REQ-841: a grass crew and a mulch crew → a visit with Lawn cut + Mu
     );
     const chip = (name: string) =>
       page.locator("[data-cy='tk-group-crew']", { hasText: name });
-    const grass = page.locator("[data-cy='tk-group']", { has: chip("Grass crew") });
+    const grass = page.locator("[data-cy='tk-group']", {
+      has: chip("Grass crew"),
+    });
     expect(
       (await grass.innerText()).includes("Lawn cut"),
       "the grass crew's group holds Lawn cut",
@@ -1809,7 +2098,9 @@ Deno.test("REQ-842: the grass crew is marked out today on /field/workers, covere
         pin: "1234",
       });
     const [ana, pedro] = [await mk("Ana Ruiz"), await mk("Pedro Gil")];
-    const mow = await api("POST", "/api/field/task-types", { name: "Lawn cut" });
+    const mow = await api("POST", "/api/field/task-types", {
+      name: "Lawn cut",
+    });
     const grass = await api("POST", "/api/field/crews", {
       name: "Grass crew",
       memberIds: [ana.id],
