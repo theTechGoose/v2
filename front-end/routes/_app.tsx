@@ -152,8 +152,8 @@ export default define.page(function App(ctx) {
         {
           /* REQ-183: Google Tag Manager's container snippet, "as high as
             possible inside <head>, on every page" — Google's loader on the
-            real deploy with GTM_ID set, nothing there without it, the app's
-            own fake on the gate and a dev box. */
+            real deploy (GTM_ID, else the production container — REQ-183
+            AMENDMENT 2026-11-17), the app's own fake on the gate and a dev box. */
         }
         <GoogleTagManager />
         <meta

@@ -9,7 +9,8 @@
  *
  * The story answers on the gate AND on a run against the real services:
  *  - on fakes (DENO_DEPLOY unset) the loader is the app's own, and it marks <html>;
- *  - on the real deploy (DENO_DEPLOY=true with a GTM_ID) the page requests Google's gtm.js
+ *  - on the real deploy (DENO_DEPLOY=true; GTM_ID, else the production container
+ *    GTM-5RGD3DP4 — REQ-183 AMENDMENT 2026-11-17) the page requests Google's gtm.js
  *    for the container and the noscript iframe is the body's first child.
  * Either way the snippet ran first in the head: the dataLayer carries gtm.start before
  * anything else and the snippet's script is the head's first <script>.
@@ -17,7 +18,10 @@
 import { story } from "#shots";
 
 const REAL = Boolean(Deno.env.get("DENO_DEPLOY")?.trim());
-const GTM_ID = Deno.env.get("GTM_ID")?.trim() || "GTM-FAKE000";
+// REQ-183 AMENDMENT (2026-11-17): on the real deploy the module defaults to the production
+// container, so a real-mode run without GTM_ID expects GTM-5RGD3DP4 on the page.
+const GTM_ID = Deno.env.get("GTM_ID")?.trim() ||
+  (REAL ? "GTM-5RGD3DP4" : "GTM-FAKE000");
 const PAGES = ["/", "/login", "/privacy", "/landing2"];
 
 Deno.test("REQ-183: every page carries Google Tag Manager — the container snippet first in the head, gtm.start on the dataLayer, the loader fetched; on the real deploy the noscript iframe first in the body", (t) =>
