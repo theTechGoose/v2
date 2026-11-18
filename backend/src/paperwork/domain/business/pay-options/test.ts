@@ -1,5 +1,5 @@
 import { assertEquals } from "#std/assert";
-import { payOptionLines } from "./mod.ts";
+import { businessAddressLine, payOptionLines } from "./mod.ts";
 
 // REQ-629 — "Extra Pay and other payment platforms exactly like the website" on the printed bill
 Deno.test("REQ-629 payOptionLines: only enabled methods with something to say, in the website's order", () => {
@@ -19,7 +19,7 @@ Deno.test("REQ-629 payOptionLines: only enabled methods with something to say, i
     other: { enabled: true },
   }, "en");
   assertEquals(lines, [
-    { label: "Check", value: "Mail to: 12 Oak St, Austin TX" },
+    { label: "Check", value: "Send to: 12 Oak St, Austin TX" },
     { label: "Venmo", value: "@a2z-landscape" },
     { label: "Zelle", value: "pay@a2z.com" },
     { label: "Cash", value: "Cash accepted" },
@@ -53,4 +53,36 @@ Deno.test("REQ-805 payOptionLines: each enabled https payment link prints by its
     { label: "Venmo", value: "@a2z-landscape" },
     { label: "Xpress Pay", value: "https://www.xpress-pay.com/a2z" },
   ]);
+});
+
+// REQ-923 — "on the invoice it says 'check accepted' it should say 'send to' <address>"
+Deno.test("REQ-923 payOptionLines: a check line reads 'Send to: <address>' — the check's mail-to, else the business address", () => {
+  // the business's own mail-to wins
+  assertEquals(
+    payOptionLines({ check: { enabled: true, mailTo: "PO Box 9, Austin TX" } }, "en", "12 Oak St, Austin, TX 78701"),
+    [{ label: "Check", value: "Send to: PO Box 9, Austin TX" }],
+  );
+  // no mail-to → the business address, never "Check accepted"
+  assertEquals(
+    payOptionLines({ check: { enabled: true } }, "en", "12 Oak St, Austin, TX 78701"),
+    [{ label: "Check", value: "Send to: 12 Oak St, Austin, TX 78701" }],
+  );
+  assertEquals(
+    payOptionLines({ check: { enabled: true, mailTo: "  " } }, "es", "12 Oak St, Austin, TX 78701"),
+    [{ label: "Cheque", value: "Enviar a: 12 Oak St, Austin, TX 78701" }],
+  );
+  // no address anywhere → the old line is the only honest thing left
+  assertEquals(payOptionLines({ check: { enabled: true } }, "en", "  "), [
+    { label: "Check", value: "Check accepted" },
+  ]);
+});
+
+Deno.test("REQ-923 businessAddressLine: street, city, state + ZIP on one line; blanks dropped", () => {
+  assertEquals(
+    businessAddressLine({ street: "12 Oak St", city: "Austin", state: "TX", postal: "78701" }),
+    "12 Oak St, Austin, TX 78701",
+  );
+  assertEquals(businessAddressLine({ street: "12 Oak St", city: " ", state: "TX" }), "12 Oak St, TX");
+  assertEquals(businessAddressLine(null), "");
+  assertEquals(businessAddressLine(undefined), "");
 });

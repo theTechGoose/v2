@@ -6,6 +6,7 @@
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
 import type { AcceptedPaymentMethods } from "@users/dto/business-identity.ts";
+import type { BusinessAddress } from "@users/dto/business-address.ts";
 import { projectPayMethods } from "#payments/pay-links.ts"; // REQ-805
 
 export interface PayOptionLine {
@@ -13,9 +14,26 @@ export interface PayOptionLine {
   value: string;
 }
 
+/** REQ-923 — the business address on one line: "12 Oak St, Austin, TX 78701". */
+export function businessAddressLine(
+  a: Partial<BusinessAddress> | null | undefined,
+): string {
+  if (!a) return "";
+  const stateZip = [a.state, a.postal].map((v) => v?.trim()).filter(Boolean)
+    .join(" ");
+  return [a.street, a.city, stateZip].map((v) => v?.trim()).filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * `businessAddress` (REQ-923): where a check goes when the business left the
+ * check's own "mail to" blank — the line reads "Send to: <address>", and only
+ * with no address at all does it fall back to "Check accepted".
+ */
 export function payOptionLines(
   m: AcceptedPaymentMethods | undefined,
   lang: Lang,
+  businessAddress?: string,
 ): PayOptionLine[] {
   if (!m) return [];
   const out: PayOptionLine[] = [];
@@ -24,10 +42,11 @@ export function payOptionLines(
     if (v) out.push({ label: t(lang, `paymentMethod.${key}`), value: v });
   };
   if (m.check?.enabled) {
+    const sendTo = m.check.mailTo?.trim() || businessAddress?.trim();
     add(
       "check",
-      m.check.mailTo?.trim()
-        ? t(lang, "printPdf.pay.mailTo", { address: m.check.mailTo.trim() })
+      sendTo
+        ? t(lang, "printPdf.pay.mailTo", { address: sendTo })
         : t(lang, "printPdf.pay.checkAccepted"),
     );
   }

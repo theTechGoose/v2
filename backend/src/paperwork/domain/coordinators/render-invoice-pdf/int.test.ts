@@ -7,6 +7,9 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { getKv, resetKv } from "@core/data/kv/mod.ts";
+import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
+import { RenderInvoicePrintPdf } from "../render-invoice-print-pdf/mod.ts";
+import { LoadBusinessLogo } from "../load-business-logo/mod.ts";
 
 async function seedContractor(userId: string) {
   const kv = await getKv();
@@ -338,5 +341,56 @@ Deno.test("REQ-906 render-invoice-pdf: the Bill-to name is drawn at 11pt", async
     new RegExp(`9 TF[\\s\\S]{0,200}?${hex("A2Z Landscape LLC")}`).test(up),
     "the From block's business line is still 9 pt",
   );
+  await resetKv();
+});
+
+// REQ-923 — "on the invoice it says 'check accepted' it should say 'send to' <address>"
+Deno.test("REQ-923 invoice PDFs: with checks on and no mail-to, both the invoice PDF and the printed invoice say 'Send to: <business address>'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const invoices = new InvoiceStore();
+  const customers = new CustomerStore();
+  const identities = new BusinessIdentityStore();
+  const addresses = new BusinessAddressStore();
+  await seedContractor("u-1");
+  await identities.upsert("u-1", {
+    businessName: "A2Z Landscape LLC",
+    acceptedPaymentMethods: { check: { enabled: true } },
+  } as never);
+  await addresses.upsert("u-1", { street: "12 Oak St", city: "Austin", state: "TX", postal: "78701" });
+  const customer = await customers.create("u-1", { name: "Robert Thall", email: "rt@acme.test" });
+  const inv = await invoices.create("u-1", {
+    customerId: customer.id,
+    status: "sent",
+    jobName: "Lawn",
+    lineItems: [{ description: "Lawn", quantity: 1, unit: "visit", price: 6500 }],
+    amount: 6500,
+  } as never);
+  const pdf = await drawnUpper(
+    await new RenderInvoicePdf(
+      invoices,
+      new QuoteStore(),
+      customers,
+      new UserStore(),
+      identities,
+      undefined,
+      undefined,
+      addresses,
+    ).run(inv.id),
+  );
+  const print = await drawnUpper(
+    await new RenderInvoicePrintPdf(
+      invoices,
+      customers,
+      new UserStore(),
+      identities,
+      addresses,
+      new LoadBusinessLogo(),
+    ).run("u-1", [inv.id]),
+  );
+  for (const [name, up] of [["invoice PDF", pdf], ["printed invoice", print]]) {
+    assert(up.includes(hexOf("Send to: 12 Oak St, Austin, TX 78701")), `${name}: 'Send to: <address>' is drawn`);
+    assert(!up.includes(hexOf("Check accepted")), `${name}: no 'Check accepted'`);
+  }
   await resetKv();
 });
