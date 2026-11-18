@@ -67,12 +67,16 @@ export function actorName(actor: { phoneNumber: string; name?: string }, inviteN
  * language included) is his alone. Kept as a split so a future account-level field has a place.
  */
 export function splitActingPatch(
-  patch: { name?: string; email?: string; language?: Language },
-): { actor: { name?: string; email?: string; language?: Language }; account: Record<string, never> } {
-  const actor: { name?: string; email?: string; language?: Language } = {};
+  patch: { name?: string; email?: string; language?: Language; idleLogoutMinutes?: number },
+): {
+  actor: { name?: string; email?: string; language?: Language; idleLogoutMinutes?: number };
+  account: Record<string, never>;
+} {
+  const actor: { name?: string; email?: string; language?: Language; idleLogoutMinutes?: number } = {};
   if (patch.name !== undefined) actor.name = patch.name;
   if (patch.email !== undefined) actor.email = patch.email;
   if (patch.language !== undefined) actor.language = patch.language;
+  if (patch.idleLogoutMinutes !== undefined) actor.idleLogoutMinutes = patch.idleLogoutMinutes; // REQ-929 — hers
   return { actor, account: {} };
 }
 

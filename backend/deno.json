@@ -24,6 +24,7 @@
     "#payments/": "../shared/payments/",
     "#customer-address/": "../shared/customer-address/",
     "#person-name/": "../shared/person-name/",
+    "#idle-logout/": "../shared/idle-logout/",
     "#features": "../shared/features.ts",
     "#legal/": "../shared/legal/",
     "#identity/": "../shared/identity/",

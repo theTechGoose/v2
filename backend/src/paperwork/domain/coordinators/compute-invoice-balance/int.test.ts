@@ -163,3 +163,45 @@ Deno.test("REQ-020 NW-29 compute-invoice-balance: flipping to paid hands the inv
   assertEquals(marked, [inv.id]);
   await resetKv();
 });
+
+Deno.test("REQ-928: a paid invoice records how it was paid (paidMethods), cleared when it reopens", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, invoices, payments } = fresh();
+  const inv = await invoices.create("u-1", {
+    quoteId: "c-1",
+    dueDate: "2026-05-01",
+    amount: 100,
+    status: "pending",
+  });
+  await payments.create("u-1", {
+    invoiceId: inv.id,
+    amount: 40,
+    method: "check",
+    receivedAt: "2026-04-10T00:00:00.000Z",
+  });
+  await flow.run(inv.id, "u-1");
+  assertEquals(
+    (await invoices.getOwned(inv.id, "u-1")).paidMethods ?? null,
+    null,
+  );
+
+  const last = await payments.create("u-1", {
+    invoiceId: inv.id,
+    amount: 60,
+    method: "venmo",
+    receivedAt: "2026-04-15T00:00:00.000Z",
+  });
+  await flow.run(inv.id, "u-1");
+  const paid = await invoices.getOwned(inv.id, "u-1");
+  assertEquals(paid.status, "paid");
+  assertEquals(paid.paidAt, "2026-04-15T00:00:00.000Z");
+  assertEquals(paid.paidMethods, ["check", "venmo"]);
+
+  await payments.delete(last.id, "u-1");
+  await flow.run(inv.id, "u-1");
+  const reopened = await invoices.getOwned(inv.id, "u-1");
+  assertEquals(reopened.status, "pending");
+  assertEquals(reopened.paidMethods ?? null, null);
+  await resetKv();
+});

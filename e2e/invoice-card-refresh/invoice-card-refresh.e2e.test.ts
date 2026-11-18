@@ -256,6 +256,10 @@ Deno.test("REQ-554 (demo m43 + m23, cycle 4): 'Payment confirmed' on a claimed c
     const before = await invoicesBadge(page);
     expect(before > 0, `the sidebar counts the open invoices (${before})`);
     await cta.click();
+    // REQ-930: Confirm payment asks for the reference first
+    await page.locator("[data-cy='mark-paid-confirm']").click({
+      timeout: 5_000,
+    });
 
     // the paid track (06) is collapsed by default: the card leaves 02
     const awaiting = page.locator(

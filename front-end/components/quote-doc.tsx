@@ -59,6 +59,7 @@ import { localizeTermValue } from "../lib/term-i18n.ts";
 import { withLang } from "../../shared/quote-flow/public-lang.ts";
 import { fmtMoneyExact, fmtPhone, telHref } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
+import { paidLine } from "../../shared/documents/paid-how.ts"; // REQ-928
 import { signerNameOnFile } from "../../shared/quote-flow/signer-name.ts";
 import {
   computeMilestones,
@@ -1418,8 +1419,20 @@ export function QuoteDoc(
               >
                 <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">
                   <strong style={`color:${TEAL}`}>{r.number}</strong>
-                  <span style={`color:${MUTED};font-size:12.5px`}>
-                    {r.stateLabel}
+                  {/* REQ-928: a paid invoice says when and how, in place of "Paid" */}
+                  <span
+                    data-cy={r.kind === "invoice" && r.paidAt
+                      ? "related-doc-paid-how"
+                      : undefined}
+                    style={`color:${MUTED};font-size:12.5px`}
+                  >
+                    {r.kind === "invoice" && r.paidAt
+                      ? paidLine(
+                        (k, v) => tFor(lang, k, v),
+                        lang === "es" ? "es" : "en",
+                        r,
+                      )
+                      : r.stateLabel}
                   </span>
                   {r.description
                     ? (

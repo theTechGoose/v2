@@ -5,6 +5,7 @@
  * one by one, each a link to its quote or invoice. Rendered inside the DashboardPage island, so
  * the segment clicks are live.
  */
+import { paidHow } from "../../shared/documents/paid-how.ts"; // REQ-928
 import { useState } from "preact/hooks";
 import Ticker from "../islands/Ticker.tsx";
 import { SkelBlock } from "./Skeletons.tsx";
@@ -95,7 +96,7 @@ function itemMeta(
         text: tFor(lang, "moneyBar.paidOn", {
           date: shortDate(item.paidAt, lang),
           num,
-        }),
+        }) + howOf(item.paidMethods, lang),
         tone: "ok",
       };
     case "estimates":
@@ -305,4 +306,10 @@ export function MoneyBar(
       </div>
     </section>
   );
+}
+
+/** REQ-928: " · Electronic (Venmo)" after the paid line, "" when unknown. */
+function howOf(methods: string[] | undefined, lang: Lang): string {
+  const how = paidHow((k, v) => tFor(lang, k, v), methods);
+  return how ? ` · ${how}` : "";
 }

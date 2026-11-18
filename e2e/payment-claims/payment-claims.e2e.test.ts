@@ -148,12 +148,24 @@ Deno.test("REQ-281: a customer's Zelle claim shows on /payments under Needs atte
     );
     await expect.see("$420 held up");
 
+    // REQ-930: "Got it" opens the Mark as paid modal (prefilled with the
+    // claim's reference); its Mark as paid confirms.
     await clickUntil(
       page,
       "[data-cy='payment-claim-confirm']",
       async () =>
-        (await page.locator("[data-cy='payment-claim']").count()) === 0,
+        (await page.locator("[data-cy='mark-paid-dialog']").count()) === 1,
     );
+    expect.eq(
+      await page.locator("[data-cy='mark-paid-reference']").inputValue(),
+      "ZL-281",
+      "the modal carries the claimed reference",
+    );
+    await page.locator("[data-cy='mark-paid-confirm']").click();
+    await page.locator("[data-cy='payment-claim']").first().waitFor({
+      state: "detached",
+      timeout: 15_000,
+    });
     expect.eq(
       (await page.locator("[data-cy='payments-kpi-attention']").innerText())
         .trim(),

@@ -45,10 +45,15 @@ export default define.page<typeof handler>(function Login(ctx) {
   return (
     <>
       <Head>
-        <link key="css-public-lang" rel="stylesheet" href={asset("/public-lang.css")} />
+        <link
+          key="css-public-lang"
+          rel="stylesheet"
+          href={asset("/public-lang.css")}
+        />
         <DocTitle
           lang={lang}
-          title={(l) => `${tFor(l, "loginPage.title")} · ${tFor(l, "brand.name")}`}
+          title={(l) =>
+            `${tFor(l, "loginPage.title")} · ${tFor(l, "brand.name")}`}
         />
         <link key="css-verify" rel="stylesheet" href={asset("/verify.css")} />
       </Head>
@@ -69,7 +74,9 @@ export default define.page<typeof handler>(function Login(ctx) {
             />
             <span>
               {tFor(lang, "brand.namePrefix")}
-              <em style="font-style:normal;color:var(--brand-green)">{tFor(lang, "brand.nameSuffix")}</em>
+              <em style="font-style:normal;color:var(--brand-green)">
+                {tFor(lang, "brand.nameSuffix")}
+              </em>
             </span>
           </a>
           <h1 style="font-size:32px;margin-top:6px">
@@ -81,6 +88,18 @@ export default define.page<typeof handler>(function Login(ctx) {
           >
             {tFor(lang, "loginPage.subtitle")}
           </p>
+          {/* REQ-929 — the inactivity timer sent the tab here */}
+          {ctx.url.searchParams.get("idle") === "1"
+            ? (
+              <p
+                data-cy="login-idle-notice"
+                role="status"
+                style="margin:-8px 0 18px;padding:10px 14px;border-radius:10px;background:#fff6e0;color:#6b4e00;font-size:14px"
+              >
+                {tFor(lang, "loginPage.idleSignedOut")}
+              </p>
+            )
+            : null}
           <LoginForm />
         </div>
         <SiteFooter lang={lang} />

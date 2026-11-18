@@ -295,6 +295,12 @@ export class UpdateInvoiceDto {
   /** REQ-202: sum of confirmed payments, maintained by the balance coordinator. */
   @IsOptional() @IsNumber()
   paidCents?: number | null;
+  /** REQ-928: how it was paid — the distinct methods of its payments, oldest
+   *  first ("venmo", "check", …), set with paidAt by the balance coordinator
+   *  (null while unpaid); never from a request. Printed as Electronic / Other
+   *  by shared/documents/paid-how.ts. */
+  @IsOptional() @IsArray() @IsString({ each: true })
+  paidMethods?: string[] | null;
   /** REQ-497 (demo-loop cycle 3, m23): a STANDALONE invoice's text per
    *  language, written by TranslateInvoice — `lang` is the language the
    *  contractor typed in, and its slot is the typed text verbatim (the cache
@@ -337,6 +343,8 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   overpaidCents?: number;
   /** REQ-202: sum of confirmed payments. */
   paidCents?: number;
+  /** REQ-928: the distinct methods of its payments, oldest first (paid only). */
+  paidMethods?: string[];
   /** REQ-488 (demo m56): the contractor said "Didn't get it" to the last
    *  claim — when, and the method the customer had claimed. Shown on /i
    *  until the customer claims again (which clears both). */

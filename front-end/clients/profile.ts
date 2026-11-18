@@ -133,6 +133,8 @@ export interface ActorView {
   email?: string;
   /** REQ-631 — HER UI language (PUT /me { language } while acting writes her record, never the owner's) */
   language?: "en" | "es";
+  /** REQ-929 — HER sign-out-after-inactivity minutes (PUT /me while acting writes hers) */
+  idleLogoutMinutes?: number;
 }
 
 export interface ProfileUser {
@@ -141,6 +143,8 @@ export interface ProfileUser {
   name?: string;
   email?: string;
   language?: "en" | "es";
+  /** REQ-929 — sign out after this many idle minutes (0/unset = Never) */
+  idleLogoutMinutes?: number;
   /** Super-admin flag — drives the sidebar Admin tab. Server-enforced. */
   superAdmin?: boolean;
   /** ISO timestamp of the first time the user reached the end of the /welcome

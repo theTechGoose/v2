@@ -849,3 +849,56 @@ Deno.test("REQ-756 send-paperwork-email: a Spanish quote email's hero never lowe
   );
   await resetKv();
 });
+
+// REQ-928 — "when an invoice is paid, it should show the method of payment and
+// when it was paid in all views. print electronic or other." The paid email's
+// money card says how, beside the date — quote-linked and standalone.
+Deno.test("REQ-928 send-paperwork-email: the paid email says 'PAID <date> · Electronic (Card)' / 'Other (Cash)'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, invoices, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Acme",
+    email: "ops@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    summary: "Patio",
+    lineItems: [{
+      description: "Patio pavers",
+      quantity: 1,
+      unit: "job",
+      price: 999_00,
+    }],
+    estimatedTotal: 999_00,
+    customerId: customer.id,
+  });
+  const linked = await invoices.create("u-1", {
+    quoteId: quote.id,
+    customerId: customer.id,
+    amount: 999_00,
+    status: "paid",
+    paidAt: "2026-04-20T12:00:00.000Z",
+    paidMethods: ["card"],
+  } as never);
+  const standalone = await invoices.create("u-1", {
+    customerId: customer.id,
+    amount: 450_00,
+    status: "paid",
+    paidAt: "2026-04-20T12:00:00.000Z",
+    paidMethods: ["cash"],
+  } as never);
+  await flow.run("u-1", {
+    kind: "invoice",
+    resourceId: linked.id,
+    variant: "paid",
+  });
+  await flow.run("u-1", {
+    kind: "invoice",
+    resourceId: standalone.id,
+    variant: "paid",
+  });
+  assertStringIncludes(sent[0].htmlBody, "Electronic (Credit card)");
+  assertStringIncludes(sent[1].htmlBody, "Other (Cash)");
+  await resetKv();
+});

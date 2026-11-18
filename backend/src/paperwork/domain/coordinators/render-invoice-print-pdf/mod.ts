@@ -54,6 +54,9 @@ import {
   visitPeriodOf,
 } from "#quote-flow/visit-groups.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { fillPaidMethods } from "@paperwork/domain/coordinators/fill-paid-methods/mod.ts"; // REQ-928
+import { paidLine } from "#documents/paid-how.ts"; // REQ-928
 
 /** US Letter, in points. */
 export const PAGE = { W: 612, H: 792 } as const;
@@ -141,12 +144,17 @@ export class RenderInvoicePrintPdf {
     private identity: BusinessIdentityStore,
     private addresses: BusinessAddressStore,
     private logos: LoadBusinessLogo,
+    /** REQ-928: a pre-REQ-928 paid invoice's methods come from its payments */
+    private payments: PaymentStore = new PaymentStore(),
   ) {}
 
   async run(userId: string, ids: string[]): Promise<Uint8Array> {
     // owner-scoped: getOwned throws NotFound / Forbidden for anything else
     const invoices = winAnsiSafeDeep(
-      await Promise.all(ids.map((id) => this.invoices.getOwned(id, userId))),
+      await fillPaidMethods(
+        this.payments,
+        await Promise.all(ids.map((id) => this.invoices.getOwned(id, userId))),
+      ),
     );
     const [contractor, ident, addr, logo] = await Promise.all([
       this.users.get(userId).catch(() => undefined),
@@ -304,6 +312,13 @@ function drawInvoice(
     text(t(lang, "printPdf.paidInFull"), R, H - 132, {
       size: 12,
       font: bold,
+      right: true,
+    });
+    // REQ-928: when and how — "Paid November 11, 2026 · Electronic (Venmo)"
+    text(paidLine((k, v) => t(lang, k, v), lang, inv), R, H - 146, {
+      size: 8.5,
+      font: reg,
+      color: SOFT,
       right: true,
     });
   } else {

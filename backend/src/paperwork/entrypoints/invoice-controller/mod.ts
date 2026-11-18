@@ -74,6 +74,7 @@ import {
 } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { billToCustomerPlan } from "@paperwork/domain/business/bill-to-customer/mod.ts"; // REQ-696
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { fillPaidMethods } from "@paperwork/domain/coordinators/fill-paid-methods/mod.ts"; // REQ-928
 import {
   duplicateDraftOf,
   MAX_BULK_IDS,
@@ -642,7 +643,9 @@ export class InvoiceController {
       ? await this.store.listByUserAndStatus(user.id, status)
       : await this.store.listByUser(user.id);
     const now = new Date();
-    return list.map((i) => project(i, now));
+    return (await fillPaidMethods(this.payments, list)).map((i) =>
+      project(i, now)
+    );
   }
 
   /**
@@ -746,7 +749,10 @@ export class InvoiceController {
   @Get(":id")
   async get(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return project(await this.store.getOwned(id, user.id), new Date());
+    const [inv] = await fillPaidMethods(this.payments, [
+      await this.store.getOwned(id, user.id),
+    ]);
+    return project(inv, new Date());
   }
 
   /**
@@ -790,6 +796,7 @@ export class InvoiceController {
     // never from a request: the balance coordinator owns these
     delete patch.paidCents;
     delete patch.overpaidCents;
+    delete patch.paidMethods; // REQ-928
     // REQ-488: reject-claim / the next claim own these
     delete patch.claimRejectedAt;
     delete patch.claimRejectedMethod;
@@ -863,14 +870,22 @@ export class InvoiceController {
   }
 
   /** Contractor confirms a customer's claimed payment. Records a Payment
-   *  row, flips the invoice to paid, fires the PDF receipt. */
+   *  row, flips the invoice to paid, fires the PDF receipt.
+   *  REQ-930: an optional `{ reference }` (the "Mark as paid" modal) is the
+   *  reference recorded; no body keeps the customer's claimed one. */
   @Post(":id/confirm-payment")
   async confirmPayment(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const result = await this.confirm.run(user.id, id);
+    const body = await ctx.req.json().catch(() => null) as
+      | { reference?: unknown }
+      | null;
+    const reference = typeof body?.reference === "string"
+      ? body.reference
+      : undefined;
+    const result = await this.confirm.run(user.id, id, { reference });
     return ctx.json(result, result.ok ? 200 : 409);
   }
 

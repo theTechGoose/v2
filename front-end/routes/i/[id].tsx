@@ -1,4 +1,5 @@
 import { asset, Head } from "fresh/runtime";
+import { paidHow, paidLine } from "../../../shared/documents/paid-how.ts"; // REQ-928
 import {
   clampToSendLanguages,
   offersLangToggle,
@@ -158,6 +159,8 @@ interface InvoicePublic {
   scheduledFor?: string;
   issuedDate?: string;
   paidAt?: string;
+  /** REQ-928: how it was paid — its payments' methods */
+  paidMethods?: string[];
   /** REQ-627: set when the business voided this invoice */
   voidedAt?: string;
   installmentIndex?: number;
@@ -211,6 +214,7 @@ interface InvoicePublic {
     amount?: number;
     status?: string;
     paidAt?: string;
+    paidMethods?: string[]; // REQ-928
     installmentIndex?: number;
     installmentTotal?: number;
   }>;
@@ -633,15 +637,21 @@ function InvoiceDoc(
                   ? tFor(lang, "status.paid")
                   : tFor(lang, "public.doc.balanceDue")}
               </div>
-              {invoice.dueDate && !voided
+              {(invoice.dueDate || paid) && !voided
                 ? (
-                  <div style={`margin-top:4px;color:${MUTED};font-size:12px`}>
+                  <div
+                    data-cy={paid ? "public-invoice-paid-how" : undefined}
+                    style={`margin-top:4px;color:${MUTED};font-size:12px`}
+                  >
                     {paid
-                      ? tFor(lang, "publicInvoice.paidOn", {
-                        date: fmtDate(invoice.paidAt ?? "", lang),
-                      })
+                      // REQ-928: when and how — "Paid November 11, 2026 · Electronic (Venmo)"
+                      ? paidLine(
+                        (k, v) => tFor(lang, k, v),
+                        lang === "es" ? "es" : "en",
+                        invoice,
+                      )
                       : tFor(lang, "publicInvoice.dueOn", {
-                        date: fmtDate(invoice.dueDate, lang),
+                        date: fmtDate(invoice.dueDate ?? "", lang),
                       })}
                   </div>
                 )
@@ -1184,6 +1194,15 @@ function InvoiceDoc(
                           ? (
                             <span style={`color:${MUTED};font-size:12.5px`}>
                               {shortDate(s.paidAt, lang)}
+                              {/* REQ-928: and how */}
+                              {s.paidMethods?.length
+                                ? ` · ${
+                                  paidHow(
+                                    (k, v) => tFor(lang, k, v),
+                                    s.paidMethods,
+                                  )
+                                }`
+                                : ""}
                             </span>
                           )
                           : null}
@@ -1416,6 +1435,8 @@ function OwnerClaimedNote(
         methodName: methodFriendly(intent.method, l),
         reference: intent.reference,
       })}
+      lang={l}
+      reference={intent.reference}
     />
   );
 }

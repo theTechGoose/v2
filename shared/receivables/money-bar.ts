@@ -65,6 +65,8 @@ export interface MoneyBarInvoice {
   amount?: number;
   paidCents?: number;
   paidAt?: string;
+  /** REQ-928 */
+  paidMethods?: string[];
   dueDate: string;
   jobName?: string;
   number?: string;
@@ -89,6 +91,8 @@ export interface MoneyBarItem {
   /** > 0 only in the overdue bucket */
   daysOverdue?: number;
   paidAt?: string;
+  /** REQ-928: how it was paid */
+  paidMethods?: string[];
   // quote
   sentAt?: string;
   // job
@@ -233,6 +237,7 @@ export function buildMoneyBar(
         Math.round(i.amount ?? 0),
       url: `/invoices?open=${i.id}`,
       paidAt: i.paidAt ?? i.updatedAt,
+      ...(i.paidMethods?.length ? { paidMethods: i.paidMethods } : {}),
     }))
     .sort((a, b) => (b.paidAt ?? "").localeCompare(a.paidAt ?? ""));
 

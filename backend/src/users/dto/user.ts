@@ -3,6 +3,7 @@ import { IsIn, IsOptional, IsString, validateSync } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import type { Features } from "#features";
 import { accountEmailError } from "#quote-flow/settings-fields.ts"; // REQ-501
+import { IDLE_LOGOUT_CHOICES } from "#idle-logout/mod.ts"; // REQ-929
 
 export type Language = "en" | "es";
 
@@ -21,6 +22,8 @@ export interface User {
   name?: string;
   email?: string;
   language?: Language;
+  /** REQ-929 — the person's own "sign out after inactivity" minutes (0/unset = Never) */
+  idleLogoutMinutes?: number;
   /**
    * Platform super-admin flag. Gates the /admin surface (user search,
    * grant/revoke, impersonation). NEVER part of UpdateUserDto — it can only
@@ -69,6 +72,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsIn(["en", "es"])
   language?: Language;
+
+  /** REQ-929 — one of 0 (Never), 15, 30, 60, 120, 240 */
+  @IsOptional()
+  @IsIn([...IDLE_LOGOUT_CHOICES])
+  idleLogoutMinutes?: number;
 }
 
 /**
@@ -84,6 +92,10 @@ export class UserInputError extends Error {
 }
 
 export function parseUpdateUser(input: unknown): UpdateUserDto {
+  // REQ-929: @IsOptional lets a null through; "no setting" is 0, never null
+  if ((input as { idleLogoutMinutes?: unknown } | null)?.idleLogoutMinutes === null) {
+    throw new UserInputError("invalid user patch: idleLogoutMinutes");
+  }
   const dto = plainToInstance(UpdateUserDto, input);
   const errors = validateSync(dto);
   if (errors.length) {

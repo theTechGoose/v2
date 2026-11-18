@@ -108,6 +108,8 @@ import {
   formatShortDate,
 } from "../../shared/quote-flow/format-helpers.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
+import MarkPaidDialog from "../components/MarkPaidDialog.tsx"; // REQ-930
+import { confirmPaymentInit } from "../lib/mark-paid.ts"; // REQ-930
 import { paymentRecordedText } from "../lib/payment-received.ts";
 import { CustomerFields } from "../components/CustomerForm.tsx"; // REQ-625
 import {
@@ -131,6 +133,7 @@ import {
   customerFixHref,
 } from "../lib/customer-card-edit.ts"; // REQ-695
 import { docNumberOf } from "../../shared/documents/numbering.ts";
+import { paidHow, paidLine } from "../../shared/documents/paid-how.ts"; // REQ-928
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import { isExtraWorkLink } from "../../shared/documents/change-order-actions.ts"; // REQ-655
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
@@ -279,6 +282,16 @@ const INITIAL: State = {
  *  customer-facing word used in the "customer paid X" subline. Returns
  *  "—" for missing/unknown values rather than an empty string so the
  *  card layout doesn't collapse. */
+/** REQ-928: "Paid Nov 11" → "Paid Nov 11 · Electronic (Venmo)" when the method is known. */
+function withHow(
+  text: string,
+  methods: string[] | undefined,
+  lang: Lang,
+): string {
+  const how = paidHow((k, v) => tFor(lang, k, v), methods);
+  return how ? `${text} · ${how}` : text;
+}
+
 function methodLabel(m: string | undefined, lang: Lang): string {
   switch (m) {
     case "check":
@@ -2487,6 +2500,19 @@ function InvoiceDetail(
             <span>{headlineOf(inv, lang)}</span>
             {hasPendingRevision(inv) && <UnpublishedBadge lang={lang} />}
           </div>
+          {/* REQ-928: when and how it was paid */}
+          {(inv.status === "paid" || inv.paidAt) && (
+            <div
+              data-cy="invoice-paid-how"
+              style="margin-top:4px;font-size:12.5px;font-weight:700;color:var(--brand-teal,#144852)"
+            >
+              {paidLine(
+                (k, v) => tFor(lang, k, v),
+                lang === "es" ? "es" : "en",
+                inv,
+              )}
+            </div>
+          )}
           {locked && (
             <div
               data-cy="invoice-locked"
@@ -3766,6 +3792,9 @@ function InvoiceCard(
   // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
   // paid — asks first, inline, naming the claim.
   const [nudgeAsk, setNudgeAsk] = useState(false);
+  // REQ-930: the "Mark as paid" modal for a claimed invoice
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+  const [markPaidFailed, setMarkPaidFailed] = useState(false);
   // REQ-704 (cycle 5, m60): the reminder a nudge would send, shown on the
   // back face before "Send a nudge" — rendered by the backend, sent to nobody.
   const nudgeDay = manualReminderDay(
@@ -3922,29 +3951,43 @@ function InvoiceCard(
     ? tFor(lang, "invoicesPage.subline.void", {
       date: fmtDate(inv.voidedAt ?? inv.updatedAt, now, lang),
     })
-    : tFor(lang, "invoicesPage.subline.paid", {
-      date: fmtDate(inv.paidAt, now, lang),
-    });
+    : withHow(
+      tFor(lang, "invoicesPage.subline.paid", {
+        date: fmtDate(inv.paidAt, now, lang),
+      }),
+      inv.paidMethods,
+      lang,
+    );
 
-  async function doConfirmReceived(e: Event) {
+  /** REQ-930: "Confirm payment" asks for the reference number first. */
+  function doConfirmReceived(e: Event) {
     e.stopPropagation();
     if (busy) return;
+    setMarkPaidFailed(false);
+    setMarkPaidOpen(true);
+  }
+  async function doMarkPaid(reference: string) {
+    if (busy) return;
     setBusy(true);
+    setMarkPaidFailed(false);
     try {
-      const r = await fetch(`/api/invoices/${inv.id}/confirm-payment`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const r = await fetch(
+        `/api/invoices/${inv.id}/confirm-payment`,
+        confirmPaymentInit(reference),
+      );
       await r.body?.cancel();
       // REQ-554 (demo cycle 4, m43): "Payment confirmed" re-reads in place
       // and says so — no whole-page reload.
       if (r.ok) {
+        setMarkPaidOpen(false);
         onFlash({
           cy: "payment-confirmed",
           text: tFor(lang, "invoicesPage.flash.paymentConfirmed"),
         });
         await onRefresh();
-      }
+      } else setMarkPaidFailed(true);
+    } catch {
+      setMarkPaidFailed(true);
     } finally {
       setBusy(false);
     }
@@ -4183,7 +4226,7 @@ function InvoiceCard(
     : inv.stage === "paid"
     // REQ-556 (cycle 4, M7): where the receipt actually went
     ? tFor(lang, paidReadKey(inv), {
-      date: fmtDate(inv.paidAt, now, lang),
+      date: withHow(fmtDate(inv.paidAt, now, lang), inv.paidMethods, lang),
     })
     : inv.stage === "claimed"
     ? tFor(lang, "invoicesPage.read.claimed", {
@@ -4930,6 +4973,20 @@ function InvoiceCard(
             )}
         </div>
       </div>
+      {
+        /* REQ-930: portals to <body> — the card's flip transform and its
+          flip-on-click never reach it */
+      }
+      {markPaidOpen && (
+        <MarkPaidDialog
+          lang={lang}
+          initialReference={inv.paymentIntent?.reference}
+          busy={busy}
+          failed={markPaidFailed}
+          onCancel={() => setMarkPaidOpen(false)}
+          onConfirm={doMarkPaid}
+        />
+      )}
     </article>
   );
 }

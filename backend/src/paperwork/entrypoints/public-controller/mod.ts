@@ -40,6 +40,7 @@ import {
 } from "#quote-flow/signer-name.ts";
 import { AcceptedPaymentMethods } from "@profile/dto/business-identity.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { fillPaidMethods } from "@paperwork/domain/coordinators/fill-paid-methods/mod.ts"; // REQ-928
 import { ConnectStripe } from "@users/domain/coordinators/connect-stripe/mod.ts"; // REQ-212
 import {
   STRIPE_API,
@@ -1261,7 +1262,7 @@ export class PaperworkPublicController {
       }
       // Project sibling invoices into a public-safe shape, sorted by
       // installmentIndex (or createdAt as fallback).
-      const sortedSiblings = siblings
+      const sortedSiblings = (await fillPaidMethods(this.payments, siblings)) // REQ-928
         .slice()
         .sort((a, b) => {
           if (a.seq != null && b.seq != null && a.seq !== b.seq) {
@@ -1279,6 +1280,7 @@ export class PaperworkPublicController {
           amount: row.amount,
           status: row.status,
           paidAt: row.paidAt,
+          paidMethods: row.paidMethods, // REQ-928
           installmentIndex: row.installmentIndex,
           installmentTotal: row.installmentTotal,
         }));
@@ -1314,7 +1316,7 @@ export class PaperworkPublicController {
       // REQ-479 (demo M30): the business's own viewer previews the claim
       const internal = await isInternalRequest(ctx, this.sessions, i.userId);
       return ctx.json({
-        ...redactInvoice(i),
+        ...redactInvoice((await fillPaidMethods(this.payments, [i]))[0]),
         ...(internal ? { internal: true } : {}),
         // REQ-202: one current balance, whatever page is open
         paidCents: balance.paidCents,
@@ -2251,6 +2253,8 @@ function redactInvoice(i: Invoice) {
     dueDate: i.dueDate,
     status: i.status,
     paidAt: i.paidAt,
+    // REQ-928: how it was paid (Electronic / Other) — the customer's own payment
+    paidMethods: i.paidMethods ?? undefined,
     // REQ-556 (demo-loop cycle 4, M7): where the paid receipt actually went
     receiptSentVia: i.receiptSentVia,
     // REQ-627: when it was cancelled (who and why stay with the business)
@@ -2365,6 +2369,7 @@ async function projectLinkedInvoice(payments: PaymentStore, i: Invoice) {
       0,
     );
   const bal = invoiceBalance(i.amount, paidCents);
+  const [filled] = await fillPaidMethods(payments, [i]); // REQ-928
   return {
     id: i.id,
     number: docNumberOf(i),
@@ -2377,6 +2382,7 @@ async function projectLinkedInvoice(payments: PaymentStore, i: Invoice) {
     balanceCents: bal.balanceCents,
     dueDate: i.dueDate,
     paidAt: i.paidAt,
+    paidMethods: filled.paidMethods, // REQ-928
     installmentIndex: i.installmentIndex,
     installmentTotal: i.installmentTotal,
   };

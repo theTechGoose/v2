@@ -48,6 +48,8 @@ export interface ActorView {
   email?: string;
   /** REQ-631 — HER UI language (her own record's; the account's while she has none) */
   language?: "en" | "es";
+  /** REQ-929 — HER sign-out-after-inactivity minutes (her own record's; never the owner's) */
+  idleLogoutMinutes?: number;
 }
 
 export interface AccountsView {
@@ -181,6 +183,7 @@ export class AccountAdmins {
       phoneNumber: actor.phoneNumber,
       ...(actor.email ? { email: actor.email } : {}),
       ...(language ? { language } : {}),
+      ...(actor.idleLogoutMinutes !== undefined ? { idleLogoutMinutes: actor.idleLogoutMinutes } : {}),
     };
   }
 

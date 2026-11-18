@@ -12,7 +12,10 @@ import {
   dispatchCustomerSms,
 } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { businessFrom } from "@communication/domain/business/sender/mod.ts";
-import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
+import {
+  emailLogo,
+  emailLogoHtml,
+} from "@paperwork/domain/business/email-logo/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
@@ -73,15 +76,20 @@ export class ConfirmPayment {
   async run(
     userId: string,
     invoiceId: string,
+    /** REQ-930: the reference the owner typed in the "Mark as paid" modal.
+     *  When given it replaces the customer's claimed one (trimmed; empty =
+     *  no reference). Omitted (voice, card) keeps the claim's. */
+    opts: { reference?: string } = {},
   ): Promise<{ ok: boolean; reason?: string; paymentId?: string }> {
     const invoice = await this.invoices.getOwned(invoiceId, userId);
     if (invoice.status === "paid") {
       return { ok: true, reason: "already_paid" };
     }
-    const intent = invoice.paymentIntent;
-    if (!intent) {
+    const claim = invoice.paymentIntent;
+    if (!claim) {
       return { ok: false, reason: "no_payment_intent" };
     }
+    const intent = withOwnerReference(claim, opts.reference);
 
     // 1. Mint the Payment row.
     const payment = await this.payments.create(userId, {
@@ -99,7 +107,9 @@ export class ConfirmPayment {
     // either way.
     await this.balance.run(invoice.id, userId);
     const paidAt = new Date().toISOString();
-    const updated = await this.invoices.update(invoice.id, userId, { paymentIntent: null });
+    const updated = await this.invoices.update(invoice.id, userId, {
+      paymentIntent: null,
+    });
 
     // REQ-224: the feed line names the client as the bill shows them.
     let customerName: string | undefined;
@@ -250,7 +260,10 @@ export class ConfirmPayment {
         } catch { /* fall through to no-url body */ }
         // REQ-204: greet the customer as snapshotted on the bill
         const shownCustomer = customerOnDocument(updated, customer);
-        const customerFirst = (shownCustomer?.name ?? shownCustomer?.businessName)?.trim().split(/\s+/)[0];
+        const customerFirst =
+          (shownCustomer?.name ?? shownCustomer?.businessName)?.trim().split(
+            /\s+/,
+          )[0];
         // UX-26: the receipt sender token goes through the shared identity
         // helper — the seeded placeholder ("Nuevo"/"New") never leaks out.
         const senderFirst = outboundSenderFirstName(contractor?.name);
@@ -282,7 +295,9 @@ export class ConfirmPayment {
           kind: "receipt",
           language: lang,
           ok: res.ok,
-          ...(res.ok ? {} : { reasonCode: res.failureCode, reason: res.reason }),
+          ...(res.ok
+            ? {}
+            : { reasonCode: res.failureCode, reason: res.reason }),
           customerId: invoice.customerId,
           customerName,
           to: res.to,
@@ -334,7 +349,10 @@ export class ConfirmPayment {
         }
       }
     } catch (err) {
-      console.error("[confirm-payment] could not record the receipt delivery:", err);
+      console.error(
+        "[confirm-payment] could not record the receipt delivery:",
+        err,
+      );
     }
 
     // 4. Emit event for activity feed + dashboard counters.
@@ -359,6 +377,18 @@ export class ConfirmPayment {
 
     return { ok: true, paymentId: payment.id };
   }
+}
+
+/** REQ-930: the claim with the owner's entered reference in place of the
+ *  customer's — trimmed, and dropped when empty. `undefined` keeps it. */
+export function withOwnerReference<T extends { reference?: string }>(
+  claim: T,
+  reference: string | undefined,
+): T {
+  if (reference === undefined) return claim;
+  const { reference: _claimed, ...rest } = claim;
+  const ref = reference.trim();
+  return (ref ? { ...rest, reference: ref } : rest) as T;
 }
 
 /** Map the invoice payment-intent method to the stored Payment method. The
@@ -398,13 +428,25 @@ function fmtUSD(cents: number): string {
 }
 
 /** REQ-204: "Receipt for INV-5000" / "Recibo de INV-5000" — the receipt names the invoice. */
-export function renderReceiptSubject(invoice: { id: string; number?: string }, lang: Lang): string {
+export function renderReceiptSubject(
+  invoice: { id: string; number?: string },
+  lang: Lang,
+): string {
   return renderWord(lang, "receiptFor", { number: docRef(invoice) });
 }
 
 export function renderReceiptHtml(opts: {
   /** REQ-204: the bill the receipt is for — named by number, customer as snapshotted */
-  invoice: { id: string; number?: string; version?: number; status?: string; sentAt?: string; publishedAt?: string; billTo?: RenderedCustomer; customerSnapshot?: RenderedCustomer };
+  invoice: {
+    id: string;
+    number?: string;
+    version?: number;
+    status?: string;
+    sentAt?: string;
+    publishedAt?: string;
+    billTo?: RenderedCustomer;
+    customerSnapshot?: RenderedCustomer;
+  };
   customer?: RenderedCustomer;
   contractor?: { name?: string };
   businessName?: string;
@@ -418,7 +460,9 @@ export function renderReceiptHtml(opts: {
   const businessLabel = opts.businessName ?? opts.contractor?.name ??
     t(lang, "paperworkEmail.senderFallback");
   const shown = customerOnDocument(opts.invoice, opts.customer);
-  const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(/\s+/)[0];
+  const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(
+    /\s+/,
+  )[0];
   const headline = customerFirst
     ? t(lang, "confirmPayment.email.headline", {
       name: escapeHtml(customerFirst),

@@ -24,7 +24,10 @@
  * Tracks for charged-back/attention render conditionally — when there's no data
  * for them the page reads cleanly without empty sections.
  */
+import { paidHow } from "../../shared/documents/paid-how.ts"; // REQ-928
 import Backdrop from "../components/Backdrop.tsx";
+import MarkPaidDialog from "../components/MarkPaidDialog.tsx"; // REQ-930
+import { confirmPaymentInit } from "../lib/mark-paid.ts"; // REQ-930
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   type Payment,
@@ -109,6 +112,10 @@ const METHOD_KEY: Record<PaymentMethod, string> = {
 
 const methodLabel = (lang: Lang, m: PaymentMethod): string =>
   tFor(lang, METHOD_KEY[m]);
+
+/** REQ-928: a landed payment says Electronic or Other — "Electronic (Venmo)". */
+const paidMethodLabel = (lang: Lang, m: PaymentMethod): string =>
+  paidHow((k, v) => tFor(lang, k, v), [m]);
 
 const METHOD_AV_BG: Record<PaymentMethod, string> = {
   ach: "linear-gradient(135deg,#4F8C6B,#2F6448)",
@@ -976,7 +983,7 @@ function PaymentCard(
             {tFor(lang, "paymentsPage.card.method")}
           </div>
           <div class="qcard__val-num" style="font-size:13px">
-            {methodLabel(lang, p.method)}
+            {paidMethodLabel(lang, p.method)}
           </div>
         </div>
       </div>
@@ -999,7 +1006,7 @@ function PaymentCard(
           </div>
           <p class="qcard__back-big">
             {fmtMoney(p.amount)}
-            <small>· {methodLabel(lang, p.method)}</small>
+            <small>· {paidMethodLabel(lang, p.method)}</small>
           </p>
         </div>
         <div class="qcard__back-body">
@@ -1072,7 +1079,10 @@ function ClaimCard(
     })
     : tFor(lang, "paymentsPage.claim.note", { name, method });
 
-  async function act(action: "confirm" | "reject") {
+  // REQ-930: "Got it" opens the Mark as paid modal for the reference number
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+
+  async function act(action: "confirm" | "reject", reference = "") {
     if (busy) return;
     setBusy(true);
     setFailed(false);
@@ -1080,15 +1090,18 @@ function ClaimCard(
       ? `/api/invoices/${c.invoiceId}/confirm-payment`
       : `/api/invoices/${c.invoiceId}/reject-claim`;
     try {
-      const r = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-      });
+      const r = await fetch(
+        url,
+        action === "confirm"
+          ? confirmPaymentInit(reference)
+          : { method: "POST", credentials: "include" },
+      );
       await r.body?.cancel();
       if (!r.ok) {
         setFailed(true);
         return;
       }
+      setMarkPaidOpen(false);
       // REQ-554 (demo-loop cycle 4, m23): the sidebar's Invoices badge
       // reads the dash cache — a settled claim re-counts it.
       refreshDash().catch(() => {/* the badge keeps its last count */});
@@ -1135,7 +1148,10 @@ function ClaimCard(
           class="qcard__cta"
           data-cy="payment-claim-confirm"
           disabled={busy}
-          onClick={() => act("confirm")}
+          onClick={() => {
+            setFailed(false);
+            setMarkPaidOpen(true);
+          }}
         >
           {tFor(lang, "paymentsPage.claim.confirm")}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
@@ -1150,6 +1166,16 @@ function ClaimCard(
           {tFor(lang, "paymentsPage.claim.reject")}
         </button>
       </div>
+      {markPaidOpen && (
+        <MarkPaidDialog
+          lang={lang}
+          initialReference={c.reference}
+          busy={busy}
+          failed={failed}
+          onCancel={() => setMarkPaidOpen(false)}
+          onConfirm={(ref) => act("confirm", ref)}
+        />
+      )}
     </article>
   );
 }
@@ -1172,7 +1198,7 @@ function LandedRow(
       <div class="qdone__body">
         <div class="qdone__title">{p.client}</div>
         <div class="qdone__sub">
-          {methodLabel(lang, p.method)} · {p.whenLabel} · {p.invoiceRef}
+          {paidMethodLabel(lang, p.method)} · {p.whenLabel} · {p.invoiceRef}
         </div>
       </div>
       <div class="qdone__amt">{fmtMoney(p.amount)}</div>
