@@ -26,6 +26,17 @@ import {
   type Invoice,
 } from "../clients/dashboard.ts";
 import { clientsClient } from "../clients/clients.ts";
+import { fieldClient } from "../clients/field.ts"; // REQ-921
+import ServiceSelect from "../components/ServiceSelect.tsx"; // REQ-921
+import {
+  type CatalogService,
+  emptyServiceRow,
+  jobNameFromServices,
+  pickService,
+  type ServiceRow,
+  serviceRowsError,
+  serviceRowsToLines,
+} from "../../shared/documents/service-lines.ts"; // REQ-921
 import type { QuoteCard } from "../clients/quotes.ts";
 // REQ-727 (demo-loop cycle 5, c4-M16): every send goes through the send sheet
 import InvoiceSendDialog from "../components/InvoiceSendDialog.tsx";
@@ -120,7 +131,6 @@ import {
   customerFixHref,
 } from "../lib/customer-card-edit.ts"; // REQ-695
 import { docNumberOf } from "../../shared/documents/numbering.ts";
-import { invoiceJobNamePlaceholderKey } from "../../shared/quote-flow/trade-fit.ts"; // REQ-450
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import { isExtraWorkLink } from "../../shared/documents/change-order-actions.ts"; // REQ-655
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
@@ -2210,6 +2220,17 @@ function InvoiceDetail(
   const [editItems, setEditItems] = useState<EditableLine[]>(() =>
     lineItemsOf(draft)
   );
+  /** REQ-921: the services a line may bill */
+  const [editCatalog, setEditCatalog] = useState<CatalogService[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fieldClient.taskTypes("").then((types) => {
+      if (alive && Array.isArray(types)) setEditCatalog(types);
+    }).catch(() => {/* the dropdown keeps each line's own name */});
+    return () => {
+      alive = false;
+    };
+  }, []);
   /** A line changed: the total follows the lines (discount + tax as stored). */
   function updateLines(next: EditableLine[]) {
     setEditItems(next);
@@ -2312,6 +2333,11 @@ function InvoiceDetail(
 
   async function doSaveEdit() {
     if (busy) return;
+    // REQ-921: a line added here must bill a picked service
+    if (editItems.some((li) => !li.description.trim())) {
+      setErr(tFor(lang, "serviceLines.err.pick"));
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -2838,40 +2864,34 @@ function InvoiceDetail(
                 key={i}
                 style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"
               >
-                <input
-                  type="text"
-                  data-cy={`invoice-edit-line-desc-${i}`}
-                  value={li.description}
+                {/* REQ-921: the line bills a service from the catalogue */}
+                <ServiceSelect
+                  catalog={editCatalog}
+                  serviceId=""
+                  name={li.description}
+                  lang={lang}
+                  data-cy={`invoice-edit-line-service-${i}`}
+                  aria-label={tFor(lang, "serviceLines.service")}
                   disabled={busy}
-                  onInput={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
+                  onPick={(id) => {
+                    const svc = editCatalog.find((c) => c.id === id);
+                    if (!svc) return;
                     setEditItems((items) =>
                       items.map((it, j) =>
-                        j === i ? { ...it, description: v } : it
+                        j === i ? { ...it, description: svc.name } : it
                       )
                     );
                   }}
-                  style={`${fieldStyle};flex:1;min-width:120px`}
+                  style="flex:1;min-width:160px"
                 />
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  data-cy={`invoice-edit-line-qty-${i}`}
-                  value={li.quantity}
-                  disabled={busy}
-                  onInput={(e) => {
-                    const v = Number((e.target as HTMLInputElement).value);
-                    updateLines(
-                      editItems.map((it, j) =>
-                        j === i
-                          ? { ...it, quantity: Number.isFinite(v) ? v : 0 }
-                          : it
-                      ),
-                    );
-                  }}
-                  style={`${fieldStyle};width:70px;flex:none`}
-                />
+                {li.quantity !== 1 && (
+                  <span
+                    data-cy={`invoice-edit-line-qty-${i}`}
+                    style="font-size:12.5px;color:var(--fg-muted,#6b7560);white-space:nowrap"
+                  >
+                    ×{li.quantity}
+                  </span>
+                )}
                 <input
                   type="number"
                   step="0.01"
@@ -2910,14 +2930,14 @@ function InvoiceDetail(
                 <button
                   type="button"
                   data-cy={`invoice-edit-line-remove-${i}`}
-                  aria-label={tFor(lang, "invoices.form.removeLine")}
-                  title={tFor(lang, "invoices.form.removeLine")}
+                  aria-label={tFor(lang, "serviceLines.remove")}
+                  title={tFor(lang, "serviceLines.remove")}
                   disabled={busy}
                   onClick={() =>
                     updateLines(editItems.filter((_, j) => j !== i))}
-                  style="appearance:none;cursor:pointer;background:none;border:0;padding:4px;color:var(--fg-muted,#6b7560)"
+                  class="svc-line__btn"
                 >
-                  <I d={ICN.x} size={14} sw={2.5} />
+                  <I d={ICN.minus} size={14} sw={2.5} />
                 </button>
               </div>
             ))}
@@ -2931,9 +2951,11 @@ function InvoiceDetail(
                     ...editItems,
                     { description: "", quantity: 1, price: "" },
                   ])}
-                style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
+                aria-label={tFor(lang, "serviceLines.add")}
+                class="svc-line__add"
               >
-                {tFor(lang, "invoices.form.addLine")}
+                <I d={ICN.plus} size={14} sw={2.5} />
+                {tFor(lang, "serviceLines.add")}
               </button>
               <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg-muted,#6b7560)">
                 <input
@@ -5026,21 +5048,11 @@ const NEW_SENTINEL = "__new__";
 /** Where the form remembers the payment instructions when Settings has none. */
 const PAY_INSTR_KEY = "pm:invoice-payment-instructions";
 
-/** A line as typed: dollars and quantity as strings, converted on submit. */
-interface TypedLine {
-  description: string;
-  quantity: string;
-  unit: string;
-  price: string;
-}
+/** REQ-921: a line as typed — a service from the catalogue + its price. */
+type TypedLine = ServiceRow;
 
 function toFormLines(lines: TypedLine[]): FormLine[] {
-  return lines.map((l) => ({
-    description: l.description.trim(),
-    quantity: Number(l.quantity) > 0 ? Number(l.quantity) : 0,
-    ...(l.unit.trim() ? { unit: l.unit.trim() } : {}),
-    price: dollarsToCents(l.price),
-  }));
+  return serviceRowsToLines(lines);
 }
 
 /**
@@ -5086,13 +5098,20 @@ function NewInvoiceModal(
   const newEmail = newClient.email;
   // REQ-715 (demo-loop cycle 5, m31): the language the new client reads
   const [newLanguage, setNewLanguage] = useState<CustomerLanguageValue>("");
+  // REQ-921: no "What's it for" / "Details" — the job name is the quote's
+  // (when drawn from one) or the services billed
   const [jobName, setJobName] = useState("");
-  const [description, setDescription] = useState("");
   const [billTo, setBillTo] = useState<BillTo>(EMPTY_BILL_TO);
   const [serviceAddress, setServiceAddress] = useState("");
   const [serviceFrom, setServiceFrom] = useState("");
   const [serviceTo, setServiceTo] = useState("");
-  const [lines, setLines] = useState<TypedLine[]>([]);
+  // REQ-921: one service row to start; a quote-drawn bill starts with none
+  // (the quote's own lines are billed — REQ-205) unless it is extra work
+  const [lines, setLines] = useState<TypedLine[]>(() =>
+    quoteId && !extraWork ? [] : [emptyServiceRow()]
+  );
+  /** REQ-921: the account's services — the only thing a line can bill */
+  const [catalog, setCatalog] = useState<CatalogService[] | null>(null);
   /** the one-amount bill: used only while there are no line items */
   const [amount, setAmount] = useState("");
   const [discount, setDiscount] = useState("");
@@ -5136,8 +5155,6 @@ function NewInvoiceModal(
   );
   // REQ-474: the account's quotes, fetched once a client is picked
   const [allQuotes, setAllQuotes] = useState<QuoteCard[] | null>(null);
-  /** REQ-450: the job-name example fits the business's trade. */
-  const [businessName, setBusinessName] = useState<string | undefined>();
   /** REQ-727 (demo-loop cycle 5, c4-M16): the send sheet over the form — for
    *  the invoice "Issue invoice" just created, or the earlier bill "Send
    *  INV-001 now" offers. Nothing is sent until its Send. */
@@ -5165,9 +5182,6 @@ function NewInvoiceModal(
     dashboardClient.profile().then((p) => {
       if (!alive) return;
       const identity = p?.identity ?? null;
-      // REQ-450: the job-name example fits the business's trade.
-      const name = p?.identity?.businessName ?? p?.identity?.displayName;
-      if (typeof name === "string") setBusinessName(name);
       const text = defaultPaymentInstructions({
         settings: p?.contractDefaults?.paymentInstructions,
         remembered,
@@ -5179,6 +5193,19 @@ function NewInvoiceModal(
         setAccountNetDays(identity.invoiceNetDays);
       }
     }).catch(() => {/* the field stays editable */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // REQ-921: the services catalogue feeds every line's dropdown
+  useEffect(() => {
+    let alive = true;
+    fieldClient.taskTypes("").then((types) => {
+      if (alive) setCatalog(Array.isArray(types) ? types : []);
+    }).catch(() => {
+      if (alive) setCatalog([]);
+    });
     return () => {
       alive = false;
     };
@@ -5468,6 +5495,12 @@ function NewInvoiceModal(
       setError(null);
       return;
     }
+    // REQ-921: every row bills a picked service at a price
+    const rowErr = serviceRowsError(lines);
+    if (rowErr) {
+      setError(tFor(lang, rowErr));
+      return;
+    }
     if (totals.totalCents <= 0) {
       setError(tFor(lang, "invoicesPage.new.errAmount"));
       return;
@@ -5540,8 +5573,8 @@ function NewInvoiceModal(
           quoteId: linkedQuoteId ?? undefined,
           // REQ-655: billed past the agreement on purpose (override)
           extraWork: !!extraWork && linkedQuoteId === quoteId,
-          jobName,
-          description,
+          jobName: jobName.trim() || jobNameFromServices(lines), // REQ-921
+          description: "",
           lineItems: formLines,
           amountCents: dollarsToCents(amount),
           discountCents: dollarsToCents(discount),
@@ -5895,33 +5928,6 @@ function NewInvoiceModal(
           </div>
         )}
 
-        <label style={labelStyle}>
-          {tFor(lang, "invoicesPage.new.jobName")}
-          <input
-            type="text"
-            data-cy="new-invoice-jobname"
-            placeholder={tFor(lang, invoiceJobNamePlaceholderKey(businessName))}
-            value={jobName}
-            disabled={busy}
-            onInput={(e) => setJobName((e.target as HTMLInputElement).value)}
-            style={inputStyle}
-          />
-        </label>
-
-        <label style={labelStyle}>
-          {tFor(lang, "invoicesPage.new.description")}
-          <textarea
-            rows={2}
-            data-cy="new-invoice-description"
-            placeholder={tFor(lang, "invoicesPage.new.descriptionPlaceholder")}
-            value={description}
-            disabled={busy}
-            onInput={(e) =>
-              setDescription((e.target as HTMLTextAreaElement).value)}
-            style={`${inputStyle};resize:vertical`}
-          />
-        </label>
-
         {/* ---- bill to ---- */}
         <div style={sectionTitle}>{tFor(lang, "invoices.form.billTo")}</div>
         <div style={pairGrid}>
@@ -6033,18 +6039,27 @@ function NewInvoiceModal(
           </label>
         </div>
 
-        {/* ---- line items ---- */}
+        {/* ---- line items: REQ-921 — a service from the catalogue + its price ---- */}
         <div style={sectionTitle}>{tFor(lang, "invoices.form.lineItems")}</div>
+        {catalog && catalog.length === 0 && (
+          <p
+            data-cy="new-invoice-no-services"
+            style="margin:0;font-size:13px;color:#8a5a00"
+          >
+            {tFor(lang, "serviceLines.none")}{" "}
+            <a href="/field/services" style="font-weight:700">
+              {tFor(lang, "serviceLines.manage")}
+            </a>
+          </p>
+        )}
         {lines.length > 0 && (
           <div style="display:flex;flex-direction:column;gap:6px">
             <div
               class="ninv-line ninv-line--head"
               style="font-size:11px;font-weight:700;color:var(--fg-muted,#6b7560)"
             >
-              <span>{tFor(lang, "invoices.form.lineDesc")}</span>
-              <span>{tFor(lang, "invoices.form.lineQty")}</span>
-              <span>{tFor(lang, "invoices.form.lineUnit")}</span>
-              <span>{tFor(lang, "invoices.form.linePrice")}</span>
+              <span>{tFor(lang, "serviceLines.service")}</span>
+              <span>{tFor(lang, "serviceLines.price")}</span>
               <span />
             </div>
             {lines.map((l, i) => (
@@ -6053,44 +6068,30 @@ function NewInvoiceModal(
                 data-cy={`new-invoice-line-${i}`}
                 class="ninv-line"
               >
-                <input
-                  type="text"
-                  data-cy={`new-invoice-line-desc-${i}`}
-                  value={l.description}
+                <ServiceSelect
+                  catalog={catalog ?? []}
+                  serviceId={l.serviceId}
+                  name={l.name}
+                  lang={lang}
+                  data-cy={`new-invoice-line-service-${i}`}
+                  aria-label={tFor(lang, "serviceLines.service")}
                   disabled={busy}
-                  onInput={(e) =>
-                    setLine(i, {
-                      description: (e.target as HTMLInputElement).value,
-                    })}
-                  style={smallInput}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  data-cy={`new-invoice-line-qty-${i}`}
-                  value={l.quantity}
-                  disabled={busy}
-                  onInput={(e) =>
-                    setLine(i, {
-                      quantity: (e.target as HTMLInputElement).value,
-                    })}
-                  style={smallInput}
-                />
-                <input
-                  type="text"
-                  data-cy={`new-invoice-line-unit-${i}`}
-                  value={l.unit}
-                  disabled={busy}
-                  onInput={(e) =>
-                    setLine(i, { unit: (e.target as HTMLInputElement).value })}
-                  style={smallInput}
+                  onPick={(id) =>
+                    setLines((ls) =>
+                      ls.map((x, j) =>
+                        j === i ? pickService(x, id, catalog ?? []) : x
+                      )
+                    )}
+                  style="width:100%"
                 />
                 <input
                   type="number"
                   min="0"
                   step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
                   data-cy={`new-invoice-line-price-${i}`}
+                  aria-label={tFor(lang, "serviceLines.price")}
                   value={l.price}
                   disabled={busy}
                   onInput={(e) =>
@@ -6100,13 +6101,13 @@ function NewInvoiceModal(
                 <button
                   type="button"
                   data-cy={`new-invoice-line-remove-${i}`}
-                  aria-label={tFor(lang, "invoices.form.removeLine")}
-                  title={tFor(lang, "invoices.form.removeLine")}
+                  aria-label={tFor(lang, "serviceLines.remove")}
+                  title={tFor(lang, "serviceLines.remove")}
                   disabled={busy}
                   onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
-                  style="appearance:none;cursor:pointer;background:none;border:0;padding:4px;color:var(--fg-muted,#6b7560)"
+                  class="svc-line__btn"
                 >
-                  <I d={ICN.x} size={14} sw={2.5} />
+                  <I d={ICN.minus} size={14} sw={2.5} />
                 </button>
               </div>
             ))}
@@ -6116,14 +6117,13 @@ function NewInvoiceModal(
           <button
             type="button"
             data-cy="new-invoice-line-add"
+            aria-label={tFor(lang, "serviceLines.add")}
             disabled={busy}
-            onClick={() => setLines((ls) => [
-              ...ls,
-              { description: "", quantity: "1", unit: "", price: "" },
-            ])}
-            style="appearance:none;cursor:pointer;background:none;border:1px dashed var(--border,#d8dcd5);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;font-weight:700;color:var(--brand-teal,#144852)"
+            onClick={() => setLines((ls) => [...ls, emptyServiceRow()])}
+            class="svc-line__add"
           >
-            {tFor(lang, "invoices.form.addLine")}
+            <I d={ICN.plus} size={14} sw={2.5} />
+            {tFor(lang, "serviceLines.add")}
           </button>
         </div>
 

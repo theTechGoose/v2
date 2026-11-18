@@ -7,6 +7,7 @@
  * and the /customers tab re-reads at once.
  */
 import { story, type StoryTools } from "#shots";
+import { ensureService, fillInvoiceLine } from "../_shared/service-lines.ts"; // REQ-921
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -118,6 +119,7 @@ Deno.test("REQ-754 M5 (cycle 5v1): an invoice issued to a typed BILL TO name in 
 
     // another tab: Nueva factura, no customer, BILL TO "Jorge Ramirez", $100, Issue
     const other = await page.context().newPage();
+    const gate = await ensureService(http, auth, "Gate install"); // REQ-921: in the catalogue before the form opens
     await other.goto(new URL("/invoices", baseUrl).href);
     await clickUntil(
       other,
@@ -125,14 +127,17 @@ Deno.test("REQ-754 M5 (cycle 5v1): an invoice issued to a typed BILL TO name in 
       async () =>
         await other.locator("[data-cy='new-invoice-modal']").isVisible(),
     );
-    await other.locator("[data-cy='new-invoice-client']").selectOption("");
+    // no client picked (REQ-801's search box opens empty): billed to a typed name
     await other.locator("[data-cy='new-invoice-bill-name']").fill(
       "Jorge Ramirez",
     );
-    await other.locator("[data-cy='new-invoice-jobname']").fill(
-      "Gate install",
+    // REQ-921: the line bills a service from the catalogue
+    await fillInvoiceLine(
+      other,
+      0,
+      gate,
+      "100",
     );
-    await other.locator("[data-cy='new-invoice-amount']").fill("100");
     await other.locator("[data-cy='new-invoice-submit']").click();
     await other.locator("[data-cy='new-invoice-modal']").waitFor({
       state: "detached",

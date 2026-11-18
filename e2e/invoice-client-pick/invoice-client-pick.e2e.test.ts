@@ -166,12 +166,13 @@ Deno.test("REQ-809: the new-invoice client box — focusing it (or any field) ke
       "the pick does not scroll the modal either",
     );
 
-    // any other field: the job name box does not scroll the modal to its submit button
-    await page.locator("[data-cy='new-invoice-jobname']").click();
+    // any other field: the bill-to name box does not scroll the modal to its submit button
+    // (REQ-921: the job-name box is gone — lines are picked services)
+    await page.locator("[data-cy='new-invoice-bill-name']").click();
     await page.waitForTimeout(700);
     expect.eq(
       await modalScroll(),
       0,
-      "focusing the job name does not scroll the modal",
+      "focusing the bill-to name does not scroll the modal",
     );
   }));

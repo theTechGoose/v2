@@ -40,6 +40,7 @@ import { langSignal, t } from "../lib/i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
+import ServiceSelect from "../components/ServiceSelect.tsx"; // REQ-921
 
 /** the cadence <select>'s values: an interval in weeks, monthly, or (REQ-787) annual */
 type CadenceChoice = "1" | "2" | "3" | "4" | "monthly" | "annual";
@@ -58,12 +59,6 @@ interface Item {
   priceCents: number;
 }
 
-/** a combobox row — a known task type, or the "Create" row (no id) */
-interface Option {
-  id?: string;
-  name: string;
-}
-
 interface Form {
   editId: string | null;
   customerId: string;
@@ -79,14 +74,8 @@ interface Form {
   checklistId: string;
   /** the visit's OWN rows (REQ-811: extras beside the checklist, or everything when there is none) */
   items: Item[];
-  /** the combobox query */
-  q: string;
-  /** true while the query is the user's own typing (a pick or Escape turns it off) */
-  searchOn: boolean;
-  options: Option[];
-  active: number;
-  /** the option last picked from the list (its canonical name wins over the typed one) */
-  picked: Option | null;
+  /** REQ-921: the service picked in the dropdown for the row being added ("" = none) */
+  pickId: string;
   /** the price input for the row being added, as typed */
   price: string;
   /** REQ-174: days to pay, as typed (prefilled from Settings) */
@@ -97,8 +86,6 @@ interface Form {
   saving: boolean;
 }
 
-/** how long a keystroke waits before it asks the API for task types */
-const SEARCH_DEBOUNCE_MS = 150;
 /** Mon … Sun, the way the chips read */
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const DAY_LETTERS: Record<"en" | "es", string[]> = {
@@ -161,11 +148,7 @@ function blankForm(defaultNetDays = 30): Form {
     month: monthOf(startDate),
     checklistId: "",
     items: [],
-    q: "",
-    searchOn: false,
-    options: [],
-    active: -1,
-    picked: null,
+    pickId: "",
     price: "",
     netDays: String(defaultNetDays),
     overhead: false,
@@ -268,9 +251,9 @@ export default function FieldSubscriptionsPage(
   const [cardErr, setCardErr] = useState<{ id: string; msg: string } | null>(
     null,
   );
-  const qRef = useRef<HTMLInputElement>(null);
   const priceRef = useRef<HTMLInputElement>(null);
-  const searchSeq = useRef(0);
+  /** REQ-921: the services catalogue — the only thing a visit can bill */
+  const [catalog, setCatalog] = useState<TaskType[] | null>(null);
 
   async function reload() {
     try {
@@ -301,6 +284,11 @@ export default function FieldSubscriptionsPage(
     }).catch(() => {
       // the picker stays empty; the modal's error line reports the save failure
     });
+    fieldClient.taskTypes("").then((list) => {
+      if (alive) setCatalog(list);
+    }).catch(() => {
+      if (alive) setCatalog([]);
+    });
     fieldClient.checklists().then((list) => {
       if (alive) setChecklists(list);
     }).catch(() => {
@@ -308,7 +296,16 @@ export default function FieldSubscriptionsPage(
     });
     profileClient.get().then((snap) => {
       const n = snap.identity?.invoiceNetDays;
-      if (alive && typeof n === "number") setDefaultNetDays(n);
+      if (alive && typeof n === "number") {
+        setDefaultNetDays(n);
+        // REQ-174: a new form opened before Settings arrived still holds the
+        // fallback 30 — take the account's number unless it was typed over
+        setForm((f) =>
+          f && !f.editId && f.netDays === "30"
+            ? { ...f, netDays: String(n) }
+            : f
+        );
+      }
       if (alive) setOverhead(overheadSetting(snap.identity));
     }).catch(() => {
       // 30 stays the default
@@ -318,128 +315,48 @@ export default function FieldSubscriptionsPage(
     };
   }, []);
 
-  // ---- the combobox: search as you type, case-insensitive, create when nothing matches exactly ----
-  const q = form?.q ?? "";
-  const searchOn = form?.searchOn ?? false;
-  useEffect(() => {
-    if (!searchOn) return;
-    const seq = ++searchSeq.current;
-    const timer = setTimeout(async () => {
-      let found: TaskType[] = [];
-      try {
-        found = await fieldClient.taskTypes(q);
-      } catch {
-        found = [];
-      }
-      if (seq !== searchSeq.current) return;
-      setForm((f) => {
-        if (!f) return f;
-        const typed = f.q.trim();
-        const lower = typed.toLowerCase();
-        const known = found
-          .filter((tt) => tt.name.toLowerCase().includes(lower))
-          .filter((tt) => !f.items.some((it) => it.id === tt.id));
-        const exact = found.some((tt) => tt.name.toLowerCase() === lower);
-        const options: Option[] = typed && !exact
-          ? [...known, { name: typed }]
-          : known;
-        return { ...f, options, active: options.length ? 0 : -1 };
-      });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [q, searchOn]);
-
   function patch(p: Partial<Form>) {
     setForm((f) => (f ? { ...f, ...p } : f));
+  }
+
+  /** REQ-921: the dropdown reads the catalogue as it is when the form opens */
+  function refreshCatalog() {
+    fieldClient.taskTypes("").then(setCatalog).catch(() => {
+      // the list loaded at mount stays
+    });
   }
 
   function openNew() {
     setConfirmId(null);
     setForm(blankForm(defaultNetDays));
+    refreshCatalog();
   }
 
   function openEdit(s: SubscriptionView) {
     setConfirmId(null);
     setForm(formFor(s, defaultNetDays));
+    refreshCatalog();
   }
 
   function close() {
-    searchSeq.current++;
     setForm(null);
   }
 
-  function pick(i: number) {
-    setForm((f) => {
-      if (!f) return f;
-      const o = f.options[i];
-      if (!o) return f;
-      searchSeq.current++;
-      return {
-        ...f,
-        q: o.name,
-        searchOn: false,
-        options: [],
-        active: -1,
-        picked: o,
-      };
-    });
-    setTimeout(() => priceRef.current?.focus(), 0);
-  }
-
-  /** Add the typed task type + price as a row; false when there is nothing valid to add. */
+  /** REQ-921: add the picked service + price as a row; an error when either is missing */
   function addItem(f: Form): Form {
-    const typed = f.q.trim();
-    const name = f.picked && f.picked.name.toLowerCase() === typed.toLowerCase()
-      ? f.picked.name
-      : typed;
+    const svc = (catalog ?? []).find((c) => c.id === f.pickId);
     const cents = Math.round(Number(f.price) * 100);
-    if (!name || !(cents > 0)) return { ...f, err: t("field.subs.noItems") };
-    const id = f.picked && f.picked.id &&
-        f.picked.name.toLowerCase() === name.toLowerCase()
-      ? f.picked.id
-      : undefined;
-    const dup = f.items.some((it) =>
-      it.name.toLowerCase() === name.toLowerCase()
-    );
-    const items = dup ? f.items : [...f.items, { id, name, priceCents: cents }];
-    searchSeq.current++;
-    return {
-      ...f,
-      items,
-      q: "",
-      searchOn: false,
-      options: [],
-      active: -1,
-      picked: null,
-      price: "",
-      err: null,
-    };
+    if (!svc) return { ...f, err: t("serviceLines.err.pick") };
+    if (!(cents > 0)) return { ...f, err: t("serviceLines.err.price") };
+    const dup = f.items.some((it) => it.id === svc.id);
+    const items = dup
+      ? f.items
+      : [...f.items, { id: svc.id, name: svc.name, priceCents: cents }];
+    return { ...f, items, pickId: "", price: "", err: null };
   }
 
   function onAddItem() {
     setForm((f) => (f ? addItem(f) : f));
-    setTimeout(() => qRef.current?.focus(), 0);
-  }
-
-  function onComboKey(e: KeyboardEvent) {
-    if (!form) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      patch({ active: Math.min(form.active + 1, form.options.length - 1) });
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      patch({ active: Math.max(form.active - 1, 0) });
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (form.options.length) pick(Math.max(form.active, 0));
-      else priceRef.current?.focus();
-    } else if (e.key === "Escape") {
-      // REQ-732: only an Escape that shuts the open search stops here; otherwise it
-      // reaches the dialog's Backdrop and closes Nueva suscripción
-      if (form.searchOn || form.options.length) e.stopPropagation();
-      searchSeq.current++;
-      patch({ searchOn: false, options: [], active: -1 });
-    }
   }
 
   function toggleDay(d: number) {
@@ -490,9 +407,9 @@ export default function FieldSubscriptionsPage(
   async function submit(e: Event) {
     e.preventDefault();
     if (!form || form.saving) return;
-    // a typed-but-not-added row counts, as in the demo
+    // a picked-but-not-added row counts, as in the demo
     let f: Form = { ...form, err: null };
-    if (form.q.trim() || form.price) {
+    if (form.pickId || form.price) {
       f = addItem(f);
       if (f.err) {
         setForm(f);
@@ -1224,7 +1141,7 @@ export default function FieldSubscriptionsPage(
                     <button
                       type="button"
                       class="x"
-                      aria-label={t("field.common.close")}
+                      aria-label={t("serviceLines.remove")}
                       data-cy="subs-item-remove"
                       onClick={() =>
                         setForm((f) => (f
@@ -1235,64 +1152,28 @@ export default function FieldSubscriptionsPage(
                           : f)
                         )}
                     >
-                      <I d={ICN.x} size={12} sw={2.5} />
+                      <I d={ICN.minus} size={12} sw={2.5} />
                     </button>
                   </div>
                 ))}
               </div>
               <div class="items__row" style="margin-top:6px">
-                <div class="combo">
-                  <input
-                    ref={qRef}
-                    data-cy="subs-type-q"
-                    placeholder={t("field.subs.taskPh")}
-                    autocomplete="off"
-                    role="combobox"
-                    aria-expanded={form.options.length > 0}
-                    aria-autocomplete="list"
-                    value={form.q}
-                    style="width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--border);border-radius:10px;font:inherit;font-size:15px;font-weight:400;color:var(--fg)"
-                    onInput={(e) =>
-                      patch({
-                        q: (e.currentTarget as HTMLInputElement).value,
-                        searchOn: true,
-                        picked: null,
-                      })}
-                    onFocus={() => {
-                      if (form && !form.options.length && !form.q) {
-                        patch({ searchOn: true });
-                      }
-                    }}
-                    onKeyDown={onComboKey}
-                  />
-                  {form.options.length > 0 && (
-                    <div
-                      class="combo__list"
-                      role="listbox"
-                      data-cy="subs-type-list"
-                    >
-                      {form.options.map((o, i) => (
-                        <div
-                          key={o.id ?? `new:${o.name}`}
-                          role="option"
-                          aria-selected={i === form.active}
-                          class={`combo__opt${
-                            i === form.active ? " combo__opt--active" : ""
-                          }${o.id ? "" : " combo__opt--new"}`}
-                          data-cy={o.id ? "subs-type-opt" : "subs-type-create"}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            pick(i);
-                          }}
-                        >
-                          {o.id
-                            ? o.name
-                            : t("field.subs.create", { name: o.name })}
-                        </div>
-                      ))}
-                    </div>
+                {/* REQ-921: a service from the catalogue — never one made up here */}
+                <ServiceSelect
+                  catalog={(catalog ?? []).filter((c) =>
+                    !form.items.some((it) => it.id === c.id)
                   )}
-                </div>
+                  serviceId={form.pickId}
+                  name=""
+                  lang={langSignal.value}
+                  data-cy="subs-service"
+                  aria-label={t("serviceLines.service")}
+                  onPick={(id) => {
+                    patch({ pickId: id });
+                    setTimeout(() => priceRef.current?.focus(), 0);
+                  }}
+                  style="flex:1"
+                />
                 <input
                   ref={priceRef}
                   class="price"
@@ -1316,13 +1197,20 @@ export default function FieldSubscriptionsPage(
                 <button
                   type="button"
                   class="x"
-                  title={t("field.subs.add")}
+                  title={t("serviceLines.add")}
+                  aria-label={t("serviceLines.add")}
                   data-cy="subs-add-item"
                   onClick={onAddItem}
                 >
                   <I d={ICN.plus} size={14} sw={2.5} />
                 </button>
               </div>
+              {catalog && catalog.length === 0 && (
+                <span class="hint" data-cy="subs-no-services">
+                  {t("serviceLines.none")}{" "}
+                  <a href="/field/services">{t("serviceLines.manage")}</a>
+                </span>
+              )}
               <span class="hint" data-cy="subs-items-hint">
                 {form.checklistId
                   ? t("field.subs.checklistHint")

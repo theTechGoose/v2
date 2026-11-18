@@ -99,6 +99,7 @@ export const ICN = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  minus: <path d="M5 12h14" />, // REQ-921
   arrow: (
     <>
       <path d="M5 12h14" />

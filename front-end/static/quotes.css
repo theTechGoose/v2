@@ -1411,24 +1411,60 @@
   color: #b23030;
 }
 
-/* REQ-482 (demo M39): the New invoice sheet's line-item row. Desktop keeps
-   one row (description · qty · unit · price · ×); under 560px the description
-   takes its own row and qty/unit/price/× wrap beneath it, so ~300px of fixed
-   tracks never push the row off a phone. The header row uses the same grid,
-   so its labels stack exactly like the inputs. */
+/* REQ-921 (supersedes REQ-482's five tracks): the New invoice sheet's line
+   is a service dropdown · price · −. The service shrinks (minmax 0), the
+   price keeps 110px, so the row fits a 390px phone without wrapping. The
+   header row uses the same grid, so its labels sit over the inputs. */
 .ninv-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px 76px 110px 28px;
+  grid-template-columns: minmax(0, 1fr) 110px 32px;
   gap: 6px;
   align-items: center;
 }
-@media (max-width: 560px) {
+@media (max-width: 380px) {
   .ninv-line {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) 28px;
+    grid-template-columns: minmax(0, 1fr) 88px 32px;
   }
-  .ninv-line > :first-child {
-    grid-column: 1 / -1;
-  }
+}
+/* REQ-921 REVISION: the service is the 50px search picker — the price box
+   matches its height so the row reads as one line */
+.ninv-line > input {
+  height: 50px;
+  box-sizing: border-box;
+}
+/* REQ-921: the − on a service row and the + under the rows */
+.svc-line__btn {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #d8dcd5);
+  background: #fff;
+  color: var(--fg-muted, #6b7560);
+  padding: 0;
+}
+.svc-line__btn:hover:not(:disabled) {
+  color: #a83b3b;
+  border-color: #a83b3b;
+}
+.svc-line__add {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px dashed var(--border, #d8dcd5);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-teal, #144852);
 }
 
 /* REQ-570 (demo-loop cycle 4, m41): the open panel's Send ▾ and the send

@@ -434,6 +434,11 @@
   font-size: 14px;
   text-align: right;
 }
+/* REQ-921 REVISION: beside the 50px service picker the price box matches it */
+.items__row:has(.ss) .price {
+  height: 50px;
+  box-sizing: border-box;
+}
 .items__row .x {
   width: 32px;
   height: 32px;
