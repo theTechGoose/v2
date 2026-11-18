@@ -224,3 +224,32 @@ Deno.test("REQ-926 chargeback: no fee adds no line; the Settings default (charge
     assertEquals([badFee.status, badFee.body.reason], [400, "invalid_fee"]);
   });
 });
+
+Deno.test("REQ-926 chargeback: a bare POST (no body) is 401 without a session and charges back with no fee with one — never a 500", async () => {
+  await withServer(async () => {
+    const bare = (path: string, sid?: string) =>
+      fetch(`${BASE}${path}`, {
+        method: "POST",
+        headers: sid ? { "x-session-id": sid } : {},
+      });
+    const anon = await bare("/payments/x/chargeback");
+    assertEquals(anon.status, 401);
+    await anon.body?.cancel();
+    const sid = await login("+15125559264");
+    const inv = (await call("POST", "/invoices", {
+      status: "sent",
+      jobName: "Edging",
+      billTo: { name: "Ana" },
+      amount: 5000,
+    }, sid)).body;
+    const pay = (await call("POST", "/payments", {
+      invoiceId: inv.id,
+      amount: 5000,
+      method: "cash",
+      receivedAt: new Date().toISOString(),
+    }, sid)).body;
+    const r = await bare(`/payments/${pay.id}/chargeback`, sid);
+    assertEquals(r.status, 200);
+    assertEquals((await r.json()).reversedFeeCents, 0);
+  });
+});
