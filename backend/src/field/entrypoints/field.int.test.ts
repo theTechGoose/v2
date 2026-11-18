@@ -2575,7 +2575,7 @@ Deno.test("REQ-839 services — a type is made with a description (201), the sam
     // delete: in use → 409 with the counts (today's round read once, so a task exists); unused → gone
     assertEquals((await call("GET", `/field/tasks?date=${fieldToday()}`, undefined, H)).body.map((t: R) => t.taskTypeName), ["Lawn cut"]);
     const refused = await call("DELETE", `/field/task-types/${mow.body.id}`, undefined, H);
-    assertEquals([refused.status, refused.body?.code, refused.body?.detail], [409, "task_type_in_use", { subscriptions: 1, checklists: 1, tasks: 1 }]);
+    assertEquals([refused.status, refused.body?.code, refused.body?.detail], [409, "task_type_in_use", { subscriptions: 1, checklists: 1, tasks: 1, crews: 0 }]);
     const spare = (await call("POST", "/field/task-types", { name: "Spare" }, H)).body;
     assertEquals((await call("DELETE", `/field/task-types/${spare.id}`, undefined, H)).body, { ok: true });
     assertEquals((await call("DELETE", `/field/task-types/${spare.id}`, undefined, H)).status, 404);

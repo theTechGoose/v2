@@ -43,6 +43,22 @@ export interface TaskType {
   updatedAt?: string;
 }
 
+/** REQ-927 — one service migration (a segment): the records it moved, undoable, redoable, movable */
+export interface ServiceMigrationView {
+  id: string;
+  fromTypeId: string;
+  toTypeId: string;
+  fromName: string;
+  /** the old service was deleted — undo brings it back */
+  fromDeleted: boolean;
+  toName: string;
+  state: "applied" | "undone";
+  counts: { subscriptions: number; checklists: number; tasks: number; crews: number };
+  history: { action: "migrate" | "undo" | "redo" | "move"; toTypeId: string; at: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TaskTypeInput {
   name: string;
   description?: string | null;
@@ -454,6 +470,21 @@ export const fieldClient = {
   ) => api.put<TaskType>(`/field/task-types/${id}`, b, opts),
   deleteTaskType: (id: string, opts?: ApiOptions) =>
     api.delete<{ ok: true }>(`/field/task-types/${id}`, opts),
+  // ---- service migrations (REQ-927) ----
+  migrateTaskType: (
+    id: string,
+    b: { toId: string; deleteAfter?: boolean },
+    opts?: ApiOptions,
+  ) =>
+    api.post<ServiceMigrationView>(`/field/task-types/${id}/migrate`, b, opts),
+  serviceMigrations: (opts?: ApiOptions) =>
+    api.get<ServiceMigrationView[]>("/field/service-migrations", opts),
+  undoServiceMigration: (id: string, opts?: ApiOptions) =>
+    api.post<ServiceMigrationView>(`/field/service-migrations/${id}/undo`, {}, opts),
+  redoServiceMigration: (id: string, opts?: ApiOptions) =>
+    api.post<ServiceMigrationView>(`/field/service-migrations/${id}/redo`, {}, opts),
+  moveServiceMigration: (id: string, toId: string, opts?: ApiOptions) =>
+    api.post<ServiceMigrationView>(`/field/service-migrations/${id}/move`, { toId }, opts),
 
   // ---- crews (REQ-840) ----
   crews: (opts?: ApiOptions) => api.get<CrewView[]>("/field/crews", opts),

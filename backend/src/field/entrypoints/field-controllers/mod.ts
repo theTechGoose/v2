@@ -45,9 +45,19 @@ import {
   FieldTaskStore,
   FieldWorkerStore,
   RegionStore,
+  ServiceMigrationStore,
   SubscriptionStore,
   TaskTypeStore,
 } from "@field/domain/data/field-stores/mod.ts";
+import {
+  keepMarks,
+  migrateService,
+  moveSegment,
+  redoSegment,
+  type SegmentResult,
+  undoSegment,
+  type World,
+} from "@field/domain/business/service-migration/mod.ts"; // REQ-927
 import {
   claimedBy,
   crewMembers,
@@ -110,6 +120,7 @@ import {
   str,
   type Subscription,
   type SubscriptionItem,
+  type ServiceMigration,
   type TaskType,
   tooLong,
 } from "@field/dto/field.ts";
@@ -511,16 +522,136 @@ async function typeUsage(
   };
 }
 
+/** REQ-927: the stores a service migration reads and writes */
+interface MigrationDeps {
+  types: TaskTypeStore;
+  subs: SubscriptionStore;
+  checklists: ChecklistStore;
+  tasks: FieldTaskStore;
+  crews: CrewStore;
+  migrations: ServiceMigrationStore;
+  day: FieldDay;
+}
+
+const MIGRATION_STATUS: Record<string, number> = { same_service: 400 };
+
+/** REQ-927: everything a segment can touch, read fresh */
+async function migrationWorld(d: MigrationDeps, userId: string): Promise<World> {
+  const [subscriptions, checklists, tasks, crews] = await Promise.all([
+    d.subs.listByUser(userId),
+    d.checklists.listByUser(userId),
+    d.tasks.listByUser(userId),
+    d.crews.listByUser(userId),
+  ]);
+  return { subscriptions, checklists, tasks, crews };
+}
+
+/** REQ-927: a live service of the account to move onto — 404 / 403 / 400 when archived */
+async function migrationTarget(d: MigrationDeps, userId: string, raw: unknown): Promise<TaskType> {
+  const id = str(raw);
+  if (!id) throw new FieldError("toId required", 400, undefined, "to_required");
+  const t = await d.types.getOwned(id, userId);
+  if (t.archived) {
+    throw new FieldError("the target service is archived", 400, undefined, "target_archived");
+  }
+  return t;
+}
+
+/** REQ-927: save what the segment changed; open generated work on the services involved re-derives from today */
+async function saveSegment(
+  d: MigrationDeps,
+  userId: string,
+  r: SegmentResult,
+  involved: string[],
+): Promise<ServiceMigration> {
+  if (!r.ok) {
+    throw new FieldError(r.code.replace(/_/g, " "), MIGRATION_STATUS[r.code] ?? 409, r.detail, r.code);
+  }
+  const pick = <T extends { id: string }>(list: T[], ids: string[]) => list.filter((x) => ids.includes(x.id));
+  const now = new Date().toISOString();
+  const touch = <T extends { updatedAt: string }>(x: T) => ({ ...x, updatedAt: now });
+  await d.subs.putMany(pick(r.world.subscriptions, r.changed.subscriptions).map(touch));
+  await d.checklists.putMany(pick(r.world.checklists, r.changed.checklists).map(touch));
+  await d.crews.putMany(pick(r.world.crews, r.changed.crews).map(touch));
+  await d.tasks.putMany(pick(r.world.tasks, r.changed.tasks));
+  await d.migrations.put(r.seg);
+  const types = new Set(involved);
+  await d.day.dropOpen(userId, fieldToday(), (t) => !!t.subscriptionId && types.has(t.taskTypeId));
+  return r.seg;
+}
+
+/** REQ-927: a segment as the page lists it — names (the old service's from its snapshot once deleted) and counts */
+async function segmentView(d: MigrationDeps, userId: string, list: ServiceMigration[]) {
+  const types = new Map((await d.types.listByUser(userId)).map((t) => [t.id, t]));
+  return list.map((s) => ({
+    ...s,
+    fromName: types.get(s.fromTypeId)?.name ?? s.from.name,
+    fromDeleted: !types.has(s.fromTypeId),
+    toName: types.get(s.toTypeId)?.name ?? "—",
+    counts: {
+      subscriptions: s.refs.subscriptions.length,
+      checklists: s.refs.checklists.length,
+      tasks: s.refs.tasks.length,
+      crews: s.refs.crews.length,
+    },
+  }));
+}
+
+/** REQ-839 + REQ-927: what still uses a service — a crew's service list counts too */
+async function fullUsage(d: MigrationDeps, userId: string, id: string) {
+  const [subscriptions, checklists, tasks, crews] = await Promise.all([
+    d.subs.listByUser(userId),
+    d.checklists.listByUser(userId),
+    d.tasks.listByUser(userId),
+    d.crews.listByUser(userId),
+  ]);
+  return {
+    ...taskTypeUsage(id, { subscriptions, checklists, tasks }),
+    crews: crews.filter((c) => c.taskTypeIds.includes(id)).length,
+  };
+}
+
 @Controller("field/task-types")
 export class FieldTaskTypesController {
   constructor(
-    private types: TaskTypeStore,
+    readonly types: TaskTypeStore,
     private users: UserStore,
     private sessions: SessionStore,
     readonly subs: SubscriptionStore, // REQ-839
     readonly checklists: ChecklistStore,
-    private tasks: FieldTaskStore,
+    readonly tasks: FieldTaskStore,
+    readonly crews: CrewStore, // REQ-927
+    readonly migrations: ServiceMigrationStore,
+    readonly day: FieldDay,
   ) {}
+
+  /** REQ-927: move every record on this service to `toId` as one segment (undo / redo / move later); `deleteAfter` deletes it once empty */
+  @Post(":id/migrate")
+  async migrate(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const from = await this.types.getOwned(id, user.id);
+    const b = body(raw);
+    const to = await migrationTarget(this, user.id, b.toId);
+    const r = migrateService(await migrationWorld(this, user.id), {
+      id: newId(),
+      userId: user.id,
+      from,
+      toTypeId: to.id,
+      now: new Date().toISOString(),
+    });
+    const seg = await saveSegment(this, user.id, r, [from.id, to.id]);
+    if (b.deleteAfter === true) {
+      const u = await fullUsage(this, user.id, from.id);
+      if (!u.subscriptions && !u.checklists && !u.tasks && !u.crews) {
+        await this.types.delete(from);
+      }
+    }
+    return ctx.json((await segmentView(this, user.id, [seg]))[0], 201);
+  }
 
   /** REQ-139: case- and accent-insensitive search; REQ-839: archived types only with `all=1`, each with its usage */
   @Get()
@@ -631,13 +762,8 @@ export class FieldTaskTypesController {
   async remove(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const t = await this.types.getOwned(id, user.id);
-    const [subscriptions, checklists, tasks] = await Promise.all([
-      this.subs.listByUser(user.id),
-      this.checklists.listByUser(user.id),
-      this.tasks.listByUser(user.id),
-    ]);
-    const u = taskTypeUsage(t.id, { subscriptions, checklists, tasks });
-    if (u.subscriptions || u.checklists || u.tasks) {
+    const u = await fullUsage(this, user.id, t.id); // REQ-927: crews count too
+    if (u.subscriptions || u.checklists || u.tasks || u.crews) {
       throw new FieldError(
         "service in use — archive it instead",
         409,
@@ -648,6 +774,76 @@ export class FieldTaskTypesController {
     await this.types.delete(t);
     return { ok: true };
   }
+}
+
+/** REQ-927 — the service migrations (segments): list, undo, redo, move on to another service */
+@Controller("field/service-migrations")
+export class FieldServiceMigrationsController {
+  constructor(
+    readonly types: TaskTypeStore,
+    private users: UserStore,
+    private sessions: SessionStore,
+    readonly subs: SubscriptionStore,
+    readonly checklists: ChecklistStore,
+    readonly tasks: FieldTaskStore,
+    readonly crews: CrewStore,
+    readonly migrations: ServiceMigrationStore,
+    readonly day: FieldDay,
+  ) {}
+
+  /** newest first */
+  @Get()
+  async list(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const list = (await this.migrations.listByUser(user.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return segmentView(this, user.id, list);
+  }
+
+  /** the records go back to the old service — brought back under its own id when it was deleted */
+  @Post(":id/undo")
+  async undo(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const seg = await this.migrations.getOwned(id, user.id);
+    const r = undoSegment(await migrationWorld(this, user.id), seg, new Date().toISOString());
+    if (r.ok) await restoreFrom(this, user.id, seg);
+    const saved = await saveSegment(this, user.id, r, [seg.fromTypeId, seg.toTypeId]);
+    return (await segmentView(this, user.id, [saved]))[0];
+  }
+
+  @Post(":id/redo")
+  async redo(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const seg = await this.migrations.getOwned(id, user.id);
+    if (seg.state === "undone") await migrationTarget(this, user.id, seg.toTypeId);
+    const r = redoSegment(await migrationWorld(this, user.id), seg, new Date().toISOString());
+    const saved = await saveSegment(this, user.id, r, [seg.fromTypeId, seg.toTypeId]);
+    return (await segmentView(this, user.id, [saved]))[0];
+  }
+
+  /** the segment's records go on to `toId` */
+  @Post(":id/move")
+  async move(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() raw: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const seg = await this.migrations.getOwned(id, user.id);
+    const to = await migrationTarget(this, user.id, body(raw).toId);
+    const r = moveSegment(await migrationWorld(this, user.id), seg, to.id, new Date().toISOString());
+    const saved = await saveSegment(this, user.id, r, [seg.fromTypeId, seg.toTypeId, to.id]);
+    return (await segmentView(this, user.id, [saved]))[0];
+  }
+}
+
+/** REQ-927: undoing a segment whose old service was deleted brings it back from the snapshot, same id — 409 when its name was taken since */
+async function restoreFrom(d: MigrationDeps, userId: string, seg: ServiceMigration) {
+  if (await d.types.find(seg.fromTypeId)) return;
+  const live = await d.types.listByUser(userId);
+  if (taskTypeNameTaken(live, seg.from.name, seg.fromTypeId)) {
+    throw new FieldError("a service with that name exists", 409, { name: seg.from.name }, "undo_name_taken");
+  }
+  await d.types.put({ id: seg.fromTypeId, userId, ...seg.from, updatedAt: new Date().toISOString() });
 }
 
 /** REQ-840: the crew a body describes — checked against the account; `cur` on an edit */
@@ -1218,7 +1414,7 @@ export class FieldSubscriptionsController {
       }
     }
     if (b.items !== undefined) {
-      s.items = await parseItems(this.types, user.id, b.items);
+      s.items = keepMarks(s.items, await parseItems(this.types, user.id, b.items)); // REQ-927
     }
     // REQ-811: a string names the account's checklist, null clears it; the visit keeps a checklist or at least one own row
     const ckl = await parseChecklistId(this.checklists, user.id, b.checklistId);
@@ -1481,7 +1677,7 @@ export class FieldChecklistsController {
       if (!items.length) {
         throw new FieldError("at least one task type with a price");
       }
-      c.items = items;
+      c.items = keepMarks(c.items, items); // REQ-927
       itemsChanged = true;
     }
     c.updatedAt = new Date().toISOString();

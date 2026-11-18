@@ -81,6 +81,41 @@ export interface TaskType {
 export interface SubscriptionItem {
   taskTypeId: string;
   priceCents: number;
+  /** REQ-927: the services this row was before each migration moved it — the last is the latest */
+  migratedFrom?: MigrationMark[];
+}
+
+/** REQ-927: "this record belonged to `typeId` before migration `migrationId`" */
+export interface MigrationMark {
+  typeId: string;
+  migrationId: string;
+}
+
+/**
+ * REQ-927: one service migration — a segment. Every record it moved from `fromTypeId` to
+ * `toTypeId` is marked (`migratedFrom`) and listed in `refs`, so the segment can be undone,
+ * redone or moved on to another service. `from` keeps the old service, so undoing after it was
+ * deleted brings it back under the same id.
+ */
+export interface ServiceMigration {
+  id: string;
+  userId: string;
+  fromTypeId: string;
+  toTypeId: string;
+  from: { name: string; description?: string; archived?: true; createdAt: string };
+  state: "applied" | "undone";
+  refs: {
+    subscriptions: string[];
+    checklists: string[];
+    tasks: string[];
+    /** "replaced": the crew's service became the target; "dropped": the target was already the crew's (or another crew's), so the old one left the list */
+    crews: { id: string; action: "replaced" | "dropped" }[];
+  };
+  /** rows removed because their record already had the target service — undo puts them back */
+  merged: { kind: "subscription" | "checklist"; id: string; at: number; item: SubscriptionItem }[];
+  history: { action: "migrate" | "undo" | "redo" | "move"; toTypeId: string; at: string }[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** REQ-811: a named list of services (task types with a price each) a repeat visit references instead of listing the same items again */
@@ -201,6 +236,8 @@ export interface FieldTask {
   completedAt?: string;
   /** REQ-142: set once the task is on an invoice (the invoice's id, in InvoiceStore) */
   invoiceId?: string;
+  /** REQ-927: the services this task was before each migration moved it — the last is the latest */
+  migratedFrom?: MigrationMark[];
 }
 
 /** REQ-142: one pull over a date range. */
