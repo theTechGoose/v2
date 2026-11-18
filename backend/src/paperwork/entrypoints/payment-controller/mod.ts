@@ -1,8 +1,24 @@
-import { Body, Context, Controller, Delete, Get, Param, Post, Put, Query } from "#danet/core";
+import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts"; // REQ-926
+import { ChargebackPayment } from "@paperwork/domain/coordinators/chargeback-payment/mod.ts"; // REQ-926
+import { parseFeeCents } from "@paperwork/domain/business/chargeback/mod.ts"; // REQ-926
+import {
+  Body,
+  Context,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
-import { parseCreatePayment, parseUpdatePayment } from "@paperwork/dto/payment.ts";
+import {
+  parseCreatePayment,
+  parseUpdatePayment,
+} from "@paperwork/dto/payment.ts";
 import type { PaymentMethod } from "@paperwork/dto/payment.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -83,6 +99,21 @@ async function refuseOverpayment(
   return null;
 }
 
+/** REQ-926: another owner's / a missing payment → 404 (a module function:
+ *  Danet routes every method of a controller class). */
+async function ownedOr404<T>(
+  ctx: ExecutionContext,
+  run: () => Promise<T>,
+): Promise<T | Response> {
+  try {
+    return await run();
+  } catch (e) {
+    if (e instanceof NotFoundError || e instanceof ForbiddenError) {
+      return ctx.json({ ok: false, reason: "not_found" }, 404);
+    }
+    throw e;
+  }
+}
 
 @Controller("payments")
 export class PaymentController {
@@ -94,6 +125,7 @@ export class PaymentController {
     private sessions: SessionStore,
     private customers: CustomerStore,
     private bus: EventBus,
+    private chargeback: ChargebackPayment, // REQ-926
   ) {}
 
   @Post()
@@ -102,7 +134,13 @@ export class PaymentController {
     const override = takeOverride(body); // REQ-551
     const dto = parseCreatePayment(body);
     const invoice = await this.invoices.getOwned(dto.invoiceId, user.id);
-    const refused = await refuseOverpayment(this.store, invoice, user.id, dto.amount, override);
+    const refused = await refuseOverpayment(
+      this.store,
+      invoice,
+      user.id,
+      dto.amount,
+      override,
+    );
     if (refused) return ctx.json(refused.body, refused.status);
     const created = await this.store.create(user.id, dto);
     await this.balances.run(dto.invoiceId, user.id);
@@ -124,8 +162,15 @@ export class PaymentController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     if (invoiceId) return await this.store.listByInvoice(invoiceId, user.id);
-    if (method) return await this.store.listByUserAndMethod(user.id, method as PaymentMethod);
-    return await this.store.listByUser(user.id);
+    if (method) {
+      return await this.store.listByUserAndMethod(
+        user.id,
+        method as PaymentMethod,
+      );
+    }
+    // REQ-926: the whole list carries charged-back payments, stamped (the
+    // /payments page's Charged back track); the per-invoice read does not.
+    return await this.store.listByUserAll(user.id);
   }
 
   /**
@@ -142,7 +187,10 @@ export class PaymentController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const range = parseExportRange(fromQ, toQ);
     if ("field" in range) {
-      return ctx.json({ ok: false, reason: "invalid", field: range.field }, 400);
+      return ctx.json(
+        { ok: false, reason: "invalid", field: range.field },
+        400,
+      );
     }
     const [payments, invoices, customers] = await Promise.all([
       this.store.listByUser(user.id),
@@ -171,6 +219,52 @@ export class PaymentController {
     });
   }
 
+  /**
+   * REQ-926: POST /payments/:id/chargeback { feeCents?, reason? } — the
+   * payment is kept and stamped, the same invoice reopens, a fee > 0 joins
+   * it as its own line. 409 `already_reversed`; not the owner's → 404.
+   */
+  @Post(":id/chargeback")
+  async chargebackPayment(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const b = (body && typeof body === "object" ? body : {}) as {
+      feeCents?: unknown;
+      reason?: unknown;
+    };
+    const feeCents = parseFeeCents(b.feeCents);
+    if (feeCents === null) {
+      return ctx.json({ ok: false, reason: "invalid_fee" }, 400);
+    }
+    const reason = typeof b.reason === "string" && b.reason.trim()
+      ? b.reason.trim().slice(0, 300)
+      : undefined;
+    const r = await ownedOr404(
+      ctx,
+      () => this.chargeback.charge(id, user.id, { feeCents, reason }),
+    );
+    if (r instanceof Response) return r;
+    if (!r.ok) return ctx.json({ ok: false, reason: r.reason }, 409);
+    return ctx.json(r.payment);
+  }
+
+  /** REQ-926: undo — the stamp and the fee line come off, the balance is
+   *  recomputed. 409 `not_reversed`. */
+  @Post(":id/chargeback/undo")
+  async undoChargeback(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+  ) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const r = await ownedOr404(ctx, () => this.chargeback.undo(id, user.id));
+    if (r instanceof Response) return r;
+    if (!r.ok) return ctx.json({ ok: false, reason: r.reason }, 409);
+    return ctx.json(r.payment);
+  }
+
   @Get(":id")
   async get(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
@@ -178,14 +272,29 @@ export class PaymentController {
   }
 
   @Put(":id")
-  async update(@Context() ctx: ExecutionContext, @Param("id") id: string, @Body() body: unknown) {
+  async update(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const override = takeOverride(body); // REQ-551
     const patch = parseUpdatePayment(body);
+    // REQ-926: the chargeback stamp has its own route; never from a PUT
+    for (const k of ["reversedAt", "reversedReason", "reversedFeeCents"]) {
+      delete (patch as Record<string, unknown>)[k];
+    }
     if (typeof patch.amount === "number") {
       const existing = await this.store.getOwned(id, user.id);
       const invoice = await this.invoices.getOwned(existing.invoiceId, user.id);
-      const refused = await refuseOverpayment(this.store, invoice, user.id, patch.amount, override, id);
+      const refused = await refuseOverpayment(
+        this.store,
+        invoice,
+        user.id,
+        patch.amount,
+        override,
+        id,
+      );
       if (refused) return ctx.json(refused.body, refused.status);
     }
     const updated = await this.store.update(id, user.id, patch);

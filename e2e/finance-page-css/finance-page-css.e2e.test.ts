@@ -53,12 +53,17 @@ async function signIn(
   );
 }
 
-Deno.test("REQ-408 (p13-a): with nothing in transit, /payments shows a plain '—' cell, not the pink accent", (t) =>
+Deno.test("REQ-408 (p13-a), AMENDED by REQ-926: /payments has no In transit cell; nothing charged back is a plain '—' cell, not the pink accent", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     await signIn(http, page, baseUrl, "es");
     await page.goto("/payments");
-    const cell = page.locator("[data-cy='payments-kpi-transit']");
+    const cell = page.locator("[data-cy='payments-kpi-reversed']");
     await cell.waitFor({ timeout: 15_000 });
+    expect.eq(
+      await page.locator("[data-cy='payments-kpi-transit']").count(),
+      0,
+      "no In transit cell",
+    );
     const seen = await cell.evaluate((el) => ({
       cls: el.className,
       bg: getComputedStyle(el).backgroundImage,
@@ -71,7 +76,7 @@ Deno.test("REQ-408 (p13-a): with nothing in transit, /payments shows a plain '�
     );
     expect.eq(seen.bg, "none", "no pink gradient");
     expect.eq(seen.val, "—", "the value");
-    expect.eq(seen.sub, "Nada en camino", "the caption");
+    expect.eq(seen.sub, "Sin contracargos", "the caption");
   }));
 
 Deno.test("REQ-408 (p13-d): on a phone the /invoices intro does not touch '+ New invoice'", (t) =>

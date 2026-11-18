@@ -132,7 +132,9 @@ describe("REQ-350 (d) the payments hero never joins 'logged.' + 'and'", () => {
     expect(src).toMatch(
       /tnFor\(\s*lang,\s*"paymentsPage\.hero\.everyDollarWaiting",\s*attentionCount/,
     );
-    expect(src).toMatch(/transitTotal > 0 && attentionCount > 0/);
+    // REQ-926 (2026-11-18) removed In transit — "on the way" and its "and"
+    // are gone with it; the sentence is the counted waiting line alone.
+    expect(src).not.toMatch(/transitTotal/);
   });
 });
 

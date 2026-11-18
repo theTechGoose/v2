@@ -317,3 +317,40 @@
     transform: rotate(-2.6deg) translate(6px, -1px);
   }
 }
+
+/* REQ-926: Chargeback / Undo on a payment card, and on a landed row */
+.pcard__cb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.pcard__cb-fee {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-muted, #6b7560);
+}
+.pcard__cb-btn {
+  border: 1.5px solid var(--border, #d9ded6);
+  background: #fff;
+  color: var(--fg, #1c2c30);
+  border-radius: 9px;
+  padding: 5px 11px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+.pcard__cb-btn:hover {
+  border-color: var(--fg-muted, #6b7560);
+}
+.pcard__cb-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.qdone__row .pcard__cb-btn {
+  margin-left: 12px;
+  flex: none;
+}

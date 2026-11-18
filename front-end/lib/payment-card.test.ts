@@ -85,3 +85,36 @@ Deno.test("REQ-555 M24: the invoice card front has its own Open link and the sen
     "no send note between the front foot and the back face",
   );
 });
+
+/* ---------------- REQ-926: chargeback, no In transit ---------------- */
+
+import {
+  chargebackFeeDollars,
+  parseChargebackFee,
+  paymentStatus,
+} from "./payment-card.ts";
+
+Deno.test("REQ-926 paymentStatus: a recorded payment is landed at once — a check or ACH the same day too (no In transit) — and reversed once charged back", () => {
+  for (const method of ["check", "ach", "cash", "card", "zelle"]) {
+    assertEquals(paymentStatus({ method }), "landed", method);
+  }
+  assertEquals(
+    paymentStatus({ method: "check", reversedAt: "2026-11-18T10:00:00Z" }),
+    "reversed",
+  );
+  const page = src("../islands/PaymentsPage.tsx");
+  assert(!page.includes("SETTLE_DAYS"), "the settle windows are gone");
+  assert(!page.includes('"transit"'), "no transit status left");
+});
+
+Deno.test("REQ-926 the modal's fee: Settings' default as dollars ('35.00', '' for none); typed dollars back to whole cents, refused when not a number ≥ 0", () => {
+  assertEquals(chargebackFeeDollars({ chargebackFeeCents: 3500 }), "35.00");
+  assertEquals(chargebackFeeDollars({ chargebackFeeCents: 0 }), "");
+  assertEquals(chargebackFeeDollars(null), "");
+  assertEquals(parseChargebackFee("35"), 3500);
+  assertEquals(parseChargebackFee("12.345"), 1235);
+  assertEquals(parseChargebackFee(""), 0);
+  assertEquals(parseChargebackFee(" $25.50 "), 2550);
+  assertEquals(parseChargebackFee("-1"), null);
+  assertEquals(parseChargebackFee("abc"), null);
+});

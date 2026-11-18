@@ -1,6 +1,7 @@
 /**
  * The /payments KPI strip (`.qkpi`, styled by static/quotes.css): landed this
- * month, in transit, needs attention, average days to land. Rendered by
+ * month, charged back (REQ-926; was In transit), needs attention, average
+ * days to land. Rendered by
  * islands/PaymentsPage.tsx; a plain component so it can be rendered on its own.
  */
 import { fmtMoney } from "../lib/format.ts";
@@ -15,8 +16,8 @@ export default function PaymentsKpis(
     lang,
     landedCount,
     monthTotal,
-    transitCount,
-    transitTotal,
+    reversedCount,
+    reversedTotal,
     attentionCount,
     attentionTotal,
     avgDays,
@@ -24,8 +25,9 @@ export default function PaymentsKpis(
     lang: Lang;
     landedCount: number;
     monthTotal: number;
-    transitCount: number;
-    transitTotal: number;
+    /** REQ-926: charged-back payments — kept, outside every total */
+    reversedCount: number;
+    reversedTotal: number;
     attentionCount: number;
     attentionTotal: number;
     /** REQ-562: average days to pay over landed payments; null = none landed
@@ -44,26 +46,18 @@ export default function PaymentsKpis(
           {tnFor(lang, "paymentsPage.kpi.payments", landedCount)}
         </div>
       </div>
-      {
-        /* REQ-408 (demo p13-a): the pink accent marks money actually on its
-          way; with nothing in transit the cell is a plain one, not an alert. */
-      }
-      <div
-        class={transitCount > 0
-          ? "qkpi__cell qkpi__cell--accent"
-          : "qkpi__cell"}
-        data-cy="payments-kpi-transit"
-      >
+      {/* REQ-926: In transit is gone; charged back, a plain cell (REQ-408) */}
+      <div class="qkpi__cell" data-cy="payments-kpi-reversed">
         <div class="qkpi__lbl">
-          {tFor(lang, "paymentsPage.kpi.transitLabel")}
+          {tFor(lang, "paymentsPage.kpi.reversedLabel")}
         </div>
         <div class="qkpi__val">
-          {transitCount > 0 ? fmtMoney(transitTotal) : "—"}
+          {reversedCount > 0 ? fmtMoney(reversedTotal) : "—"}
         </div>
         <div class="qkpi__sub">
-          {transitCount > 0
-            ? tFor(lang, "paymentsPage.kpi.onTheWay", { n: transitCount })
-            : tFor(lang, "paymentsPage.kpi.nothingInTransit")}
+          {reversedCount > 0
+            ? tnFor(lang, "paymentsPage.kpi.reversedSub", reversedCount)
+            : tFor(lang, "paymentsPage.kpi.nothingReversed")}
         </div>
       </div>
       <div class="qkpi__cell">
