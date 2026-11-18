@@ -11,15 +11,17 @@
  *     aside.qside → PSideFlow, PSideTopPayors, PSideMix, PSideTip
  *
  * Status taxonomy:
- *   - landed:    payment has been recorded and is past its settling window
- *   - transit:   recorded ACH/check still inside its settling window
+ *   - landed:    payment has been recorded (REQ-926: at once — the old
+ *                method-and-age "In transit" window is gone)
+ *   - reversed:  REQ-926 — charged back: kept on record, struck through,
+ *                outside every total; the invoice it paid owes again
  *   - attention: a customer's "I paid by X" claim waiting for the contractor
  *                to confirm or reject it (REQ-281, demo M34). A claim is not
  *                a Payment row — it lives on the invoice (status "claimed" +
  *                paymentIntent) — so it is derived from the invoice list by
  *                lib/payment-claims.ts.
  *
- * Tracks for transit/attention render conditionally — when there's no data
+ * Tracks for charged-back/attention render conditionally — when there's no data
  * for them the page reads cleanly without empty sections.
  */
 import Backdrop from "../components/Backdrop.tsx";
@@ -40,7 +42,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import PaymentsKpis from "../components/PaymentsKpis.tsx";
@@ -49,11 +51,17 @@ import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
 import { creditedPayments } from "../lib/headline-counts.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
-import { paymentCardCtaHref } from "../lib/payment-card.ts";
+import {
+  chargebackFeeDollars,
+  parseChargebackFee,
+  paymentCardCtaHref,
+  paymentStatus,
+} from "../lib/payment-card.ts"; // REQ-926
+import { profileClient } from "../clients/profile.ts"; // REQ-926
 import {
   recordIdFromSearch,
-  recordOptionLabel,
   type RecordOptionInvoice,
+  recordOptionLabel,
 } from "../lib/payment-record-option.ts";
 import SearchSelect from "./SearchSelect.tsx"; // REQ-909
 
@@ -73,6 +81,8 @@ interface State {
   payments: Payment[];
   invoices: Invoice[];
   customers: Customer[];
+  /** REQ-926: Settings' chargeback fee — the modal's default, cents */
+  chargebackFeeCents?: number;
 }
 
 const INITIAL: State = {
@@ -166,7 +176,9 @@ const METHOD_ICON: Record<PaymentMethod, preact.JSX.Element> = {
   ),
 };
 
-type PaymentStatus = "landed" | "transit" | "attention";
+/** REQ-926: landed at once; reversed once charged back. "attention" is a
+ *  customer's claim (a card of its own, not a Payment row). */
+type PaymentStatus = "landed" | "reversed" | "attention";
 
 interface EnrichedPayment extends Payment {
   client: string;
@@ -178,35 +190,6 @@ interface EnrichedPayment extends Payment {
   whenLabel: string;
   note: string;
   status: PaymentStatus;
-  /** ACH and checks have settling windows. Card/cash are instant. */
-  etaDays?: number;
-}
-
-/** Derive status from method + age. The current backend Payment model
- *  doesn't carry an explicit status; for ACH and checks we apply the
- *  industry-standard settlement windows. Once a payment ages past its
- *  window it counts as "landed". */
-const SETTLE_DAYS: Record<PaymentMethod, number> = {
-  ach: 2, // standard ACH settlement
-  check: 5, // mailed check + deposit clearing
-  card: 0, // captured instantly
-  cash: 0, // instant
-  venmo: 0, // peer-to-peer — funds land instantly
-  zelle: 0, // instant
-  cashapp: 0, // instant
-  paypal: 0, // instant
-  other: 0, // unknown — treat as instant
-};
-
-function deriveStatus(
-  method: PaymentMethod,
-  daysAgo: number,
-): { status: PaymentStatus; etaDays?: number } {
-  const settleDays = SETTLE_DAYS[method];
-  if (settleDays > 0 && daysAgo < settleDays) {
-    return { status: "transit", etaDays: settleDays - daysAgo };
-  }
-  return { status: "landed" };
 }
 
 function initialsOf(name: string): string {
@@ -227,17 +210,8 @@ function noteFor(
   method: PaymentMethod,
   daysAgo: number,
   client: string,
-  status: PaymentStatus = "landed",
 ): string {
   const name = client.split(/\s+/)[0];
-  if (status === "transit") {
-    if (method === "ach") {
-      return tFor(lang, "paymentsPage.note.transitAch", { name });
-    }
-    if (method === "check") {
-      return tFor(lang, "paymentsPage.note.transitCheck", { name });
-    }
-  }
   switch (method) {
     case "ach":
       return tFor(lang, "paymentsPage.note.ach", { name });
@@ -270,7 +244,7 @@ function enrich(
       (now.getTime() - new Date(p.receivedAt).getTime()) / (24 * 3600 * 1000),
     ),
   );
-  const { status, etaDays } = deriveStatus(p.method, daysAgo);
+  const status = paymentStatus(p); // REQ-926
   return {
     ...p,
     client,
@@ -281,9 +255,12 @@ function enrich(
     invoiceRef: docNumberOf(inv ?? { id: p.invoiceId }),
     daysAgo,
     whenLabel: whenLabel(lang, daysAgo),
-    note: noteFor(lang, p.method, daysAgo, client, status),
+    note: status === "reversed"
+      ? tFor(lang, "paymentsPage.chargeback.note", {
+        name: client.split(/\s+/)[0],
+      }) + (p.reversedReason ? ` — ${p.reversedReason}` : "")
+      : noteFor(lang, p.method, daysAgo, client),
     status,
-    etaDays,
   };
 }
 
@@ -302,12 +279,24 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 
   // One loader for mount AND the refresh after "Record a payment" (REQ-019).
   async function load(): Promise<void> {
-    const [payments, invoices, customers] = await Promise.all([
-      paymentsClient.list().catch(() => [] as Payment[]),
-      dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
-      dashboardClient.customers().catch(() => [] as Customer[]),
-    ]);
-    setS({ loading: false, error: null, payments, invoices, customers });
+    const [payments, invoices, customers, chargebackFeeCents] = await Promise
+      .all([
+        paymentsClient.list().catch(() => [] as Payment[]),
+        dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
+        dashboardClient.customers().catch(() => [] as Customer[]),
+        // REQ-926: the chargeback modal's default fee (Settings)
+        profileClient.get().catch(() => null),
+      ]).then(([p, i, c, prof]) =>
+        [p, i, c, prof?.identity?.chargebackFeeCents ?? 0] as const
+      );
+    setS({
+      loading: false,
+      error: null,
+      payments,
+      invoices,
+      customers,
+      chargebackFeeCents,
+    });
   }
 
   useEffect(() => {
@@ -320,6 +309,17 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
       alive = false;
     };
   }, []);
+
+  // REQ-926: the payment whose Chargeback modal is open
+  const [chargeback, setChargeback] = useState<EnrichedPayment | null>(null);
+  async function undoChargeback(p: EnrichedPayment) {
+    try {
+      await paymentsClient.undoChargeback(p.id);
+    } finally {
+      await load();
+      refreshDash().catch(() => {/* the badge keeps its last count */});
+    }
+  }
 
   const customerNames = useMemo(
     () =>
@@ -361,14 +361,15 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
     .sort((a, b) => a.daysAgo - b.daysAgo);
 
   const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
-  // Partition by derived status. Landed = settled this month. Transit =
-  // still inside the method's settlement window (ACH < 2d, check < 5d).
+  // Partition by status. Landed = recorded this month (REQ-926: at once —
+  // no In transit). Reversed = charged back (kept, outside every total).
   // Attention = customer claims awaiting confirm/reject (REQ-281): they are
   // on the invoices, not the payments, until the contractor confirms.
   const landed = enriched.filter((p) =>
     p.status === "landed" && new Date(p.receivedAt) >= monthCutoff
   );
-  const transit = enriched.filter((p) => p.status === "transit");
+  const reversed = enriched.filter((p) => p.status === "reversed");
+  const reversedTotal = reversed.reduce((sum, p) => sum + p.amount, 0);
   const attention = pendingClaims(s.invoices, customerNames, now);
   const recentLanded = landed.filter((p) => p.daysAgo <= 1);
   const olderLanded = landed.filter((p) => p.daysAgo > 1);
@@ -377,7 +378,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   // counts what its bill still owed when it arrived; the overpaid rest is
   // its own line under the hero, never part of the total.
   const credited = creditedPayments(
-    s.payments,
+    s.payments.filter((p) => !p.reversedAt), // REQ-926
     Array.isArray(s.invoices) ? s.invoices : [],
   );
   const creditOf = (p: { id: string; amount: number }) =>
@@ -390,7 +391,6 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
     (sum, p) => sum + creditOf(p).overCents,
     0,
   );
-  const transitTotal = transit.reduce((sum, p) => sum + p.amount, 0);
   const attentionTotal = attention.reduce((sum, p) => sum + p.amount, 0);
 
   // Avg days to pay — over landed payments, average of receivedAt minus invoice issuedDate.
@@ -417,7 +417,6 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
         lang={lang}
         monthTotal={monthTotal}
         monthOverpaid={monthOverpaid}
-        transitTotal={transitTotal}
         attentionCount={attention.length}
         stubs={stubs}
         recordOptions={(Array.isArray(s.invoices) ? s.invoices : [])
@@ -441,8 +440,8 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
         lang={lang}
         landedCount={landed.length}
         monthTotal={monthTotal}
-        transitCount={transit.length}
-        transitTotal={transitTotal}
+        reversedCount={reversed.length}
+        reversedTotal={reversedTotal}
         attentionCount={attention.length}
         attentionTotal={attentionTotal}
         avgDays={avgDays}
@@ -492,14 +491,26 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
                   {recentLanded.length > 0 && (
                     <div class="qcards">
                       {recentLanded.map((p, i) => (
-                        <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
+                        <PaymentCard
+                          key={p.id}
+                          lang={lang}
+                          p={p}
+                          idx={i}
+                          onChargeback={setChargeback}
+                          onUndo={undoChargeback}
+                        />
                       ))}
                     </div>
                   )}
                   {olderLanded.length > 0 && (
                     <div class="qdone" style="margin-top:14px">
                       {olderLanded.map((p) => (
-                        <LandedRow key={p.id} lang={lang} p={p} />
+                        <LandedRow
+                          key={p.id}
+                          lang={lang}
+                          p={p}
+                          onChargeback={setChargeback}
+                        />
                       ))}
                     </div>
                   )}
@@ -507,18 +518,26 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
               )}
           </QuoteTrack>
 
-          {transit.length > 0 && (
+          {/* REQ-926: charged back — kept on record, outside every total */}
+          {reversed.length > 0 && (
             <QuoteTrack
               num={attention.length > 0 ? "03" : "02"}
               unit={tFor(lang, "paymentsPage.unit.payment")}
-              title={tFor(lang, "paymentsPage.track.transit")}
-              count={transit.length}
-              defaultOpen={false}
-              storageKey="payments:track:transit"
+              title={tFor(lang, "paymentsPage.track.reversed")}
+              count={reversed.length}
+              defaultOpen
+              storageKey="payments:track:reversed"
             >
-              <div class="qcards">
-                {transit.map((p, i) => (
-                  <PaymentCard key={p.id} lang={lang} p={p} idx={i} />
+              <div class="qcards" data-cy="payments-reversed-track">
+                {reversed.map((p, i) => (
+                  <PaymentCard
+                    key={p.id}
+                    lang={lang}
+                    p={p}
+                    idx={i}
+                    onChargeback={setChargeback}
+                    onUndo={undoChargeback}
+                  />
                 ))}
               </div>
             </QuoteTrack>
@@ -532,6 +551,19 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
           <PSideTip lang={lang} />
         </aside>
       </div>
+      {chargeback && (
+        <ChargebackModal
+          lang={lang}
+          p={chargeback}
+          defaultFeeCents={s.chargebackFeeCents ?? 0}
+          onCancel={() => setChargeback(null)}
+          onDone={async () => {
+            setChargeback(null);
+            await load();
+            refreshDash().catch(() => {/* the badge keeps its last count */});
+          }}
+        />
+      )}
     </>
   );
 }
@@ -543,7 +575,6 @@ function PaymentsHero(
     lang,
     monthTotal,
     monthOverpaid = 0,
-    transitTotal,
     attentionCount,
     stubs,
     recordOptions,
@@ -554,7 +585,6 @@ function PaymentsHero(
     monthTotal: number;
     /** REQ-551: received this month beyond what the bills owed. */
     monthOverpaid?: number;
-    transitTotal: number;
     attentionCount: number;
     stubs: EnrichedPayment[];
     /** REQ-019 (NW-33): unpaid invoices the contractor can record against. */
@@ -605,8 +635,8 @@ function PaymentsHero(
     lang,
     `dashboardPage.month.${MONTH_KEYS[new Date().getMonth()]}`,
   );
-  const fresh = monthTotal === 0 && transitTotal === 0 &&
-    attentionCount === 0 && monthOverpaid === 0;
+  const fresh = monthTotal === 0 && attentionCount === 0 &&
+    monthOverpaid === 0;
   return (
     <header class="pph">
       <div class="pph__main">
@@ -644,15 +674,8 @@ function PaymentsHero(
         <p class="pph__sub">
           {fresh ? <>{tFor(lang, "paymentsPage.hero.freshSub")}</> : (
             <>
-              {transitTotal > 0
-                ? (
-                  <>
-                    {tFor(lang, "paymentsPage.hero.subPlus")}{" "}
-                    <strong>{fmtMoney(transitTotal)}</strong>{" "}
-                    {tFor(lang, "paymentsPage.hero.subOnTheWay")}
-                  </>
-                )
-                : attentionCount > 0
+              {/* REQ-926: no In transit — what is waiting, else every dollar */}
+              {attentionCount > 0
                 // REQ-350: one counted sentence — never "logged. and 1 waiting"
                 ? (
                   <>
@@ -664,19 +687,6 @@ function PaymentsHero(
                   </>
                 )
                 : <>{tFor(lang, "paymentsPage.hero.everyDollar")}</>}
-              {transitTotal > 0 && attentionCount > 0
-                ? (
-                  <>
-                    {" "}
-                    {tFor(lang, "paymentsPage.hero.subAnd")}{" "}
-                    <strong>{attentionCount}</strong>{" "}
-                    {tFor(lang, "paymentsPage.hero.subUnstick")}
-                  </>
-                )
-                : null}
-              {transitTotal > 0
-                ? <>{tFor(lang, "paymentsPage.hero.subMonsters")}</>
-                : null}
             </>
           )}
         </p>
@@ -722,9 +732,11 @@ function PaymentsHero(
               <div style="font-size:18px;font-weight:800;color:var(--fg,#144852)">
                 {tFor(lang, "paymentsPage.record.title")}
               </div>
-              {/* REQ-909: type to find the invoice — customer, number or job
+              {
+                /* REQ-909: type to find the invoice — customer, number or job
                   (the REQ-136 SearchSelect, as the New invoice client field
-                  since REQ-801). A <div>, not a <label>: REQ-809. */}
+                  since REQ-801). A <div>, not a <label>: REQ-809. */
+              }
               <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
                 <span>{tFor(lang, "paymentsPage.record.invoiceLabel")}</span>
                 <div data-cy="payments-record-invoice" data-value={recordId}>
@@ -816,11 +828,12 @@ const STATUS_MOOD: Record<
     shadow: "rgba(81,152,67,0.28)",
     statusFg: "#1F3F18",
   },
-  transit: {
-    from: "#C8DDE0",
-    to: "#56969E",
-    shadow: "rgba(86,150,158,0.28)",
-    statusFg: "#0F3036",
+  // REQ-926: charged back — a neutral grey, not the alert red
+  reversed: {
+    from: "#E4E6E3",
+    to: "#8A918A",
+    shadow: "rgba(110,118,110,0.24)",
+    statusFg: "#1F2420",
   },
   attention: {
     from: "#FFD9D9",
@@ -831,8 +844,17 @@ const STATUS_MOOD: Record<
 };
 
 function PaymentCard(
-  { lang, p, idx }: { lang: Lang; p: EnrichedPayment; idx: number },
+  { lang, p, idx, onChargeback, onUndo }: {
+    lang: Lang;
+    p: EnrichedPayment;
+    idx: number;
+    /** REQ-926: opens the Chargeback modal on this payment */
+    onChargeback: (p: EnrichedPayment) => void;
+    /** REQ-926: Undo on a charged-back payment */
+    onUndo: (p: EnrichedPayment) => Promise<void>;
+  },
 ) {
+  const [undoing, setUndoing] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const mood = STATUS_MOOD[p.status];
   const moodLabel = tFor(lang, `paymentsPage.mood.${p.status}.label`);
@@ -845,13 +867,9 @@ function PaymentCard(
     : invoiceHref;
   // REQ-626 AMENDMENT — reconciled with develop on demo-fixes: the front CTA
   // is a real link (REQ-555: "View receipt" opens the receipt page in a new
-  // tab); "View timeline" (in transit) flips to the trail on the card's back.
+  // tab); a charged-back card's (REQ-926) opens the invoice that owes again.
   function onCta(e: Event) {
     e.stopPropagation();
-    if (p.status === "transit") {
-      e.preventDefault();
-      setFlipped(true);
-    }
   }
   return (
     <article
@@ -878,12 +896,68 @@ function PaymentCard(
       <div class="qcard__av">{p.initials}</div>
       <div class="qcard__body">
         <div class="qcard__client-name">{p.client} · {p.invoiceRef}</div>
-        <div class="pcard__amount">{fmtMoney(p.amount)}</div>
+        <div
+          class="pcard__amount"
+          style={p.status === "reversed"
+            ? "text-decoration:line-through;opacity:0.6"
+            : ""}
+        >
+          {fmtMoney(p.amount)}
+        </div>
         <p class="qcard__story">{p.note}</p>
+        {/* REQ-926: Chargeback on a landed payment; Undo on a reversed one */}
+        {p.status === "reversed"
+          ? (
+            <div class="pcard__cb">
+              {p.reversedFeeCents
+                ? (
+                  <span class="pcard__cb-fee" data-cy="pay-card-chargeback-fee">
+                    {tFor(lang, "paymentsPage.chargeback.feeAdded", {
+                      amount: fmtMoneyExact(p.reversedFeeCents),
+                    })}
+                  </span>
+                )
+                : null}
+              <button
+                type="button"
+                class="pcard__cb-btn"
+                data-cy="pay-card-chargeback-undo"
+                disabled={undoing}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setUndoing(true);
+                  try {
+                    await onUndo(p);
+                  } finally {
+                    setUndoing(false);
+                  }
+                }}
+              >
+                {tFor(lang, "paymentsPage.chargeback.undo")}
+              </button>
+            </div>
+          )
+          : (
+            <div class="pcard__cb">
+              <button
+                type="button"
+                class="pcard__cb-btn"
+                data-cy="pay-card-chargeback"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChargeback(p);
+                }}
+              >
+                {tFor(lang, "paymentsPage.chargeback.button")}
+              </button>
+            </div>
+          )}
       </div>
       <div class="qcard__foot">
-        {/* REQ-555 (M24): the CTA goes somewhere — the receipt (landed) or
-            the invoice detail (in transit). */}
+        {
+          /* REQ-555 (M24): the CTA goes somewhere — the receipt (landed) or
+            the invoice detail (charged back, REQ-926). */
+        }
         <a
           class="qcard__cta"
           data-cy="pay-card-cta"
@@ -899,14 +973,10 @@ function PaymentCard(
         </a>
         <div class="qcard__val-wrap">
           <div class="qcard__val-lbl">
-            {p.status === "transit"
-              ? tFor(lang, "paymentsPage.card.expected")
-              : tFor(lang, "paymentsPage.card.method")}
+            {tFor(lang, "paymentsPage.card.method")}
           </div>
           <div class="qcard__val-num" style="font-size:13px">
-            {p.status === "transit" && p.etaDays
-              ? tFor(lang, "paymentsPage.card.eta", { n: p.etaDays })
-              : methodLabel(lang, p.method)}
+            {methodLabel(lang, p.method)}
           </div>
         </div>
       </div>
@@ -935,10 +1005,15 @@ function PaymentCard(
         <div class="qcard__back-body">
           <p class="qcard__read">{p.note}</p>
         </div>
-        {/* REQ-555 (M24) / REQ-626: every action has a destination — the
+        {
+          /* REQ-555 (M24) / REQ-626: every action has a destination — the
             receipt is the paid invoice's page, the invoice opens its own
-            detail, the client's sheet carries Message. */}
-        <div class="qcard__back-foot" style="grid-template-columns:repeat(3,1fr)">
+            detail, the client's sheet carries Message. */
+        }
+        <div
+          class="qcard__back-foot"
+          style="grid-template-columns:repeat(3,1fr)"
+        >
           {/* REQ-626: the customer's copy of the invoice is the receipt */}
           <a
             data-cy="pay-card-receipt"
@@ -1081,7 +1156,14 @@ function ClaimCard(
 
 /* ---------------- Landed row (compact tail of month) ---------------- */
 
-function LandedRow({ lang, p }: { lang: Lang; p: EnrichedPayment }) {
+function LandedRow(
+  { lang, p, onChargeback }: {
+    lang: Lang;
+    p: EnrichedPayment;
+    /** REQ-926 */
+    onChargeback: (p: EnrichedPayment) => void;
+  },
+) {
   return (
     <div class="qdone__row">
       <div class="qdone__badge qdone__badge--won">
@@ -1094,7 +1176,132 @@ function LandedRow({ lang, p }: { lang: Lang; p: EnrichedPayment }) {
         </div>
       </div>
       <div class="qdone__amt">{fmtMoney(p.amount)}</div>
+      <button
+        type="button"
+        class="pcard__cb-btn"
+        data-cy="pay-card-chargeback"
+        onClick={() => onChargeback(p)}
+      >
+        {tFor(lang, "paymentsPage.chargeback.button")}
+      </button>
     </div>
+  );
+}
+
+/**
+ * REQ-926 — "a modal when the chargeback is clicked to add a fee with the
+ * default populated." The fee box starts on Settings' Chargeback fee; the
+ * reason is optional. Confirm keeps the payment (struck through, outside
+ * every total), reopens its invoice and adds the fee to it as a line.
+ */
+function ChargebackModal(
+  { lang, p, defaultFeeCents, onCancel, onDone }: {
+    lang: Lang;
+    p: EnrichedPayment;
+    defaultFeeCents: number;
+    onCancel: () => void;
+    onDone: () => Promise<void>;
+  },
+) {
+  const [fee, setFee] = useState(
+    chargebackFeeDollars({ chargebackFeeCents: defaultFeeCents }),
+  );
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function confirm() {
+    const feeCents = parseChargebackFee(fee);
+    if (feeCents === null) {
+      setErr(tFor(lang, "paymentsPage.chargeback.feeInvalid"));
+      return;
+    }
+    setErr(null);
+    setBusy(true);
+    try {
+      await paymentsClient.chargeback(p.id, {
+        feeCents,
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+      });
+      await onDone();
+    } catch {
+      setErr(tFor(lang, "paymentsPage.chargeback.failed"));
+      setBusy(false);
+    }
+  }
+  return (
+    <Backdrop
+      class="send-dialog__backdrop"
+      onClose={() => !busy && onCancel()}
+    >
+      <div
+        class="send-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chargeback-title"
+        data-cy="chargeback-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h4 id="chargeback-title" class="send-dialog__title">
+          {tFor(lang, "paymentsPage.chargeback.title", {
+            amount: fmtMoney(p.amount),
+            invoice: p.invoiceRef,
+          })}
+        </h4>
+        <p class="send-dialog__paper-note">
+          {tFor(lang, "paymentsPage.chargeback.explain", {
+            invoice: p.invoiceRef,
+          })}
+        </p>
+        <label class="send-dialog__add">
+          <span>{tFor(lang, "paymentsPage.chargeback.feeLabel")}</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            class="cust-pick__search"
+            data-cy="chargeback-fee"
+            placeholder="0.00"
+            value={fee}
+            onInput={(e) => setFee((e.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="send-dialog__add">
+          <span>{tFor(lang, "paymentsPage.chargeback.reasonLabel")}</span>
+          <input
+            type="text"
+            class="cust-pick__search"
+            data-cy="chargeback-reason"
+            placeholder={tFor(
+              lang,
+              "paymentsPage.chargeback.reasonPlaceholder",
+            )}
+            value={reason}
+            onInput={(e) =>
+              setReason((e.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+        {err ? <div class="cust-pick__err">{err}</div> : null}
+        <div class="send-dialog__actions">
+          <button
+            type="button"
+            class="send-dialog__cancel"
+            data-cy="chargeback-cancel"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {tFor(lang, "asstChat.send.cancel")}
+          </button>
+          <button
+            type="button"
+            class="send-dialog__keep"
+            data-cy="chargeback-confirm"
+            disabled={busy}
+            onClick={() => void confirm()}
+          >
+            {busy ? "…" : tFor(lang, "paymentsPage.chargeback.confirm")}
+          </button>
+        </div>
+      </div>
+    </Backdrop>
   );
 }
 

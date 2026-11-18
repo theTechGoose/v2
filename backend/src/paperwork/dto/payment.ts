@@ -1,4 +1,10 @@
-import { IsIn, IsNumber, IsOptional, IsString, validateSync } from "#class-validator";
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  validateSync,
+} from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 
 // Includes the peer-to-peer wallets so a confirmed payment preserves HOW the
@@ -32,19 +38,30 @@ export class CreatePaymentDto {
   @IsString()
   receivedAt!: string;
 
-  @IsOptional() @IsString() reference?: string;
+  @IsOptional() @IsString()
+  reference?: string;
 }
 
 export class UpdatePaymentDto {
   /** INTEGER CENTS. */
-  @IsOptional() @IsNumber() amount?: number;
-  @IsOptional() @IsString() @IsIn(PAYMENT_METHODS as unknown as string[]) method?: PaymentMethod;
-  @IsOptional() @IsString() receivedAt?: string;
-  @IsOptional() @IsString() reference?: string;
+  @IsOptional() @IsNumber()
+  amount?: number;
+  @IsOptional() @IsString() @IsIn(PAYMENT_METHODS as unknown as string[])
+  method?: PaymentMethod;
+  @IsOptional() @IsString()
+  receivedAt?: string;
+  @IsOptional() @IsString()
+  reference?: string;
 }
 
 export interface Payment extends CreatePaymentDto {
   id: string;
+  /** REQ-926: charged back — the payment is kept, counts toward nothing.
+   *  Set by POST /payments/:id/chargeback only; never from a PUT. */
+  reversedAt?: string;
+  reversedReason?: string;
+  /** the fee added to the invoice with it, INTEGER CENTS */
+  reversedFeeCents?: number;
   /** Owner. Populated server-side from the auth context — never accept from request body. */
   userId: string;
   createdAt: string;
@@ -54,13 +71,17 @@ export interface Payment extends CreatePaymentDto {
 export function parseCreatePayment(input: unknown): CreatePaymentDto {
   const dto = plainToInstance(CreatePaymentDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid payment: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid payment: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }
 
 export function parseUpdatePayment(input: unknown): UpdatePaymentDto {
   const dto = plainToInstance(UpdatePaymentDto, input);
   const errors = validateSync(dto);
-  if (errors.length) throw new Error(`invalid payment patch: ${JSON.stringify(errors)}`);
+  if (errors.length) {
+    throw new Error(`invalid payment patch: ${JSON.stringify(errors)}`);
+  }
   return dto;
 }

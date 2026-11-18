@@ -225,6 +225,8 @@ function tr(es: boolean) {
     netDaysHint: tFor(lang, "settings.netDaysHint"),
     overhead: tFor(lang, "settings.overhead"),
     overheadHint: tFor(lang, "settings.overheadHint"),
+    chargebackFee: tFor(lang, "settings.chargebackFee"), // REQ-926
+    chargebackFeeHint: tFor(lang, "settings.chargebackFeeHint"),
     overheadFlat: tFor(lang, "settings.overheadFlat"),
     overheadPercent: tFor(lang, "settings.overheadPercent"),
     // Address
@@ -502,6 +504,9 @@ function EditCard(
       ? String(snapshot.identity?.fieldOverheadPct ?? 0)
       : ((snapshot.identity?.fieldOverheadCents ?? 0) / 100).toFixed(2);
   const [overhead, setOverhead] = useState(overheadShown(overheadMode));
+  // REQ-926: the chargeback modal's default fee — dollars (stored in cents)
+  const savedCbFee = snapshot.identity?.chargebackFeeCents ?? 0;
+  const [cbFee, setCbFee] = useState((savedCbFee / 100).toFixed(2));
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // REQ-501 (demo M35): a bad email / an emptied business name is shown under its field and NOT
@@ -849,6 +854,37 @@ function EditCard(
           </div>
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
             {t.overheadHint}
+          </span>
+        </label>
+        {/* REQ-926: the fee a chargeback adds to the reopened invoice */}
+        <label style="display:block;grid-column:1 / -1">
+          <span style={labelStyle}>{t.chargebackFee}</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            inputMode="decimal"
+            class="settings-edit__input"
+            style={inputStyle}
+            data-cy="settings-chargeback-fee"
+            value={cbFee}
+            disabled={busy === "identity"}
+            onInput={(e) => setCbFee((e.target as HTMLInputElement).value)}
+            onBlur={() => {
+              const cents = Math.round(Number(cbFee) * 100);
+              if (cbFee.trim() === "" || !Number.isFinite(cents) || cents < 0) {
+                setCbFee((savedCbFee / 100).toFixed(2));
+                return;
+              }
+              setCbFee((cents / 100).toFixed(2));
+              if (cents !== savedCbFee) {
+                saveIdentity({ chargebackFeeCents: cents });
+              }
+            }}
+            aria-label={t.chargebackFee}
+          />
+          <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
+            {t.chargebackFeeHint}
           </span>
         </label>
         <div

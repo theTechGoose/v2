@@ -31,6 +31,10 @@ export interface Payment {
   reference?: string;
   createdAt: string;
   updatedAt: string;
+  /** REQ-926: charged back — kept, counts toward nothing */
+  reversedAt?: string;
+  reversedReason?: string;
+  reversedFeeCents?: number;
 }
 
 export const paymentsClient = {
@@ -53,4 +57,14 @@ export const paymentsClient = {
     api.get<Payment[]>("/payments", { ...opts, query: { method } }),
   byInvoice: (invoiceId: string, opts: ApiOptions = {}) =>
     api.get<Payment[]>("/payments", { ...opts, query: { invoiceId } }),
+  /** REQ-926: charge back — the payment is kept, its invoice reopens, a fee
+   *  > 0 joins it as a line. */
+  chargeback: (
+    id: string,
+    body: { feeCents: number; reason?: string },
+    opts: ApiOptions = {},
+  ) => api.post<Payment>(`/payments/${id}/chargeback`, body, opts),
+  /** REQ-926: undo a chargeback (the stamp and the fee line come off). */
+  undoChargeback: (id: string, opts: ApiOptions = {}) =>
+    api.post<Payment>(`/payments/${id}/chargeback/undo`, {}, opts),
 };

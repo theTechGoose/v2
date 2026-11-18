@@ -101,6 +101,8 @@ export class CreateInvoiceDto {
     /** REQ-810: a batch line names the field task it bills (or is the visit's overhead) — removing the line frees that task */
     taskId?: string;
     overhead?: boolean;
+    /** REQ-926: a chargeback's fee line — the payment it came from */
+    chargebackFor?: string;
     /** REQ-710 (cycle 5, M4): a STANDALONE invoice's line per language,
      *  written by TranslateInvoice — the `lang` slot is the typed text (the
      *  cache key, shared/documents/invoice-lang.ts). */
@@ -219,6 +221,8 @@ export class UpdateInvoiceDto {
     /** REQ-810: a batch line names the field task it bills (or is the visit's overhead) — removing the line frees that task */
     taskId?: string;
     overhead?: boolean;
+    /** REQ-926: a chargeback's fee line — the payment it came from */
+    chargebackFor?: string;
     /** REQ-710: see CreateInvoiceDto — set by TranslateInvoice. */
     descriptionByLang?: Record<string, string>;
   }>;

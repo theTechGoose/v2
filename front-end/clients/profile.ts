@@ -29,6 +29,8 @@ export interface BusinessIdentity {
   /** REQ-788 AMENDMENT: flat cents per visit, or a percent of the visit's services */
   fieldOverheadMode?: "flat" | "percent";
   fieldOverheadPct?: number;
+  /** REQ-926: the fee a chargeback adds to the reopened invoice (the modal's default), cents */
+  chargebackFeeCents?: number;
   /** Language the contractor's customers receive outbound comms in
    *  (quotes/SMS/email/docs). Distinct from the contractor's UI language.
    *  Defaults to "en" when unset. Stays the DEFAULT (first enabled). */

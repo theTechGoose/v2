@@ -4,7 +4,8 @@
  * strip still painted the "in transit" cell in the pink accent (gradient +
  * brand-pink value), so "$0 · 0 en camino" read like an alert. The accent is
  * for money actually on its way; at zero the cell is a plain cell reading "—"
- * and "Nothing in transit".
+ * and "Nothing in transit". REQ-926 (2026-11-18) removed In transit; the
+ * cell is Charged back now, under the same no-accent-at-zero rule.
  */
 import { assert, assertEquals } from "@std/assert";
 import { DOMParser, type Element } from "@b-fuze/deno-dom";
@@ -12,53 +13,62 @@ import { renderToString } from "preact-render-to-string";
 import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import type { Lang } from "./i18n.ts";
 
-function transitCell(
+/* REQ-926 SUPERSEDES REQ-408's transit cell: "lets remove the in transit".
+ * The cell is now Charged back — plain (never the pink accent, REQ-408's
+ * rule kept), "—" / "Nothing charged back" at zero. */
+function reversedCell(
   lang: Lang,
-  transitCount: number,
-  transitTotal: number,
+  reversedCount: number,
+  reversedTotal: number,
 ): Element {
   const html = renderToString(
     <PaymentsKpis
       lang={lang}
       landedCount={0}
       monthTotal={0}
-      transitCount={transitCount}
-      transitTotal={transitTotal}
+      reversedCount={reversedCount}
+      reversedTotal={reversedTotal}
       attentionCount={0}
       attentionTotal={0}
       avgDays={0}
     />,
   );
   const doc = new DOMParser().parseFromString(html, "text/html")!;
-  const cell = doc.querySelector('[data-cy="payments-kpi-transit"]');
-  assert(cell, "the in-transit cell is rendered");
+  assertEquals(
+    doc.querySelector('[data-cy="payments-kpi-transit"]'),
+    null,
+    "no In transit cell (REQ-926)",
+  );
+  const cell = doc.querySelector('[data-cy="payments-kpi-reversed"]');
+  assert(cell, "the charged-back cell is rendered");
   return cell as Element;
 }
 
-Deno.test("REQ-408 p13-a: nothing in transit is a plain cell, not the pink alert accent", () => {
+Deno.test("REQ-926 (supersedes REQ-408 p13-a): no In transit cell; nothing charged back is a plain '—' cell", () => {
   for (const lang of ["en", "es"] as Lang[]) {
-    const cell = transitCell(lang, 0, 0);
-    assert(
-      !cell.className.split(/\s+/).includes("qkpi__cell--accent"),
-      `${lang}: the zero cell carries no accent: ${cell.className}`,
-    );
+    const cell = reversedCell(lang, 0, 0);
+    assert(!cell.className.includes("qkpi__cell--accent"), cell.className);
     assertEquals(cell.querySelector(".qkpi__val")?.textContent, "—");
   }
   assertEquals(
-    transitCell("en", 0, 0).querySelector(".qkpi__sub")?.textContent,
-    "Nothing in transit",
+    reversedCell("en", 0, 0).querySelector(".qkpi__sub")?.textContent,
+    "Nothing charged back",
   );
   assertEquals(
-    transitCell("es", 0, 0).querySelector(".qkpi__sub")?.textContent,
-    "Nada en camino",
+    reversedCell("es", 0, 0).querySelector(".qkpi__sub")?.textContent,
+    "Sin contracargos",
   );
 });
 
-Deno.test("REQ-408 p13-a: money on its way keeps the accent, amount and count", () => {
-  const cell = transitCell("es", 2, 125_000);
-  assert(cell.className.split(/\s+/).includes("qkpi__cell--accent"));
+Deno.test("REQ-926: charged-back money shows its amount and count, still no accent", () => {
+  const cell = reversedCell("es", 2, 125_000);
+  assert(!cell.className.includes("qkpi__cell--accent"));
   assertEquals(cell.querySelector(".qkpi__val")?.textContent, "$1,250");
-  assertEquals(cell.querySelector(".qkpi__sub")?.textContent, "2 en camino");
+  assertEquals(cell.querySelector(".qkpi__sub")?.textContent, "2 pagos");
+  assertEquals(
+    reversedCell("en", 1, 3500).querySelector(".qkpi__sub")?.textContent,
+    "1 payment",
+  );
 });
 
 /**
@@ -73,8 +83,8 @@ function avgCell(lang: Lang, avgDays: number | null): Element {
       lang={lang}
       landedCount={1}
       monthTotal={1_425_00}
-      transitCount={0}
-      transitTotal={0}
+      reversedCount={0}
+      reversedTotal={0}
       attentionCount={0}
       attentionTotal={0}
       avgDays={avgDays}

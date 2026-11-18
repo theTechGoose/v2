@@ -3,8 +3,8 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
-  IsNumber,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -190,6 +190,8 @@ export interface BusinessIdentity {
   /** REQ-788 AMENDMENT: "flat" bills fieldOverheadCents per visit; "percent" bills fieldOverheadPct of the visit's services. Unset = flat. */
   fieldOverheadMode?: "flat" | "percent";
   fieldOverheadPct?: number;
+  /** REQ-926: the fee a chargeback adds to the reopened invoice (the modal's default), INTEGER CENTS; 0/unset = none */
+  chargebackFeeCents?: number;
   /** REQ-172: the business's IANA time zone — the 9 am schedule texts follow it (default America/New_York) */
   timezone?: string;
   /** REQ-623: automatic payment reminders — see ReminderSettingsDto */
@@ -251,6 +253,11 @@ export class UpdateBusinessIdentityDto {
   @Min(0)
   @Max(100)
   fieldOverheadPct?: number;
+  /** REQ-926 */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  chargebackFeeCents?: number;
   /** REQ-172: an IANA zone (validated by the route) */
   @IsOptional()
   @IsString()
