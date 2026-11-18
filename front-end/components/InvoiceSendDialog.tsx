@@ -61,6 +61,7 @@ export default function InvoiceSendDialog(
         : tFor(lang, "invoicesPage.send.sheetTitleNoName", { number })}
       customer={customer}
       initialChannel={defaultSendChannel(onFile)}
+      paper
       initialSendLang={invoiceSheetLang(invoice)}
       loadDefaultLang={() =>
         dashboardClient.invoiceSendPreview(

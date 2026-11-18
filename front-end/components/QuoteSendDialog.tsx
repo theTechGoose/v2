@@ -42,6 +42,7 @@ import {
   type SendDialogCustomer,
   sendDialogErrorKey,
   type SendDialogPick,
+  type SendSheetChannel,
 } from "../lib/send-dialog.ts";
 import {
   type PanelSendResult,
@@ -55,6 +56,9 @@ const CHANNELS = [
   ["sms", "asstChat.preview.menuSms", ICN.phone],
   ["email", "asstChat.preview.menuEmail", ICN.mail],
 ] as const;
+
+/** REQ-922: the invoice sheet's fourth channel — the PDF, handed over. */
+const PAPER = ["paper", "invoicesPage.send.menuPaper", ICN.doc] as const;
 
 /**
  * The send dialog: the channel (Recommended / "needs an email"), a missing
@@ -75,6 +79,7 @@ export function SendDialog(
     previewKey,
     errorKey,
     summary,
+    paper,
     onCancel,
     onSend,
   }: {
@@ -83,7 +88,9 @@ export function SendDialog(
     /** REQ-776: a review of what is being sent, under the title */
     summary?: ComponentChildren;
     customer: SendDialogCustomer | null;
-    initialChannel: SendChannel;
+    initialChannel: SendSheetChannel;
+    /** REQ-922: offer Paper (the invoice sheet only) */
+    paper?: boolean;
     /** "Sends in" starts here; else on the app language */
     initialSendLang?: "en" | "es";
     /** the document's own language, asked for when `initialSendLang` is not
@@ -102,7 +109,7 @@ export function SendDialog(
     onSend: (pick: SendDialogPick) => Promise<void>;
   },
 ) {
-  const [channel, setChannel] = useState<SendChannel>(initialChannel);
+  const [channel, setChannel] = useState<SendSheetChannel>(initialChannel);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [err, setErr] = useState<string | undefined>();
@@ -137,6 +144,24 @@ export function SendDialog(
 
   function send() {
     return runExclusive(inFlight, async () => {
+      // REQ-922: Paper reaches nobody by email or text — no contact asked
+      // for, none saved; the caller saves the PDF.
+      if (channel === "paper") {
+        setErr(undefined);
+        setSending(true);
+        try {
+          await onSend({
+            channel,
+            language: langRef.current,
+            typed: { email: "", phone: "" },
+          });
+        } catch {
+          setErr(tFor(lang, errorKey));
+        } finally {
+          setSending(false);
+        }
+        return;
+      }
       const typed = { email: email.trim(), phone: phone.trim() };
       const invalid = sendDialogErrorKey(channel, onFile, typed);
       if (invalid) {
@@ -193,8 +218,10 @@ export function SendDialog(
         </h4>
         {summary}
         <div class="send-dialog__options" role="radiogroup">
-          {CHANNELS.map(([ch, key, icon]) => {
-            const needs = channelNeedsKey(ch, onFile);
+          {(paper ? [...CHANNELS, PAPER] : CHANNELS).map(([ch, key, icon]) => {
+            const needs = ch === "paper"
+              ? undefined
+              : channelNeedsKey(ch, onFile);
             return (
               <button
                 key={ch}
@@ -232,19 +259,27 @@ export function SendDialog(
             );
           })}
         </div>
-        <SendLangPreview
-          load={loadPreview}
-          loadKey={previewKey}
-          channel={channel}
-          sendLang={sendLang}
-          langs={lang === "es" ? ["es", "en"] : ["en", "es"]}
-          uiLang={lang}
-          onPickLang={(l) => {
-            langPicked.current = true;
-            chooseLang(l);
-          }}
-        />
-        {channel !== "sms" && !onFile.email
+        {channel === "paper"
+          ? (
+            <p class="send-dialog__paper-note" data-cy="send-paper-note">
+              {tFor(lang, "invoicesPage.send.paperNote")}
+            </p>
+          )
+          : (
+            <SendLangPreview
+              load={loadPreview}
+              loadKey={previewKey}
+              channel={channel}
+              sendLang={sendLang}
+              langs={lang === "es" ? ["es", "en"] : ["en", "es"]}
+              uiLang={lang}
+              onPickLang={(l) => {
+                langPicked.current = true;
+                chooseLang(l);
+              }}
+            />
+          )}
+        {channel !== "paper" && channel !== "sms" && !onFile.email
           ? (
             <label class="send-dialog__add" data-cy="send-add-email">
               <span>{tFor(lang, addFieldLabelKey("email", channel))}</span>
@@ -259,7 +294,7 @@ export function SendDialog(
             </label>
           )
           : null}
-        {channel !== "email" && !onFile.phoneNumber
+        {channel !== "paper" && channel !== "email" && !onFile.phoneNumber
           ? (
             <label class="send-dialog__add" data-cy="send-add-phone">
               <span>{tFor(lang, addFieldLabelKey("phone", channel))}</span>
@@ -296,6 +331,8 @@ export function SendDialog(
           >
             {sending
               ? tFor(lang, "asstChat.preview.sending")
+              : channel === "paper"
+              ? tFor(lang, "invoicesPage.send.paperKeep")
               : tFor(lang, "asstChat.send.keep")}
           </button>
         </div>
@@ -332,6 +369,8 @@ export default function QuoteSendDialog(
       errorKey="quotesPage.open.sendError"
       onCancel={onClose}
       onSend={async ({ channel, language }) => {
+        // REQ-922: Paper is the invoice sheet's; this dialog never offers it
+        if (channel === "paper") return;
         const result = await sendFromQuotePanel({
           quoteId,
           customerId: customer?.id,

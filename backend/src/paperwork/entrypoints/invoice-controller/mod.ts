@@ -82,6 +82,7 @@ import {
 import type { VoidedBy } from "@paperwork/dto/invoice.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { RenderInvoicePrintPdf } from "@paperwork/domain/coordinators/render-invoice-print-pdf/mod.ts"; // REQ-629
+import { stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts"; // REQ-922
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -186,6 +187,46 @@ export class InvoiceController {
         "content-type": "application/pdf",
         "content-length": String(bytes.length),
         "content-disposition": `attachment; filename="invoices-${day}.pdf"`,
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  /**
+   * REQ-922: POST /invoices/:id/paper — "Paper" in the send sheet. The
+   * invoice is handed over on paper, so saving its PDF IS its delivery: a
+   * draft / scheduled invoice is issued now (REQ-480's stamp: "sent" +
+   * sentAt; REQ-566's activity line once) and the answer is its print-ready
+   * PDF (REQ-629's renderer) as an attachment named after its number. Void
+   * → 409 `void`; not the owner's → 404.
+   */
+  @Post(":id/paper")
+  async paper(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    let existing;
+    try {
+      existing = await this.store.getOwned(id, user.id);
+    } catch (e) {
+      if (e instanceof NotFoundError || e instanceof ForbiddenError) {
+        return ctx.json({ ok: false, reason: "not_found" }, 404);
+      }
+      throw e;
+    }
+    if (existing.status === "void") {
+      return ctx.json({ ok: false, reason: "void" }, 409);
+    }
+    const issued = await stampInvoiceDelivered(this.store, id, user.id);
+    if (issued) await announceIssued(this.bus, this.customers, user.id, issued);
+    const bytes = await this.printPdf.run(user.id, [id]);
+    const name = (existing.number || `invoice-${id}`).replace(
+      /[^A-Za-z0-9._-]/g,
+      "_",
+    );
+    return new Response(bytes as BodyInit, {
+      headers: {
+        "content-type": "application/pdf",
+        "content-length": String(bytes.length),
+        "content-disposition": `attachment; filename="${name}.pdf"`,
         "cache-control": "no-store",
       },
     });

@@ -155,7 +155,6 @@ import {
   centsToDollars,
   computeTotals,
   defaultInvoiceNetDays,
-  percentOfLinesCents, // REQ-910
   defaultPaymentInstructions,
   dollarsToCents,
   dueDateFrom,
@@ -175,6 +174,7 @@ import {
   newInvoiceFieldErrors,
   newInvoiceStatus,
   paymentSummary,
+  percentOfLinesCents, // REQ-910
   percentToBp,
   prefillFromLedger,
   priorBillingFor,
@@ -575,6 +575,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       partial: boolean;
       parts?: { went: string; failed: string };
       notSent?: boolean;
+      /** REQ-922: good news (Paper's PDF saved), green */
+      ok?: boolean;
     } | null
   >(() => {
     try {
@@ -586,6 +588,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         partial: boolean;
         parts?: { went: string; failed: string };
         notSent?: boolean;
+        ok?: boolean;
       };
     } catch {
       return null;
@@ -981,7 +984,17 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
 
   return (
     <>
-      {sendFlash && sendFlash.partial && sendFlash.parts
+      {sendFlash && sendFlash.ok
+        ? (
+          <p
+            role="status"
+            data-cy="invoice-sent"
+            style="margin:0 0 12px;padding:10px 14px;border-radius:10px;background:var(--brand-green-soft,#e8f3e4);color:var(--brand-green,#519843);font-size:13.5px;font-weight:700"
+          >
+            {sendFlash.text}
+          </p>
+        )
+        : sendFlash && sendFlash.partial && sendFlash.parts
         ? <PartialSendNote {...sendFlash.parts} />
         : sendFlash && (
           <p
@@ -2809,8 +2822,10 @@ function InvoiceDetail(
               style={`${fieldStyle};resize:vertical`}
             />
           </label>
-          {/* REQ-910: lines can be added and removed on a sent invoice; a
-              percentage of the lines above becomes a plain Overhead line */}
+          {
+            /* REQ-910: lines can be added and removed on a sent invoice; a
+              percentage of the lines above becomes a plain Overhead line */
+          }
           <div
             style="display:flex;flex-direction:column;gap:6px"
             data-cy="invoice-edit-lines"
@@ -2898,7 +2913,8 @@ function InvoiceDetail(
                   aria-label={tFor(lang, "invoices.form.removeLine")}
                   title={tFor(lang, "invoices.form.removeLine")}
                   disabled={busy}
-                  onClick={() => updateLines(editItems.filter((_, j) => j !== i))}
+                  onClick={() =>
+                    updateLines(editItems.filter((_, j) => j !== i))}
                   style="appearance:none;cursor:pointer;background:none;border:0;padding:4px;color:var(--fg-muted,#6b7560)"
                 >
                   <I d={ICN.x} size={14} sw={2.5} />
@@ -3170,6 +3186,56 @@ interface DispatchResult {
   tried: DispatchChannel[];
   email: ChannelSendResult;
   text: ChannelSendResult;
+  /** REQ-922: the sheet picked Paper — POST /invoices/:id/paper, the PDF
+   *  saved; `delivered` = the server issued it and the PDF came back */
+  paper?: boolean;
+}
+
+/** REQ-922: save a PDF Response in the browser as its attachment name. */
+async function savePdf(r: Response, fallback: string): Promise<void> {
+  const blob = await r.blob();
+  const m = /filename="([^"]+)"/.exec(
+    r.headers.get("content-disposition") ?? "",
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = m?.[1] ?? fallback;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // the download has the blob before a navigation (Issue invoice reloads)
+  await new Promise((res) => setTimeout(res, 400));
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** REQ-922: "Paper" — the server issues the invoice (Out for payment, never
+ *  Drafting) and answers its PDF, which the browser saves. */
+async function dispatchPaper(id: string): Promise<DispatchResult> {
+  let ok = false;
+  try {
+    const r = await fetch(`/api/invoices/${id}/paper`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (r.ok) {
+      await savePdf(r, `invoice-${id}.pdf`);
+      ok = true;
+    } else await r.body?.cancel();
+  } catch { /* ok stays false — the sheet's copy says the PDF failed */ }
+  return {
+    delivered: ok,
+    partial: false,
+    failedChannels: [],
+    noRecipient: false,
+    tried: [],
+    email: NOT_TRIED,
+    text: NOT_TRIED,
+    paper: true,
+  };
 }
 
 /** REQ-727: the result held for a channel the sheet did not pick — never
@@ -3219,6 +3285,7 @@ async function dispatchInvoice(
   id: string,
   pick: SendDialogPick & { hasCustomer: boolean },
 ): Promise<DispatchResult> {
+  if (pick.channel === "paper") return await dispatchPaper(id);
   const tried = dispatchChannels(pick.channel);
   const settled = await Promise.allSettled(
     tried.map((ch) =>
@@ -3288,6 +3355,12 @@ function dispatchFailureCopy(
   d: DispatchResult,
   opts: { number?: string; keptDraft?: boolean } = {},
 ): string {
+  // REQ-922: Paper failed — no channel to name, the PDF never came
+  if (d.paper) {
+    return tFor(lang, "invoicesPage.send.paperFailed", {
+      number: opts.number ?? tFor(lang, "invoicesPage.send.invoiceFallback"),
+    });
+  }
   return invoiceNotDeliveredCopy((key, params) => tFor(lang, key, params), {
     number: opts.number,
     // REQ-727: only the channels the send sheet picked are named
@@ -3408,7 +3481,12 @@ function useInvoiceDispatch(
       if (d.delivered && !d.partial) {
         onFlash({
           cy: "invoice-sent",
-          text: tFor(lang, "invoicesPage.flash.sent"),
+          // REQ-922: Paper says where the PDF'd invoice went
+          text: d.paper
+            ? tFor(lang, "invoicesPage.flash.paper", {
+              number: inv.invoiceRef,
+            })
+            : tFor(lang, "invoicesPage.flash.sent"),
         });
       } else if (d.delivered) onFlash(partialParts(lang, d));
       else {
@@ -3468,7 +3546,12 @@ function useInvoiceDispatch(
       if (d.delivered && !d.partial) {
         onFlash({
           cy: "invoice-sent",
-          text: tFor(lang, "invoicesPage.flash.sent"),
+          // REQ-922: Paper says where the PDF'd invoice went
+          text: d.paper
+            ? tFor(lang, "invoicesPage.flash.paper", {
+              number: inv.invoiceRef,
+            })
+            : tFor(lang, "invoicesPage.flash.sent"),
         });
       } else if (d.delivered) onFlash(partialParts(lang, d));
       else {
@@ -5170,6 +5253,7 @@ function NewInvoiceModal(
         ...pick,
         hasCustomer: !!pickedId,
       });
+      if (d.paper && d.delivered) paperFlash(inv.number);
       if (!d.delivered || d.partial) {
         try {
           globalThis.sessionStorage?.setItem(
@@ -5562,6 +5646,7 @@ function NewInvoiceModal(
     hasCustomer: boolean,
   ) {
     const d = await dispatchInvoice(invoice.id, { ...pick, hasCustomer });
+    if (d.paper && d.delivered) paperFlash(invoice.number);
     if (!d.delivered || d.partial) {
       try {
         globalThis.sessionStorage?.setItem(
@@ -5579,6 +5664,21 @@ function NewInvoiceModal(
         );
       } catch { /* storage unavailable — the reload still happens */ }
     }
+  }
+  /** REQ-922: Paper's PDF saved — said in green after the reload. */
+  function paperFlash(number?: string) {
+    try {
+      globalThis.sessionStorage?.setItem(
+        SEND_FLASH_KEY,
+        JSON.stringify({
+          text: tFor(lang, "invoicesPage.flash.paper", {
+            number: number ?? tFor(lang, "invoicesPage.send.invoiceFallback"),
+          }),
+          partial: false,
+          ok: true,
+        }),
+      );
+    } catch { /* storage unavailable — the reload still happens */ }
   }
   /** REQ-727: Cancel on the sheet — the invoice "Issue invoice" created stays
    *  a draft (in Drafting), and the page says it was not sent. */

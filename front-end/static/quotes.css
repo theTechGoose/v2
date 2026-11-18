@@ -1590,6 +1590,16 @@
   opacity: 0.6;
   cursor: default;
 }
+/* REQ-922: what Paper does, in place of "What they'll get" */
+.send-dialog__paper-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2, #f4f6f5);
+  color: var(--fg-muted, #4a5a5e);
+  font-size: 13px;
+  line-height: 1.45;
+}
 .send-dialog__add {
   display: flex;
   flex-direction: column;

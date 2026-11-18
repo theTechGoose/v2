@@ -8,15 +8,19 @@
  * Pure: shared by the island and its tests.
  */
 import type {
-  SendChannel,
   SendDialogCustomer,
   SendDialogPick,
+  SendSheetChannel,
 } from "./send-dialog.ts";
 import type { DispatchChannel } from "../../shared/quote-flow/send-result.ts";
 import { dueDateFrom } from "../../shared/documents/invoice-form.ts";
 
-/** The endpoints a pick posts to (POST /invoices/:id/email | /text). */
-export function dispatchChannels(channel: SendChannel): DispatchChannel[] {
+/** The endpoints a pick posts to (POST /invoices/:id/email | /text).
+ *  REQ-922: Paper posts to neither — it is POST /invoices/:id/paper. */
+export function dispatchChannels(
+  channel: SendSheetChannel,
+): DispatchChannel[] {
+  if (channel === "paper") return [];
   if (channel === "email") return ["email"];
   if (channel === "sms") return ["text"];
   return ["email", "text"];
