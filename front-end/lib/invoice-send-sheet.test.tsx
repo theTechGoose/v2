@@ -129,3 +129,76 @@ Deno.test("REQ-727 (c4-M16) a client with only a phone starts on Text; with noth
     "Enviar",
   );
 });
+
+/* ---------------- REQ-922: Paper ---------------- */
+
+import { SendDialog } from "../components/QuoteSendDialog.tsx";
+import QuoteSendDialog from "../components/QuoteSendDialog.tsx";
+import { dispatchChannels } from "./invoice-send-sheet.ts";
+
+Deno.test("REQ-922 the invoice send sheet offers Paper beside the three channels — no 'needs an email' tag, even with nothing on file — in both languages", () => {
+  for (const [ui, label] of [["en", "Paper"], ["es", "Papel"]] as const) {
+    const doc = render(null, ui);
+    const opt = doc.querySelector('[data-cy="send-option-paper"]');
+    assert(opt, `Paper is offered (${ui})`);
+    assertStringIncludes(opt.textContent, label);
+    assertEquals(
+      doc.querySelector('[data-cy="send-needs-paper"]'),
+      null,
+      "paper needs no contact",
+    );
+  }
+});
+
+Deno.test("REQ-922 with Paper picked the sheet asks for no email or phone, shows no 'What they'll get', and its Send reads 'Save PDF'", () => {
+  const doc = parse(renderToString(
+    <SendDialog
+      lang="en"
+      title="How do you want to send INV-001 to your client?"
+      customer={null}
+      paper
+      initialChannel="paper"
+      loadPreview={() => new Promise(() => {})}
+      previewKey="inv-1"
+      errorKey="invoicesPage.send.sheetError"
+      onCancel={() => {}}
+      onSend={() => Promise.resolve()}
+    />,
+  ));
+  assertEquals(
+    doc.querySelector('[data-cy="send-option-paper"]')!.getAttribute(
+      "aria-checked",
+    ),
+    "true",
+  );
+  assertEquals(doc.querySelector('[data-cy="send-add-email"]'), null);
+  assertEquals(doc.querySelector('[data-cy="send-add-phone"]'), null);
+  assert(
+    doc.querySelector('[data-cy="send-paper-note"]'),
+    "says what Paper does",
+  );
+  assertStringIncludes(
+    doc.querySelector('[data-cy="send-paper-note"]')!.textContent,
+    "Out for payment",
+  );
+  assertEquals(
+    doc.querySelector('[data-cy="send-keep"]')!.textContent.trim(),
+    "Save PDF",
+  );
+});
+
+Deno.test("REQ-922 the quote send dialog does not offer Paper; Paper posts to no email / text endpoint", () => {
+  const doc = parse(renderToString(
+    <QuoteSendDialog
+      lang="en"
+      quoteId="q-1"
+      customer={{ id: "c-1", name: "Juan", email: "j@example.com" }}
+      initialChannel="email"
+      onClose={() => {}}
+      onSent={() => {}}
+    />,
+  ));
+  assert(doc.querySelector('[data-cy="send-option-email"]'));
+  assertEquals(doc.querySelector('[data-cy="send-option-paper"]'), null);
+  assertEquals(dispatchChannels("paper"), []);
+});

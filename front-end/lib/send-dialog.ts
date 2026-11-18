@@ -24,6 +24,9 @@ import {
 } from "../../shared/quote-flow/comms-language.ts";
 
 export type SendChannel = "both" | "sms" | "email";
+/** REQ-922: the invoice send sheet's channels — the three, plus Paper (the
+ *  invoice saved as a PDF to hand over; nothing is emailed or texted). */
+export type SendSheetChannel = SendChannel | "paper";
 
 export interface ContactOnFile {
   email?: string | null;
@@ -291,7 +294,8 @@ export interface SendDialogCustomer {
  * customer when the dialog has one to save it to).
  */
 export interface SendDialogPick {
-  channel: SendChannel;
+  /** REQ-922: "paper" only from a sheet that offers it (the invoice's) */
+  channel: SendSheetChannel;
   language: "en" | "es";
   typed: { email: string; phone: string };
 }
