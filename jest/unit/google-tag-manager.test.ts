@@ -19,6 +19,7 @@ import {
   gtmHeadScript,
   gtmNoscriptSrc,
   isGtmId,
+  PROD_GTM_ID,
   REAL_GTM_LOADER,
 } from "../../shared/google-tag-manager/gtm";
 
@@ -63,11 +64,13 @@ describe("REQ-183 Google Tag Manager on every page, behind GTM_ID", () => {
         id: "GTM-ABC1234",
         loader: REAL_GTM_LOADER,
       });
-    // the real deploy without an id: nothing — never a placeholder in prod
-    expect(gtmConfig({ DENO_DEPLOY: "true" })).toBeNull();
-    expect(gtmConfig({ GTM_ID: "", DENO_DEPLOY: "true" })).toBeNull();
+    // REQ-183 AMENDMENT (2026-11-17): the real deploy without an id (or with the
+    // placeholder) runs on the production container — never nothing, never GTM-XXXXXXX
+    const prod = { mode: "real", id: PROD_GTM_ID, loader: REAL_GTM_LOADER };
+    expect(gtmConfig({ DENO_DEPLOY: "true" })).toEqual(prod);
+    expect(gtmConfig({ GTM_ID: "", DENO_DEPLOY: "true" })).toEqual(prod);
     expect(gtmConfig({ GTM_ID: "GTM-XXXXXXX", DENO_DEPLOY: "true" }))
-      .toBeNull();
+      .toEqual(prod);
     // the gate and a dev box: the fake, under the id when set, the placeholder when not
     expect(gtmConfig({})).toEqual({
       mode: "fake",
@@ -129,5 +132,31 @@ describe("REQ-183 Google Tag Manager on every page, behind GTM_ID", () => {
     const js = read(fakeFile);
     expect(js).toMatch(/data-gtm-loaded/);
     expect(js).not.toMatch(/googletagmanager|google-analytics/);
+  });
+});
+
+describe("REQ-183 AMENDMENT (2026-11-17) the real container is GTM-5RGD3DP4", () => {
+  it("REQ-183 the production container is the module's default on the real deploy; GTM_ID still overrides it; a dev box never loads it for real", () => {
+    expect(PROD_GTM_ID).toBe("GTM-5RGD3DP4");
+    expect(isGtmId(PROD_GTM_ID)).toBe(true);
+    const m = read(".env.example").match(/prod(?:uction)?:\s*(GTM-[A-Z0-9]+)/);
+    expect(m?.[1]).toBe(PROD_GTM_ID);
+    expect(gtmConfig({ DENO_DEPLOYMENT_ID: "x1" })).toEqual({
+      mode: "real",
+      id: PROD_GTM_ID,
+      loader: REAL_GTM_LOADER,
+    });
+    expect(gtmConfig({ GTM_ID: "GTM-ABC1234", DENO_DEPLOY: "true" })!.id).toBe("GTM-ABC1234");
+    expect(gtmConfig({})).toEqual({ mode: "fake", id: FAKE_GTM_ID, loader: FAKE_GTM_LOADER });
+    expect(gtmHeadScript(gtmConfig({ DENO_DEPLOY: "true" })!)).toContain(
+      "'https://www.googletagmanager.com/gtm.js?id='+i+dl",
+    );
+    expect(gtmHeadScript(gtmConfig({ DENO_DEPLOY: "true" })!)).toContain("'GTM-5RGD3DP4');");
+    expect(read("shared/google-tag-manager/gtm.ts")).toMatch(/export const PROD_GTM_ID = "GTM-5RGD3DP4"/);
+    expect(gtmConfig({ GTM_ID: "GTM-5RGD3DP4", DENO_DEPLOY: "true" })).toEqual({
+      mode: "real",
+      id: "GTM-5RGD3DP4",
+      loader: REAL_GTM_LOADER,
+    });
   });
 });

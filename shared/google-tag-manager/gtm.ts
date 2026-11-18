@@ -11,8 +11,12 @@
  *    letters/digits — it is interpolated into an inline script, and anything
  *    else counts as unset.
  *  - WHICH loader: Google's on the real deploy (DENO_DEPLOY / the platform's
- *    DENO_DEPLOYMENT_ID set) with an id; NOTHING on the real deploy without
- *    one — tag management never takes the site down; the app's own fake
+ *    DENO_DEPLOYMENT_ID set). REQ-183 AMENDMENT (Raphael, 2026-11-17: "I
+ *    think this is missing the real Google Tag Manager container number.
+ *    GTM-5RGD3DP4"): the real deploy runs on the production container
+ *    PROD_GTM_ID when GTM_ID is unset or not a container id — the account's
+ *    id is public on every served page, so it lives here, not in a secret;
+ *    GTM_ID still overrides it (a second container, a test one). The app's own fake
  *    (`/gtm-fake.js`, which only marks the document) when neither is set —
  *    REQ-318: the gate, a dev box and a pin run on fakes, so test traffic
  *    never lands in the container's reports. On fakes the id is GTM_ID when
@@ -25,6 +29,8 @@ export const REAL_GTM_LOADER = "https://www.googletagmanager.com/gtm.js";
 export const FAKE_GTM_LOADER = "/gtm-fake.js";
 export const REAL_GTM_NOSCRIPT = "https://www.googletagmanager.com/ns.html";
 export const FAKE_GTM_ID = "GTM-FAKE000";
+/** the production container (Emily Keck's account) — the real deploy's default (REQ-183 AMENDMENT) */
+export const PROD_GTM_ID = "GTM-5RGD3DP4";
 
 export interface GtmConfig {
   mode: "real" | "fake";
@@ -46,7 +52,7 @@ export function isGtmId(id: string): boolean {
   return /^GTM-[A-Z0-9]+$/.test(id) && id !== "GTM-XXXXXXX";
 }
 
-/** Google's loader on the real deploy with an id, nothing there without one; the fake elsewhere */
+/** Google's loader on the real deploy — GTM_ID, else the production container; the fake elsewhere */
 export function gtmConfig(env: GtmEnv): GtmConfig | null {
   const realDeploy = Boolean(env.DENO_DEPLOY?.trim()) ||
     Boolean(env.DENO_DEPLOYMENT_ID?.trim());
@@ -55,7 +61,7 @@ export function gtmConfig(env: GtmEnv): GtmConfig | null {
   if (!realDeploy) {
     return { mode: "fake", id: id || FAKE_GTM_ID, loader: FAKE_GTM_LOADER };
   }
-  return id ? { mode: "real", id, loader: REAL_GTM_LOADER } : null;
+  return { mode: "real", id: id || PROD_GTM_ID, loader: REAL_GTM_LOADER };
 }
 
 /** Google's container snippet, verbatim — only the loader's url and the id are the config's */
