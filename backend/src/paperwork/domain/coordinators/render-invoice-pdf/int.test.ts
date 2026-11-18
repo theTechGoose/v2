@@ -394,3 +394,96 @@ Deno.test("REQ-923 invoice PDFs: with checks on and no mail-to, both the invoice
   }
   await resetKv();
 });
+
+// REQ-928 — "when an invoice is paid, it should show the method of payment and
+// when it was paid in all views. print electronic or other." Both PDFs — the
+// invoice PDF and the printed invoice — say how and when; a paid invoice from
+// before REQ-928 (no paidMethods) reads its payment row.
+Deno.test("REQ-928 invoice PDFs: a paid invoice prints 'Paid <date> · Electronic (Venmo)' / 'Other (Check)' on both PDFs", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const invoices = new InvoiceStore();
+  const customers = new CustomerStore();
+  const identities = new BusinessIdentityStore();
+  await seedContractor("u-1");
+  await identities.upsert(
+    "u-1",
+    { businessName: "A2Z Landscape LLC" } as never,
+  );
+  const customer = await customers.create("u-1", {
+    name: "Robert Thall",
+    email: "rt@acme.test",
+  });
+  const base = {
+    customerId: customer.id,
+    jobName: "Lawn",
+    lineItems: [{
+      description: "Lawn",
+      quantity: 1,
+      unit: "visit",
+      price: 6500,
+    }],
+    amount: 6500,
+    paidCents: 6500,
+    status: "paid",
+    paidAt: "2026-11-11T15:00:00.000Z",
+  };
+  const venmo = await invoices.create(
+    "u-1",
+    { ...base, paidMethods: ["venmo"] } as never,
+  );
+  const legacy = await invoices.create("u-1", base as never);
+  const { PaymentStore } = await import(
+    "@paperwork/domain/data/payment-store/mod.ts"
+  );
+  await new PaymentStore().create("u-1", {
+    invoiceId: legacy.id,
+    amount: 6500,
+    method: "check",
+    receivedAt: "2026-11-11T15:00:00.000Z",
+  });
+  const pdfOf = async (id: string) =>
+    await drawnUpper(
+      await new RenderInvoicePdf(
+        invoices,
+        new QuoteStore(),
+        customers,
+        new UserStore(),
+        identities,
+      ).run(id),
+    );
+  const printOf = async (id: string) =>
+    await drawnUpper(
+      await new RenderInvoicePrintPdf(
+        invoices,
+        customers,
+        new UserStore(),
+        identities,
+        new BusinessAddressStore(),
+        new LoadBusinessLogo(),
+      ).run("u-1", [id]),
+    );
+  for (
+    const [name, up] of [["invoice PDF", await pdfOf(venmo.id)], [
+      "printed invoice",
+      await printOf(venmo.id),
+    ]]
+  ) {
+    assert(
+      up.includes(hexOf("Paid November 11, 2026 · Electronic (Venmo)")),
+      `${name}: the paid line with the method`,
+    );
+  }
+  for (
+    const [name, up] of [["invoice PDF", await pdfOf(legacy.id)], [
+      "printed invoice",
+      await printOf(legacy.id),
+    ]]
+  ) {
+    assert(
+      up.includes(hexOf("Paid November 11, 2026 · Other (Check)")),
+      `${name}: a pre-REQ-928 invoice reads its payment`,
+    );
+  }
+  await resetKv();
+});

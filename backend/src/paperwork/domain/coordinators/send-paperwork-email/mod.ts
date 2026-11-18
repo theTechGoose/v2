@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { paidHow } from "#documents/paid-how.ts"; // REQ-928
 import { EventBus } from "@core/business/events/mod.ts";
 import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
@@ -1379,11 +1380,13 @@ export function renderInvoicePaidSubject(
 /** REQ-020: the money-card label — "Amount due" on a bill, "PAID <date>"
  *  on the invoice stamped paid. */
 function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean): string {
-  return paid
-    ? t(lang, "paperworkEmail.invoice.paidLabel", {
-      date: fmtDate(i.paidAt ?? new Date().toISOString(), lang),
-    })
-    : t(lang, "paperworkEmail.invoice.amountDueLabel");
+  if (!paid) return t(lang, "paperworkEmail.invoice.amountDueLabel");
+  const label = t(lang, "paperworkEmail.invoice.paidLabel", {
+    date: fmtDate(i.paidAt ?? new Date().toISOString(), lang),
+  });
+  // REQ-928: and how — "PAID Apr 20, 2026 · Electronic (Credit card)"
+  const how = paidHow((k, v) => t(lang, k, v), i.paidMethods);
+  return how ? `${label} · ${how}` : label;
 }
 
 export function renderInvoiceHtml(

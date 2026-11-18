@@ -24,6 +24,7 @@
  * Tracks for charged-back/attention render conditionally — when there's no data
  * for them the page reads cleanly without empty sections.
  */
+import { paidHow } from "../../shared/documents/paid-how.ts"; // REQ-928
 import Backdrop from "../components/Backdrop.tsx";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
@@ -109,6 +110,10 @@ const METHOD_KEY: Record<PaymentMethod, string> = {
 
 const methodLabel = (lang: Lang, m: PaymentMethod): string =>
   tFor(lang, METHOD_KEY[m]);
+
+/** REQ-928: a landed payment says Electronic or Other — "Electronic (Venmo)". */
+const paidMethodLabel = (lang: Lang, m: PaymentMethod): string =>
+  paidHow((k, v) => tFor(lang, k, v), [m]);
 
 const METHOD_AV_BG: Record<PaymentMethod, string> = {
   ach: "linear-gradient(135deg,#4F8C6B,#2F6448)",
@@ -976,7 +981,7 @@ function PaymentCard(
             {tFor(lang, "paymentsPage.card.method")}
           </div>
           <div class="qcard__val-num" style="font-size:13px">
-            {methodLabel(lang, p.method)}
+            {paidMethodLabel(lang, p.method)}
           </div>
         </div>
       </div>
@@ -999,7 +1004,7 @@ function PaymentCard(
           </div>
           <p class="qcard__back-big">
             {fmtMoney(p.amount)}
-            <small>· {methodLabel(lang, p.method)}</small>
+            <small>· {paidMethodLabel(lang, p.method)}</small>
           </p>
         </div>
         <div class="qcard__back-body">
@@ -1172,7 +1177,7 @@ function LandedRow(
       <div class="qdone__body">
         <div class="qdone__title">{p.client}</div>
         <div class="qdone__sub">
-          {methodLabel(lang, p.method)} · {p.whenLabel} · {p.invoiceRef}
+          {paidMethodLabel(lang, p.method)} · {p.whenLabel} · {p.invoiceRef}
         </div>
       </div>
       <div class="qdone__amt">{fmtMoney(p.amount)}</div>

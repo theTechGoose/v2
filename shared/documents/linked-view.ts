@@ -334,6 +334,8 @@ export interface LinkedInvoiceLike {
   balanceCents?: number;
   dueDate?: string;
   paidAt?: string;
+  /** REQ-928: how it was paid */
+  paidMethods?: string[];
 }
 
 export interface LinkedChangeOrderLike {
@@ -356,6 +358,9 @@ export interface RelatedDocumentRow {
   balanceCents?: number;
   deltaAmountCents?: number;
   dueDate?: string;
+  /** REQ-928: a paid invoice row says when and how (printed with paidLine) */
+  paidAt?: string;
+  paidMethods?: string[];
   description?: string;
   /** REQ-457: a change order still waiting for the customer's approval */
   pending?: boolean;
@@ -387,6 +392,9 @@ export function relatedDocumentRows(
       balanceCents: i.balanceCents ??
         Math.max(0, (i.amountCents ?? 0) - (i.paidCents ?? 0)),
       ...(i.dueDate ? { dueDate: i.dueDate } : {}),
+      // REQ-928: when and how a paid one was paid
+      ...(i.paidAt ? { paidAt: i.paidAt } : {}),
+      ...(i.paidMethods?.length ? { paidMethods: i.paidMethods } : {}),
     });
   }
   for (const co of payload.changeOrders ?? []) {

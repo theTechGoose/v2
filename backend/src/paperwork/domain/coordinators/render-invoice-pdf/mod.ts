@@ -47,6 +47,9 @@ import {
   payOptionLines,
 } from "@paperwork/domain/business/pay-options/mod.ts"; // REQ-805
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
+import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
+import { fillPaidMethods } from "@paperwork/domain/coordinators/fill-paid-methods/mod.ts"; // REQ-928
+import { paidLine } from "#documents/paid-how.ts"; // REQ-928
 import {
   drawBrandMark,
   embedLogo,
@@ -93,11 +96,17 @@ export class RenderInvoicePdf {
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
     /** REQ-923: where checks are sent when the check's own mail-to is blank */
     private addresses: BusinessAddressStore = new BusinessAddressStore(),
+    /** REQ-928: a pre-REQ-928 paid invoice's methods come from its payments */
+    private payments: PaymentStore = new PaymentStore(),
   ) {}
 
   async run(invoiceId: string): Promise<Uint8Array> {
     // REQ-161: the standard fonts encode WinAnsi only — every string drawn comes from here
-    const invoice = winAnsiSafeDeep(await this.invoices.get(invoiceId));
+    const invoice = winAnsiSafeDeep(
+      (await fillPaidMethods(this.payments, [
+        await this.invoices.get(invoiceId),
+      ]))[0],
+    );
     // customer / contractor / ident depend only on the invoice, so fan them
     // out concurrently with the quote fetch instead of awaiting serially
     // (this is an uncached, customer-facing "Download PDF" endpoint).
@@ -335,7 +344,8 @@ export class RenderInvoicePdf {
       { x: M + 16, y: y - 22, size: 9, font: bold, color: GREEN },
     );
     const sub = paid
-      ? fmtDate(invoice.paidAt)
+      // REQ-928: when and how — "Paid November 11, 2026 · Electronic (Venmo)"
+      ? paidLine((k, v) => t(lang, k, v), lang === "es" ? "es" : "en", invoice)
       : partial
       ? payState.headline
       : invoice.dueDate
