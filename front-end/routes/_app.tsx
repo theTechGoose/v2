@@ -3,6 +3,8 @@ import { define } from "../utils.ts";
 import MobileViewport from "../islands/MobileViewport.tsx";
 import ImpersonationBanner from "../islands/ImpersonationBanner.tsx";
 import DemoModeOverlay from "../islands/DemoModeOverlay.tsx";
+import IdleLogout from "../islands/IdleLogout.tsx"; // REQ-929
+import { idleMinutesOf } from "../../shared/idle-logout/mod.ts";
 import { adminEndedNotice } from "../lib/demo-mode/pill-carry.ts";
 import HtmlLang from "../islands/HtmlLang.tsx";
 import MetaPixel from "../components/MetaPixel.tsx";
@@ -259,6 +261,14 @@ export default define.page(function App(ctx) {
               endedNotice={adminEndedNotice(url.pathname, url.search)}
             />
           )
+          : null}
+        {
+          /* REQ-929 — sign out after inactivity: on the signed-in app pages (their middleware put
+            the person on ctx.state.user), with HER own minutes; 0 renders nothing until Settings
+            picks a time. */
+        }
+        {hasSession && ctx.state.user
+          ? <IdleLogout minutes={idleMinutesOf(ctx.state.user)} />
           : null}
         <Component />
       </body>

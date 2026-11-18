@@ -6,7 +6,8 @@ import { NotFoundError } from "@core/data/repository/mod.ts";
 import type { Language, User } from "@users/dto/user.ts";
 
 /** the fields a profile patch may change (REQ-113: everything else a PUT /me body carries is dropped) */
-const PROFILE_FIELDS: ReadonlySet<string> = new Set(["name", "email", "language"]);
+// REQ-929: idleLogoutMinutes — the person's own sign-out-after-inactivity minutes
+const PROFILE_FIELDS: ReadonlySet<string> = new Set(["name", "email", "language", "idleLogoutMinutes"]);
 
 /**
  * Phone numbers that are ALWAYS super admins — hardcoded in source, so the
@@ -192,7 +193,7 @@ export class UserStore {
    */
   async update(
     id: string,
-    patch: Partial<Pick<User, "name" | "email" | "language">>,
+    patch: Partial<Pick<User, "name" | "email" | "language" | "idleLogoutMinutes">>,
   ): Promise<User> {
     const existing = await this.get(id);
     const definedPatch = Object.fromEntries(

@@ -128,6 +128,11 @@ import { Icon } from "../components/ui/Icon.tsx";
 import AddressAutocomplete from "../components/AddressAutocomplete.tsx"; // REQ-861
 import { addressPick, type AddressSuggestion } from "../lib/mapbox.ts"; // REQ-861
 import {
+  IDLE_LOGOUT_CHOICES,
+  IDLE_MINUTES_EVENT,
+  idleMinutesOf,
+} from "../../shared/idle-logout/mod.ts"; // REQ-929
+import {
   CardGridSkeleton,
   PageHeaderSkeleton,
   ShimmerStyle,
@@ -3635,6 +3640,88 @@ function DangerZoneCard(
   );
 }
 
+/** REQ-929 — Security: "Sign out after inactivity". The person's own (PUT /me writes hers while
+ *  acting); the shell's IdleLogout timer follows the pick at once through IDLE_MINUTES_EVENT. */
+function IdleLogoutCard(
+  { snapshot, onSaved }: {
+    snapshot: ProfileSnapshot;
+    onSaved: (partial: Partial<ProfileSnapshot>) => void;
+  },
+) {
+  const lang: Lang = langSignal.value === "es" ? "es" : "en";
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const value = idleMinutesOf({
+    idleLogoutMinutes: snapshot.user.idleLogoutMinutes,
+    actor: snapshot.actor,
+  });
+  const label = (m: number) =>
+    m === 0
+      ? tFor(lang, "settings.idleNever")
+      : m === 60
+      ? tFor(lang, "settings.idleHour")
+      : m > 60
+      ? tFor(lang, "settings.idleHours", { n: String(m / 60) })
+      : tFor(lang, "settings.idleMinutes", { n: String(m) });
+
+  async function save(minutes: number) {
+    setBusy(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const { actor, ...u } = await profileClient.updateUser({
+        idleLogoutMinutes: minutes,
+      });
+      onSaved({
+        user: { ...snapshot.user, ...u } as typeof snapshot.user,
+        ...(actor ? { actor } : {}),
+      });
+      globalThis.dispatchEvent(
+        new CustomEvent(IDLE_MINUTES_EVENT, { detail: { minutes } }),
+      );
+      setSaved(true);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : tFor(lang, "settings.saveFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <EditPanel
+      title={tFor(lang, "settings.security")}
+      busy={busy}
+      err={err}
+      saved={saved}
+      saving={tFor(lang, "settings.saving")}
+      savedLabel={tFor(lang, "settings.saved")}
+      dataCy="settings-security"
+      id="security"
+    >
+      <label style="display:block">
+        <span style={labelStyle}>{tFor(lang, "settings.idleLogout")}</span>
+        <select
+          data-cy="settings-idle-logout"
+          style={inputStyle}
+          value={String(value)}
+          disabled={busy}
+          onChange={(e) => save(Number((e.target as HTMLSelectElement).value))}
+        >
+          {IDLE_LOGOUT_CHOICES.map((m) => (
+            <option key={m} value={String(m)}>{label(m)}</option>
+          ))}
+        </select>
+        <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted)">
+          {tFor(lang, "settings.idleLogoutHint")}
+        </span>
+      </label>
+    </EditPanel>
+  );
+}
+
 /**
  * REQ-623 (demo cycle 4, M26) — the business's automatic payment reminders:
  * an on/off switch for every invoice and the cadence days (3 / 7 / 14 / 30)
@@ -3945,6 +4032,9 @@ export default function SettingsPage() {
           </div>
 
           <EditCard snapshot={p} onSaved={onSaved} />
+
+          {/* REQ-929 — sign out after inactivity (the person's own) */}
+          <IdleLogoutCard snapshot={p} onSaved={onSaved} />
 
           <div class="grid">
             <AddressEditCard snapshot={p} onSaved={onSaved} />

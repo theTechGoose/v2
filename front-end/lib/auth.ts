@@ -29,7 +29,11 @@ export interface User {
     email?: string;
     /** REQ-631 — HER UI language (her own record's); every SSR route renders in it */
     language?: "en" | "es";
+    /** REQ-929 — HER sign-out-after-inactivity minutes */
+    idleLogoutMinutes?: number;
   };
+  /** REQ-929 — sign out after this many idle minutes (0/unset = Never) */
+  idleLogoutMinutes?: number;
   createdAt: number;
   updatedAt: number;
 }
