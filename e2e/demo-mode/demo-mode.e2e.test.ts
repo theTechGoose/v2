@@ -572,10 +572,11 @@ Deno.test("REQ-153 + REQ-179 + REQ-180 + REQ-181 + REQ-187 + REQ-188: the admin 
       );
 
       // 6. REQ-187 — the customer's screen is the truth: a page, the drawer, the map, a scroll
-      await userPage.goto(`${baseUrl}/customers`);
+      // REQ-924 AMENDMENT: /quotes, a root page — /customers rests on the Customers context (no folders to open)
+      await userPage.goto(`${baseUrl}/quotes`);
       await until(
-        "the frame follows to /customers",
-        async () => (await mirrorPath(page)) === "/customers",
+        "the frame follows to /quotes",
+        async () => (await mirrorPath(page)) === "/quotes",
         20_000,
       );
       expect.eq(

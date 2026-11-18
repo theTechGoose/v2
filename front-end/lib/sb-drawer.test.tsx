@@ -28,7 +28,7 @@ Deno.test("REQ-358 the resting folder: the active page's folder, the root otherw
   assertEquals(restingPath("tasks"), ["field"]); // REQ-361: the folder is "field" now
   assertEquals(restingPath("admin"), []); // REQ-604: the super-admin tab sits on the root
   assertEquals(restingPath("home"), []);
-  assertEquals(restingPath("customers"), []);
+  assertEquals(restingPath("customers"), ["@customers"]); // REQ-924 AMENDMENT: the Customers context
   assertEquals(restingPath(undefined), []);
 });
 

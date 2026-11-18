@@ -2,7 +2,7 @@
  * REQ-358 — demo issue m45 (cycle 1): on a 390 px phone the sidebar drawer had no close
  * button, painted over the ☰ that toggles it, and re-opened on the last folder browsed.
  * Now: the drawer's head has a 44 px ✕ inside the drawer; ✕, the backdrop and Escape all
- * close it; and it always re-opens at the page's own folder (the root on /customers).
+ * close it; and it always re-opens at the page's own folder (the root on /quotes — REQ-924: /customers rests on the Customers context).
  */
 import { story, type StoryTools } from "#shots";
 
@@ -82,7 +82,8 @@ Deno.test("REQ-358: at 390 px the drawer has a 44 px ✕; ✕, backdrop and Esca
       );
     };
 
-    await page.goto("/customers");
+    // REQ-924 AMENDMENT: /customers rests on the Customers context now; /quotes is a root page with the shell
+    await page.goto("/quotes");
     await menu.waitFor({ timeout: 20_000 });
     await sb.locator("[data-cy='nav-folder-billing']").waitFor({
       state: "attached",

@@ -57,7 +57,8 @@ Deno.test("REQ-156: the root shows Field (REQ-361, was Recurring) and none of th
       );
 
     // 1. the root: Field (REQ-361) is a row, the five are not (/customers: a new account's /dashboard lands on the /welcome wizard, which has no sidebar — REQ-091)
-    await page.goto("/customers");
+    // REQ-924 AMENDMENT: /customers rests on the Customers context now; /quotes is a root page with the shell
+    await page.goto("/quotes");
     await nav.locator("[data-cy='nav-folder-field']").waitFor({
       timeout: 20_000,
     });

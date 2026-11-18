@@ -6,8 +6,11 @@
  */
 import { folderPathTo } from "./nav-folders.ts";
 import { NAV } from "./nav-tree.ts";
+import { CUSTOMERS_CONTEXT, isCustomersPage } from "./customer-nav.ts";
 
 export function restingPath(active: string | undefined): string[] {
+  // REQ-924: the customer pages rest on the Customers context — the list of customers
+  if (isCustomersPage(active)) return [CUSTOMERS_CONTEXT];
   return folderPathTo(NAV, active);
 }
 

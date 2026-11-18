@@ -301,20 +301,21 @@ Deno.test("REQ-799 phone: at 390px the topbar search is the Customers page's sea
       !!rowBox && rowBox.x >= 0 && rowBox.x + rowBox.width <= 390,
       `the result row fits the phone (${JSON.stringify(rowBox)})`,
     );
+    // REQ-924 AMENDMENT: on /customers the search is scoped to Customers — a customer result opens her page
     await clickUntil(
       page,
       row("customer", customer.number),
       () =>
         Promise.resolve(
-          new URL(page.url()).searchParams.get("open") === customer.id,
+          new URL(page.url()).pathname === `/customers/${customer.id}`,
         ),
     );
-    await page.locator("[data-cy='client-sheet-name']").waitFor({
+    await page.locator("[data-cy='cws-name']").waitFor({
       timeout: 15_000,
     });
     expect(
-      (await page.locator("[data-cy='client-sheet-name']").innerText())
+      (await page.locator("[data-cy='cws-name']").innerText())
         .includes("Zelda Ortiz"),
-      "the sheet names her",
+      "her page names her",
     );
   }));

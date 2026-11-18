@@ -332,6 +332,45 @@ export default function FieldSubscriptionsPage(
     refreshCatalog();
   }
 
+  // REQ-924: the customer page's "Start recurring service" (?new=1&customerId=<id>) opens the form
+  // with her chosen and her address filled; its "Edit" (?edit=<subscription>) opens that one; with
+  // ?back=<path> a save returns there
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (deepLinked.current || typeof globalThis.location === "undefined") {
+      return;
+    }
+    const p = new URLSearchParams(globalThis.location.search);
+    const edit = p.get("edit");
+    if (edit) {
+      const sub = subs?.find((x) => x.id === edit);
+      if (!sub) return;
+      deepLinked.current = true;
+      openEdit(sub);
+      return;
+    }
+    if (p.get("new") !== "1") {
+      deepLinked.current = true;
+      return;
+    }
+    const customerId = p.get("customerId");
+    if (customerId && !customers.length) return;
+    deepLinked.current = true;
+    const c = customers.find((x) => x.id === customerId);
+    setConfirmId(null);
+    setForm({
+      ...blankForm(defaultNetDays),
+      ...(c ? { customerId: c.id, address: c.address ?? "" } : {}),
+    });
+  }, [customers, subs]);
+
+  /** REQ-924: back to the page that sent us here (a same-site path only) */
+  function backTarget(): string | null {
+    if (typeof globalThis.location === "undefined") return null;
+    const back = new URLSearchParams(globalThis.location.search).get("back");
+    return back && back.startsWith("/") && !back.startsWith("//") ? back : null;
+  }
+
   function openEdit(s: SubscriptionView) {
     setConfirmId(null);
     setForm(formFor(s, defaultNetDays));
@@ -499,6 +538,11 @@ export default function FieldSubscriptionsPage(
         });
       }
       close();
+      const back = backTarget();
+      if (back) {
+        globalThis.location.assign(back);
+        return;
+      }
       await reload();
     } catch (err) {
       setForm((

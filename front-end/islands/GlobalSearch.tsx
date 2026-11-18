@@ -15,10 +15,14 @@ import { dashboardClient, type SearchHit } from "../clients/dashboard.ts";
 import { langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import {
   bestHit,
-  groupHits,
   recordPaymentUrl,
   searchHitLine,
 } from "../../shared/documents/search.ts";
+import {
+  scopedUrl,
+  scopeGroups,
+  type SearchScope,
+} from "../lib/scoped-search.ts"; // REQ-924
 
 const DEBOUNCE_MS = 250;
 const PER_TYPE = 8;
@@ -43,6 +47,8 @@ const CSS = `
 .gsearch__sub,.gsearch__related{grid-column:1/-1;font-size:12px;color:var(--fg-muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .gsearch__related a{margin-left:6px;color:var(--brand-teal);text-decoration:underline;white-space:nowrap}
 .gsearch__note{padding:10px;font-size:13px;color:var(--fg-muted)}
+.gsearch__scope{display:inline-flex;align-items:center;gap:4px;flex-shrink:0;background:var(--brand-teal);color:#fff;font-size:11px;font-weight:700;border-radius:999px;padding:3px 4px 3px 9px;white-space:nowrap}
+.gsearch__scope button{border:0;background:rgba(255,255,255,.22);color:#fff;width:16px;height:16px;border-radius:50%;font-size:11px;line-height:1;display:grid;place-items:center;padding:0;cursor:pointer}
 @media (max-width:720px){.topbar__search{max-width:none}.gsearch__panel{position:fixed;left:8px;right:8px;top:64px}}
 @media (max-width:640px){.gsearch__panel{position:absolute;left:0;right:0;top:calc(100% + 6px)}}
 `;
@@ -68,8 +74,14 @@ function isTypingTarget(t: EventTarget | null): boolean {
     el.isContentEditable === true;
 }
 
-export default function GlobalSearch() {
+/** REQ-924: `scope` — the Customers context: a "Customers" chip, the open customer's results first,
+ *  a customer result opens her page. × (or Backspace in an empty box) searches everything again. */
+export default function GlobalSearch(
+  { scope }: { scope?: SearchScope | null } = {},
+) {
   const lang = langSignal.value;
+  const [scoped, setScoped] = useState(!!scope);
+  const sc = scoped && scope ? scope : null;
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [state, setState] = useState<"idle" | "loading" | "ready" | "error">(
@@ -129,7 +141,7 @@ export default function GlobalSearch() {
           limit: PER_TYPE,
         });
         if (seq.current !== id) return;
-        const ordered = groupHits(results).flatMap((g) => g.hits);
+        const ordered = scopeGroups(results, sc).flatMap((g) => g.hits);
         setHits(ordered);
         setAnswered(query);
         setState("ready");
@@ -141,14 +153,14 @@ export default function GlobalSearch() {
       }
     }, DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, scoped]);
 
-  const groups = groupHits(hits);
+  const groups = scopeGroups(hits, sc);
   const showPanel = open && q.trim() !== "";
 
   function go(hit: SearchHit) {
     setOpen(false);
-    globalThis.location.assign(hit.url);
+    globalThis.location.assign(scopedUrl(hit, sc));
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -165,6 +177,8 @@ export default function GlobalSearch() {
         e.preventDefault();
         go(hit);
       }
+    } else if (e.key === "Backspace" && sc && q === "") {
+      setScoped(false);
     } else if (e.key === "Escape") {
       setOpen(false);
       inputRef.current?.blur();
@@ -193,11 +207,32 @@ export default function GlobalSearch() {
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
+      {sc && (
+        <span class="gsearch__scope" data-cy="global-search-scope">
+          {tFor(lang, "customerWs.search.scope")}
+          <button
+            type="button"
+            aria-label={tFor(lang, "customerWs.search.everything")}
+            title={tFor(lang, "customerWs.search.everything")}
+            data-cy="global-search-scope-clear"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setScoped(false);
+              inputRef.current?.focus();
+            }}
+          >
+            ×
+          </button>
+        </span>
+      )}
       <input
         ref={inputRef}
         type="search"
         value={q}
-        placeholder={tFor(lang, "search.placeholder")}
+        placeholder={tFor(
+          lang,
+          sc ? "customerWs.search.placeholder" : "search.placeholder",
+        )}
         aria-label={tFor(lang, "search.label")}
         aria-expanded={showPanel}
         aria-controls="gsearch-list"
@@ -239,12 +274,16 @@ export default function GlobalSearch() {
           )}
           {groups.map((g) => (
             <div
-              key={g.type}
+              key={g.key}
               class="gsearch__group"
-              data-cy={`global-search-group-${g.type}`}
+              data-cy={`global-search-group-${g.key}`}
             >
               <div class="gsearch__heading">
-                {tFor(lang, `search.group.${g.type}`)}
+                {g.key === "mine"
+                  ? tFor(lang, "customerWs.search.in", {
+                    name: sc?.customerName ?? "",
+                  })
+                  : tFor(lang, `search.group.${g.key}`)}
               </div>
               {g.hits.map((h) => {
                 const idx = hits.indexOf(h);
@@ -266,7 +305,7 @@ export default function GlobalSearch() {
                     data-type={h.type}
                     data-number={h.number}
                     data-id={h.id}
-                    data-url={h.url}
+                    data-url={scopedUrl(h, sc)}
                     onMouseEnter={() => setActive(idx)}
                     onMouseDown={(e) => {
                       // before the input blurs and the panel closes

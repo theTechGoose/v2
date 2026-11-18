@@ -2347,11 +2347,16 @@ export class FieldBatchesController {
     if (!isValidDate(from) || !isValidDate(to) || from > to) {
       throw new FieldError("from/to must be YYYY-MM-DD, from ≤ to");
     }
+    // REQ-924: an optional customer — the customer page bills only hers
+    if (b.customerId !== undefined && typeof b.customerId !== "string") {
+      throw new FieldError("customerId must be a string");
+    }
     const r = await this.batches.pull(
       user.id,
       from,
       to,
       user.language === "es" ? "es" : "en",
+      (b.customerId as string | undefined) || undefined,
     );
     return ctx.json(r, r.invoices.length ? 201 : 200);
   }

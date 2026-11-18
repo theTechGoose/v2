@@ -86,6 +86,8 @@ export interface CustomerCard {
   lastWhen: string | null;
   lastTone: ClientLastTone;
   balanceCents: number;
+  /** REQ-924: the part of the balance past due (the sidebar's "$X overdue"); absent on rows from before it */
+  overdueCents?: number;
   /** The balance sub-line in English — the neutral base (REQ-204/350). */
   balanceSub: string;
   /** REQ-350 + REQ-367: the same line as data — clients-display words it in the live language */

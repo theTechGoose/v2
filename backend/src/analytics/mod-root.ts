@@ -8,6 +8,9 @@ import { ComputeDashboardStats } from "@analytics/domain/coordinators/compute-da
 import { ListActiveJobs } from "@analytics/domain/coordinators/list-active-jobs/mod.ts";
 import { GlobalSearch } from "@analytics/domain/coordinators/global-search/mod.ts";
 import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
+import { BuildCustomerWorkspace } from "@analytics/domain/coordinators/build-customer-workspace/mod.ts"; // REQ-924
+import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
+import { ChecklistStore, CrewStore, FieldTaskStore, FieldWorkerStore, RegionStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { BuildQuoteCards } from "@analytics/domain/coordinators/build-quote-cards/mod.ts";
 import { ComputeQuoteWinRate } from "@analytics/domain/coordinators/compute-quote-win-rate/mod.ts";
 import { ComputeQuoteInsight } from "@analytics/domain/coordinators/compute-quote-insight/mod.ts";
@@ -44,6 +47,16 @@ import { QuotesController } from "@analytics/entrypoints/quotes-controller/mod.t
     ListActiveJobs,
     GlobalSearch,
     BuildCustomerCards,
+    // REQ-924: the customer workspace reads the repeat visits (the field stores are stateless KV wrappers)
+    BuildCustomerWorkspace,
+    FieldViews,
+    SubscriptionStore,
+    FieldTaskStore,
+    TaskTypeStore,
+    FieldWorkerStore,
+    RegionStore,
+    ChecklistStore,
+    CrewStore,
     BuildQuoteCards,
     ComputeQuoteWinRate,
     ComputeQuoteInsight,

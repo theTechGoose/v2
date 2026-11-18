@@ -60,7 +60,9 @@ Deno.test("REQ-359: /customers highlights Customers; no sidebar link is underlin
 
     await page.goto("/customers");
     const nav = page.locator(".sb__nav");
-    await nav.locator("[data-cy='nav-folder-billing']").waitFor({
+    // REQ-924 AMENDMENT: /customers rests on the Customers context — its "All customers" row
+    // (a link to /customers) is the active one; the root's Billing folder is behind Back
+    await nav.locator("[data-cy='nav-customers-all']").waitFor({
       timeout: 20_000,
     });
     await page.locator("a.nav-item[href='/customers']").waitFor({
