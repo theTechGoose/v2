@@ -1,6 +1,7 @@
 import { Injectable } from "#danet/core";
 import { getKv } from "@core/data/kv/mod.ts";
 import type { BusinessIdentity, UpdateBusinessIdentityDto } from "@profile/dto/business-identity.ts";
+import { withSendLanguageDefault } from "#quote-flow/comms-language.ts";
 
 /**
  * BusinessIdentityStore — single document per user, keyed by userId.
@@ -16,7 +17,8 @@ export class BusinessIdentityStore {
   async get(userId: string): Promise<BusinessIdentity | null> {
     const kv = await getKv();
     const result = await kv.get<BusinessIdentity>([this.prefix, userId]);
-    return result.value ?? null;
+    // REQ-925: a default outside Settings → "Languages you send in" never leaks out
+    return result.value ? withSendLanguageDefault(result.value) : null;
   }
 
   async upsert(userId: string, patch: UpdateBusinessIdentityDto): Promise<BusinessIdentity> {
@@ -41,8 +43,9 @@ export class BusinessIdentityStore {
     }
 
     const kv = await getKv();
-    await kv.set([this.prefix, userId], merged);
-    return merged;
+    const stored = withSendLanguageDefault(merged); // REQ-925
+    await kv.set([this.prefix, userId], stored);
+    return stored;
   }
 
   /** Walk the alias namespace and append -2/-3/... until we hit a slot that

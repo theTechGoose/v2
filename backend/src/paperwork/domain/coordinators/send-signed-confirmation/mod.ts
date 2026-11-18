@@ -168,6 +168,7 @@ export class SendSignedConfirmation {
     const lang: Lang = resolveCommsLanguage({
       customerLanguage: customer?.language,
       identityCommsLanguage: ident?.commsLanguage,
+      sendLanguages: ident?.commsLanguages, // REQ-925
     });
 
     // ---- 0. REQ-699 (demo-loop cycle 5, M20): a recurring payment term is

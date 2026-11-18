@@ -335,6 +335,7 @@ export class SendPaymentReminder {
     const lang = resolveCommsLanguage({
       customerLanguage: customer?.language,
       identityCommsLanguage: biz?.commsLanguage,
+      sendLanguages: biz?.commsLanguages, // REQ-925
     });
     // REQ-628: never DocuMonster — the business, else the sender, else a neutral word
     const businessName = biz?.businessName?.trim() || biz?.legalName?.trim() || sender?.name?.trim() || t(lang, "paymentReminder.senderFallback");

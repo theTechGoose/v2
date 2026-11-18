@@ -1,4 +1,8 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  clampToSendLanguages,
+  offersLangToggle,
+} from "../../../shared/quote-flow/comms-language.ts"; // REQ-925
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
@@ -89,6 +93,8 @@ interface Contractor {
   acceptedPaymentMethods?: Record<string, { enabled?: boolean }>;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
+  /** REQ-925: Settings → "Languages you send in" — the page renders only in these. */
+  sendLanguages?: string[];
   /** True when the contractor uploaded a business logo (roadmap p.2). */
   hasLogo?: boolean;
   /** REQ-613 (M31): the logo's version — part of its URL, so a replaced logo is a new URL. */
@@ -257,15 +263,19 @@ export default define.page(async function PublicInvoice(ctx) {
   // document's generation language (P-12). The claim + change-order islands
   // below receive this same resolved language.
   const url = new URL(ctx.req.url);
-  const lang: Lang = resolvePublicLang({
-    query: url.searchParams.get("lang"),
-    cookie: ctx.req.headers.get("cookie"),
-    // REQ-586 (cycle 4, M11): the invoice's own document language (its
-    // `lang`, else the language its quote was sent in) ahead of the
-    // contractor's default.
-    docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
-    header: ctx.req.headers.get("accept-language"),
-  });
+  // REQ-925: …and never outside the contractor's Settings → "Languages you send in"
+  const lang: Lang = clampToSendLanguages(
+    resolvePublicLang({
+      query: url.searchParams.get("lang"),
+      cookie: ctx.req.headers.get("cookie"),
+      // REQ-586 (cycle 4, M11): the invoice's own document language (its
+      // `lang`, else the language its quote was sent in) ahead of the
+      // contractor's default.
+      docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
+      header: ctx.req.headers.get("accept-language"),
+    }),
+    invoice?.contractor?.sendLanguages,
+  );
   const err = r.ok ? undefined : tFor(lang, "publicInvoice.error.expired");
   // <html lang> says what this page actually paints (REQ-122 contract).
   ctx.state.lang = lang;
@@ -301,13 +311,16 @@ export default define.page(async function PublicInvoice(ctx) {
       >
         <div style="flex:1;width:100%;max-width:712px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
           {/* REQ-272: the same EN | ES switch the contract has (REQ-048) */}
-          <PublicLangToggle
-            lang={lang}
-            hrefs={{
-              en: langToggleHref(url.href, "en"),
-              es: langToggleHref(url.href, "es"),
-            }}
-          />
+          {/* REQ-925: no switch into a language Settings left out */}
+          {offersLangToggle(invoice?.contractor?.sendLanguages) && (
+            <PublicLangToggle
+              lang={lang}
+              hrefs={{
+                en: langToggleHref(url.href, "en"),
+                es: langToggleHref(url.href, "es"),
+              }}
+            />
+          )}
           {err || !invoice
             ? (
               <ErrorCard

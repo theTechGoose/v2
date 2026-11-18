@@ -85,6 +85,7 @@ import { invoiceDocLang } from "#quote-flow/share-link.ts"; // REQ-586
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-697
 import {
   asCommsLang,
+  clampOptionalToSendLanguages,
   type CommsLang,
   resolveCommsLanguage,
 } from "#quote-flow/comms-language.ts"; // REQ-715
@@ -462,6 +463,8 @@ export class PaperworkPublicController {
       // customer's own language, else the contractor's outgoing-comms
       // language. Defaults EN if neither can be read.
       let commsLanguage: "en" | "es" = coCustomerLang ?? "en";
+      // REQ-925: the contractor's send-in set — /co renders only in it
+      let sendLanguages: CommsLang[] | undefined;
       // REQ-205: the documents this order belongs to, as clickable links
       let invoiceLink: {
         id: string;
@@ -486,10 +489,12 @@ export class PaperworkPublicController {
         };
         const ident = await this.identity.get(inv.userId).catch(() => null);
         businessName = ident?.businessName ?? ident?.legalName ?? undefined;
+        sendLanguages = sendLanguagesField(ident?.commsLanguages).sendLanguages;
         commsLanguage = resolveCommsLanguage({
           customerLanguage: coCustomerLang ??
             await customerLanguageOf(this.customers, inv.customerId, co.userId),
           identityCommsLanguage: ident?.commsLanguage,
+          sendLanguages: ident?.commsLanguages, // REQ-925
         });
         const quoteId = co.quoteId ?? inv.quoteId;
         if (quoteId) {
@@ -551,6 +556,7 @@ export class PaperworkPublicController {
         ...(internal ? { internal: true } : {}),
         businessName,
         commsLanguage,
+        ...(sendLanguages ? { sendLanguages } : {}),
         decidedAt: co.decidedAt,
       });
     } catch (e) {
@@ -804,7 +810,8 @@ export class PaperworkPublicController {
         contractor,
         customer,
         // REQ-715: the customer's own language, when one is on file
-        ...(docLang ? { docLang } : {}),
+        // REQ-925: never a language Settings → "Languages you send in" left out
+        ...docLangField(docLang, contractor),
         invoices,
         changeOrders: cos.map(projectLinkedChangeOrder),
         ...(changesFromPrevious ? { changesFromPrevious } : {}),
@@ -1321,7 +1328,8 @@ export class PaperworkPublicController {
         // REQ-586 (cycle 4, M11): the document's language — /i reads it
         // ahead of the contractor's default commsLanguage (REQ-715: the
         // customer's own language first).
-        ...(docLang ? { docLang } : {}),
+        // REQ-925: never a language Settings → "Languages you send in" left out
+        ...docLangField(docLang, contractor),
         ...(visits ? { visits } : {}),
         siblings: sortedSiblings,
         changeOrders: cos.map(projectLinkedChangeOrder),
@@ -2010,6 +2018,9 @@ interface PublicContractor {
    *  in this language so the customer reads everything in their language.
    *  Defaults to "en". */
   commsLanguage?: string;
+  /** REQ-925: Settings → "Languages you send in". The public pages render
+   *  only in these and show no EN | ES toggle when there is one. */
+  sendLanguages?: CommsLang[];
   /** True when the contractor uploaded a business logo. Public doc pages
    *  use it to render GET /public-logo/:kind/:id (roadmap p.2 — the logo
    *  shows on quotes & invoices). */
@@ -2065,6 +2076,7 @@ async function loadContractor(
         ident?.acceptedPaymentMethods,
       ),
       commsLanguage: ident?.commsLanguage === "es" ? "es" : "en",
+      ...sendLanguagesField(ident?.commsLanguages), // REQ-925
       invoiceNetDays: accountNetDays(ident?.invoiceNetDays), // REQ-697
       // REQ-252: no <img> for a logo that would not draw; REQ-613: its version rides along
       ...(ident?.logoFileId &&
@@ -2075,6 +2087,27 @@ async function loadContractor(
   } catch {
     return undefined;
   }
+}
+
+/** REQ-925: `docLang`, clamped to the contractor's send-in set; nothing when absent. */
+function docLangField(
+  docLang: string | null | undefined,
+  contractor: PublicContractor | undefined,
+): { docLang?: CommsLang } {
+  const l = clampOptionalToSendLanguages(docLang, contractor?.sendLanguages);
+  return l ? { docLang: l } : {};
+}
+
+/** REQ-925: the stored send-in set, en/es only, or nothing when none is stored. */
+function sendLanguagesField(
+  list: string[] | null | undefined,
+): { sendLanguages?: CommsLang[] } {
+  const out: CommsLang[] = [];
+  for (const v of list ?? []) {
+    const l = asCommsLang(v);
+    if (l && !out.includes(l)) out.push(l);
+  }
+  return out.length ? { sendLanguages: out } : {};
 }
 
 /** Strip ACH routing/account numbers from the public projection — the

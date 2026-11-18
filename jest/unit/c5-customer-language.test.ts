@@ -154,13 +154,23 @@ describe("REQ-715 the send dialog's 'Sends in' starts on the customer's language
     expect(defaultSendLang({}, "es")).toBe("es");
     expect(defaultSendLang(null, "en")).toBe("en");
     expect(defaultSendLang({ language: "fr" }, "en")).toBe("en");
+    // REQ-925: clamped to Settings → "Languages you send in"
+    expect(defaultSendLang({ language: "es" }, "en", ["en"])).toBe("en");
+    expect(defaultSendLang({}, "es", ["en"])).toBe("en");
+    expect(defaultSendLang({ language: "es" }, "en", ["en", "es"])).toBe("es");
   });
 
   it("REQ-715 sendLangChoices: app language first, the send languages, and the customer's language when it is missing", () => {
     const { sendLangChoices } = dialog();
-    expect(sendLangChoices("en", ["en"], "es")).toEqual(["en", "es"]);
+    // REQ-925 AMENDS these: English only in Settings offers English only —
+    // never the customer's (or the app's) Spanish.
+    expect(sendLangChoices("en", ["en"], "es")).toEqual(["en"]);
     expect(sendLangChoices("en", ["en", "es"], "es")).toEqual(["en", "es"]);
-    expect(sendLangChoices("es", ["en"], undefined)).toEqual(["es", "en"]);
+    expect(sendLangChoices("es", ["en"], undefined)).toEqual(["en"]);
+    expect(sendLangChoices("es", ["en", "es"], undefined)).toEqual([
+      "es",
+      "en",
+    ]);
     expect(sendLangChoices("en", [], undefined)).toEqual(["en"]);
     expect(sendLangChoices("en", ["fr"], "xx")).toEqual(["en"]);
   });
@@ -266,12 +276,14 @@ describe("REQ-715 wiring — every place a customer is made or edited, and every
   it("REQ-715 the New invoice modal's new client carries the language", () => {
     expect(invoices()).toMatch(/<CustomerLanguageSelect/);
     // REQ-715 AMENDMENT (reconciled with develop's REQ-625 shared form)
-    expect(invoices()).toMatch(/customerCreatePayload\(newClient, newLanguage\)/);
+    expect(invoices()).toMatch(
+      /customerCreatePayload\(newClient, newLanguage\)/,
+    );
   });
 
   it("REQ-715 both send dialogs start 'Sends in' on the customer's language", () => {
-    expect(sendDialog()).toMatch(/defaultSendLang\(customer,\s*lang\)/);
-    expect(chat()).toMatch(/defaultSendLang\(customer,\s*lang\)/);
+    expect(sendDialog()).toMatch(/defaultSendLang\(customer,\s*lang[,)]/);
+    expect(chat()).toMatch(/defaultSendLang\(customer,\s*lang[,)]/);
     expect(chat()).toMatch(/sendLangChoices\(/);
   });
 

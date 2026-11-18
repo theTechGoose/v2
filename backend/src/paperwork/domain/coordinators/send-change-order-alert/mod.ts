@@ -136,6 +136,7 @@ export class SendChangeOrderAlert {
     const coLang: Lang = resolveCommsLanguage({
       customerLanguage: liveCustomer?.language,
       identityCommsLanguage: ident?.commsLanguage,
+      sendLanguages: ident?.commsLanguages, // REQ-925
     });
     const businessName = ident?.businessName?.trim() ||
       (ident as { legalName?: string } | null)?.legalName?.trim() ||

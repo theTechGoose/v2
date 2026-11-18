@@ -53,6 +53,8 @@ interface Sender {
   ownerLang: NoticeLang;
   /** the business's comms language (a customer with none of their own) */
   commsLang: NoticeLang;
+  /** REQ-925: Settings → "Languages you send in" — a customer text never leaves it. */
+  sendLanguages?: string[];
   tz: string;
 }
 
@@ -67,6 +69,7 @@ const customerLang = (
   resolveCommsLanguage({
     customerLanguage: customer?.language,
     identityCommsLanguage: s.commsLang,
+    sendLanguages: s.sendLanguages, // REQ-925
   });
 
 @Injectable()
@@ -117,6 +120,7 @@ export class FieldNotices {
       owner,
       ownerLang: user.language === "es" ? "es" : "en",
       commsLang: identity?.commsLanguage === "es" ? "es" : "en",
+      ...(identity?.commsLanguages ? { sendLanguages: identity.commsLanguages } : {}),
       tz: await this.zone(userId, identity?.timezone),
     };
   }

@@ -82,6 +82,7 @@ export class PreviewInvoiceSend {
     const lang = resolveCommsLanguage({
       override: input.lang ?? invoiceDocLang(stored, quote),
       identityCommsLanguage: rawBiz?.commsLanguage,
+      sendLanguages: rawBiz?.commsLanguages, // REQ-925
     });
     const displayName = outboundSenderName({
       userName: sender?.name,

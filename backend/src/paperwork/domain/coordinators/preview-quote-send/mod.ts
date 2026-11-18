@@ -83,6 +83,7 @@ export class PreviewQuoteSend {
       override: input.lang,
       customerLanguage: customer?.language,
       identityCommsLanguage: rawBiz?.commsLanguage,
+      sendLanguages: rawBiz?.commsLanguages, // REQ-925
     });
     const displayName = outboundSenderName({
       userName: sender?.name,

@@ -20,6 +20,10 @@ import {
 } from "../../shared/quote-flow/public-quote-error.ts";
 import { langSignal, persistLang, writeLangToUrl } from "../lib/lang.ts";
 import { contractLangOnLoad } from "../../shared/quote-flow/public-lang.ts"; // REQ-715
+import {
+  clampToSendLanguages,
+  offersLangToggle,
+} from "../../shared/quote-flow/comms-language.ts"; // REQ-925
 import { startPublicQuoteRefresh } from "../lib/live-doc-refresh.ts";
 import { enterSignInPerson } from "../lib/sign-in-person.ts";
 import {
@@ -90,7 +94,10 @@ export default function PublicQuoteView(
       for (const l of ["en", "es"] as const) {
         el?.setAttribute(titleAttr(l), tFor(l, "quoteDoc.cantOpen"));
       }
-      document.title = tFor(picked ? lang : (errorLang ?? lang), "quoteDoc.cantOpen");
+      document.title = tFor(
+        picked ? lang : (errorLang ?? lang),
+        "quoteDoc.cantOpen",
+      );
     }
   }, [s.phase]);
   function pick(next: Lang) {
@@ -131,7 +138,11 @@ export default function PublicQuoteView(
       ))}
     </div>
   );
-  const toggle = toggleFor(lang);
+  // REQ-925: the contractor's Settings → "Languages you send in" — one language, no switch
+  const sendLangs = s.phase === "ok"
+    ? s.quote?.contractor?.sendLanguages
+    : undefined;
+  const toggle = offersLangToggle(sendLangs) ? toggleFor(lang) : null;
 
   // REQ-715 (demo-loop cycle 5, m31): a visitor who chose no language (no
   // ?lang=, no pm_lang pick, no tap yet) reads the contract in the language
@@ -140,19 +151,20 @@ export default function PublicQuoteView(
   // pick: no cookie, no ?lang= written.
   const docLang = s.phase === "ok" ? s.quote?.docLang : undefined;
   useLayoutEffect(() => {
-    if (picked) return;
-    const next = contractLangOnLoad({
+    const opened = picked ? lang : contractLangOnLoad({
       opened: lang,
       chosen: chosen === true,
       docLang,
     });
+    // REQ-925: never a language Settings left out — not even the visitor's own pick
+    const next = clampToSendLanguages(opened, sendLangs);
     if (next === lang) return;
     setLang(next);
     langSignal.value = next;
     if (typeof document !== "undefined") {
       document.title = tFor(next, "quoteDoc.docTitle");
     }
-  }, [docLang]);
+  }, [docLang, sendLangs?.join(",")]);
 
   useEffect(() => {
     let alive = true;

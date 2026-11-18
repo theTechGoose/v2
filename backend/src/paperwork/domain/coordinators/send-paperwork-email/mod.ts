@@ -189,6 +189,7 @@ export class SendPaperworkEmail {
       override,
       customerLanguage: customer?.language,
       identityCommsLanguage: biz?.commsLanguage,
+      sendLanguages: biz?.commsLanguages, // REQ-925
     });
   }
 
@@ -209,6 +210,7 @@ export class SendPaperworkEmail {
         override: input.language,
         customerLanguage: customer?.language,
         identityCommsLanguage: rawBiz?.commsLanguage,
+        sendLanguages: rawBiz?.commsLanguages, // REQ-925
       }),
     } as BusinessIdentity);
 
