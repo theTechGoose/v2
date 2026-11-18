@@ -26,6 +26,8 @@
  */
 import { paidHow } from "../../shared/documents/paid-how.ts"; // REQ-928
 import Backdrop from "../components/Backdrop.tsx";
+import MarkPaidDialog from "../components/MarkPaidDialog.tsx"; // REQ-930
+import { confirmPaymentInit } from "../lib/mark-paid.ts"; // REQ-930
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   type Payment,
@@ -1077,7 +1079,10 @@ function ClaimCard(
     })
     : tFor(lang, "paymentsPage.claim.note", { name, method });
 
-  async function act(action: "confirm" | "reject") {
+  // REQ-930: "Got it" opens the Mark as paid modal for the reference number
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
+
+  async function act(action: "confirm" | "reject", reference = "") {
     if (busy) return;
     setBusy(true);
     setFailed(false);
@@ -1085,15 +1090,18 @@ function ClaimCard(
       ? `/api/invoices/${c.invoiceId}/confirm-payment`
       : `/api/invoices/${c.invoiceId}/reject-claim`;
     try {
-      const r = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-      });
+      const r = await fetch(
+        url,
+        action === "confirm"
+          ? confirmPaymentInit(reference)
+          : { method: "POST", credentials: "include" },
+      );
       await r.body?.cancel();
       if (!r.ok) {
         setFailed(true);
         return;
       }
+      setMarkPaidOpen(false);
       // REQ-554 (demo-loop cycle 4, m23): the sidebar's Invoices badge
       // reads the dash cache — a settled claim re-counts it.
       refreshDash().catch(() => {/* the badge keeps its last count */});
@@ -1140,7 +1148,10 @@ function ClaimCard(
           class="qcard__cta"
           data-cy="payment-claim-confirm"
           disabled={busy}
-          onClick={() => act("confirm")}
+          onClick={() => {
+            setFailed(false);
+            setMarkPaidOpen(true);
+          }}
         >
           {tFor(lang, "paymentsPage.claim.confirm")}{" "}
           <span style="display:inline-block;transition:transform 240ms">→</span>
@@ -1155,6 +1166,16 @@ function ClaimCard(
           {tFor(lang, "paymentsPage.claim.reject")}
         </button>
       </div>
+      {markPaidOpen && (
+        <MarkPaidDialog
+          lang={lang}
+          initialReference={c.reference}
+          busy={busy}
+          failed={failed}
+          onCancel={() => setMarkPaidOpen(false)}
+          onConfirm={(ref) => act("confirm", ref)}
+        />
+      )}
     </article>
   );
 }

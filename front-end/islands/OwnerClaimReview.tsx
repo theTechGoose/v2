@@ -1,4 +1,7 @@
 import { useState } from "preact/hooks";
+import MarkPaidDialog from "../components/MarkPaidDialog.tsx"; // REQ-930
+import { confirmPaymentInit } from "../lib/mark-paid.ts"; // REQ-930
+import type { Lang } from "../lib/i18n.ts";
 import {
   confirmPaymentPath,
   type OwnerClaimNote,
@@ -10,6 +13,10 @@ interface Props {
   invoiceId: string;
   /** The note's copy, already in the page's language (ownerClaimNote()). */
   copy: OwnerClaimNote;
+  /** REQ-930: the page's language, for the Mark as paid modal */
+  lang: Lang;
+  /** REQ-930: the customer's claimed reference — the modal's prefill */
+  reference?: string;
 }
 
 const INK = "#1c2c30";
@@ -21,17 +28,25 @@ const TEAL = "#144852";
  * then Confirm received (confirm-payment) / Didn't get it (reject-claim) —
  * the actions /invoices and /payments offer — and the invoice on /invoices.
  * Either action reloads the page, which then shows the paid / reopened state.
+ * REQ-930: Confirm received opens the Mark as paid modal (reference number)
+ * first; only its Mark as paid posts confirm-payment.
  */
-export default function OwnerClaimReview({ invoiceId, copy }: Props) {
+export default function OwnerClaimReview(
+  { invoiceId, copy, lang, reference }: Props,
+) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
 
-  async function act(url: string) {
+  async function act(url: string, init?: RequestInit) {
     if (busy) return;
     setBusy(true);
     setFailed(false);
     try {
-      const r = await fetch(url, { method: "POST", credentials: "include" });
+      const r = await fetch(
+        url,
+        init ?? { method: "POST", credentials: "include" },
+      );
       await r.body?.cancel();
       if (!r.ok) {
         setFailed(true);
@@ -66,7 +81,10 @@ export default function OwnerClaimReview({ invoiceId, copy }: Props) {
           type="button"
           data-cy="owner-claim-confirm"
           disabled={busy}
-          onClick={() => act(confirmPaymentPath(invoiceId))}
+          onClick={() => {
+            setFailed(false);
+            setMarkPaidOpen(true);
+          }}
           style={`background:${TEAL};color:#fff;border:0;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer`}
         >
           {copy.confirm}
@@ -99,6 +117,17 @@ export default function OwnerClaimReview({ invoiceId, copy }: Props) {
           </p>
         )
         : null}
+      {markPaidOpen && (
+        <MarkPaidDialog
+          lang={lang}
+          initialReference={reference}
+          busy={busy}
+          failed={failed}
+          onCancel={() => setMarkPaidOpen(false)}
+          onConfirm={(ref) =>
+            act(confirmPaymentPath(invoiceId), confirmPaymentInit(ref))}
+        />
+      )}
     </section>
   );
 }

@@ -870,14 +870,22 @@ export class InvoiceController {
   }
 
   /** Contractor confirms a customer's claimed payment. Records a Payment
-   *  row, flips the invoice to paid, fires the PDF receipt. */
+   *  row, flips the invoice to paid, fires the PDF receipt.
+   *  REQ-930: an optional `{ reference }` (the "Mark as paid" modal) is the
+   *  reference recorded; no body keeps the customer's claimed one. */
   @Post(":id/confirm-payment")
   async confirmPayment(
     @Context() ctx: ExecutionContext,
     @Param("id") id: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const result = await this.confirm.run(user.id, id);
+    const body = await ctx.req.json().catch(() => null) as
+      | { reference?: unknown }
+      | null;
+    const reference = typeof body?.reference === "string"
+      ? body.reference
+      : undefined;
+    const result = await this.confirm.run(user.id, id, { reference });
     return ctx.json(result, result.ok ? 200 : 409);
   }
 

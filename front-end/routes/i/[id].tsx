@@ -1435,6 +1435,8 @@ function OwnerClaimedNote(
         methodName: methodFriendly(intent.method, l),
         reference: intent.reference,
       })}
+      lang={l}
+      reference={intent.reference}
     />
   );
 }

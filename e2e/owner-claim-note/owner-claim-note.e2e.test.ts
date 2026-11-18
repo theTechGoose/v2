@@ -124,7 +124,13 @@ Deno.test("REQ-557 M25: the owner's claimed /i/:id says 'Juan says they paid by 
       i++
     ) {
       try {
-        await page.locator("[data-cy=owner-claim-confirm]").click({
+        // REQ-930: Confirm received opens the Mark as paid modal first
+        if ((await page.locator("[data-cy=mark-paid-dialog]").count()) === 0) {
+          await page.locator("[data-cy=owner-claim-confirm]").click({
+            timeout: 2_000,
+          });
+        }
+        await page.locator("[data-cy=mark-paid-confirm]").click({
           timeout: 2_000,
         });
         await page.waitForTimeout(1_000);

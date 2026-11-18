@@ -54,13 +54,14 @@ describe("REQ-554 /invoices cards re-read in place (M9, m23, m43, m52)", () => {
   });
 
   test("REQ-554 m43 'Payment confirmed' / 'Didn't get it' re-read in place — no page reload — and say what happened", () => {
-    for (const fn of ["doConfirmReceived", "doRejectClaim"]) {
+    // REQ-930: the confirm itself runs from the Mark as paid modal (doMarkPaid)
+    for (const fn of ["doMarkPaid", "doRejectClaim"]) {
       const body = fnBody(src, fn);
       expect(body).not.toMatch(/location\.reload\(/);
       expect(body).toMatch(/onRefresh\(/);
       expect(body).toMatch(/onFlash\(/);
     }
-    expect(fnBody(src, "doConfirmReceived")).toMatch(
+    expect(fnBody(src, "doMarkPaid")).toMatch(
       /invoicesPage\.flash\.paymentConfirmed/,
     );
     expect(fnBody(src, "doRejectClaim")).toMatch(
