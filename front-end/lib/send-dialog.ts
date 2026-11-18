@@ -20,6 +20,7 @@ import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { phoneCantReceiveTexts } from "../../shared/quote-flow/sms-number.ts";
 import {
   asCommsLang,
+  clampToSendLanguages,
   type CommsLang,
 } from "../../shared/quote-flow/comms-language.ts";
 
@@ -246,13 +247,18 @@ export function sendOpenLabelKey(channel: SendChannel): string {
  * REQ-715 (demo-loop cycle 5, m31 + c4-M34): the language "Sends in" starts
  * on — the customer's own language (Customer.language, "Carmen reads
  * Spanish") when one is on file, else the app language. The contractor can
- * still pick the other one for this send.
+ * still pick the other one for this send. REQ-925: never a language outside
+ * Settings → "Languages you send in" (when the account has stored them).
  */
 export function defaultSendLang(
   customer: { language?: string | null } | null | undefined,
   appLang: string,
+  sendLanguages?: readonly string[] | null,
 ): CommsLang {
-  return asCommsLang(customer?.language) ?? (appLang === "es" ? "es" : "en");
+  return clampToSendLanguages(
+    asCommsLang(customer?.language) ?? (appLang === "es" ? "es" : "en"),
+    sendLanguages,
+  );
 }
 
 /**
@@ -260,6 +266,8 @@ export function defaultSendLang(
  * contractor's send languages (Settings; English when none), then the
  * customer's own language when it is not among them, so the language the
  * dialog starts on is always one of its choices. en | es only, no repeats.
+ * REQ-925: when Settings → "Languages you send in" names languages, ONLY
+ * those — English only never offers Spanish (app language first among them).
  */
 export function sendLangChoices(
   appLang: string,
@@ -267,12 +275,17 @@ export function sendLangChoices(
   customerLang?: string | null,
 ): CommsLang[] {
   const out: CommsLang[] = [];
+  const allowed = (sendLanguages ?? []).map((l) => asCommsLang(l)).filter(
+    (l): l is CommsLang => !!l,
+  );
   const add = (v: string | null | undefined) => {
     const l = asCommsLang(v);
-    if (l && !out.includes(l)) out.push(l);
+    if (l && !out.includes(l) && (!allowed.length || allowed.includes(l))) {
+      out.push(l);
+    }
   };
   add(appLang);
-  for (const l of sendLanguages?.length ? sendLanguages : ["en"]) add(l);
+  for (const l of allowed.length ? allowed : ["en"]) add(l);
   add(customerLang);
   return out;
 }

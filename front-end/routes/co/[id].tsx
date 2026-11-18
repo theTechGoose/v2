@@ -1,4 +1,8 @@
 import { asset, Head } from "fresh/runtime";
+import {
+  clampToSendLanguages,
+  offersLangToggle,
+} from "../../../shared/quote-flow/comms-language.ts"; // REQ-925
 import { define } from "../../utils.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
@@ -45,6 +49,8 @@ interface ChangeOrderPublic {
   /** REQ-628: the business has a logo on file (served via /api/public-logo/invoice/:invoiceId) */
   hasLogo?: boolean;
   commsLanguage?: "en" | "es";
+  /** REQ-925: Settings → "Languages you send in" — the page renders only in these. */
+  sendLanguages?: string[];
   decidedAt?: string;
 }
 
@@ -81,12 +87,15 @@ export default define.page(async function PublicChangeOrder(ctx) {
   // visitor's own saved choice (pm_lang cookie), over the document's
   // generation language (P-12) — exactly like /i (REQ-272).
   const url = new URL(ctx.req.url);
-  const lang: Lang = resolvePublicLang({
-    query: url.searchParams.get("lang"),
-    cookie: ctx.req.headers.get("cookie"),
-    docLang: co?.commsLanguage,
-    header: ctx.req.headers.get("accept-language"),
-  });
+  const lang: Lang = clampToSendLanguages(
+    resolvePublicLang({
+      query: url.searchParams.get("lang"),
+      cookie: ctx.req.headers.get("cookie"),
+      docLang: co?.commsLanguage,
+      header: ctx.req.headers.get("accept-language"),
+    }),
+    co?.sendLanguages,
+  ); // REQ-925
   // <html lang> says what this page actually paints (REQ-122 contract).
   ctx.state.lang = lang;
   const hasJob = co?.jobCurrentAmount != null && co?.jobNewAmount != null;
@@ -128,13 +137,16 @@ export default define.page(async function PublicChangeOrder(ctx) {
       >
         <div style="flex:1;width:100%;max-width:592px;margin:0 auto;padding:32px 16px calc(64px + var(--kb-inset, 0px))">
           {/* REQ-398 (demo p13-j): the same EN | ES switch as /i and /q */}
-          <PublicLangToggle
-            lang={lang}
-            hrefs={{
-              en: langToggleHref(url.href, "en"),
-              es: langToggleHref(url.href, "es"),
-            }}
-          />
+          {/* REQ-925: no switch into a language Settings left out */}
+          {offersLangToggle(co?.sendLanguages) && (
+            <PublicLangToggle
+              lang={lang}
+              hrefs={{
+                en: langToggleHref(url.href, "en"),
+                es: langToggleHref(url.href, "es"),
+              }}
+            />
+          )}
           {!co
             ? (
               <div style="background:#fff;border-radius:18px;padding:32px;box-shadow:0 8px 32px rgba(20,72,82,0.08);text-align:center">

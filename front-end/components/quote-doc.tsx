@@ -96,6 +96,8 @@ interface Contractor {
   state?: string;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
+  /** REQ-925: Settings → "Languages you send in" — the page renders only in these. */
+  sendLanguages?: string[];
   /** True when the contractor uploaded a business logo — rendered via the
    *  public-logo endpoint above the brand strip (roadmap p.2). */
   hasLogo?: boolean;

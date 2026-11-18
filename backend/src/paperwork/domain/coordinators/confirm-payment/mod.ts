@@ -129,6 +129,7 @@ export class ConfirmPayment {
       const lang: Lang = resolveCommsLanguage({
         customerLanguage: customer?.language,
         identityCommsLanguage: biz?.commsLanguage,
+        sendLanguages: biz?.commsLanguages, // REQ-925
       });
       const pdfBytes = await this.receiptPdf.run({
         invoice: updated,

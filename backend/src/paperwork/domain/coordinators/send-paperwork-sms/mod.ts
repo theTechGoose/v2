@@ -137,6 +137,7 @@ export class SendPaperworkSms {
         override: input.language,
         customerLanguage: customer?.language,
         identityCommsLanguage: rawBiz?.commsLanguage,
+        sendLanguages: rawBiz?.commsLanguages, // REQ-925
       });
       const senderBiz = {
         ...(rawBiz ?? {}),
@@ -357,6 +358,7 @@ export class SendPaperworkSms {
           override: input.language,
           customerLanguage: customer?.language,
           identityCommsLanguage: biz?.commsLanguage,
+          sendLanguages: biz?.commsLanguages, // REQ-925
         }),
         ok: false,
         reasonCode: target.ok ? "other" : target.failureCode,

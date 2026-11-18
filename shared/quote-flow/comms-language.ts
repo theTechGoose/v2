@@ -35,9 +35,51 @@ export function resolveCommsLanguage(args: {
   override?: string | null;
   customerLanguage?: string | null;
   identityCommsLanguage?: string | null;
+  /** REQ-925: the account's Settings → "Languages you send in" (identity.commsLanguages).
+   *  When stored, the result is ALWAYS one of them — English-only never sends Spanish. */
+  sendLanguages?: readonly string[] | null;
 }): CommsLang {
-  return normalize(args.override) ?? normalize(args.customerLanguage) ??
-    normalize(args.identityCommsLanguage) ?? "en";
+  const allowed = validList(args.sendLanguages ? [...args.sendLanguages] : []);
+  const ok = (l: CommsLang | undefined) =>
+    l && (!allowed.length || allowed.includes(l)) ? l : undefined;
+  return ok(normalize(args.override)) ?? ok(normalize(args.customerLanguage)) ??
+    ok(normalize(args.identityCommsLanguage)) ?? allowed[0] ?? "en";
+}
+
+/**
+ * REQ-925 — clamp a language to the account's send-in set: the language when
+ * the set allows it (or no set is stored), else the set's first language.
+ */
+export function clampToSendLanguages(
+  lang: string | null | undefined,
+  sendLanguages: readonly string[] | null | undefined,
+): CommsLang {
+  return resolveCommsLanguage({ override: lang, sendLanguages });
+}
+
+/** REQ-925 — like clampToSendLanguages, but an absent language stays absent. */
+export function clampOptionalToSendLanguages(
+  lang: string | null | undefined,
+  sendLanguages: readonly string[] | null | undefined,
+): CommsLang | undefined {
+  return normalize(lang)
+    ? clampToSendLanguages(lang, sendLanguages)
+    : undefined;
+}
+
+/**
+ * REQ-925 — an identity as every reader should see it: a stored default
+ * `commsLanguage` outside the stored send-in set (Spanish left behind after
+ * Spanish was unticked) reads as the set's first language. No set stored →
+ * unchanged.
+ */
+export function withSendLanguageDefault<
+  T extends { commsLanguages?: string[] | null; commsLanguage?: string | null },
+>(identity: T): T {
+  const allowed = validList(identity.commsLanguages);
+  const cur = normalize(identity.commsLanguage);
+  if (!allowed.length || !cur || allowed.includes(cur)) return identity;
+  return { ...identity, commsLanguage: allowed[0] };
 }
 
 /**
@@ -187,4 +229,15 @@ export function toggleSendLanguage(
  */
 export function hasSendLanguage(list: readonly string[]): boolean {
   return validList([...list]).length > 0;
+}
+
+/**
+ * REQ-925 — whether a public page offers its EN | ES toggle: not when the
+ * contractor sends in one language only (the other would be a language
+ * Settings left out).
+ */
+export function offersLangToggle(
+  sendLanguages: readonly string[] | null | undefined,
+): boolean {
+  return validList(sendLanguages ? [...sendLanguages] : []).length !== 1;
 }

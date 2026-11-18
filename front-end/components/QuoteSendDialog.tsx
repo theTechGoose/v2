@@ -25,6 +25,10 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 import { assistantClient } from "../clients/assistant.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { quotesClient } from "../clients/quotes.ts";
+import { profileClient } from "../clients/profile.ts"; // REQ-925
+import {
+  clampToSendLanguages,
+} from "../../shared/quote-flow/comms-language.ts"; // REQ-925
 import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import type {
   QuoteSendPreview,
@@ -129,11 +133,32 @@ export function SendDialog(
     langRef.current = l;
     setSendLang(l);
   }
+  // REQ-925: Settings → "Languages you send in" — "Sends in" offers only these
+  const [sendLanguages, setSendLanguages] = useState<string[] | undefined>(
+    undefined,
+  );
+  const allowedRef = useRef<string[] | undefined>(undefined);
+  useEffect(() => {
+    profileClient.get()
+      .then((p) => {
+        const list = p?.identity?.commsLanguages?.filter((l) =>
+          l === "en" || l === "es"
+        );
+        if (!list?.length) return;
+        allowedRef.current = list;
+        setSendLanguages(list);
+        const now = clampToSendLanguages(langRef.current, list);
+        if (now !== langRef.current) chooseLang(now);
+      })
+      .catch(() => {/* the server clamps the send regardless */});
+  }, []);
   useEffect(() => {
     if (initialSendLang || !loadDefaultLang) return;
     defaultLang.current = loadDefaultLang()
       .then((l) => {
-        if (l && !langPicked.current) chooseLang(l);
+        if (l && !langPicked.current) {
+          chooseLang(clampToSendLanguages(l, allowedRef.current));
+        }
       })
       .catch(() => {/* the app language stays */});
   }, []);
@@ -271,7 +296,11 @@ export function SendDialog(
               loadKey={previewKey}
               channel={channel}
               sendLang={sendLang}
-              langs={lang === "es" ? ["es", "en"] : ["en", "es"]}
+              langs={(lang === "es"
+                ? ["es", "en"] as const
+                : ["en", "es"] as const).filter((l) =>
+                  !sendLanguages || sendLanguages.includes(l)
+                )}
               uiLang={lang}
               onPickLang={(l) => {
                 langPicked.current = true;

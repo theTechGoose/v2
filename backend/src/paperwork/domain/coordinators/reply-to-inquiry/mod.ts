@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { clampToSendLanguages } from "#quote-flow/comms-language.ts"; // REQ-925
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import {
@@ -148,10 +149,14 @@ export class ReplyToInquiry {
       : (first ?? business)!;
     const uiLang: Lang = sender?.language === "es" ? "es" : "en";
     // The client reads the wrapper in the language they asked in.
-    const docLang: Lang = inquiry.lang ?? quoteSendLang(quote) ??
-      (biz?.commsLanguage === "es" || biz?.commsLanguage === "en"
-        ? biz.commsLanguage
-        : uiLang);
+    // REQ-925: …but never in a language Settings → "Languages you send in" left out.
+    const docLang: Lang = clampToSendLanguages(
+      inquiry.lang ?? quoteSendLang(quote) ??
+        (biz?.commsLanguage === "es" || biz?.commsLanguage === "en"
+          ? biz.commsLanguage
+          : uiLang),
+      biz?.commsLanguages,
+    );
     const targets = inquiryReplyTargets(inquiry, customer);
     // REQ-784 (demo-loop dv1, d12): the answer is a customer message — the
     // outbox lists it, sent or not and why, with what was sent.

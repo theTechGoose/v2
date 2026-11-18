@@ -919,12 +919,10 @@ export default function AsstChat({
   const [customer, setCustomer] = useState<CustomerLite | undefined>(
     initialCustomer,
   );
-  // Languages offered in the quote-review "Preview in" toggle. Start from the
-  // contractor's configured send languages, but ALWAYS include their app
-  // language (first) so e.g. a Spanish-app contractor can always preview/send
-  // in Spanish even when their send languages are English-only — and, REQ-715
-  // (demo-loop cycle 5, c4-M34), the customer's own language, which the
-  // toggle starts on.
+  // Languages offered in the quote-review "Preview in" toggle: the
+  // contractor's configured send languages, app language first. REQ-925:
+  // ONLY those — English only in Settings never offers (or sends) Spanish,
+  // whatever the app language or the customer's (REQ-715) language.
   const sendLangs = sendLangChoices(lang, sendLanguages, customer?.language);
   /** Per-user "see what your customer sees" sample quote URL. Minted
    *  lazily — eagerly fetched on mount when the synthetic onboarding-
@@ -1401,7 +1399,7 @@ export default function AsstChat({
    *  the customer's own language, else their app language, until they
    *  explicitly pick one. */
   const [previewLang, setPreviewLang] = useState<"en" | "es">(
-    defaultSendLang(customer, lang),
+    defaultSendLang(customer, lang, sendLanguages),
   );
   // Until the contractor explicitly taps a "Preview in" pill, keep the preview
   // following their app language — so a Spanish-app contractor sees the quote
@@ -1412,9 +1410,9 @@ export default function AsstChat({
   const previewLangPickedRef = useRef(false);
   useEffect(() => {
     if (!previewLangPickedRef.current) {
-      setPreviewLang(defaultSendLang(customer, lang));
+      setPreviewLang(defaultSendLang(customer, lang, sendLanguages));
     }
-  }, [lang, customer?.language]);
+  }, [lang, customer?.language, sendLanguages?.join(",")]);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the

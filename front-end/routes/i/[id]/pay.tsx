@@ -7,6 +7,7 @@
  * tab. Nothing to pay here (paid, void, no Stripe) → a short note and the way back.
  */
 import { asset, Head } from "fresh/runtime";
+import { clampToSendLanguages } from "../../../../shared/quote-flow/comms-language.ts"; // REQ-925
 import { define } from "../../../utils.ts";
 import DocTitle from "../../../components/DocTitle.tsx";
 import SiteFooter from "../../../components/SiteFooter.tsx";
@@ -33,6 +34,7 @@ interface InvoiceHead {
     name?: string;
     businessName?: string;
     commsLanguage?: string;
+    sendLanguages?: string[]; // REQ-925
   };
 }
 
@@ -50,12 +52,15 @@ export default define.page(async function CardPortal(ctx) {
     ? squareRes.data
     : undefined;
   const url = new URL(ctx.req.url);
-  const lang: Lang = resolvePublicLang({
-    query: url.searchParams.get("lang"),
-    cookie: ctx.req.headers.get("cookie"),
-    docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
-    header: ctx.req.headers.get("accept-language"),
-  });
+  const lang: Lang = clampToSendLanguages(
+    resolvePublicLang({
+      query: url.searchParams.get("lang"),
+      cookie: ctx.req.headers.get("cookie"),
+      docLang: invoice?.docLang ?? invoice?.contractor?.commsLanguage,
+      header: ctx.req.headers.get("accept-language"),
+    }),
+    invoice?.contractor?.sendLanguages,
+  ); // REQ-925
   ctx.state.lang = lang;
   const business = card?.merchantName?.trim() ||
     square?.merchantName?.trim() ||
