@@ -3303,7 +3303,7 @@ async function interpretSettledSend(
  *  it sends the send sheet's pick — only the picked channel(s), each POST
  *  carrying the picked language (and, with no customer record, the typed
  *  address). */
-async function dispatchInvoice(
+export async function dispatchInvoice(
   id: string,
   pick: SendDialogPick & { hasCustomer: boolean },
 ): Promise<DispatchResult> {
@@ -3372,7 +3372,7 @@ function partialParts(
  *  drafted" wording, and (REQ-030) neither channel's reason is dropped.
  *  `keptDraft`: the invoice stays a draft (the send endpoints stamp "sent"
  *  only on delivery), and the copy says so. */
-function dispatchFailureCopy(
+export function dispatchFailureCopy(
   lang: Lang,
   d: DispatchResult,
   opts: { number?: string; keptDraft?: boolean } = {},
@@ -5074,8 +5074,8 @@ function toFormLines(lines: TypedLine[]): FormLine[] {
  * agreement cap applies; a direct bill no longer lands beside a scheduled one
  * unseen.
  */
-function NewInvoiceModal(
-  { customers, invoices, lang, quoteId, extraWork, onClose }: {
+export function NewInvoiceModal(
+  { customers, invoices, lang, quoteId, extraWork, customerId, onClose }: {
     customers: Customer[];
     /** the page's invoices — what the picked client already has (REQ-474) */
     invoices: Invoice[];
@@ -5083,6 +5083,8 @@ function NewInvoiceModal(
     quoteId?: string | null;
     /** REQ-655: extra work on a paid-off job (?extra=1) */
     extraWork?: boolean;
+    /** REQ-924: the customer page opens the form with her already chosen */
+    customerId?: string | null;
     onClose: () => void;
   },
 ) {
@@ -5348,6 +5350,12 @@ function NewInvoiceModal(
     ],
     [customers, lang],
   );
+
+  // REQ-924: opened from a customer's page — she is the client, once the list has her
+  useEffect(() => {
+    if (!customerId || clientSel) return;
+    if (customers.some((c) => c.id === customerId)) pickCustomer(customerId);
+  }, [customerId, customers.length]);
 
   function pickCustomer(id: string) {
     setClientSel(id);

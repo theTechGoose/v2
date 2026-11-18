@@ -70,6 +70,8 @@ export default define.page(async function ClientsRoute(ctx) {
         <DashSidebar active="customers" />
         <main class="main">
           <DashTopbar
+            // REQ-924: the Customers context — the search is scoped to Customers (the board keeps its title, REQ-619)
+            searchScope={{}}
             pageTitleKey="nav.clients"
             greetingDate={greetingDate}
             greetingName={greetingName}

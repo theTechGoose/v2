@@ -34,6 +34,8 @@ import {
   workerViewLink,
 } from "../lib/worker-view-link.ts";
 import { ActorNamePrompt } from "../components/ActorNamePrompt.tsx"; // REQ-624
+import CustomersNav from "../components/CustomersNav.tsx"; // REQ-924
+import { activeCustomerId, CUSTOMERS_CONTEXT } from "../lib/customer-nav.ts"; // REQ-924
 
 // REQ-176 — the tree itself is data in lib/nav-tree.ts; this island renders one level of it.
 
@@ -370,119 +372,140 @@ export default function DashSidebar(
 
           {showNav && (
             <nav class="sb__nav">
-              {view.parentPath !== null && (
-                <button
-                  type="button"
-                  class="nav-item nav-item--back"
-                  data-cy="nav-back"
-                  onClick={() => setPath(view.parentPath!)}
-                  {...named(tFor(lang, "nav.back"))}
-                >
-                  <span class="nav-item__icon">
-                    <I d={ICN.chevLeft} size={18} />
-                  </span>
-                  {!collapsed && (
-                    <span class="nav-item__label">
-                      {tFor(lang, "nav.back")}
-                    </span>
-                  )}
-                </button>
-              )}
-              {view.folder && !collapsed && (
-                <div class="sb__label" data-cy="nav-folder-name">
-                  {tFor(lang, `nav.${view.folder.id}`)}
-                </div>
-              )}
-              {view.items.map((item) => {
-                if (isFolder(item)) {
-                  return (
-                    <button
-                      type="button"
-                      key={item.id}
-                      class="nav-item nav-item--folder"
-                      data-cy={`nav-folder-${item.id}`}
-                      onClick={() => setPath([...path, item.id])}
-                      {...named(tFor(lang, `nav.${item.id}`))}
-                    >
-                      <span class="nav-item__icon">
-                        <I d={ICN[item.icon]} size={18} />
-                      </span>
-                      {!collapsed && (
-                        <span class="nav-item__label">
-                          {tFor(lang, `nav.${item.id}`)}
+              {
+                /* REQ-924: the customer pages rest on the Customers context — the list of
+                customers, each a link to her page; Back returns to the root */
+              }
+              {path[0] === CUSTOMERS_CONTEXT
+                ? (
+                  <CustomersNav
+                    lang={lang}
+                    activeId={activeCustomerId(active)}
+                    onAllCustomers={active === "customers"}
+                    collapsed={collapsed}
+                    onBack={() => setPath([])}
+                    named={named}
+                  />
+                )
+                : (
+                  <>
+                    {view.parentPath !== null && (
+                      <button
+                        type="button"
+                        class="nav-item nav-item--back"
+                        data-cy="nav-back"
+                        onClick={() => setPath(view.parentPath!)}
+                        {...named(tFor(lang, "nav.back"))}
+                      >
+                        <span class="nav-item__icon">
+                          <I d={ICN.chevLeft} size={18} />
                         </span>
-                      )}
-                      {!collapsed && (
-                        <span class="nav-item__chev">
-                          <I d={ICN.chev} size={16} />
-                        </span>
-                      )}
-                    </button>
-                  );
-                }
-                const count = item.countKey
-                  ? s.counts[item.countKey as CountKey]
-                  : undefined;
-                // REQ-518: the pill says what it counts (hover title + screen readers)
-                const countLabel = item.countKey && count
-                  ? tFor(lang, countLabelKey(item.countKey), { count })
-                  : undefined;
-                return (
-                  <a
-                    key={item.id}
-                    href={item.href}
-                    class={`nav-item ${
-                      active === item.id ? "nav-item--active" : ""
-                    }`}
-                    {...named(tFor(lang, `nav.${item.id}`))}
-                  >
-                    <span class="nav-item__icon">
-                      <I d={ICN[item.icon]} size={18} />
-                    </span>
-                    {
-                      /* Icon-only rail: the label leaves the DOM entirely when
+                        {!collapsed && (
+                          <span class="nav-item__label">
+                            {tFor(lang, "nav.back")}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    {view.folder && !collapsed && (
+                      <div class="sb__label" data-cy="nav-folder-name">
+                        {tFor(lang, `nav.${view.folder.id}`)}
+                      </div>
+                    )}
+                    {view.items.map((item) => {
+                      if (isFolder(item)) {
+                        return (
+                          <button
+                            type="button"
+                            key={item.id}
+                            class="nav-item nav-item--folder"
+                            data-cy={`nav-folder-${item.id}`}
+                            onClick={() => setPath([...path, item.id])}
+                            {...named(tFor(lang, `nav.${item.id}`))}
+                          >
+                            <span class="nav-item__icon">
+                              <I d={ICN[item.icon]} size={18} />
+                            </span>
+                            {!collapsed && (
+                              <span class="nav-item__label">
+                                {tFor(lang, `nav.${item.id}`)}
+                              </span>
+                            )}
+                            {!collapsed && (
+                              <span class="nav-item__chev">
+                                <I d={ICN.chev} size={16} />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      }
+                      const count = item.countKey
+                        ? s.counts[item.countKey as CountKey]
+                        : undefined;
+                      // REQ-518: the pill says what it counts (hover title + screen readers)
+                      const countLabel = item.countKey && count
+                        ? tFor(lang, countLabelKey(item.countKey), { count })
+                        : undefined;
+                      return (
+                        <a
+                          key={item.id}
+                          href={item.href}
+                          class={`nav-item ${
+                            active === item.id ? "nav-item--active" : ""
+                          }`}
+                          {...named(tFor(lang, `nav.${item.id}`))}
+                        >
+                          <span class="nav-item__icon">
+                            <I d={ICN[item.icon]} size={18} />
+                          </span>
+                          {
+                            /* Icon-only rail: the label leaves the DOM entirely when
                       collapsed (not just display:none) so the rail is a true
                       QuickBooks-style icon rail (roadmap p9). */
-                    }
-                    {!collapsed && (
-                      <span class="nav-item__label">
-                        {tFor(lang, `nav.${item.id}`)}
-                      </span>
-                    )}
-                    {!collapsed && count != null && count > 0
-                      ? (
-                        <span
-                          class="nav-item__count"
-                          title={countLabel}
-                          aria-label={countLabel}
-                        >
-                          {count}
-                        </span>
-                      )
-                      : null}
-                  </a>
-                );
-              })}
-              {
-                /* Super-admin tab — super-admins only, on the root and inside the
+                          }
+                          {!collapsed && (
+                            <span class="nav-item__label">
+                              {tFor(lang, `nav.${item.id}`)}
+                            </span>
+                          )}
+                          {!collapsed && count != null && count > 0
+                            ? (
+                              <span
+                                class="nav-item__count"
+                                title={countLabel}
+                                aria-label={countLabel}
+                              >
+                                {count}
+                              </span>
+                            )
+                            : null}
+                        </a>
+                      );
+                    })}
+                    {
+                      /* Super-admin tab — super-admins only, on the root and inside the
                 Roles folder (REQ-176; REQ-604 demo m18: on the root too). Server enforces the /admin gate too (route middleware
                 + every endpoint); this just hides the entry for everyone else.
                 Label is intentionally not i18n'd (internal operator tool). */
-              }
-              {superAdminTabAt(s.superAdmin, view.folder?.id ?? null) && (
-                <a
-                  href="/admin"
-                  class={`nav-item ${
-                    active === "admin" ? "nav-item--active" : ""
-                  }`}
-                  {...named("Admin")}
-                >
-                  <span class="nav-item__icon">
-                    <I d={ICN.shield} size={18} />
-                  </span>
-                  {!collapsed && <span class="nav-item__label">Admin</span>}
-                </a>
-              )}
+                    }
+                    {superAdminTabAt(s.superAdmin, view.folder?.id ?? null) && (
+                      <a
+                        href="/admin"
+                        class={`nav-item ${
+                          active === "admin" ? "nav-item--active" : ""
+                        }`}
+                        {...named("Admin")}
+                      >
+                        <span class="nav-item__icon">
+                          <I d={ICN.shield} size={18} />
+                        </span>
+                        {!collapsed && (
+                          <span class="nav-item__label">Admin</span>
+                        )}
+                      </a>
+                    )}
+                  </>
+                )}
             </nav>
           )}
 

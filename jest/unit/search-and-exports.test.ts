@@ -608,7 +608,8 @@ describe("REQ-799 one search bar — the topbar's; a result opens the item itsel
     const page = read("front-end/islands/ClientsPage.tsx");
     expect(page).not.toMatch(/onQuery=\{/);
     const gs = read("front-end/islands/GlobalSearch.tsx");
-    expect(gs).toMatch(/globalThis\.location\.assign\(hit\.url\)/);
+    // REQ-924 AMENDMENT: a result still opens the item itself — in the Customers context a customer opens her page (/customers/<id>)
+    expect(gs).toMatch(/globalThis\.location\.assign\(scopedUrl\(hit, sc\)\)/);
     for (const lang of ["en", "es"]) {
       const dict = JSON.parse(read(`lang/${lang}.json`));
       expect(dict["clientsBoard.searchPlaceholder"]).toBeUndefined();

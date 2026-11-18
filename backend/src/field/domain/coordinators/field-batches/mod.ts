@@ -5,6 +5,7 @@
  * Customers and invoices are read and written through their own stores only.
  */
 import { Injectable } from "#danet/core";
+import { liveIds } from "@field/domain/business/live-invoices/mod.ts"; // REQ-924: shared with the customer workspace
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -39,20 +40,6 @@ const draftLang = (inv: Invoice, fallback: "en" | "es"): "en" | "es" => {
   return fallback;
 };
 
-/** The invoices that still bill their tasks: every non-void one, and (REQ-627)
- *  a void one whose "Void & duplicate" copy — followed to the end — still lives. */
-const liveIds = (invoices: Invoice[]) => {
-  const byId = new Map(invoices.map((i) => [i.id, i]));
-  const live = new Set<string>();
-  for (const inv of invoices) {
-    let cur: Invoice | undefined = inv;
-    for (let hops = 0; cur && cur.status === "void" && hops < 20; hops++) {
-      cur = cur.replacedBy ? byId.get(cur.replacedBy) : undefined;
-    }
-    if (cur && cur.status !== "void") live.add(inv.id);
-  }
-  return live;
-};
 
 @Injectable()
 export class FieldBatches {
@@ -68,13 +55,15 @@ export class FieldBatches {
     private sms: SendPaperworkSms,
   ) {}
 
-  async pull(userId: string, from: string, to: string, lang: "en" | "es") {
-    const [tasks, subscriptions, taskTypes, invoices] = await Promise.all([
+  /** REQ-924: `customerId` drafts only that customer's visits (the customer page's "Bill now") */
+  async pull(userId: string, from: string, to: string, lang: "en" | "es", customerId?: string) {
+    const [inRange, subscriptions, taskTypes, invoices] = await Promise.all([
       this.tasks.listByRange(userId, from, to),
       this.subs.listByUser(userId),
       this.types.listByUser(userId),
       this.invoices.listByUser(userId),
     ]);
+    const tasks = customerId ? inRange.filter((t) => t.customerId === customerId) : inRange;
     const live = liveIds(invoices);
     // REQ-174: days to pay — the subscription's, else the account's default, else 30
     const identity = await this.identity.get(userId).catch(() => null);

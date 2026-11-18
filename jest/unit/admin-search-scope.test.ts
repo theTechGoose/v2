@@ -39,7 +39,8 @@ describe("REQ-507 (demo cycle 3, m25) /admin has one search, scoped to users", (
   test("DashTopbar renders GlobalSearch only when `search` is not false", () => {
     const src = read("front-end/islands/DashTopbar.tsx");
     expect(src).toMatch(/search\?: boolean/);
-    expect(src).toMatch(/search\s*!==\s*false\s*&&\s*<GlobalSearch\s*\/>/);
+    // REQ-924 AMENDMENT: the search takes the page's scope (the Customers context); still one search, still dropped by search={false}
+    expect(src).toMatch(/search\s*!==\s*false\s*&&\s*<GlobalSearch(\s+scope=\{searchScope\})?\s*\/>/);
     expect(src).not.toMatch(/^\s*<GlobalSearch \/>\s*$/m);
   });
 

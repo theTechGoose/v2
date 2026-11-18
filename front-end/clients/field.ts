@@ -602,8 +602,13 @@ export const fieldClient = {
   batches: (opts?: ApiOptions) => api.get<BatchView[]>("/field/batches", opts),
   batch: (id: string, opts?: ApiOptions) =>
     api.get<BatchView>(`/field/batches/${id}`, opts),
-  pull: (from: string, to: string, opts?: ApiOptions) =>
-    api.post<PullResult>("/field/batches/pull", { from, to }, opts),
+  /** REQ-924: `customerId?: string` — the customer page's Bill now drafts only her visits */
+  pull: (from: string, to: string, opts?: ApiOptions, customerId?: string) =>
+    api.post<PullResult>(
+      "/field/batches/pull",
+      customerId ? { from, to, customerId } : { from, to },
+      opts,
+    ),
   /** REQ-810: take a draft out of the batch (deleted; its tasks un-invoiced) — answers the batch */
   removeInvoice: (id: string, invoiceId: string, opts?: ApiOptions) =>
     api.delete<BatchView>(`/field/batches/${id}/invoices/${invoiceId}`, opts),

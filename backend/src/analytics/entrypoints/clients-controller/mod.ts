@@ -1,4 +1,4 @@
-import { Context, Controller, Get, Query } from "#danet/core";
+import { Context, Controller, Get, Param, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import {
   BuildCustomerCards,
@@ -16,6 +16,7 @@ import type {
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
+import { BuildCustomerWorkspace, CustomerNotFound } from "@analytics/domain/coordinators/build-customer-workspace/mod.ts"; // REQ-924
 import { clientsPage, type ClientsPageResponse } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135
 
 const SEGMENT_LABELS: Record<ClientSegment | "unsorted", string> = {
@@ -47,7 +48,20 @@ export class ClientsController {
     private users:    UserStore,
     private sessions: SessionStore,
     private invoices: InvoiceStore,
+    private workspace: BuildCustomerWorkspace, // REQ-924
   ) {}
+
+  /** REQ-924 — one customer's page: card, money summary, documents, payments, repeat visits, work orders; 404 when not hers */
+  @Get("customers/:id/workspace")
+  async customerWorkspace(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    try {
+      return await this.workspace.run(user.id, id);
+    } catch (err) {
+      if (err instanceof CustomerNotFound) return ctx.json({ error: "customer_not_found" }, 404);
+      throw err;
+    }
+  }
 
   /** REQ-135 — one page of the roster: `?page=&pageSize=&q=&status=`, with the chip counts and the roster's totals */
   @Get("clients")

@@ -7,6 +7,7 @@ import { patchCachedLanguage } from "../lib/dash-cache.ts";
 import { formatGreetingDate } from "../../shared/quote-flow/locale-format.ts";
 import { tickerAge } from "../lib/ticker-age.ts";
 import GlobalSearch from "./GlobalSearch.tsx";
+import type { SearchScope } from "../lib/scoped-search.ts"; // REQ-924
 import { TOPBAR_CSS } from "../lib/topbar-css.ts";
 import { startPoll } from "../lib/poll.ts";
 import {
@@ -53,6 +54,11 @@ interface Props {
   /** REQ-507 (demo m25) — false drops the account search (GlobalSearch): /admin's own
    *  users search is the page's only search, not a second box with another scope */
   search?: boolean;
+  /** REQ-924 — the customer pages: the top bar keeps the menu button, the search and the EN/ES
+   *  switch only (no greeting, no activity ticker) */
+  minimal?: boolean;
+  /** REQ-924 — the search's context: the Customers chip, the open customer's results first */
+  searchScope?: SearchScope | null;
 }
 
 // No fallback ticker — when the user has zero real notifications we hide
@@ -73,6 +79,8 @@ export default function DashTopbar(
     initialUnread = 0,
     initialNotifications = [],
     search,
+    minimal = false,
+    searchScope,
   }: Props,
 ) {
   // Reactive app language (seeded from user.language, flipped live by Settings).
@@ -212,30 +220,32 @@ export default function DashTopbar(
       >
         <I d={<path d="M3 6h18M3 12h18M3 18h18" />} size={18} />
       </button>
-      <div class="topbar__greet">
-        <div class="topbar__greet-line">{greetingDate}</div>
-        <div class="topbar__greet-name" data-cy="topbar-greeting">
-          {
-            // REQ-355 — a saved name re-greets; REQ-423 — no name (or the
-            // placeholder) greets namelessly in the LIVE language
-            topbarGreeting((k, v) => tFor(lang, k, v), {
-              greetingName,
-              savedName,
-              greetingOverrideKey,
-              greetingOverride,
-              pageTitleKey,
-            })
-          }
+      {!minimal && (
+        <div class="topbar__greet">
+          <div class="topbar__greet-line">{greetingDate}</div>
+          <div class="topbar__greet-name" data-cy="topbar-greeting">
+            {
+              // REQ-355 — a saved name re-greets; REQ-423 — no name (or the
+              // placeholder) greets namelessly in the LIVE language
+              topbarGreeting((k, v) => tFor(lang, k, v), {
+                greetingName,
+                savedName,
+                greetingOverrideKey,
+                greetingOverride,
+                pageTitleKey,
+              })
+            }
+          </div>
         </div>
-      </div>
+      )}
       {
         /* REQ-207: the account search — numbers, customers, addresses,
           dates — with `/` to focus. It takes the flexible middle of the bar.
           The notifications drawer is still not built; its affordance stays
           hidden rather than advertise a dead control (audit #7). */
       }
-      {search !== false && <GlobalSearch />}
-      {ticker
+      {search !== false && <GlobalSearch scope={searchScope} />}
+      {ticker && !minimal
         ? (
           // Anchored to /dashboard#activity so the pill is no longer inert:
           // on the dashboard it scrolls to the on-page activity panel; from

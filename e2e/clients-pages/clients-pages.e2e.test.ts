@@ -53,16 +53,18 @@ async function clickUntil(
 const GS_INPUT = "[data-cy='global-search-input']";
 const gsRow = (name: string) =>
   `[data-cy='global-search-results'][data-state='ready'] [data-cy='global-search-row'][data-type='customer']:has-text("${name}")`;
-/** REQ-799: the topbar search is the only search — type, wait for the customer row, open it, and the sheet names the customer */
+/** REQ-799: the topbar search is the only search — type, wait for the customer row, open it, and the page names the customer.
+ *  REQ-924 AMENDMENT: on /customers the search is scoped to Customers, and a customer result opens her own page
+ *  (/customers/<id>, the workspace) instead of the sheet. */
 async function openViaTopbar(page: StoryTools["page"], q: string, name: string) {
   await page.locator(GS_INPUT).waitFor({ timeout: 15_000 });
   await page.locator(GS_INPUT).fill(q);
   await page.locator(gsRow(name)).first().waitFor({ timeout: 15_000 });
   await clickUntil(page, gsRow(name), () =>
-    Promise.resolve(new URL(page.url()).pathname === "/customers" && !!new URL(page.url()).searchParams.get("open")));
-  await page.locator("[data-cy='client-sheet-name']").waitFor({ timeout: 15_000 });
-  const shown = await page.locator("[data-cy='client-sheet-name']").innerText();
-  if (!shown.includes(name)) throw new Error(`the sheet names "${shown}", not "${name}"`);
+    Promise.resolve(/^\/customers\/[^/]+$/.test(new URL(page.url()).pathname)));
+  await page.locator("[data-cy='cws-name']").waitFor({ timeout: 15_000 });
+  const shown = await page.locator("[data-cy='cws-name']").innerText();
+  if (!shown.includes(name)) throw new Error(`the page names "${shown}", not "${name}"`);
 }
 
 Deno.test("REQ-135 + REQ-799: thirty customers — the page shows twenty-five, says Page 1 of 2, next shows five, the page has no search box and the topbar search opens one, the crumb counts thirty", (t) =>
@@ -89,6 +91,8 @@ Deno.test("REQ-135 + REQ-799: thirty customers — the page shows twenty-five, s
     // REQ-799: no search box on the page; the topbar search finds and opens the customer
     expect((await page.locator("[data-cy='clients-search']").count()) === 0, "the page has no search box");
     await openViaTopbar(page, "client 07", "Client 07");
+    // REQ-924 AMENDMENT: the result opened her page; the board (All customers) still counts thirty
+    await page.goto("/customers");
     await expect.see("30 on the books");
   }));
 

@@ -77,7 +77,13 @@ export default function ClientsPage(
       alive = false;
     };
   }, []);
-  const [addOpen, setAddOpen] = useState(false);
+  // REQ-924: the sidebar's "New customer" (/customers?new=1) opens the form; the customer it
+  // makes opens on her own page
+  const [fromNav] = useState(() =>
+    typeof globalThis.location !== "undefined" &&
+    new URLSearchParams(globalThis.location.search).get("new") === "1"
+  );
+  const [addOpen, setAddOpen] = useState(fromNav);
   // REQ-352 (demo p15-5): "<name> added" after a successful Add
   const [flash, setFlash] = useState("");
   useEffect(() => {
@@ -182,6 +188,10 @@ export default function ClientsPage(
   async function onCustomerSaved(saved: CustomerCard, created = false) {
     setAddOpen(false);
     setEditing(null);
+    if (created && fromNav) {
+      globalThis.location.assign(`/customers/${encodeURIComponent(saved.id)}`);
+      return;
+    }
     if (created) {
       setFlash(tFor(lang, "clientsPage.added", { name: saved.name }));
     }

@@ -210,6 +210,8 @@ export interface CustomerCard extends Customer {
   lastWhen: string | null;
   lastTone: CustomerLastTone;
   balanceCents: number;
+  /** REQ-924: the part of the balance past due (the sidebar's "$X overdue") */
+  overdueCents: number;
   /** The balance sub-line in English — the neutral base (REQ-204/350). */
   balanceSub: string;
   /** REQ-350 + REQ-367: the same line as data; the client words it in the

@@ -165,9 +165,15 @@ function buildOne(
     myQuotes,
     myInvoices,
   );
-  const overdueCount = myInvoices.filter(
+  const overdueInvoices = myInvoices.filter(
     (i) => isOpenReceivable(i) && i.dueDate < now.toISOString().slice(0, 10),
-  ).length;
+  );
+  const overdueCount = overdueInvoices.length;
+  // REQ-924: the overdue part of the balance, for the sidebar's status line
+  const overdueCents = overdueInvoices.reduce(
+    (sum, i) => sum + receivableBalanceCents(i),
+    0,
+  );
   // P-34/P-64: the story line's "· active" in the viewer's language — REQ-367:
   // a kind the client words in the live language (clientsDisplay.jobsSub.*).
   const jobsSub: CustomerCard["jobsSub"] = overdueCount > 0
@@ -216,6 +222,7 @@ function buildOne(
     lastWhen,
     lastTone,
     balanceCents,
+    overdueCents,
     balanceSub,
     balanceSubParts,
     activeJobs,

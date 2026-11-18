@@ -66,7 +66,8 @@ Deno.test("REQ-604 m18: Field lists Workers; a super-admin sees Admin on the sid
       );
 
     // 1. the root carries Admin for a super-admin — no folder to open first
-    await page.goto("/customers");
+    // REQ-924 AMENDMENT: /customers rests on the Customers context now; /quotes is a root page with the shell
+    await page.goto("/quotes");
     await nav.locator("a[href='/admin']").waitFor({ timeout: 20_000 });
     expect(
       (await nav.locator("[data-cy='nav-back']").count()) === 0,
