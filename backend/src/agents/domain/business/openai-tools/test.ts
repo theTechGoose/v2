@@ -488,3 +488,65 @@ Deno.test("REQ-715 c4-M34: create_quote offers customerLanguage, en | es only", 
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// REQ-1084 (LOOP-007 cycle 3, q3-18): "add a new line: hallway painting $450.
+// and remove the drywall line. make it version 2" — revise_quote had no way to
+// add a line, so the model put the new line into lines[] and the server
+// answered "I couldn't find a line called … so I changed nothing".
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-1084 q3-18 TOOL_DEFS: revise_quote has an `add` array of {description, amountCents} for new lines in the same Version", () => {
+  const def = TOOL_DEFS.find((d) => d.function.name === "revise_quote");
+  if (!def) throw new Error("revise_quote tool is missing");
+  const params = def.function.parameters as unknown as {
+    properties: Record<string, {
+      type: string;
+      items?: { properties?: Record<string, unknown>; required?: string[] };
+    }>;
+  };
+  assertEquals(params.properties.add?.type, "array", "revise_quote has no `add` field");
+  assertEquals(
+    Object.keys(params.properties.add?.items?.properties ?? {}).sort(),
+    ["amountCents", "description"],
+  );
+});
+
+Deno.test("REQ-1084 q3-18 parseToolCall: revise_quote keeps `add` lines (trimmed, cents truncated) next to a removal; an add-only call is fine", () => {
+  assertEquals(
+    parseToolCall(call("revise_quote", {
+      quoteNumber: "q-002",
+      lines: [],
+      remove: ["drywall"],
+      add: [
+        { description: " Pintura del pasillo ", amountCents: 45_000.4 },
+        { description: "", amountCents: 1 }, // no wording
+        { description: "no price" }, // no price
+        "junk",
+      ],
+    })) as unknown,
+    {
+      type: "revise_quote",
+      payload: {
+        quoteNumber: "Q-002",
+        lines: [],
+        remove: ["drywall"],
+        add: [{ description: "Pintura del pasillo", amountCents: 45_000 }],
+      },
+    } as unknown,
+  );
+  assertEquals(
+    parseToolCall(call("revise_quote", {
+      lines: [],
+      add: [{ description: "Hallway painting", amountCents: 45_000 }],
+    })) as unknown,
+    {
+      type: "revise_quote",
+      payload: {
+        lines: [],
+        remove: [],
+        add: [{ description: "Hallway painting", amountCents: 45_000 }],
+      },
+    } as unknown,
+  );
+});

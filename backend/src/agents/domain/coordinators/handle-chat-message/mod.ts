@@ -1173,7 +1173,13 @@ export class HandleChatMessage {
     const revise = (
       p: Pick<
         ReviseQuoteInput,
-        "customerName" | "quoteNumber" | "lines" | "remove" | "targetTotalCents"
+        | "customerName"
+        | "quoteNumber"
+        | "lines"
+        | "remove"
+        | "targetTotalCents"
+        | "add"
+        | "repriceOnly"
       >,
     ) =>
       this.reviseQuote.run({
@@ -1185,6 +1191,8 @@ export class HandleChatMessage {
         quoteNumber: p.quoteNumber,
         lines: p.lines,
         remove: p.remove,
+        add: p.add, // REQ-1084
+        repriceOnly: p.repriceOnly,
         userText,
         jobDetails,
         jobDetailsUpdated: detailsUpdated,
@@ -1303,7 +1311,12 @@ export class HandleChatMessage {
               : undefined)
           : undefined;
         if (reprice) {
-          const revised = await revise({ ...p, lines: [reprice], remove: [] });
+          const revised = await revise({
+            ...p,
+            lines: [reprice],
+            remove: [],
+            repriceOnly: true, // REQ-1084: a change order, never an add
+          });
           if (revised.outcome.kind !== "locked") {
             parts.push(revised.text);
             payload.quoteRevision = revised.outcome;
@@ -3402,6 +3415,7 @@ export class HandleChatMessage {
           quoteNumber: llmResponse.action.payload.quoteNumber,
           lines: [reprice],
           remove: [],
+          repriceOnly: true, // REQ-1084: a change order, never an add
           userText,
         });
         if (revised.outcome.kind !== "locked") {
@@ -3473,6 +3487,7 @@ export class HandleChatMessage {
           quoteNumber: p.quoteNumber,
           lines: p.lines,
           remove: p.remove,
+          add: p.add, // REQ-1084 (q3-18): new lines in the same Version
           userText,
           // REQ-1027 (q2-4): the job's new total, landed in code.
           targetTotalCents: p.targetTotalCents,

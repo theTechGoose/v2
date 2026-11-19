@@ -173,6 +173,22 @@ export const TOOL_DEFS = [
             description: t("en", "prompts.tools.reviseQuote.remove"),
             items: { type: "string" },
           },
+          // REQ-1084 (LOOP-007 q3-18): "add a new line: hallway painting $450.
+          // and remove the drywall line. make it version 2" — a NEW line in the
+          // same Version; it never goes in lines[] (those name existing lines).
+          add: {
+            type: "array",
+            description: t("en", "prompts.tools.reviseQuote.add"),
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string", description: t("en", "prompts.tools.reviseQuote.addDescription") },
+                amountCents: { type: "integer", description: t("en", "prompts.tools.reviseQuote.addAmountCents") },
+              },
+              required: ["description", "amountCents"],
+              additionalProperties: false,
+            },
+          },
           // REQ-1027 (LOOP-007 cycle 2, q2-4): "sin la cerca, total 5,550" — the
           // job's new total has its own field, never a line's amountCents.
           newTotalDollars: { type: "number", description: t("en", "prompts.tools.reviseQuote.newTotalDollars") },
@@ -410,7 +426,20 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
       const targetTotalCents = typeof total === "number" && Number.isFinite(total) && total > 0
         ? Math.round(total * 100)
         : undefined;
-      if (lines.length === 0 && remove.length === 0 && targetTotalCents === undefined) return undefined;
+      // REQ-1084 (q3-18): new lines in the same Version — a wording AND a price.
+      const add: { description: string; amountCents: number }[] = [];
+      for (const raw of Array.isArray(args.add) ? args.add : []) {
+        if (typeof raw !== "object" || raw === null) continue;
+        const r = raw as Record<string, unknown>;
+        const description = typeof r.description === "string" ? r.description.trim() : "";
+        if (!description) continue;
+        if (typeof r.amountCents !== "number" || !Number.isFinite(r.amountCents)) continue;
+        add.push({ description, amountCents: Math.trunc(r.amountCents) });
+      }
+      if (
+        lines.length === 0 && remove.length === 0 && add.length === 0 &&
+        targetTotalCents === undefined
+      ) return undefined;
       const customerName = typeof args.customerName === "string" ? args.customerName.trim() : "";
       const quoteNumber = docNumber(args.quoteNumber);
       return {
@@ -420,6 +449,7 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           ...(quoteNumber ? { quoteNumber } : {}),
           lines,
           remove,
+          ...(add.length > 0 ? { add } : {}),
           ...(targetTotalCents !== undefined ? { targetTotalCents } : {}),
         },
       };

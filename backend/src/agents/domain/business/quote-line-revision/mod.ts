@@ -29,6 +29,13 @@ export interface LineChange {
   amountCents?: number;
 }
 
+/** REQ-1084 (LOOP-007 q3-18): a NEW line added in the same revision. */
+export interface LineAddition {
+  description: string;
+  /** The new line's total in integer cents (qty 1 × this). */
+  amountCents: number;
+}
+
 export interface LineRevision<T extends RevisableLine> {
   lineItems: T[];
   estimatedTotal: number;
@@ -122,11 +129,17 @@ export function findLine(
  * (qty 1 × the new total); a reworded line loses its cached translations.
  * When any name matches nothing, NOTHING is applied — the caller tells the
  * user which name was unknown instead of guessing or appending.
+ *
+ * REQ-1084 (LOOP-007 q3-18): `add` appends NEW lines (qty 1 × the amount,
+ * after the reprices and removals) — one Version can add, remove and
+ * reprice together ("agregar pintar el pasillo por $450 y quitar el
+ * drywall. hazme una nueva versión").
  */
 export function reviseLineItems<T extends RevisableLine>(
   base: readonly T[],
   changes: readonly LineChange[],
   remove: readonly string[],
+  add: readonly LineAddition[] = [],
 ): LineRevision<T> {
   const unmatched: string[] = [];
   const patched: T[] = base.map((l) => ({ ...l }));
@@ -161,7 +174,63 @@ export function reviseLineItems<T extends RevisableLine>(
     return { lineItems: asIs, estimatedTotal: totalOf(asIs), unmatched };
   }
   const lineItems = patched.filter((_, i) => !dropped.has(i));
+  for (const a of add) {
+    const description = (a.description ?? "").trim();
+    if (!description || !Number.isFinite(a.amountCents)) continue;
+    lineItems.push({
+      description,
+      quantity: 1,
+      unit: "ea",
+      price: Math.trunc(a.amountCents),
+    } as T);
+  }
   return { lineItems, estimatedTotal: totalOf(lineItems), unmatched: [] };
+}
+
+/** REQ-1084 (LOOP-007 q3-18): words that ask for a NEW line ("add a new
+ *  line: hallway painting $450", "agregar pintar el pasillo por $450",
+ *  "nueva partida"), read on the accent-free `lineKey` of the text. */
+const ADD_LINE_RE =
+  /\b(?:add|adding|agregar|agrega|agregue|agreguen|agregale|agregales|anadir|anade|anada|anadan|anadele|new (?:line|item)|nueva (?:partida|linea)|otra partida)\b/;
+
+/** REQ-1084: the user's words ask for a new line to be added. */
+export function saysAddLine(text: string): boolean {
+  return ADD_LINE_RE.test(lineKey(text));
+}
+
+/**
+ * REQ-1084 (LOOP-007 q3-18): the model that still puts a NEW line in
+ * `lines[]` ({ match: "Pintura interior (pasillo)", amountCents: 45000 })
+ * next to a removal. An entry is read as an addition only when it names no
+ * line on the quote, carries a price the user typed, and the user's words
+ * ask to add — a misspelled reprice ("change plumbng to $1,300") still
+ * matches nothing and is asked about.
+ */
+export function splitAdditions(
+  base: readonly { description: string }[],
+  changes: readonly LineChange[],
+  userText: string,
+  typedCents: readonly number[],
+): { lines: LineChange[]; add: LineAddition[] } {
+  if (!saysAddLine(userText)) return { lines: [...changes], add: [] };
+  const lines: LineChange[] = [];
+  const add: LineAddition[] = [];
+  for (const c of changes) {
+    const cents = typeof c.amountCents === "number" &&
+        Number.isFinite(c.amountCents)
+      ? Math.trunc(c.amountCents)
+      : undefined;
+    if (
+      cents !== undefined && cents > 0 && typedCents.includes(cents) &&
+      findLine(base, c.match) < 0
+    ) {
+      add.push({
+        description: (c.description ?? "").trim() || c.match.trim(),
+        amountCents: cents,
+      });
+    } else lines.push(c);
+  }
+  return { lines, add };
 }
 
 /**
@@ -187,6 +256,7 @@ export function settleToTotal<T extends RevisableLine>(
   remove: readonly string[],
   targetCents: number,
   typedCents: readonly number[] = [],
+  add: readonly LineAddition[] = [],
 ): LineRevision<T> | undefined {
   if (!Number.isFinite(targetCents) || targetCents <= 0) return undefined;
   const fixed: LineChange[] = [];
@@ -197,7 +267,7 @@ export function settleToTotal<T extends RevisableLine>(
       }
     } else fixed.push({ ...c });
   }
-  const rev = reviseLineItems(base, fixed, remove);
+  const rev = reviseLineItems(base, fixed, remove, add);
   if (rev.unmatched.length > 0) return undefined;
   if (rev.estimatedTotal === targetCents) return rev;
 
@@ -230,7 +300,7 @@ export function settleToTotal<T extends RevisableLine>(
   const settled = repriced.length === 1
     ? fixed.map((c) => c === repriced[0] ? { ...c, amountCents } : c)
     : [...fixed, { match: base[at].description, amountCents }];
-  const out = reviseLineItems(base, settled, remove);
+  const out = reviseLineItems(base, settled, remove, add);
   return out.unmatched.length === 0 && out.estimatedTotal === targetCents
     ? out
     : undefined;
