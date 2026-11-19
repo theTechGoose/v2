@@ -983,11 +983,13 @@ export default function FieldWorkersPage(
                       style="flex-basis:100%;display:flex;flex-direction:column;gap:2px"
                       data-cy="away-row-wos"
                     >
+                      {/* REQ-1163 — each line links to its work order (the fix path); a defer says where it moved */}
                       {a.workOrders.map((wo) => (
-                        <span
+                        <a
                           key={wo.id}
+                          href={`/work-orders/${wo.id}`}
                           class="hint"
-                          style={wo.coverName
+                          style={wo.coverName || wo.deferredTo
                             ? undefined
                             : "color:var(--danger)"}
                           data-cy="away-row-wo"
@@ -998,11 +1000,21 @@ export default function FieldWorkersPage(
                               date: fmtDayRange(wo.date, wo.date, lang),
                               name: wo.coverName,
                             })
+                            : wo.deferredTo
+                            ? t("field.away.woDefer", {
+                              number: wo.number,
+                              date: fmtDayRange(wo.date, wo.date, lang),
+                              to: fmtDayRange(
+                                wo.deferredTo,
+                                wo.deferredTo,
+                                lang,
+                              ),
+                            })
                             : t("field.away.woResched", {
                               number: wo.number,
                               date: fmtDayRange(wo.date, wo.date, lang),
                             })}
-                        </span>
+                        </a>
                       ))}
                     </span>
                   )}

@@ -24,6 +24,11 @@ describe("REQ-1022 assigneeLabel", () => {
       expect(assigneeLabel({ assignee: "Jake Fowler", assigneeOut }, t)).toMatch(/^Jake Fowler is out that day/);
     }
   });
+  it("REQ-1163 (q3-96) deferred with a day back: says the day it moved to, en + es", () => {
+    const wo = { assignee: "Luis Ortega", assigneeOut: "defer" as const, assigneeDeferredTo: "2026-11-21" };
+    expect(assigneeLabel(wo, t, () => "Sat, Nov 21")).toBe("Luis Ortega is out that day — moved to Sat, Nov 21, the day they are back");
+    expect(assigneeLabel(wo, tFor("es"))).toContain("2026-11-21");
+  });
   it("REQ-1022 not out: the stored assignee, or nothing", () => {
     expect(assigneeLabel({ assignee: "Jake Fowler" }, t)).toBe("Jake Fowler");
     expect(assigneeLabel({}, t)).toBeUndefined();

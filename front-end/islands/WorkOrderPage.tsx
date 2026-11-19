@@ -349,7 +349,7 @@ export default function WorkOrderPage({ id }: { id: string }) {
                 )}
                 {kv(
                   t("workOrders.detail.assignee"),
-                  assigneeLabel(wo, t),
+                  assigneeLabel(wo, t, (d) => shortDate(d, lang)),
                   "wo-assignee",
                 )}
               </div>

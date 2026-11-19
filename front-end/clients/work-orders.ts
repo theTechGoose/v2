@@ -42,6 +42,8 @@ export interface WorkOrder {
   coverAssignee?: string;
   /** REQ-1022 — the assignee is out and nobody covers: deferred / skipped / the cover is out too */
   assigneeOut?: "defer" | "skip" | "uncovered";
+  /** REQ-1163 — deferred: the day it sits on, the assignee's day back */
+  assigneeDeferredTo?: string;
   notes?: string;
   publishedAt?: string;
   publishedBy?: { userId?: string; name?: string; customer?: boolean };

@@ -1187,6 +1187,8 @@ async function redoAbsence(
  * REQ-1022 (LOOP-007 q2-12): the work orders an absence takes off its worker (or a member of its
  * crew) — scheduled in its range, not cancelled — each with who has it that day (`coverName`), or
  * none when the work is deferred / skipped / the cover is out too, so the owner reschedules it.
+ * REQ-1163: a defer with a day back carries `deferredTo` (the WO sits there at read time); a skip,
+ * or a defer with no day back, carries `out`.
  */
 async function awayOrders(
   deps: { workOrders: WorkOrderStore; absences: AbsenceStore; workers: FieldWorkerStore; crews: CrewStore },
@@ -1213,7 +1215,17 @@ async function awayOrders(
         const coverName = r?.kind === "cover"
           ? (r.staff.kind === "crew" ? r.staff.crew.name : name.get(r.staff.workerId) ?? "—")
           : undefined;
-        return { id: wo.id, number: docNumberOf(wo), date: wo.scheduledFor!, ...(coverName ? { coverName } : {}) };
+        // REQ-1163: a defer with a day back moves it there (deferredTo); skip / no day back → flagged `out`
+        const moved = r?.kind === "defer" && r.to ? { deferredTo: r.to } : {};
+        const flagged = (r?.kind === "defer" && !r.to) || r?.kind === "skip" ? { out: r.kind } : {};
+        return {
+          id: wo.id,
+          number: docNumberOf(wo),
+          date: wo.scheduledFor!,
+          ...(coverName ? { coverName } : {}),
+          ...moved,
+          ...flagged,
+        };
       }),
     };
   };

@@ -232,8 +232,9 @@ function visitsOf(rows: WorkerTaskView[]): Visit[] {
   );
 }
 
+// REQ-1163: a work order flagged `out` (the worker is off that day) is drawn but not on the to-do count
 const isLive = (s: WorkerTaskView) =>
-  s.status !== "skipped" && s.status !== "deferred";
+  s.status !== "skipped" && s.status !== "deferred" && !s.out;
 const live = (v: Visit) => v.services.filter(isLive);
 
 /** an API failure as the worker should read it */
@@ -679,6 +680,19 @@ export default function WorkerScreen(
             {wo.coverForName && (
               <div class="hint" data-cy="w-wo-cover">
                 {t("field.tk.coverFor", { name: wo.coverForName })}
+              </div>
+            )}
+            {/* REQ-1163 — deferred here from the day the worker was off; or off today, the office reschedules */}
+            {wo.deferredFrom && (
+              <div class="hint" data-cy="w-wo-deferred">
+                {t("field.tk.deferredFrom", {
+                  date: fmtDay(wo.deferredFrom, lang),
+                })}
+              </div>
+            )}
+            {wo.out && (
+              <div class="hint" data-cy="w-wo-out">
+                {t("worker.woOffDay")}
               </div>
             )}
           </div>

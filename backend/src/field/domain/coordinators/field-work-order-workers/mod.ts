@@ -73,6 +73,10 @@ export class FieldWorkOrderWorkers {
             : name.get(r.staff.workerId) ?? "—",
         };
       }
+      // REQ-1163: a defer with a day back says which day it sits on
+      if (r.kind === "defer" && r.to) {
+        return { assigneeOut: "defer", assigneeDeferredTo: r.to };
+      }
       return r.kind === "staff" ? {} : { assigneeOut: r.kind };
     });
   }
