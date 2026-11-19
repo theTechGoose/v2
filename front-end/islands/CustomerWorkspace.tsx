@@ -28,6 +28,7 @@ import { toE164 } from "../lib/communications.ts";
 import { assistantThreadPath } from "../lib/quote-panel-send.ts";
 import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
 import { initialsOf } from "../lib/customer-nav.ts";
+import { isIssuedState, zeroBalanceKey } from "../lib/clients-display.ts";
 import { CUSTOMERS_CHANGED } from "../components/CustomersNav.tsx";
 import Backdrop from "../components/Backdrop.tsx";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
@@ -237,6 +238,11 @@ export default function CustomerWorkspace(
 
   const c = ws.customer;
   const s = ws.summary;
+  // REQ-990 / REQ-323: the issued, non-void invoices — the "Invoices: N" count, and whether a zero
+  // balance reads "Settled" or "Nothing billed yet" (the board's and the sidebar's word, zeroBalanceKey)
+  const issuedCount =
+    ws.invoices.filter((i) => isIssuedState(i.state) && i.status !== "void")
+      .length;
   const open = ws.invoices.filter((i) => i.balanceCents > 0);
   const mostOverdue =
     [...open].sort((a, b) => (b.overdueDays ?? 0) - (a.overdueDays ?? 0))[0];
@@ -463,7 +469,7 @@ export default function CustomerWorkspace(
               <div class="cws-kpi__val" data-cy="cws-owed-amount">
                 {s.owedCents > 0
                   ? money(s.owedCents, lang)
-                  : tFor(lang, "customerWs.kpi.paidUp")}
+                  : tFor(lang, zeroBalanceKey(issuedCount > 0))}
               </div>
               {mostOverdue && (
                 <button
@@ -485,7 +491,9 @@ export default function CustomerWorkspace(
                 })
                 : s.owedCents > 0
                 ? tFor(lang, "customerWs.kpi.notOverdue")
-                : tFor(lang, "customerWs.kpi.noBalance")}
+                : issuedCount > 0
+                ? tFor(lang, "customerWs.kpi.noBalance")
+                : tFor(lang, "customerWs.kpi.noInvoicesYet")}
             </div>
             {s.owedCents > 0 && (
               <div class="cws-bar">
@@ -507,9 +515,7 @@ export default function CustomerWorkspace(
             <div class="cws-kpi__val">{money(s.billedCents, lang, true)}</div>
             <div class="cws-kpi__hint">
               {tFor(lang, "customerWs.kpi.invoices", {
-                count: ws.invoices.filter((i) =>
-                  i.state !== "draft" && i.status !== "void"
-                ).length,
+                count: issuedCount,
               })}
             </div>
           </div>

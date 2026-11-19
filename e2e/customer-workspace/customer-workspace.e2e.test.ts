@@ -79,7 +79,7 @@ Deno.test("REQ-924: the Customers sidebar lists the customers with what they owe
     expect.eq(await first.getAttribute("data-tone"), "late", "her row is the overdue tone");
     expect.eq((await first.locator("[data-cy='nav-customer-line']").textContent())?.trim(), "$500 overdue", "her status line");
     const bobRow = nav.locator(`[data-cy='nav-customer-row'][data-id='${bob.id}']`);
-    expect.eq((await bobRow.locator("[data-cy='nav-customer-line']").textContent())?.trim(), "Paid up", "his status line");
+    expect.eq((await bobRow.locator("[data-cy='nav-customer-line']").textContent())?.trim(), "Nothing billed yet", "his status line — never billed (REQ-990 / REQ-323)");
 
     // (2) her row opens her full page in the main screen; the top bar is menu + search + EN/ES
     await first.click();
@@ -110,12 +110,12 @@ Deno.test("REQ-924: the Customers sidebar lists the customers with what they owe
     const res = await saved;
     expect(res.ok(), `the payment is recorded (${res.status()})`);
     await page.waitForFunction(
-      () => document.querySelector("[data-cy='cws-owed-amount']")?.textContent?.trim() === "All paid up",
+      () => document.querySelector("[data-cy='cws-owed-amount']")?.textContent?.trim() === "Settled", // REQ-990: the board's one zero-balance word
       undefined,
       { timeout: 15_000 },
     );
     await page.waitForFunction(
-      (id) => document.querySelector(`[data-cy='nav-customer-row'][data-id='${id}'] [data-cy='nav-customer-line']`)?.textContent?.trim() === "Paid up",
+      (id) => document.querySelector(`[data-cy='nav-customer-row'][data-id='${id}'] [data-cy='nav-customer-line']`)?.textContent?.trim() === "Settled",
       ana.id,
       { timeout: 15_000 },
     );
