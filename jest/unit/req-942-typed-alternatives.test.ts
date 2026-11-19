@@ -146,3 +146,91 @@ describe("REQ-1019 (LOOP-007 q2-2) firstAlternativeLines — the first option's 
     expect(sum(out ?? [])).toBe(840000);
   });
 });
+
+/**
+ * REQ-1096 (LOOP-007 cycle 3, q3-21; amends REQ-942 / REQ-1019) — two option
+ * phrasings the detector never read, so the REQ-942 guard never fired and the
+ * model's summed draft was saved:
+ *  - a lone add-on option: "exterior $4,850, fence $1,275.50. option 2: also
+ *    pressure wash driveway $325" — option 1 is everything before the marker
+ *    ($6,125.50), option 2 is that plus the add-on ($6,450.50). Saved at
+ *    $6,450.50 with the driveway as a required line.
+ *  - good/better tiers that name lines instead of carrying prices: "materials
+ *    around 600 labor 1400 … gutters - clean them 175. give her a
+ *    good/better: good = deck only, better = deck + gutters" — Good $2,000,
+ *    Better $2,175. Saved as one $3,575 quote holding the gutters.
+ */
+describe("REQ-1096 (LOOP-007 q3-21) typedAlternatives — lone 'option 2' add-on and good/better tiers", () => {
+  const ADD_ON =
+    "new quote for maria lopez, 412 oak st austin. exterior house paint and stain the fence. exterior $4,850, fence $1,275.50. option 2: also pressure wash driveway $325. 30% deposit";
+  const GOOD_BETTER =
+    "ok so maria lopez again, she also wants the back deck done. its about 14x20, sand it down, replace like 6 boards maybe 8, then 2 coats of semi transparent stain. materials around 600 labor 1400. also she asked about the gutters - clean them 175. give her a good/better: good = deck only, better = deck + gutters";
+  const L = (description: string, amountCents: number) => ({
+    description,
+    amountCents,
+  });
+  const sum = (ls: { amountCents: number }[]) =>
+    ls.reduce((n, l) => n + l.amountCents, 0);
+
+  it("REQ-1096: a lone priced 'option 2: also … $325' after priced lines reads as option 1 $6,125.50 / option 2 $6,450.50", () => {
+    const found = alts.typedAlternatives(ADD_ON);
+    expect(found).toBeDefined();
+    expect((found ?? []).map((a: { cents: number }) => a.cents)).toEqual([
+      612550,
+      645050,
+    ]);
+  });
+  it("REQ-1096: 'good/better: good = deck only, better = deck + gutters' reads as Good $2,000 / Better $2,175", () => {
+    const found = alts.typedAlternatives(GOOD_BETTER);
+    expect(found).toBeDefined();
+    expect(
+      (found ?? []).map((a: { label: string; cents: number }) => [
+        /good/i.test(a.label),
+        /better/i.test(a.label),
+        a.cents,
+      ]),
+    ).toEqual([[true, false, 200000], [false, true, 217500]]);
+  });
+  it("REQ-1096: one job is still not options — no marker, or tier words used as plain English", () => {
+    expect(
+      alts.typedAlternatives(
+        "new quote for maria lopez. exterior $4,850, fence $1,275.50. 30% deposit",
+      ),
+    ).toBeUndefined();
+    expect(
+      alts.typedAlternatives(
+        "deck is in good shape, better to stain it now before winter. stain $900, labor $1,100",
+      ),
+    ).toBeUndefined();
+  });
+  it("REQ-1096: the summed add-on draft [exterior $4,850, fence $1,275.50, pressure wash driveway $325] narrows to option 1 without the driveway", () => {
+    const out = alts.firstAlternativeLines([
+      L("Exterior house painting", 485000),
+      L("Fence staining", 127550),
+      L("Pressure wash driveway", 32500),
+    ], alts.typedAlternatives(ADD_ON) ?? []);
+    expect(out).toBeDefined();
+    expect(sum(out ?? [])).toBe(612550);
+    expect(
+      (out ?? []).some((l: { description: string }) =>
+        /driveway/i.test(l.description)
+      ),
+    ).toBe(false);
+  });
+  it("REQ-1096: the good/better draft [deck $2,000, gutter cleaning $175] narrows to Good (deck only) without the gutters", () => {
+    const out = alts.firstAlternativeLines([
+      L(
+        "Deck refinishing (sand down, replace 6-8 boards, 2 coats of semi-transparent stain)",
+        200000,
+      ),
+      L("Gutter cleaning", 17500),
+    ], alts.typedAlternatives(GOOD_BETTER) ?? []);
+    expect(out).toBeDefined();
+    expect(sum(out ?? [])).toBe(200000);
+    expect(
+      (out ?? []).some((l: { description: string }) =>
+        /gutter/i.test(l.description)
+      ),
+    ).toBe(false);
+  });
+});
