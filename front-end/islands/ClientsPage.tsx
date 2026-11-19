@@ -327,7 +327,7 @@ export default function ClientsPage(
       <ClientsHero
         totalClients={summary.totalClients}
         activeJobs={summary.activeJobs}
-        owedTotal={summary.owedCents / 100}
+        owedCents={summary.owedCents}
         quietCount={summary.quietCount}
         lang={lang}
         onAdd={() => setAddOpen(true)}

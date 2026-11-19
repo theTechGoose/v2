@@ -10,12 +10,14 @@ import type {
   UnassignedRevenue,
 } from "../clients/clients.ts";
 import { dollars, initialsOf, numberWord } from "../lib/clients-display.ts";
+import { fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, tFor, tnFor } from "../lib/i18n.ts";
 
 interface ClientsHeroProps {
   totalClients: number;
   activeJobs: number;
-  owedTotal: number;
+  /** Money owed across every customer, in exact cents (REQ-1086). */
+  owedCents: number;
   quietCount: number;
   lang?: Lang;
   /** Open the add-client modal. Rendered inside the ClientsPage island, so
@@ -24,12 +26,12 @@ interface ClientsHeroProps {
 }
 
 export function ClientsHero(
-  { totalClients, activeJobs, owedTotal, quietCount, lang = "en", onAdd }:
+  { totalClients, activeJobs, owedCents, quietCount, lang = "en", onAdd }:
     ClientsHeroProps,
 ) {
-  const owedFmt = owedTotal.toLocaleString("en-US", {
-    maximumFractionDigits: 0,
-  });
+  // REQ-961 / REQ-1086: to the cent unless the total is whole, like the
+  // board card and the sidebar on the same screen (never rounded to dollars).
+  const owedFmt = fmtMoneyTotal(owedCents);
   const empty = totalClients === 0;
   return (
     <div class="ph2">
@@ -93,7 +95,7 @@ export function ClientsHero(
                     { n: activeJobs },
                   )}
                 </strong>{" "}
-                · <strong>${owedFmt}</strong> {tFor(lang, "clientsHero.owed")} ·
+                · <strong>{owedFmt}</strong> {tFor(lang, "clientsHero.owed")} ·
                 {" "}
                 {
                   /* count + noun in ONE key so ES keeps noun-then-adjective

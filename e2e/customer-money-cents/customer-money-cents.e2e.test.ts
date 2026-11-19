@@ -21,6 +21,7 @@ async function signIn(
   http: StoryTools["http"],
   page: StoryTools["page"],
   baseUrl: string,
+  lang: "en" | "es" = "en",
 ) {
   const r = await http("/api/auth/verify", {
     method: "POST",
@@ -44,14 +45,14 @@ async function signIn(
   await (await http("/api/me", {
     method: "PUT",
     headers: auth,
-    body: JSON.stringify({ language: "en" }),
+    body: JSON.stringify({ language: lang }),
   })).body?.cancel();
   const [name, value] = cookie.split("=");
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
   await page.context().addCookies(
     [...hosts].flatMap((domain) => [
       { name, value, domain, path: "/" },
-      { name: "pm_lang", value: "en", domain, path: "/" },
+      { name: "pm_lang", value: lang, domain, path: "/" },
     ]),
   );
   return auth;
@@ -181,3 +182,114 @@ Deno.test("REQ-1072 q2-61: a $1,190.75 invoice part-paid by $500 reads to the ce
       "the customer page's owes/billed/paid KPIs, the board card and the /invoices hero all reconcile to the cent",
     );
   }));
+
+/**
+ * REQ-1086 (LOOP-007 cycle 3, issue q3-9): the /customers hero lede printed
+ * "$691 currently owed to you" ("$691 que te deben actualmente") while the
+ * board card and the sidebar on the same screen read "$690.75" — the hero
+ * rounded with its own maximumFractionDigits: 0. It must read to the cent and
+ * agree with the card and the sidebar, in English and Spanish.
+ */
+const heroStory = (lang: "en" | "es") => (t: Deno.TestContext) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl, lang);
+    const customer = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Rosa Hero", email: "rosa@example.test" }),
+    })).json();
+    if (!customer?.id) {
+      throw new Error(`seed customer: ${JSON.stringify(customer)}`);
+    }
+    const job = `Fence repair ${digits()}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const due = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(
+      0,
+      10,
+    );
+    const inv = await (await http("/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        jobName: job,
+        status: "sent",
+        issuedDate: today,
+        dueDate: due,
+        lineItems: [{
+          description: job,
+          quantity: 1,
+          unit: "job",
+          price: CENTS,
+        }],
+        amount: CENTS,
+      }),
+    })).json();
+    if (!inv?.id) throw new Error(`seed invoice: ${JSON.stringify(inv)}`);
+    const pay = await http("/api/payments", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        invoiceId: inv.id,
+        amount: PAID,
+        method: "check",
+        receivedAt: new Date().toISOString(),
+      }),
+    });
+    if (!pay.ok) {
+      throw new Error(`seed payment: ${pay.status} ${await pay.text()}`);
+    }
+    await pay.body?.cancel();
+
+    await page.goto("/customers");
+    const cardSel =
+      `.ccard2[data-customer-id='${customer.id}'] .ccard2__bal-val`;
+    const rowSel =
+      `[data-cy='nav-customer-row'][data-id='${customer.id}'] [data-cy='nav-customer-line']`;
+    await page.locator(cardSel).waitFor({ timeout: 20_000 });
+    await page.locator(".ph2__sub strong").first().waitFor({
+      timeout: 20_000,
+    });
+    await page.locator(rowSel).waitFor({ timeout: 20_000 });
+    // one evaluate: the hero, the card and the sidebar read in one render
+    const seen = await page.evaluate(
+      ({ cardSel, rowSel }) => {
+        const money = (s: string | null | undefined) =>
+          (s ?? "").match(/\$[\d,]+(?:\.\d+)?/)?.[0] ?? "";
+        const strongs = [
+          ...document.querySelectorAll(".ph2__sub strong"),
+        ].map((e) => e.textContent?.trim() ?? "");
+        return {
+          hero: strongs.find((s) => s.includes("$")) ?? "",
+          heroLine: document.querySelector(".ph2__sub")?.textContent
+            ?.replace(/\s+/g, " ").trim() ?? "",
+          card: money(document.querySelector(cardSel)?.textContent),
+          sidebar: money(document.querySelector(rowSel)?.textContent),
+        };
+      },
+      { cardSel, rowSel },
+    );
+    expect.eq(
+      JSON.stringify({
+        hero: seen.hero,
+        card: seen.card,
+        sidebar: seen.sidebar,
+      }),
+      JSON.stringify({
+        hero: "$690.75",
+        card: "$690.75",
+        sidebar: "$690.75",
+      }),
+      `the /customers hero (${lang}) reads money owed to the cent, like the card and the sidebar — hero line: "${seen.heroLine}"`,
+    );
+  });
+
+Deno.test(
+  "REQ-1086 (LOOP-007 q3, q3-9) en: the /customers hero reads $690.75 owed to the cent — a $1,190.75 invoice part-paid by $500 — the same as the board card and the sidebar",
+  heroStory("en"),
+);
+
+Deno.test(
+  "REQ-1086 (LOOP-007 q3, q3-9) es: the /customers hero reads $690.75 owed to the cent — a $1,190.75 invoice part-paid by $500 — the same as the board card and the sidebar",
+  heroStory("es"),
+);
