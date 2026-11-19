@@ -17,6 +17,7 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { ApiError } from "../lib/api.ts";
 import AddressAutocomplete from "../components/AddressAutocomplete.tsx";
 import FieldHead from "../components/FieldHead.tsx";
+import { Icon } from "../components/ui/Icon.tsx";
 import {
   type LatLng,
   type Located,
@@ -510,7 +511,7 @@ export default function SatelliteMeasurePage({ initialLang }: Props) {
                   aria-label={t("roof.nudge")}
                   onClick={() => nudge(1, 0)}
                 >
-                  ▲
+                  <Icon name="chevron-up" />
                 </button>
                 <button
                   type="button"
@@ -519,7 +520,7 @@ export default function SatelliteMeasurePage({ initialLang }: Props) {
                   aria-label={t("roof.nudge")}
                   onClick={() => nudge(-1, 0)}
                 >
-                  ▼
+                  <Icon name="chevron-down" />
                 </button>
                 <button
                   type="button"
@@ -528,7 +529,7 @@ export default function SatelliteMeasurePage({ initialLang }: Props) {
                   aria-label={t("roof.nudge")}
                   onClick={() => nudge(0, -1)}
                 >
-                  ◀
+                  <Icon name="chevron-left" />
                 </button>
                 <button
                   type="button"
@@ -537,7 +538,7 @@ export default function SatelliteMeasurePage({ initialLang }: Props) {
                   aria-label={t("roof.nudge")}
                   onClick={() => nudge(0, 1)}
                 >
-                  ▶
+                  <Icon name="chevron-right" />
                 </button>
               </>
             )}

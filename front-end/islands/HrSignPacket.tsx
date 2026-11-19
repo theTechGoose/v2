@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { hrSignClient, type SignDoc, type SignPacket } from "../clients/hr.ts";
 import SignaturePad from "../components/hr/SignaturePad.tsx";
+import { Icon } from "../components/ui/Icon.tsx";
 import { friendlyHr } from "../components/hr/bits.tsx";
 import { ApiError } from "../lib/api.ts";
 import { FIELD_TYPES } from "../lib/hr.ts";
@@ -284,7 +285,9 @@ export default function HrSignPacket({ token, initialLang }: Props) {
         {screen === "done" && (
           <div class="hrs__body">
             <div class="hrs__done" data-cy="hrs-done">
-              <span class="hrs__done-mark">✓</span>
+              <span class="hrs__done-mark">
+                <Icon name="check" size={40} />
+              </span>
               <div class="hrs__eyebrow">{t("hr.sign.done.eyebrow")}</div>
               <h1 class="hrs__title">{t("hr.sign.done.title")}</h1>
               <p class="hrs__p">

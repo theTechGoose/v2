@@ -108,6 +108,7 @@
 .cws-visits { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
 .cws-vis { font-size: 12px; border: 1px solid var(--cws-line2); border-radius: 8px; padding: 5px 8px; display: flex; flex-direction: column; min-width: 70px; background: #fff; }
 .cws-vis b { font-family: var(--font-heading); font-size: 13px; }
+.cws-vis__st { display: inline-flex; align-items: center; gap: 3px; }
 .cws-vis--done { background: var(--green-50, #ecf5e9); border-color: #cfe5c8; }
 .cws-vis--skip { background: var(--mint-300, #ddebdd); text-decoration: line-through; color: var(--cws-coffee); }
 .cws-vis--today { border-color: var(--brand-green, #519843); box-shadow: 0 0 0 1px var(--brand-green, #519843); }

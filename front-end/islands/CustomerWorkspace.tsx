@@ -10,6 +10,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
+import { Icon } from "../components/ui/Icon.tsx";
 import {
   type CustomerWorkspace as Workspace,
   customerWorkspaceClient,
@@ -423,7 +424,8 @@ export default function CustomerWorkspace(
                 setMenuOpen((o) => !o);
               }}
             >
-              {tFor(lang, "customerWs.act.more")} ▾
+              {tFor(lang, "customerWs.act.more")}{" "}
+              <Icon name="chevron-down" size={14} />
             </button>
             {menuOpen && (
               <div class="cws-menu" role="menu" data-cy="cws-menu">
@@ -447,7 +449,8 @@ export default function CustomerWorkspace(
                   data-cy="cws-edit"
                   onClick={() => setModal({ kind: "edit" })}
                 >
-                  ✏️ {tFor(lang, "customerWs.act.edit")}
+                  <Icon name="pencil" size={14} />{" "}
+                  {tFor(lang, "customerWs.act.edit")}
                 </button>
               </div>
             )}
@@ -1357,9 +1360,14 @@ function ServiceCard(
                 <b>{day(v.date, lang)}</b>
                 {v.status === "skipped"
                   ? tFor(lang, "customerWs.visit.skippedShort")
-                  : v.unbilled
-                  ? tFor(lang, "customerWs.visit.doneShort")
-                  : tFor(lang, "customerWs.visit.billedShort")}
+                  : (
+                    <span class="cws-vis__st">
+                      <Icon name="check" size={12} />
+                      {v.unbilled
+                        ? tFor(lang, "customerWs.visit.doneShort")
+                        : tFor(lang, "customerWs.visit.billedShort")}
+                    </span>
+                  )}
               </span>
             ))}
           {sv.nextVisits.slice(0, compact ? 3 : 5).map((d) => (
