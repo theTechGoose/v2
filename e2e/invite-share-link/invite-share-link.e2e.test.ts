@@ -129,3 +129,61 @@ Deno.test("REQ-601 (demo M12): an editor invite that couldn't be texted shows th
     const clip = await page.evaluate(() => navigator.clipboard.readText());
     expect(clip.includes(url), `the copied invite carries the link (${clip})`);
   }));
+
+/**
+ * REQ-998 (LOOP-007 cycle 1, q1-85) — amends REQ-601: the "couldn't text" line
+ * says WHY. The tester added a worker at 843-555-0142 (reserved 555-01XX,
+ * refused by design per REQ-523) and read only "We couldn't text Luis Ortega —
+ * share the link and PIN yourself.", so the owner thought the phone was broken.
+ */
+async function addReservedWorker(page: StoryTools["page"]) {
+  await page.locator("[data-cy='wk-form']").waitFor({ timeout: 20_000 });
+  await page.locator("[data-cy='wk-name']").fill("Luis Ortega");
+  await page.locator("[data-cy='wk-phone']").fill(`${area()}55501${two()}`);
+  await page.locator("[data-cy='wk-pin']").fill("4826");
+  await page.locator("[data-cy='wk-add']").click();
+  const said = page.locator("[data-cy='wk-texted'][data-texted='false']");
+  await said.waitFor({ timeout: 15_000 });
+  return (await said.innerText()).trim();
+}
+
+Deno.test("REQ-998 (LOOP-007 q1-85): a worker at a reserved 555-01XX number — the page says it's a reserved test number", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.goto("/field/workers");
+    const line = await addReservedWorker(page);
+    expect(
+      line.includes("reserved test number"),
+      `the couldn't-text line names the reason (got "${line}")`,
+    );
+    await page.locator("[data-cy='wk-share']").waitFor({ timeout: 10_000 });
+  }));
+
+Deno.test("REQ-998 (LOOP-007 q1-85): in Spanish the reason reads número de prueba reservado", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.goto("/field/workers?lang=es");
+    const line = await addReservedWorker(page);
+    expect(
+      line.includes("número de prueba reservado"),
+      `the couldn't-text line names the reason in Spanish (got "${line}")`,
+    );
+  }));
+
+Deno.test("REQ-998 (LOOP-007 q1-85): an editor invite to a reserved 555-01XX number says it's a reserved test number", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await signIn(http, page, baseUrl);
+    await page.goto("/admins");
+    await page.locator("[data-cy='adm-phone']").fill(`${area()}55501${two()}`);
+    await page.locator("[data-cy='adm-name']").fill("Carol Miller");
+    const invite = page.locator("[data-cy='adm-invite']:not([disabled])");
+    await invite.waitFor({ timeout: 20_000 });
+    await invite.click();
+    const sent = page.locator("[data-cy='adm-sent'][data-texted='false']");
+    await sent.waitFor({ timeout: 15_000 });
+    const line = (await sent.innerText()).trim();
+    expect(
+      line.includes("reserved test number"),
+      `the not-texted line names the reason (got "${line}")`,
+    );
+  }));

@@ -73,3 +73,42 @@ Deno.test("REQ-601 (cycle 4, M12) an editor invite that could not be texted answ
     await resetKv();
   }
 });
+
+/**
+ * REQ-998 (LOOP-007 cycle 1, q1-85, the /admins sibling) — the invite that
+ * could not be texted also says WHY: `smsFailureCode` from the SmsService
+ * ("fictional" for a reserved 555-01XX number, REQ-523).
+ */
+Deno.test("REQ-998 (LOOP-007 q1-85) an editor invite to a reserved 555-01XX number answers smsFailureCode 'fictional'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const owner = "+15125552332";
+    await call("POST", "/auth/send-otp", { phoneNumber: owner });
+    const code = (await new OtpStore().get(owner))!.code;
+    const v = await call("POST", "/auth/verify-otp", {
+      phoneNumber: owner,
+      code,
+    });
+    const O = { "x-session-id": v.body.sessionId as string };
+    await call("PUT", "/me", { name: "Hank Miller", language: "en" }, O);
+
+    const carol = await call("POST", "/me/admins", {
+      phoneNumber: "8435550142",
+      name: "Carol Miller",
+    }, O);
+    assertEquals(carol.status, 201, JSON.stringify(carol.body));
+    assertEquals(carol.body.texted, false);
+    assertEquals(
+      carol.body.smsFailureCode,
+      "fictional",
+      "the invite says why the text did not go (a reserved test number)",
+    );
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
