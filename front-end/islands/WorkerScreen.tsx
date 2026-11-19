@@ -147,14 +147,16 @@ const css = `
   .visit__client { font-family: var(--font-heading); font-weight: 800; font-size: 17px; color: var(--brand-teal); }
   .visit__state { flex: none; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; border-radius: 999px; padding: 4px 9px; background: var(--mint-200); color: var(--brand-teal); transition: background-color var(--pm-dur-base), color var(--pm-dur-base); }
   .visit--done .visit__state { background: var(--brand-green); color: #fff; }
-  .svc { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
-  .svc__check { width: 46px; height: 46px; border-radius: 12px; border: 2px solid var(--green-200); background: #fff; display: grid; place-items: center; color: var(--brand-green); cursor: pointer; font-size: 0; flex: none; transition: background-color var(--pm-dur-base) var(--pm-ease-out), border-color var(--pm-dur-base) var(--pm-ease-out), transform var(--pm-dur-fast) var(--pm-ease-out); }
+  .svc { display: flex; align-items: center; gap: 12px; padding: 4px 0; width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .svc:disabled { cursor: default; }
+  .svc--locked { cursor: default; }
+  .svc__check { width: 46px; height: 46px; border-radius: 12px; border: 2px solid var(--green-200); background: #fff; display: grid; place-items: center; color: var(--brand-green); cursor: inherit; font-size: 0; flex: none; transition: background-color var(--pm-dur-base) var(--pm-ease-out), border-color var(--pm-dur-base) var(--pm-ease-out), transform var(--pm-dur-fast) var(--pm-ease-out); }
   .svc__check svg { opacity: .18; transition: opacity var(--pm-dur-base); }
   .svc--done .svc__check { background: var(--brand-green); color: #fff; border-color: var(--brand-green); }
   .svc--done .svc__check svg { opacity: 1; animation: pop var(--pm-dur-slow) var(--ease-bounce) both; }
   @keyframes pop { 0% { transform: scale(.4); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
-  .svc__check[disabled] { opacity: .5; cursor: default; }
-  .svc--locked .svc__check { border-style: dashed; cursor: default; }
+  .svc:disabled .svc__check { opacity: .5; }
+  .svc--locked .svc__check { border-style: dashed; }
   .svc__name { font-weight: 700; font-size: 15px; color: var(--brand-teal); flex: 1; overflow-wrap: anywhere; transition: color var(--pm-dur-base); }
   .svc--done .svc__name { color: var(--fg-muted); }
   .svc__extra { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--brand-teal); background: var(--mint-100); border-radius: 999px; padding: 2px 7px; }
@@ -686,32 +688,31 @@ export default function WorkerScreen(
         </div>
         <div>
           {act_.map((s) => (
-            <div
+            // REQ-1001: the whole row is the check-off target — a tap on the
+            // service's name toggles it like the square does
+            <button
+              type="button"
               key={s.id}
               class={`svc${s.status === "complete" ? " svc--done" : ""}${
                 s.locked || preview ? " svc--locked" : ""
               }`}
               data-id={s.id}
+              data-cy="w-check"
+              aria-pressed={s.status === "complete"}
+              disabled={s.locked || preview || busy.has(s.id)}
+              onClick={() =>
+                act(
+                  s.id,
+                  () =>
+                    s.status === "complete"
+                      ? workerClient.uncomplete(s.id)
+                      : workerClient.complete(s.id),
+                )}
             >
-              <button
-                type="button"
-                class="svc__check"
-                data-cy="w-check"
-                aria-label={t("worker.done")}
-                aria-pressed={s.status === "complete"}
-                disabled={s.locked || preview || busy.has(s.id)}
-                onClick={() =>
-                  act(
-                    s.id,
-                    () =>
-                      s.status === "complete"
-                        ? workerClient.uncomplete(s.id)
-                        : workerClient.complete(s.id),
-                  )}
-              >
+              <span class="svc__check" aria-hidden="true">
                 <I d={ICN.check} size={24} sw={3} />
-              </button>
-              <div class="svc__name">
+              </span>
+              <span class="svc__name">
                 {s.taskTypeName}
                 {s.addedBy === "worker" && (
                   <>
@@ -741,8 +742,8 @@ export default function WorkerScreen(
                     </span>
                   </>
                 )}
-              </div>
-            </div>
+              </span>
+            </button>
           ))}
         </div>
         {v.services.filter((s) => s.status === "deferred").map((s) => (
