@@ -60,6 +60,10 @@ export function renderReceiptHtml(opts: {
   balanceCents?: number;
   /** REQ-1071: where the customer pays the balance (the invoice shortlink). */
   payUrl?: string;
+  /** REQ-1121 (amends REQ-1054): the customer can pay online (hasOnlinePayWay). false → the
+   *  button only views the invoice ("View the invoice →"), never "Pay the balance →" — /i
+   *  then says "contact your contractor". */
+  payOnline?: boolean;
 }): string {
   const { lang } = opts;
   const businessLabel = opts.businessName ?? opts.contractor?.name ??
@@ -101,7 +105,12 @@ export function renderReceiptHtml(opts: {
       <a data-receipt-pay href="${
           escapeHtml(opts.payUrl)
         }" style="display:inline-block;background:#144852;color:#fff;text-decoration:none;font-weight:800;font-size:15px;padding:12px 22px;border-radius:12px">${
-          t(lang, "confirmPayment.email.payCta")
+          t(
+            lang,
+            opts.payOnline === false
+              ? "confirmPayment.email.viewCta"
+              : "confirmPayment.email.payCta",
+          )
         }</a>
     </div>`
         : ""

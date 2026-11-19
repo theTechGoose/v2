@@ -30,6 +30,9 @@ import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import { balanceDue } from "@paperwork/domain/business/invoice-balance/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-1121
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-1121
+import { hasOnlinePayWay } from "#payments/pay-links.ts"; // REQ-1121
 import {
   customerOnDocument,
   docRef,
@@ -90,6 +93,9 @@ export class SendPaymentReceipt {
   // REQ-1017 / REQ-175: the same per-(contractor, customer) reply token the
   // invoice emails use (send-paperwork-email holds it the same way).
   private replyTokens = new ReplyTokenStore();
+  // REQ-1121: the business's own card processors, for the REQ-1054 online-pay check
+  private stripeSettings = new StripeSettingsStore();
+  private squareSettings = new SquareSettingsStore();
 
   constructor(
     private invoices: InvoiceStore,
@@ -103,6 +109,15 @@ export class SendPaymentReceipt {
     private commsLog: LogPaperworkMessage,
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
+
+  /** REQ-1121 (amends REQ-1054): the customer can pay online — the same inputs /i uses */
+  private async payOnline(userId: string, apm: unknown): Promise<boolean> {
+    const [stripe, square] = await Promise.all([
+      this.stripeSettings.get(userId).catch(() => null),
+      this.squareSettings.get(userId).catch(() => null),
+    ]);
+    return hasOnlinePayWay(apm, { card: !!stripe || !!square });
+  }
 
   async run(
     userId: string,
@@ -205,6 +220,8 @@ export class SendPaymentReceipt {
           totalCents,
           balanceCents,
           ...(invoiceUrl ? { payUrl: invoiceUrl } : {}),
+          // REQ-1121: "Pay the balance" only when /i offers a way to pay online
+          payOnline: await this.payOnline(userId, biz?.acceptedPaymentMethods),
           // REQ-628: headed by the business's own logo, or its name as a wordmark
           logoHtml: emailLogoHtml(emailLogo({
             appUrl: Deno.env.get("APP_URL") ?? SITE_ORIGIN,

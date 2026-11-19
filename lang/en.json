@@ -6375,6 +6375,8 @@
   "invoicesPage.empty.paidUnlisted": "{amount} received this month, on invoices no longer listed here.",
   "paperworkEmail.quote.attachmentName": "Quote-{id}.pdf",
   "signedConfirm.email.attachmentName": "Agreement-{id}.pdf",
+  "paperworkEmail.invoice.ctaView": "View invoice",
+  "confirmPayment.email.viewCta": "View the invoice →",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",
