@@ -23,6 +23,7 @@ import {
   type Invoice,
 } from "../clients/dashboard.ts";
 import { fieldClient } from "../clients/field.ts";
+import { clientsClient } from "../clients/clients.ts";
 import { assistantClient } from "../clients/assistant.ts";
 import { commsClient, type ThreadDetail } from "../clients/communications.ts";
 import { outboxClient, type OutboxRow } from "../clients/outbox.ts";
@@ -206,6 +207,10 @@ export default function CustomerWorkspace(
     null,
   );
   const [busy, setBusy] = useState<string | null>(null);
+  // REQ-1075: More → Delete customer asks inline (REQ-802's question, Delete / Keep)
+  const [askDelete, setAskDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -237,6 +242,23 @@ export default function CustomerWorkspace(
     globalThis.addEventListener("click", close);
     return () => globalThis.removeEventListener("click", close);
   }, [menuOpen]);
+
+  /** REQ-1075: REQ-039's soft delete; the sidebar drops her and the board flashes "<name> deleted" */
+  async function onDeleteYes(id: string, name: string) {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      await clientsClient.delete(id);
+      globalThis.dispatchEvent(new Event(CUSTOMERS_CHANGED));
+      globalThis.location.assign(
+        `/customers?deleted=${encodeURIComponent(name)}`,
+      );
+    } catch (err) {
+      setDeleting(false);
+      setDeleteErr((err as Error).message);
+    }
+  }
 
   /** re-read the page and the sidebar's rows */
   async function changed(text?: string) {
@@ -490,10 +512,62 @@ export default function CustomerWorkspace(
                   <Icon name="pencil" size={14} />{" "}
                   {tFor(lang, "customerWs.act.edit")}
                 </button>
+                {/* REQ-1075: Delete customer — quiet danger, the question inline below */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="cws-menu__danger"
+                  data-cy="cws-delete"
+                  onClick={() => {
+                    setDeleteErr(null);
+                    setAskDelete(true);
+                  }}
+                >
+                  {tFor(lang, "clientsBoard.panel.delete")}
+                </button>
               </div>
             )}
           </div>
         </div>
+        {askDelete && (
+          <div class="cws-ask" data-cy="cws-delete-ask" role="group">
+            <div>
+              {tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
+            </div>
+            <div class="cws-ask__btns">
+              <button
+                type="button"
+                class="cws-btn cws-btn--sm cws-btn--danger"
+                data-cy="cws-delete-yes"
+                disabled={deleting}
+                onClick={() =>
+                  onDeleteYes(c.id, c.name)}
+              >
+                <I d={ICN.trash} size={13} />{" "}
+                {tFor(lang, "clientsBoard.panel.deleteYes")}
+              </button>
+              <button
+                type="button"
+                class="cws-btn cws-btn--sm cws-btn--ghost"
+                data-cy="cws-delete-keep"
+                disabled={deleting}
+                onClick={() => {
+                  setAskDelete(false);
+                  setDeleteErr(null);
+                }}
+              >
+                {tFor(lang, "clientsBoard.panel.deleteKeep")}
+              </button>
+            </div>
+            {deleteErr && (
+              <div class="cws-ask__err" data-cy="cws-delete-error" role="alert">
+                {tFor(lang, "clientsBoard.panel.deleteError", {
+                  message: deleteErr,
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       <nav class="cws-tabs" role="tablist">
