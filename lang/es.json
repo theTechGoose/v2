@@ -5347,6 +5347,7 @@
   "customerForm.err.stateInvalid": "Escribe un estado de EE. UU., como TX o Texas.",
   "customerForm.err.zipInvalid": "Escribe un código postal de 5 dígitos, como 78704.",
   "customerForm.err.save": "No se pudo guardar el cliente. Inténtalo de nuevo.",
+  "customerForm.err.conflict": "Este cliente se editó en otro lugar. Aquí está lo más reciente — haz tu cambio otra vez y guarda.",
   "clientsBoard.msg.reminder": "Hola {name}, un recordatorio amable sobre tu saldo pendiente de {amount}. ¡Gracias!",
   "clientsBoard.msg.progress": "Hola {name}, una actualización rápida de tu trabajo: ",
   "clientsBoard.msg.followUp": "Hola {name}, te escribo para dar seguimiento — con gusto respondo cualquier pregunta.",

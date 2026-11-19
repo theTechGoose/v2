@@ -5346,6 +5346,7 @@
   "customerForm.err.stateInvalid": "Enter a US state, like TX or Texas.",
   "customerForm.err.zipInvalid": "Enter a 5-digit ZIP code, like 78704.",
   "customerForm.err.save": "Couldn't save the customer. Try again.",
+  "customerForm.err.conflict": "This customer was edited somewhere else. Here is the latest — make your change again and save.",
   "clientsBoard.msg.reminder": "Hi {name}, a friendly reminder about your open balance of {amount}. Thank you!",
   "clientsBoard.msg.progress": "Hi {name}, a quick update on your job: ",
   "clientsBoard.msg.followUp": "Hi {name}, following up — happy to answer any questions.",

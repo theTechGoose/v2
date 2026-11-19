@@ -13,9 +13,16 @@
  * Layout: inline styles only (a route <style> can die on hydration); the
  * paired rows use auto-fit grids so a 390px phone stacks them instead of
  * clipping.
+ *
+ * REQ-1144 (LOOP-007 q3, q3-74): Edit sends the `version` it loaded. When the
+ * customer was saved somewhere else since (another tab, an invited admin),
+ * the backend answers 409 stale_version with the latest record; the form
+ * reloads it, says so (`cf-conflict`) and keeps that version, so the next
+ * Save is a deliberate one on the current values — never a silent overwrite.
  */
 import { useState } from "preact/hooks";
 import { clientsClient, type CustomerCard } from "../clients/clients.ts";
+import { ApiError } from "../lib/api.ts"; // REQ-1144
 import AddressAutocomplete from "./AddressAutocomplete.tsx"; // REQ-599
 import Backdrop from "./Backdrop.tsx"; // REQ-354
 import CustomerLanguageSelect, {
@@ -280,8 +287,8 @@ export function CustomerFields(
 interface DialogProps {
   mode: "create" | "edit";
   lang: Lang;
-  /** the customer being edited (mode="edit") */
-  customer?: (CustomerLike & { id: string }) | null;
+  /** the customer being edited (mode="edit"); REQ-1144 its `version` */
+  customer?: (CustomerLike & { id: string; version?: number }) | null;
   onSaved: (saved: CustomerCard) => void | Promise<void>;
   onClose: () => void;
 }
@@ -304,11 +311,17 @@ export default function CustomerFormDialog(
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-1144: the version this form was loaded on, and whether a save was
+  // refused because the customer moved on (the form then shows the latest)
+  const [version, setVersion] = useState<number | undefined>(() =>
+    typeof customer?.version === "number" ? customer.version : undefined
+  );
+  const [conflict, setConflict] = useState(false);
   const errors = validateCustomerForm(values);
   const invalid = Object.keys(errors).length > 0;
   // REQ-300 (demo cycle 1, M20): a backdrop click never drops typed text —
   // it closes the dialog only while the draft is clean (Cancel still closes)
-  const [start] = useState(() => JSON.stringify([values, language]));
+  const [start, setStart] = useState(() => JSON.stringify([values, language]));
   const dirty = JSON.stringify([values, language]) !== start;
 
   async function submit(e: Event) {
@@ -317,15 +330,37 @@ export default function CustomerFormDialog(
     if (invalid || busy) return;
     setBusy(true);
     setErr(null);
+    setConflict(false);
     try {
       const saved = mode === "edit" && customer
         ? await clientsClient.update(customer.id, {
           ...customerUpdatePayload(values),
           ...(language ? { language } : {}),
+          ...(version !== undefined ? { version } : {}), // REQ-1144
         })
         : await clientsClient.create(customerCreatePayload(values, language));
       await onSaved(saved);
     } catch (x) {
+      // REQ-1144: saved somewhere else since this form loaded — show the
+      // latest instead of writing the stale values over it
+      const body = x instanceof ApiError && x.status === 409 &&
+          x.body && typeof x.body === "object"
+        ? x.body as {
+          error?: string;
+          currentVersion?: number;
+          customer?: CustomerLike & { language?: string };
+        }
+        : null;
+      if (body?.error === "stale_version") {
+        const latest = customerFormFrom(body.customer);
+        const latestLang = customerLanguageValue(body.customer?.language);
+        setValues(latest);
+        setLanguage(latestLang);
+        setStart(JSON.stringify([latest, latestLang]));
+        setVersion(body.currentVersion);
+        setConflict(true);
+        return;
+      }
       // REQ-278/992: the backend's refusal is a dictionary key
       setErr(
         x instanceof Error && x.message
@@ -388,6 +423,15 @@ export default function CustomerFormDialog(
             style={INPUT}
           />
         </label>
+        {conflict && (
+          <p
+            role="alert"
+            data-cy="cf-conflict"
+            style="margin:0;padding:10px 12px;border-radius:10px;background:#fff6e5;color:#7a4b00;font-size:13.5px;font-weight:600"
+          >
+            {tFor(lang, "customerForm.err.conflict")}
+          </p>
+        )}
         {err && (
           <p
             role="alert"

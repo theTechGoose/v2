@@ -12,8 +12,25 @@ import type {
   UpdateCustomerDto,
 } from "@crm/dto/customer.ts";
 import { addressWrite } from "@crm/domain/business/customer-address/mod.ts"; // REQ-625
+import { versionOf } from "#documents/versions.ts"; // REQ-1144
 
 const PREFIX = "customer";
+
+/** compare-and-set retries before an unversioned edit gives up (REQ-1144) */
+const MAX_CAS_ATTEMPTS = 5;
+
+/**
+ * REQ-1144 (LOOP-007 q3, q3-74): an edit made on a version the customer has
+ * moved past. Carries the current record so the caller can show it — the
+ * controller answers 409 `{ error: "stale_version", currentVersion, customer }`.
+ */
+export class StaleCustomerVersionError extends Error {
+  readonly status: number = 409;
+  constructor(public current: Customer) {
+    super(`customer ${current.id} is at version ${versionOf(current)}`);
+    this.name = "StaleCustomerVersionError";
+  }
+}
 const INDEX_PREFIX = "customer_by_user"; // [INDEX_PREFIX, userId, customerId] → customerId
 
 /**
@@ -102,30 +119,56 @@ export class CustomerStore {
     return recs.filter((c): c is Customer => !!c && !c.deletedAt);
   }
 
+  /**
+   * REQ-625 edit. REQ-1144 (LOOP-007 q3, q3-74): every edit bumps `version`
+   * and is written compare-and-set on the row's versionstamp, so two saves
+   * can never both land on the same version. A patch carrying `version` that
+   * is not the stored one is refused with StaleCustomerVersionError (the
+   * stale form would put back values someone else changed). A patch without
+   * `version` (a one-field change: the language picker, a rename) applies to
+   * whatever is current, retrying if a concurrent edit got there first.
+   */
   async update(
     id: string,
     userId: string,
     patch: UpdateCustomerDto,
   ): Promise<Customer> {
-    const existing = await this.getOwned(id, userId);
+    const { version: expected, ...fields } = patch;
     const definedPatch = Object.fromEntries(
-      Object.entries(patch).filter(([_, v]) => v !== undefined),
+      Object.entries(fields).filter(([_, v]) => v !== undefined),
     );
-    const updated: Customer = {
-      ...existing,
-      ...definedPatch,
-      ...addressWrite(existing, patch), // REQ-625: recompose from the merged parts
-      id: existing.id,
-      userId: existing.userId,
-      createdAt: existing.createdAt,
-      updatedAt: new Date().toISOString(),
-    };
-    // REQ-715: "" (or null) clears the customer's language — the field is
-    // gone, never a stored ""
-    if (!updated.language) delete updated.language;
     const kv = await getKv();
-    await kv.set([PREFIX, id], updated);
-    return updated;
+    for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+      const entry = await kv.get<Customer>([PREFIX, id]);
+      const existing = entry.value;
+      if (!existing || existing.deletedAt) throw new NotFoundError(PREFIX, id);
+      if (existing.userId !== userId) throw new ForbiddenError(PREFIX, id);
+      const current = versionOf(existing);
+      if (expected !== undefined && expected !== current) {
+        throw new StaleCustomerVersionError(existing);
+      }
+      const updated: Customer = {
+        ...existing,
+        ...definedPatch,
+        ...addressWrite(existing, fields), // REQ-625: recompose from the merged parts
+        id: existing.id,
+        userId: existing.userId,
+        createdAt: existing.createdAt,
+        updatedAt: new Date().toISOString(),
+        version: current + 1,
+      };
+      // REQ-715: "" (or null) clears the customer's language — the field is
+      // gone, never a stored ""
+      if (!updated.language) delete updated.language;
+      const res = await kv.atomic()
+        .check({ key: [PREFIX, id], versionstamp: entry.versionstamp })
+        .set([PREFIX, id], updated)
+        .commit();
+      if (res.ok) return updated;
+      // someone else saved in between: a versioned edit re-reads and is
+      // refused above; an unversioned one re-applies on the newer record
+    }
+    throw new StaleCustomerVersionError(await this.getOwned(id, userId));
   }
 
   /** REQ-039 (NW-52): soft delete — flagged, never erased. */

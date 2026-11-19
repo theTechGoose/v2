@@ -2,8 +2,10 @@ import type { BalanceSubParts } from "#quote-flow/balance-sub.ts";
 import {
   IsBoolean,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
+  Min,
   validateSync,
 } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
@@ -145,6 +147,17 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsIn([...CUSTOMER_LANGUAGES, ""])
   language?: CustomerLanguage | "";
+
+  /**
+   * REQ-1144 (LOOP-007 q3, q3-74): the version the edit was made on. When
+   * sent and the stored customer has moved on, the save is refused
+   * (409 stale_version) instead of silently putting back the older values.
+   * Left out, the edit applies to whatever is current (a one-field change).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  version?: number;
 }
 
 export interface Customer
@@ -156,6 +169,8 @@ export interface Customer
   userId: string;
   createdAt: string;
   updatedAt: string;
+  /** REQ-1144: bumped by every edit — what an edit's `version` is checked against. */
+  version?: number;
 }
 
 /**
