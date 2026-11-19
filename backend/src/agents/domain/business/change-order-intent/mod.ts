@@ -82,6 +82,10 @@ export interface ChangeOrderRequest {
    *  a line already on the quote — a reprice, never an added line. When set,
    *  `description` / `deltaAmountCents` are not. */
   reprice?: LineReprice;
+  /** REQ-1098 (LOOP-007 q3-23): "add X $A and Y $B" — each item with its
+   *  own amount; `description` names them all and `deltaAmountCents` is the
+   *  sum (one change order). On a draft they are separate lines. */
+  items?: { description: string; deltaAmountCents: number }[];
   /** REQ-661 (demo-loop cycle 5, M15): "heated floor is $1,200 not 150" —
    *  `deltaAmountCents` is the line's RIGHT price. A line by that name already
    *  on the job is repriced to it; with none, it is added at that price. */
@@ -337,6 +341,20 @@ export function parseChangeOrderRequest(
     return out;
   }
 
+  // REQ-1098 (LOOP-007 q3-23): "add painting the garage $1,150 and 3 fence
+  // boards $95.50" is ONE change order — both items, each with its price,
+  // at the sum. Read in code, so the model never splits it into two.
+  const items = parsePricedItems(rest);
+  if (items) {
+    if (!out.customerName && items.customerName) {
+      out.customerName = items.customerName;
+    }
+    out.description = items.description;
+    out.deltaAmountCents = items.deltaAmountCents;
+    out.items = items.items;
+    return out;
+  }
+
   const money = rest.match(MONEY_RE);
   let negative = false;
   if (money) {
@@ -374,6 +392,116 @@ export function parseChangeOrderRequest(
     if (desc && isCleanChangeClause(desc)) out.description = capitalize(desc);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// REQ-1098 (LOOP-007 cycle 3, q3-23): "maria wants to add painting the
+// detached garage $1,150 and replacing 3 rotten fence boards $95.50. make a
+// change order and send it to her" — two items, each priced, ONE change order.
+// ---------------------------------------------------------------------------
+
+/** "maria wants to add", "Dana would like" — a named lead-in (up to two
+ *  words) saying who asked; the pronoun forms are WANTS_LEAD_RE's. */
+const NAMED_WANTS_LEAD_RE =
+  /^(?<who>[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*)?)\s+(?:also\s+)?(?:wants?|would\s+like|needs?|quiere|necesita)(?:\s+(?:to|a))?(?:\s+(?:add|have|get|agregar|añadir|poner))?\s+/iu;
+/** Lead-in "names" that name nobody. */
+const NOT_A_WHO_RE =
+  /^(?:i|we|you|she|he|they|it|customer|client|homeowner|the\s+\p{L}+|ella|[eé]l|ellos|ellas)$/iu;
+/** Joiners between two priced items: ", and", "plus", "y", "&". */
+const ITEM_JOIN_RE =
+  /^[\s,;&+]*(?:(?:and|plus|also|y|e)\b[\s,]*)*(?:add(?:ing)?|agrega|agregar|añade|añadir)?\s*/iu;
+/** An item that is really a reprice or a total ("change Q-001 to"). */
+const NOT_AN_ITEM_RE =
+  /(?:^(?:change|update|make|set|lower|raise|bump|reprice|total)\b|\b(?:to|from|total|instead|not|now|is|was)$)/i;
+/** A rate after an amount ("$55 a foot", "$3 per sqft") — not a price. */
+const RATE_AFTER_RE = /^\s*(?:a|an|per|each|\/)\b/i;
+
+/** "$1,150.00" — always with cents, as a change order's item price. */
+export function itemPrice(cents: number): string {
+  return `$${
+    (Math.abs(cents) / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }`;
+}
+
+/** "Painting the garage ($1,150.00) and fence boards ($95.50)". */
+export function describePricedItems(
+  items: readonly { description: string; cents: number }[],
+): string {
+  return joinItems(
+    items.map((i) => `${i.description.trim()} (${itemPrice(i.cents)})`),
+  );
+}
+
+/**
+ * REQ-1098: two or more items, each followed by its own amount, in the
+ * first sentence of the change ("add X $A and Y $B"). Undefined unless
+ * every item is a short, clean, added item (no credits, rates, reprices or
+ * totals) — those stay with the single-item reading or the model.
+ */
+function parsePricedItems(text: string): {
+  customerName?: string;
+  description: string;
+  deltaAmountCents: number;
+  items: { description: string; deltaAmountCents: number }[];
+} | undefined {
+  let clause = text ?? "";
+  const stop = clause.search(/[.!?](?:\s|$)/);
+  if (stop >= 0) clause = clause.slice(0, stop);
+  const moneys = [...clause.matchAll(new RegExp(MONEY_RE.source, "gi"))];
+  if (moneys.length < 2) return undefined;
+  clause = clause.replace(/\(?\bQ-\d+\b\)?/gi, (m) => " ".repeat(m.length));
+  let customerName: string | undefined;
+  const items: { description: string; cents: number }[] = [];
+  let from = 0;
+  for (const [i, m] of moneys.entries()) {
+    if (m[1]) return undefined; // a credit — not this reading
+    let seg = clause.slice(from, m.index);
+    from = (m.index ?? 0) + m[0].length;
+    if (RATE_AFTER_RE.test(clause.slice(from))) return undefined;
+    seg = seg.trim();
+    if (i === 0) {
+      seg = seg.replace(/^[\s:,;—–-]+/, "");
+      const lead = seg.match(WANTS_LEAD_RE);
+      if (lead) seg = seg.slice(lead[0].length);
+      else {
+        const named = seg.match(NAMED_WANTS_LEAD_RE);
+        if (named) {
+          const who = named.groups?.who?.trim() ?? "";
+          if (!NOT_A_WHO_RE.test(who)) customerName = who;
+          seg = seg.slice(named[0].length);
+        }
+      }
+      if (CREDIT_VERBS.test(seg)) return undefined;
+      seg = seg.replace(ADD_VERBS, "");
+    } else {
+      seg = seg.replace(ITEM_JOIN_RE, "");
+      if (CREDIT_VERBS.test(seg)) return undefined;
+    }
+    seg = seg.replace(/[\s,;:—–-]+(?:for|at|of|by|por)?\s*$/i, "").trim()
+      .replace(/\s+(?:for|at|of|by|por)$/i, "").trim()
+      .replace(ARTICLE_RE, "").trim();
+    if (!seg || !/\p{L}/u.test(seg) || !isCleanChangeClause(seg)) {
+      return undefined;
+    }
+    if (NOT_AN_ITEM_RE.test(seg)) return undefined;
+    const cents = wholeFracCents(m[2], m[3]);
+    if (!(cents > 0)) return undefined;
+    items.push({ description: seg, cents });
+  }
+  // anything after the last amount but punctuation is not this shape
+  if (/\p{L}/u.test(clause.slice(from))) return undefined;
+  return {
+    ...(customerName ? { customerName } : {}),
+    description: capitalize(describePricedItems(items)),
+    deltaAmountCents: items.reduce((a, b) => a + b.cents, 0),
+    items: items.map((i) => ({
+      description: capitalize(i.description),
+      deltaAmountCents: i.cents,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1200,6 +1328,13 @@ export function reconcileChangeOrderDelta(input: {
     fits.add(-a);
     for (const b of input.bases) fits.add(a - b);
   }
+  // REQ-1098: items each priced ("garage $1,150 and boards $95.50") are one
+  // change order at the sum of what was typed.
+  if (amounts.length > 1) {
+    const sum = amounts.reduce((a, b) => a + b, 0);
+    fits.add(sum);
+    fits.add(-sum);
+  }
   fits.delete(0);
   if (fits.has(delta)) return { kind: "ok", deltaCents: delta };
   const slips = new Set<number>();
@@ -1267,18 +1402,37 @@ function joinItems(items: readonly string[]): string {
   return [first, ...rest].join(", ") + " and " + last;
 }
 
+/** REQ-1098: the owner asked for more than one change order ("two change
+ *  orders", "separate change orders", "each its own"). */
+const SEPARATE_CO_RE =
+  /(?<!\p{L})(?:(?:two|three|four|2|3|4|separate|individual|different)\s+change\s+orders|separate(?:ly)?|each\s+(?:its|their)\s+own|one\s+(?:change\s+order\s+)?(?:for\s+|per\s+)?each|(?:dos|tres|2|3)\s+[oó]rdenes\s+de\s+cambio|por\s+separado|separad[oa]s)(?!\p{L})/iu;
+export function asksForSeparateChangeOrders(text: string): boolean {
+  return SEPARATE_CO_RE.test(text ?? "");
+}
+
 /**
  * Merge the change_order calls of one turn that point at the same quote and
  * were priced together: the owner typed one amount and the calls' deltas are
  * not each a typed amount ("$2,800 for both"), or the deltas add up to a
  * typed amount. The merged call names every item and carries that amount;
- * it sits where the first one was. Calls each priced by what was typed
- * ("niche $500 and door $1,200"), a new total (REQ-377) or nothing typed
- * stay as they are.
+ * it sits where the first one was. REQ-1098: calls each priced by what was
+ * typed ("niche $500 and door $1,200") merge too, at the sum, each item
+ * keeping its price in the description — unless the owner asked for
+ * separate change orders. A new total (REQ-377) or nothing typed stay as
+ * they are.
  */
 export function mergeChangeOrderCalls<
   T extends { type: string; payload: unknown },
->(edits: readonly T[], userText: string): T[] {
+>(
+  edits: readonly T[],
+  userText: string,
+  opts: {
+    /** REQ-1098: true for a call whose target makes no change order (a
+     *  draft's lines, a pending revision) — items each priced as typed are
+     *  separate lines there, never one. */
+    keepEachPricedApart?: (p: ChangeOrderCallPayload) => boolean;
+  } = {},
+): T[] {
   const typed = changeOrderAmountsCents(userText);
   if (typed.length === 0) return [...edits];
   const co = (e: T) =>
@@ -1303,18 +1457,40 @@ export function mergeChangeOrderCalls<
     if (idx.length < 2) continue;
     const calls = idx.map((i) => co(edits[i])!);
     const deltas = calls.map((p) => Math.trunc(p.deltaAmountCents ?? 0));
-    if (deltas.every((d) => typed.includes(Math.abs(d)))) continue;
     const sum = deltas.reduce((a, b) => a + b, 0);
+    // REQ-1098 (LOOP-007 q3-23): items each priced as typed ("garage $1,150
+    // and fence boards $95.50") are still ONE change order — at the sum,
+    // each item keeping its own price — unless separate ones were asked for.
+    // each delta its own typed amount (one typed $500 never prices two calls)
+    const left = [...typed];
+    const eachTyped = deltas.every((d) => {
+      const at = left.indexOf(Math.abs(d));
+      if (at < 0) return false;
+      left.splice(at, 1);
+      return true;
+    });
+    if (
+      eachTyped && (asksForSeparateChangeOrders(userText) ||
+        calls.some((p) => opts.keepEachPricedApart?.(p)))
+    ) continue;
     const credit = deltas.every((d) => d < 0);
     let amount: number | undefined;
-    if (typed.includes(Math.abs(sum))) amount = sum;
+    if (eachTyped) amount = sum;
+    else if (typed.includes(Math.abs(sum))) amount = sum;
     else if (typed.length === 1) amount = credit ? -typed[0] : typed[0];
     if (amount === undefined) continue;
     const named = calls.find((p) => p.quoteNumber || p.customerName);
     const merged: ChangeOrderCallPayload = {
       ...(named?.customerName ? { customerName: named.customerName } : {}),
       ...(named?.quoteNumber ? { quoteNumber: named.quoteNumber } : {}),
-      description: joinItems(calls.map((p) => p.description.trim())),
+      description: eachTyped
+        ? describePricedItems(
+          calls.map((p, i) => ({
+            description: p.description,
+            cents: deltas[i],
+          })),
+        )
+        : joinItems(calls.map((p) => p.description.trim())),
       deltaAmountCents: amount,
     };
     out[idx[0]] = { ...edits[idx[0]], payload: merged };

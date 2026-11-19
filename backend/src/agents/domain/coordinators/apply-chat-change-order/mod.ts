@@ -163,26 +163,40 @@ export class ApplyChatChangeOrder {
     private alert: SendChangeOrderAlert,
   ) {}
 
-  async run(input: ChatChangeOrderInput): Promise<ChatChangeOrderResult> {
-    const { userId, lang } = input;
-    const description = input.description?.trim() ?? "";
-    let delta = Math.trunc(input.deltaAmountCents);
+  /**
+   * REQ-1098 (LOOP-007 q3-23): would a change_order call for this target
+   * make a CHANGE ORDER — the job has an open invoice — rather than lines on
+   * a draft or a pending revision? Items each priced as typed are one change
+   * order there, but separate lines on a draft.
+   */
+  async makesChangeOrder(input: {
+    userId: string;
+    boundQuoteId?: string;
+    customerName?: string;
+    quoteNumber?: string;
+  }): Promise<boolean> {
+    const { target } = await this.findTarget(input);
+    if (target.kind !== "quote") return false;
+    const invoices = await this.invoices.listByUser(input.userId);
+    return invoices.some((i) =>
+      i.quoteId === target.quoteId && !isInvoiceLocked(i)
+    );
+  }
+
+  private async findTarget(input: {
+    userId: string;
+    boundQuoteId?: string;
+    customerName?: string;
+    quoteNumber?: string;
+  }) {
     const [quotes, customers] = await Promise.all([
-      this.quotes.listByUser(userId),
-      this.customers.listByUser(userId),
+      this.quotes.listByUser(input.userId),
+      this.customers.listByUser(input.userId),
     ]);
     const nameOf = (q: Quote): string => {
       const c = customers.find((c) => c.id === q.customerId);
       return c?.name ?? q.customerSnapshot?.name ?? "";
     };
-    // REQ-1095: an unsigned quote's working title is its pending one.
-    const labelOf = (q: Quote): string =>
-      [
-        q.number,
-        (q.pendingRevision?.jobName as string | undefined) || q.jobName ||
-        q.summary,
-      ].filter(Boolean).join(" ");
-
     const target = pickChangeOrderTarget({
       quotes: quotes.map((q) => ({
         id: q.id,
@@ -199,6 +213,21 @@ export class ApplyChatChangeOrder {
       quoteNumber: input.quoteNumber,
       boundQuoteId: input.boundQuoteId,
     });
+    return { target, quotes, nameOf };
+  }
+
+  async run(input: ChatChangeOrderInput): Promise<ChatChangeOrderResult> {
+    const { userId, lang } = input;
+    const description = input.description?.trim() ?? "";
+    let delta = Math.trunc(input.deltaAmountCents);
+    const { target, quotes, nameOf } = await this.findTarget(input);
+    // REQ-1095: an unsigned quote's working title is its pending one.
+    const labelOf = (q: Quote): string =>
+      [
+        q.number,
+        (q.pendingRevision?.jobName as string | undefined) || q.jobName ||
+        q.summary,
+      ].filter(Boolean).join(" ");
 
     if (target.kind === "ask_customer") {
       return {

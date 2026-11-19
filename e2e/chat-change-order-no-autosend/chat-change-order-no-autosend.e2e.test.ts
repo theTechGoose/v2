@@ -236,3 +236,88 @@ Deno.test("REQ-1025 q2-7 (LOOP-007 cycle 2): QA's master bath change order on Q-
       `the lowercase follow-up sends it (got ${sent.content})`,
     );
   }));
+
+// REQ-1098 = REQ-1025 AMENDMENT (LOOP-007 cycle 3, q3-23): QA's message on
+// Maria's job — two items, each priced, "make a change order and send it to
+// her" — made AND SENT CO-001 ($1,150) and CO-002 ($95.50): two customer
+// emails in the Outbox, two approvals, and the chat linked only CO-002.
+Deno.test("REQ-1098 (REQ-1025 AMENDMENT q3-23): 'add garage $1,150 and fence boards $95.50. make a change order and send it to her' makes ONE CO at $1,245.50, one 'Sent CO-00N' and one customer email in the Outbox", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await answerQuestions(http, auth, {
+      name: "CO No Autosend Story",
+      businessName: "CO No Autosend LLC",
+    });
+    const email = `maria.${digits()}@blackhole.postmarkapp.com`;
+    const customer = await call(http, auth, "POST", "/api/customers", {
+      name: "Maria Lopez",
+      email,
+    });
+    const quote = await call(http, auth, "POST", "/api/quotes", {
+      customerId: customer.id,
+      summary: "Fence and garage — Maria Lopez",
+      jobName: "Fence repair",
+      lineItems: [line("Fence repair and stain", 432000)],
+      estimatedTotal: 432000,
+      status: "draft",
+    });
+    const inv = await call(http, auth, "POST", "/api/invoices", {
+      customerId: customer.id,
+      quoteId: quote.id,
+      jobName: "Fence repair",
+      lineItems: [line("Balance", 432000)],
+      amount: 432000,
+      dueDate: "2026-12-30",
+    });
+    type Row = { id: string; channel: string; to?: string };
+    const toMaria = async () =>
+      ((await call(http, auth, "GET", "/api/outbox")) as Row[]).filter((r) =>
+        r.channel === "email" && r.to === email
+      );
+
+    const chat = await call(http, auth, "POST", "/api/agents/chat", {
+      kind: "text",
+      content:
+        "maria wants to add painting the detached garage $1,150 and replacing 3 rotten fence boards $95.50. make a change order and send it to her",
+    });
+    const reply = chat.newMessages[chat.newMessages.length - 1];
+    const sentLines = reply.content.match(/\bSent CO-\d+/g) ?? [];
+    expect.eq(
+      sentLines.length,
+      1,
+      `one 'Sent CO-00N' in the reply (${reply.content})`,
+    );
+    const cos = await call(
+      http,
+      auth,
+      "GET",
+      `/api/invoices/${inv.id}/change-orders`,
+    ) as { id: string; number?: string; deltaAmountCents: number }[];
+    // expect.eq compares with !== — arrays and objects go in as JSON.
+    expect.eq(
+      JSON.stringify(cos.map((c) => c.deltaAmountCents)),
+      JSON.stringify([124550]),
+      "one change order for $1,150 + $95.50",
+    );
+    const outcome = reply.payload?.changeOrder ?? {};
+    expect.eq(
+      JSON.stringify({
+        kind: outcome.kind,
+        sent: outcome.sent,
+        id: outcome.changeOrderId,
+      }),
+      JSON.stringify({ kind: "change_order", sent: true, id: cos[0]?.id }),
+      "the payload names the one sent change order",
+    );
+    let mails: Row[] = [];
+    for (let i = 0; i < 25; i++) {
+      mails = await toMaria();
+      if (mails.length >= 1) {
+        await new Promise((r) => setTimeout(r, 1000));
+        mails = await toMaria();
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect.eq(mails.length, 1, "Maria gets ONE change order email");
+  }));

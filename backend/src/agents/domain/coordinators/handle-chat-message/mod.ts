@@ -1221,10 +1221,32 @@ export class HandleChatMessage {
     // REQ-1025 (LOOP-007 q2-7): the model's change_order calls for work the
     // owner priced together are one change order — never CO-001 beside a
     // "How much should … add? — I didn't change anything yet".
-    edits = mergeChangeOrderCalls(edits, userText);
+    // REQ-1098 (LOOP-007 q3-23): items each priced as typed are ONE change
+    // order too — but on a job with no open invoice they are lines, apart.
+    const noChangeOrder = new Set<unknown>();
+    const coCalls = edits.filter((e) => e.type === "change_order");
+    if (coCalls.length > 1) {
+      for (const e of coCalls) {
+        const p = e.payload as { customerName?: string; quoteNumber?: string };
+        const makes = await this.changeOrder.makesChangeOrder({
+          userId,
+          boundQuoteId: conv.quoteId,
+          customerName: p.customerName,
+          quoteNumber: p.quoteNumber,
+        }).catch(() => true);
+        if (!makes) noChangeOrder.add(e.payload);
+      }
+    }
+    edits = mergeChangeOrderCalls(edits, userText, {
+      keepEachPricedApart: (p) => noChangeOrder.has(p),
+    });
     // REQ-1025: the change order this turn made — what the reply's "tap
     // Send CO-00N" and its Send button (payload.changeOrder) stand on.
     let madeChangeOrder = false;
+    // REQ-1098 (LOOP-007 q3-23): every change order this turn made — should
+    // more than one still be made (separate ones asked for), the chat links
+    // each, not only the last.
+    const madeChangeOrders: unknown[] = [];
     for (const edit of edits) {
       if (edit.type === "update_terms") {
         // REQ-663 (demo-loop cycle 5, m40 + p18-7c): the model re-sends the
@@ -1365,7 +1387,10 @@ export class HandleChatMessage {
           (result.outcome.kind === "needs_amount" ||
             result.outcome.kind === "needs_description")
         ) continue;
-        if (result.outcome.kind === "change_order") madeChangeOrder = true;
+        if (result.outcome.kind === "change_order") {
+          madeChangeOrder = true;
+          madeChangeOrders.push(result.outcome);
+        }
         parts.push(result.text);
         payload.changeOrder = result.outcome;
         landed(result.outcome);
@@ -1390,6 +1415,7 @@ export class HandleChatMessage {
       const now = await readBound();
       totalSaid = now ? workingTotalCents(now) : totalSaid;
     }
+    if (madeChangeOrders.length > 1) payload.changeOrders = madeChangeOrders;
     const after = await readBound();
     if (before && after) {
       const from = workingTotalCents(before);
@@ -2138,23 +2164,42 @@ export class HandleChatMessage {
       !llmResponse && changeOrderAsk?.description &&
       typeof changeOrderAsk.deltaAmountCents === "number"
     ) {
-      llmResponse = {
-        text: "",
-        action: {
-          type: "change_order",
-          payload: {
-            ...(changeOrderAsk.customerName
-              ? { customerName: changeOrderAsk.customerName }
-              : {}),
-            ...(changeOrderAsk.quoteNumber
-              ? { quoteNumber: changeOrderAsk.quoteNumber }
-              : {}),
-            description: changeOrderAsk.description,
-            deltaAmountCents: changeOrderAsk.deltaAmountCents,
-            ...(changeOrderAsk.setsLinePrice ? { setsLinePrice: true } : {}),
-          },
-        },
+      const who = {
+        ...(changeOrderAsk.customerName
+          ? { customerName: changeOrderAsk.customerName }
+          : {}),
+        ...(changeOrderAsk.quoteNumber
+          ? { quoteNumber: changeOrderAsk.quoteNumber }
+          : {}),
       };
+      // REQ-1098 (LOOP-007 q3-23): "add X $A and Y $B" is one call per item,
+      // as the model would make them; mergeChangeOrderCalls makes them ONE
+      // change order on an invoiced job and keeps them as lines on a draft.
+      const itemCalls = (changeOrderAsk.items?.length ?? 0) > 1
+        ? changeOrderAsk.items!.map((i) => ({
+          type: "change_order" as const,
+          payload: { ...who, ...i },
+        }))
+        : undefined;
+      llmResponse = itemCalls
+        ? { text: "", action: itemCalls[0], actions: itemCalls }
+        : {
+          text: "",
+          action: {
+            type: "change_order",
+            payload: {
+              ...(changeOrderAsk.customerName
+                ? { customerName: changeOrderAsk.customerName }
+                : {}),
+              ...(changeOrderAsk.quoteNumber
+                ? { quoteNumber: changeOrderAsk.quoteNumber }
+                : {}),
+              description: changeOrderAsk.description,
+              deltaAmountCents: changeOrderAsk.deltaAmountCents,
+              ...(changeOrderAsk.setsLinePrice ? { setsLinePrice: true } : {}),
+            },
+          },
+        };
     }
     // ---- REQ-769 (demo-loop cycle 5v4, M10 re-test): "Change Dana
     // Whitfield's quote: add post caps for $300" from Tom Henderson's Q-002
