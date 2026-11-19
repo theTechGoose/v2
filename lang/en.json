@@ -1719,6 +1719,7 @@
   "invoicesPage.back.changeDateFailed": "Couldn't change the send date.",
   "invoicesPage.nudge.sent": "Nudge sent",
   "invoicesPage.nudge.alreadySent": "Already nudged today — the next reminder is scheduled.",
+  "invoicesPage.nudge.ownerAlertOnly": "This step only alerts you — nothing was sent to the customer.",
   "invoicesPage.nudge.failed": "Couldn't send the nudge.",
   "invoicesPage.nudge.muted": "Reminders are muted for this invoice.",
   "invoicesPage.nudge.noRecipient": "No email or phone on file — add one to send a reminder.",

@@ -389,7 +389,9 @@ export class SendPaymentReminder {
  *      contractor adopting the system mid-cycle on a 30-day-late
  *      invoice goes straight to Day 30 rather than the gentle Day-3
  *      copy).
- *    - Never regress: once Day N has fired, no step < N will fire.
+ *    - Never regress: once customer Day N has fired, no step < N will fire.
+ *      The Day-30 owner alert (bell-only, REQ-704) does not count — it
+ *      reached nobody, so it never stops the 3/7/14 customer steps (REQ-938).
  */
 /** REQ-250 (demo m12): `claimed` is deliberately absent — a pending payment
  *  claim pauses the cadence. */
@@ -410,7 +412,7 @@ export function pickNextDay(
   const firedDays = new Set((invoice.reminderHistory ?? []).map((h) => h.day));
   let largestFired: number | undefined;
   for (const d of CADENCE_DAYS) {
-    if (firedDays.has(d)) largestFired = d;
+    if (d !== 30 && firedDays.has(d)) largestFired = d;
   }
   for (let i = cadence.length - 1; i >= 0; i--) {
     const d = cadence[i];

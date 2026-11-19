@@ -60,6 +60,8 @@ export function outReadKey(
 export interface NudgeReply {
   channels?: string[];
   reason?: string;
+  /** the day-30 step: an owner alert, nothing to the customer */
+  escalated?: boolean;
 }
 
 export interface NudgeNote {
@@ -68,6 +70,7 @@ export interface NudgeNote {
   key:
     | "invoicesPage.nudge.sent"
     | "invoicesPage.nudge.alreadySent"
+    | "invoicesPage.nudge.ownerAlertOnly"
     | "invoicesPage.nudge.muted"
     | "invoicesPage.nudge.noRecipient"
     | "invoicesPage.nudge.notDelivered"
@@ -81,6 +84,11 @@ export function nudgeNote(body: NudgeReply | null): NudgeNote {
   if (Array.isArray(body.channels) && body.channels.length > 0) {
     return { tone: "note", key: "invoicesPage.nudge.sent" };
   }
+  // REQ-938 (REQ-556): the day-30 owner alert reached nobody — never word it
+  // as a nudge that already went out.
+  if (body.escalated === true) {
+    return { tone: "note", key: "invoicesPage.nudge.ownerAlertOnly" };
+  }
   switch (body.reason) {
     case "no_recipient":
       return { tone: "fail", key: "invoicesPage.nudge.noRecipient" };
@@ -89,7 +97,7 @@ export function nudgeNote(body: NudgeReply | null): NudgeNote {
     case "muted":
       return { tone: "note", key: "invoicesPage.nudge.muted" };
     default:
-      // already_fired (or the Day-30 escalation, which texts nobody)
+      // already_fired
       return { tone: "note", key: "invoicesPage.nudge.alreadySent" };
   }
 }
