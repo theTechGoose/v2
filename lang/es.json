@@ -1293,6 +1293,8 @@
   "quoteDoc.signedBanner.nextDue": "Siguiente: paga los {amount}, vence el {date} →",
   "quoteDoc.signedBanner.nextDueToday": "Siguiente: paga los {amount}, vence hoy →",
   "quoteDoc.signedBanner.nextView": "Siguiente: la factura de {amount} →",
+  "quoteDoc.signedBanner.nextViewDue": "Siguiente: la factura de {amount}, vence el {date} →",
+  "quoteDoc.signedBanner.nextViewDueToday": "Siguiente: la factura de {amount}, vence hoy →",
   "quoteDoc.signedBanner.nextNoInvoice": "Siguiente: tu contratista se pondrá en contacto contigo para programar el trabajo.",
   "quoteDoc.signedBanner.owner": "Firmado por {name} el {date}.",
   "quoteDoc.signedBanner.ownerCopy": "Estás viendo la copia del cliente.",

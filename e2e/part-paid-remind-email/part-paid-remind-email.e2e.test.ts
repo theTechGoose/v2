@@ -3,7 +3,13 @@
  * shell.
  *
  * QA: INV-001 is $1,190.75 with $500 paid. The owner (UI in English) opens
- * the customer page → Remind → Email only → Español → Send. The Spanish email
+ * the customer page → Remind → Email only → Español → Send.
+ *
+ * Integration (qa-loop): REQ-1031 (q2-8) made the customer page's Remind send
+ * the reminder nudge, not the first-send invoice email this story checks; the
+ * invoice email's send sheet is reached from the /customers board's "Send a
+ * kind reminder" (REQ-1029, q2-10), which REQ-1066 (q2-56) offers only for
+ * money that is due — so the invoice here is overdue. The Spanish email
  * headlines "Monto a pagar $1,190.75", reads "Estado Pending", and shows the
  * $690.75 balance only at the bottom. The email must headline the $690.75
  * balance (money card + preheader) and its Estado must be a Spanish word.
@@ -86,7 +92,8 @@ Deno.test("REQ-1028 q2-9/q2-20: Remind (Email only, Español) on a $1,190.75 inv
       customerId: customer.id,
       status: "sent",
       jobName: "Cambio de piso de cocina",
-      dueDate: inDays(10),
+      issuedDate: inDays(-40),
+      dueDate: inDays(-10),
       lineItems: [{
         description: "Cambio de piso de cocina",
         quantity: 1,
@@ -106,9 +113,15 @@ Deno.test("REQ-1028 q2-9/q2-20: Remind (Email only, Español) on a $1,190.75 inv
         .map((r) => r.id),
     );
 
-    await page.goto(`/customers/${customer.id}`);
-    await page.locator("[data-cy='cws-remind']").click();
-    await page.locator("[data-cy='send-dialog']").waitFor({ timeout: 15_000 });
+    await page.goto("/customers");
+    const nudge = `.ccard2:has-text('Carmen Ruiz') [data-cy='ccard2-nudge']`;
+    await page.locator(nudge).waitFor({ timeout: 15_000 });
+    const dialog = page.locator("[data-cy='send-dialog']");
+    for (let i = 0; i < 20 && (await dialog.count()) === 0; i++) {
+      await page.locator(nudge).click({ timeout: 2_000 }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
+    await dialog.waitFor({ timeout: 15_000 });
     await page.locator("[data-cy='send-option-email']").click();
     await page.locator("[data-cy='send-lang-es']").click();
     await page.locator("[data-cy='send-lang-es'][aria-pressed='true']")

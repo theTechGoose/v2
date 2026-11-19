@@ -150,7 +150,15 @@ Deno.test("REQ-626: client card → Open card opens the client's sheet with Edit
       ".ccard2--open [data-cy='ccard2-open']",
       visible(page, "[data-cy='client-sheet']"),
     );
-    await expect.see("725 Frederick Rd, Rockingham, VA 22801");
+    // the sheet's own address row (the card's hidden back carries it too, so
+    // a page-wide text match can land on that copy)
+    const sheetAddr = page.locator("[data-cy='client-sheet-address']");
+    await sheetAddr.waitFor({ timeout: 15_000 });
+    expect.eq(
+      (await sheetAddr.innerText()).trim(),
+      "725 Frederick Rd, Rockingham, VA 22801",
+      "the sheet shows the client's address",
+    );
     expect(
       page.url().includes(`open=${customer.id}`),
       `the sheet is a link (${page.url()})`,
@@ -240,10 +248,11 @@ Deno.test("REQ-626: invoice card → Open opens the editable invoice panel in-ap
       async () => (await page.locator(".qcard--flipped").count()) > 0,
     );
     const back = page.locator(".qcard--flipped");
+    // REQ-586: the link carries the invoice's language (?lang=…)
     expect.eq(
-      await back.locator("[data-cy='invoice-view-as-customer']").getAttribute(
+      (await back.locator("[data-cy='invoice-view-as-customer']").getAttribute(
         "href",
-      ),
+      ))?.split("?")[0],
       `/i/${invoice.id}`,
       "View as customer goes to the customer's page",
     );

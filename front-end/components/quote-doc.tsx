@@ -662,23 +662,33 @@ export function QuoteDoc(
                       // REQ-1048: name the invoice's stored due date — the
                       // same one the schedule row prints (REQ-954) — so the
                       // banner never reads as "pay right now".
-                      !payOnline
-                        ? tFor(lang, "quoteDoc.signedBanner.nextView", {
-                          amount: fmtMoneyExact(payNow.balanceCents),
-                        })
-                        : payNow.dueDate
+                      payNow.dueDate
                         ? payNow.dueDate.slice(0, 10) ===
                             new Date().toISOString().slice(0, 10)
-                          ? tFor(lang, "quoteDoc.signedBanner.nextDueToday", {
-                            amount: fmtMoneyExact(payNow.balanceCents),
-                          })
-                          : tFor(lang, "quoteDoc.signedBanner.nextDue", {
-                            amount: fmtMoneyExact(payNow.balanceCents),
-                            date: shortDate(payNow.dueDate, lang, false),
-                          })
-                        : tFor(lang, "quoteDoc.signedBanner.next", {
-                          amount: fmtMoneyExact(payNow.balanceCents),
-                        })
+                          ? tFor(
+                            lang,
+                            payOnline
+                              ? "quoteDoc.signedBanner.nextDueToday"
+                              : "quoteDoc.signedBanner.nextViewDueToday",
+                            { amount: fmtMoneyExact(payNow.balanceCents) },
+                          )
+                          : tFor(
+                            lang,
+                            payOnline
+                              ? "quoteDoc.signedBanner.nextDue"
+                              : "quoteDoc.signedBanner.nextViewDue",
+                            {
+                              amount: fmtMoneyExact(payNow.balanceCents),
+                              date: shortDate(payNow.dueDate, lang, false),
+                            },
+                          )
+                        : tFor(
+                          lang,
+                          payOnline
+                            ? "quoteDoc.signedBanner.next"
+                            : "quoteDoc.signedBanner.nextView",
+                          { amount: fmtMoneyExact(payNow.balanceCents) },
+                        )
                     }
                   </a>
                 )

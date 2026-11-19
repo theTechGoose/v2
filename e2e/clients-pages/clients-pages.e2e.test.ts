@@ -278,6 +278,17 @@ Deno.test("REQ-600 (cycle 4, M5): /customers?open=<id> opens a name+address cust
     // REQ-626: with no contact, Message is the edit form's way in — no sms: link yet
     expect((await card.locator("a[data-cy='ccard2-message']").count()) === 0, "no Message link yet: Tom has no contact");
 
+    // REQ-626: the deep link also opens Tom's client sheet over the board —
+    // close it to edit on the card itself (reopening the card if it folded)
+    const sheet = page.locator("[data-cy='client-sheet']");
+    if ((await sheet.count()) > 0) {
+      await clickUntil(page, "[data-cy='client-sheet-close']", async () => (await sheet.count()) === 0);
+    }
+    if (!((await card.getAttribute("class"))?.includes("ccard2--open"))) {
+      await clickUntil(page, ".ccard2:has-text('Taskmade Tom') .ccard2__name", async () =>
+        ((await card.getAttribute("class"))?.includes("ccard2--open")) ?? false);
+    }
+
     // Add phone: a short number is refused under the row, a full one is saved
     await clickUntil(page, ".ccard2:has-text('Taskmade Tom') [data-cy='ccard2-edit-phone']", async () =>
       (await card.locator("[data-cy='ccard2-input-phone']").count()) > 0);
@@ -351,8 +362,10 @@ Deno.test("REQ-1029 (LOOP-007 q2-10): a customer who owes money with a fictional
       headers: auth,
       body: JSON.stringify({ name: "Rosa Delgado", phoneNumber: "843-555-0111", email: "rosa@blackhole.postmarkapp.com" }),
     })).json() as { id: string };
-    const today = new Date().toISOString().slice(0, 10);
-    const due = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+    // REQ-1066 (q2-56): only money that is due headlines "Send a kind
+    // reminder", so the invoice went out 40 days ago and is 10 days overdue.
+    const today = new Date(Date.now() - 40 * 864e5).toISOString().slice(0, 10);
+    const due = new Date(Date.now() - 10 * 864e5).toISOString().slice(0, 10);
     const inv = await (await http("/api/invoices", {
       method: "POST",
       headers: auth,

@@ -144,7 +144,7 @@ Deno.test("REQ-652 M8 (cycle 5): 'Make a change order' in chat makes it unsent w
     );
     expect.eq(
       (await page.locator("[data-cy='msg-co-open']").innerText()).trim(),
-      `Open ${coNumber} as customer`,
+      `View ${coNumber} as customer`, // REQ-690: one "View as customer" label
       "and Preview",
     );
     expect.eq(

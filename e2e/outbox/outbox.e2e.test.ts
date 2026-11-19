@@ -116,6 +116,18 @@ Deno.test("REQ-784 d12: a quote by email + text, an invoice and a change order t
   story(t, async ({ page, expect, http, baseUrl }) => {
     const auth = await signIn(http, page, baseUrl);
     await page.setViewportSize({ width: 1280, height: 900 });
+    // REQ-715: a customer's language is used only when the business writes in
+    // it — this account writes to customers in English and Spanish
+    const idRes = await http("/api/profile/identity", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        businessName: "Ortega Handyman Services",
+        commsLanguage: "en",
+        commsLanguages: ["en", "es"],
+      }),
+    });
+    expect(idRes.ok, `the account writes in both: ${idRes.status} ${await idRes.text()}`);
 
     const maria = await post(http, auth, "/api/customers", {
       name: "María López",
@@ -184,10 +196,19 @@ Deno.test("REQ-784 d12: a quote by email + text, an invoice and a change order t
     );
 
     // 4 — the sidebar's Outbox row opens the page
-    // (a fresh account's /dashboard is onboarding-gated — REQ-091 — so start
-    // from /customers, which carries the same sidebar)
-    await page.goto("/customers");
+    // (a fresh account's /dashboard is onboarding-gated — REQ-091)
+    // REQ-914: the Outbox row sits in the root's Communications folder; /quotes
+    // shows the root menu (/customers shows the Customers context instead)
+    await page.goto("/quotes");
     const nav = page.locator(".sb__nav");
+    await nav.locator("[data-cy='nav-folder-communications']").waitFor({
+      timeout: 20_000,
+    });
+    await clickUntil(
+      page,
+      ".sb__nav [data-cy='nav-folder-communications']",
+      async () => (await nav.locator("a[href='/messages']").count()) > 0,
+    );
     await nav.locator("a[href='/messages']").waitFor({ timeout: 20_000 });
     await nav.locator(".nav-item__label", { hasText: "Outbox" }).waitFor({
       timeout: 20_000,

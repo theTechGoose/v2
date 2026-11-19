@@ -1293,6 +1293,8 @@
   "quoteDoc.signedBanner.nextDue": "Next: pay the {amount} due {date} →",
   "quoteDoc.signedBanner.nextDueToday": "Next: pay the {amount} due today →",
   "quoteDoc.signedBanner.nextView": "Next: the {amount} invoice →",
+  "quoteDoc.signedBanner.nextViewDue": "Next: the {amount} invoice, due {date} →",
+  "quoteDoc.signedBanner.nextViewDueToday": "Next: the {amount} invoice, due today →",
   "quoteDoc.signedBanner.nextNoInvoice": "Next: your contractor will be in touch to schedule the work.",
   "quoteDoc.signedBanner.owner": "Signed by {name} on {date}.",
   "quoteDoc.signedBanner.ownerCopy": "You're viewing the customer's copy.",

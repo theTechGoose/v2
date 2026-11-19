@@ -110,8 +110,12 @@ Deno.test("REQ-744 (demo p18-8a, cycle 5): /worker's day summary says '0 of 1 ta
       await page.locator("[data-cy='w-login']").click();
       await page.getByText(`Hey, ${name}`).waitFor({ timeout: 15_000 });
     };
-    const summary = async () =>
-      (await page.locator(".greet small").textContent())?.trim() ?? "";
+    // the day summary's count line (the header's small line is the date only)
+    const summary = async () => {
+      const count = page.locator("[data-cy='w-count']");
+      await count.waitFor({ timeout: 15_000 });
+      return (await count.textContent())?.trim() ?? "";
+    };
 
     // one task today: singular
     await signIn(cell, "Luis");
