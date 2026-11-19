@@ -20,6 +20,7 @@ import {
 } from "@users/domain/business/account-admins/mod.ts";
 import type { AccountAdmin } from "@users/dto/account-admin.ts";
 import type { User } from "@users/dto/user.ts";
+import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 
 /** a refused invite or switch: `status` + a stable `error` word for the client */
 export class AccountAdminError extends Error {
@@ -79,7 +80,12 @@ export class AccountAdmins {
     owner: User,
     input: { phoneNumber?: unknown; name?: unknown },
   ): Promise<
-    AccountAdmin & { texted: boolean; signInUrl: string; shareText: string }
+    AccountAdmin & {
+      texted: boolean;
+      signInUrl: string;
+      shareText: string;
+      smsFailureCode?: SmsFailureCode;
+    }
   > {
     let phone: string;
     try {
@@ -117,7 +123,14 @@ export class AccountAdmins {
       );
     }
     // REQ-601 — the sign-in address and the very text, so the page can hand them over when the text failed
-    return { ...rec, texted: sent.ok, signInUrl: url, shareText: body };
+    // REQ-998 — and why it did not go (a reserved 555-01XX number, a landline, …), so the page can say so
+    return {
+      ...rec,
+      texted: sent.ok,
+      signInUrl: url,
+      shareText: body,
+      ...(sent.ok ? {} : { smsFailureCode: sent.failureCode ?? "other" }),
+    };
   }
 
   list(owner: User): Promise<AccountAdmin[]> {

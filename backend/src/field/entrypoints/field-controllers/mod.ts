@@ -29,6 +29,7 @@ import {
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { secretAllows } from "@users/domain/business/shared-secret/mod.ts";
 import type { User } from "@users/dto/user.ts";
+import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import {
   newWorkerLang,
   parseLang,
@@ -170,7 +171,9 @@ async function welcomeWorker(
   user: User,
   w: FieldWorker,
   override?: "en" | "es",
-): Promise<{ ok: boolean; url: string; body: string }> {
+): Promise<
+  { ok: boolean; url: string; body: string; failureCode?: SmsFailureCode }
+> {
   const lang = override ?? workerLang(w, user); // REQ-155 — the worker's language
   const identity = await d.identities.get(user.id);
   const who = realName(user.name);
@@ -185,14 +188,17 @@ async function welcomeWorker(
         `[field/workers] welcome text to ${w.phoneNumber} failed: ${sent.reason}`,
       );
     }
-    return { ok: sent.ok, url, body };
+    // REQ-998 — why it did not go, so the page can tell the owner (not just "couldn't text")
+    return sent.ok
+      ? { ok: true, url, body }
+      : { ok: false, url, body, failureCode: sent.failureCode ?? "other" };
   } catch (err) {
     console.error(
       `[field/workers] welcome text to ${w.phoneNumber} failed: ${
         (err as Error).message
       }`,
     );
-    return { ok: false, url, body };
+    return { ok: false, url, body, failureCode: "other" };
   }
 }
 
@@ -347,6 +353,8 @@ export class FieldWorkersController {
       texted: welcome.ok,
       signInUrl: welcome.url,
       shareText: welcome.body,
+      // REQ-998 — the reason the welcome text did not go (e.g. "fictional" for a reserved 555-01XX number)
+      ...(welcome.ok ? {} : { smsFailureCode: welcome.failureCode }),
     }, 201);
   }
 

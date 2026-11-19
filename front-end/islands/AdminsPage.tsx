@@ -18,6 +18,8 @@ import {
   copyShareText,
   type InviteShare,
   inviteShare,
+  type NotTextedReason,
+  notTextedReason,
 } from "../lib/invite-share.ts";
 import { inviteName } from "../../shared/person-name/mod.ts"; // REQ-632 — the rule the API applies
 
@@ -69,7 +71,13 @@ export default function AdminsPage() {
   // REQ-523 (demo m16): the invited number, and whether the text went out
   // REQ-601 (cycle 4, M12): when it did not, the sign-in link + the invite text to share
   const [sent, setSent] = useState<
-    { phone: string; texted: boolean; share: InviteShare | null } | null
+    {
+      phone: string;
+      texted: boolean;
+      share: InviteShare | null;
+      /** REQ-998 (LOOP-007 q1-85) — why the text did not go (null: the plain line) */
+      smsFailureCode: NotTextedReason | null;
+    } | null
   >(null);
   const [copied, setCopied] = useState<boolean | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -112,17 +120,21 @@ export default function AdminsPage() {
     setSent(null);
     setCopied(null);
     try {
-      const { texted, signInUrl, shareText, ...made } = await adminsClient
-        .invite({
-          phoneNumber: form.phone,
-          name: inviteName(form.name)!,
-        });
+      const { texted, signInUrl, shareText, smsFailureCode, ...made } =
+        await adminsClient
+          .invite({
+            phoneNumber: form.phone,
+            name: inviteName(form.name)!,
+          });
       setForm(BLANK);
       setNameTouched(false);
       setSent({
         phone: fmtCell(made.phoneNumber),
         texted: texted === true,
         share: inviteShare({ texted, signInUrl, shareText }),
+        smsFailureCode: texted === true
+          ? null
+          : notTextedReason(smsFailureCode),
       });
       setAdmins((list) => [...(list ?? []), made]);
     } catch (err) {
@@ -267,9 +279,14 @@ export default function AdminsPage() {
                 data-texted={sent.texted ? "true" : "false"}
                 style="margin:8px 0 0"
               >
-                {t(sent.texted ? "admins.sent" : "admins.notTexted", {
-                  phone: sent.phone,
-                })}
+                {t(
+                  sent.texted
+                    ? "admins.sent"
+                    : sent.smsFailureCode
+                    ? `admins.notTexted.${sent.smsFailureCode}` // REQ-998 — why: a reserved test number, a landline, …
+                    : "admins.notTexted",
+                  { phone: sent.phone },
+                )}
               </p>
             )}
             {sent && !sent.texted && sent.share && (

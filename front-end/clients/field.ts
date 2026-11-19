@@ -8,6 +8,7 @@
  * module only names them by id.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { SmsFailureCode } from "../../shared/quote-flow/sms-failure.ts";
 import type { SendFailure } from "../lib/field-batches.ts";
 
 export type Cadence = "weekly" | "biweekly" | "monthly" | "annual";
@@ -444,8 +445,13 @@ export const fieldClient = {
     opts?: ApiOptions,
   ) =>
     api.post<
-      FieldWorker & { texted: boolean; signInUrl?: string; shareText?: string }
-    >("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out; REQ-601 — signInUrl + shareText: what to share when it didn't
+      FieldWorker & {
+        texted: boolean;
+        signInUrl?: string;
+        shareText?: string;
+        smsFailureCode?: SmsFailureCode;
+      }
+    >("/field/workers", b, opts), // REQ-151 — texted: the welcome text went out; REQ-601 — signInUrl + shareText: what to share when it didn't; REQ-998 — smsFailureCode: why
   /** REQ-155 — the worker's language, changed from the row */
   setWorkerLanguage: (id: string, language: "en" | "es", opts?: ApiOptions) =>
     api.put<FieldWorker>(`/field/workers/${id}`, { language }, opts),
