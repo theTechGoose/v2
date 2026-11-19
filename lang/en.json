@@ -1877,6 +1877,7 @@
   "invoicesPage.new.errCreate": "Couldn't create the invoice. Try again.",
   "invoicesPage.new.errExceedsAgreement": "That amount is more than what's left to invoice on this agreement.",
   "invoicesPage.new.errDueDate": "Pick a due date.",
+  "invoicesPage.new.errDueBeforeIssued": "The due date can't be before the issue date.",
   "invoicesPage.new.errRecipient": "Choose a client or type who it's billed to before you issue it.",
   "invoicesPage.new.errAmountMax": "That amount is too large — an invoice can bill at most $1,000,000,000.",
   "invoicesPage.new.confirmLarge": "This invoice is for {amount}. Is that right? Press Issue invoice again to confirm.",

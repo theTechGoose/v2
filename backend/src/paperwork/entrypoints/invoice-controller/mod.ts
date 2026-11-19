@@ -63,6 +63,7 @@ import {
 } from "#documents/exports.ts"; // REQ-208
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
 import { invoiceCapDecision } from "#documents/ledger.ts"; // REQ-233
+import { dueBeforeIssued } from "#documents/invoice-form.ts"; // REQ-962
 import { hasCreatedFor } from "@core/data/numbered-store/mod.ts";
 import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-497
 import { PreviewInvoiceSend } from "@paperwork/domain/coordinators/preview-invoice-send/mod.ts"; // REQ-727
@@ -537,6 +538,12 @@ export class InvoiceController {
       return ctx.json({ error: "invalid_invoice" }, 422);
     }
     delete dto.replaces; // REQ-627: server-set by void-duplicate only
+    // REQ-962 (LOOP-007 q1-39): an invoice is never due before it is issued
+    // — refused before anything is derived or stored. (The store never
+    // stamps an issue date, so a body without one has none to compare.)
+    if (dueBeforeIssued(dto.issuedDate, dto.dueDate)) {
+      return ctx.json({ error: "due_before_issued" }, 422);
+    }
 
     // Derive-from-quote (roadmap p.6): the invoice carries all the quote's
     // information — job name, description, customer, line items, amount —
@@ -806,6 +813,17 @@ export class InvoiceController {
     delete patch.voidReason;
     delete patch.replacedBy;
     const existing = await this.store.getOwned(id, user.id);
+    // REQ-962 (LOOP-007 q1-39): an edit never leaves an invoice due before
+    // it is issued — the patch's dates, else the stored ones.
+    if (
+      ("dueDate" in patch || "issuedDate" in patch) &&
+      dueBeforeIssued(
+        patch.issuedDate ?? existing.issuedDate,
+        patch.dueDate ?? existing.dueDate,
+      )
+    ) {
+      return ctx.json({ error: "due_before_issued" }, 422);
+    }
     if (patch.status === "void" && existing.status !== "void") {
       return ctx.json({ ok: false, reason: "use_void" }, 409);
     }
