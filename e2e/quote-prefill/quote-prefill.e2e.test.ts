@@ -211,3 +211,93 @@ Deno.test("REQ-265: the wizard does not re-ask what the job sentence already sai
       "Maria Lopez was created from the prefilled form",
     );
   }));
+
+/** REQ-953 (LOOP-007 q1, q1-28; cites REQ-265): the QA tester's Spanish
+ *  sentence ended "mitad al empezar y mitad al terminar" — a 50/50 schedule —
+ *  and "¿Cuándo quieres recibir el pago?" showed no "De tu mensaje" confirm,
+ *  only the spec's generic SUGGESTED 50/50. */
+const TYPED_ES =
+  "Cotización para Juan Pérez 512-555-0177, pintar 3 recámaras, mitad al empezar y mitad al terminar";
+
+Deno.test("REQ-953: a Spanish 'mitad al empezar y mitad al terminar' is offered as the 50/50 'De tu mensaje' confirm on the payment step", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn("+15125550953", http, page, baseUrl);
+    const put = await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "es" }),
+    });
+    await put.body?.cancel();
+    const host = new URL(baseUrl).hostname;
+    await page.context().addCookies([
+      { name: "pm_lang", value: "es", domain: host, path: "/" },
+    ]);
+    const post = async (path: string, payload?: unknown) => {
+      const res = await http(path, {
+        method: "POST",
+        headers: auth,
+        body: payload === undefined ? undefined : JSON.stringify(payload),
+      });
+      return await res.json().catch(() => ({}));
+    };
+    const quote = await post("/api/quotes", {
+      summary: "Pintar 3 recámaras",
+      description: TYPED_ES,
+      lineItems: [{
+        description: "Pintar 3 recámaras",
+        quantity: 1,
+        unit: "ea",
+        price: 370000,
+      }],
+      estimatedTotal: 370000,
+    });
+    const conv = await post("/api/agents/conversations", {
+      quoteId: quote.id,
+    });
+    await post(`/api/agents/conversations/${conv.id}/transition-to-terms`);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${conv.id}`);
+
+    // Customer step: the create form, filled from the sentence.
+    const form = page.locator(".cust-create").first();
+    await form.waitFor({ state: "visible", timeout: 20_000 });
+    const nameInput = form.locator("input.cust-pick__search").first();
+    let typedName = "";
+    for (let i = 0; i < 40 && typedName !== "Juan Pérez"; i++) {
+      typedName = await nameInput.inputValue();
+      if (typedName !== "Juan Pérez") await page.waitForTimeout(250);
+    }
+    expect.eq(typedName, "Juan Pérez", "the typed name is in the name field");
+    await form.locator(".cust-create__btn--primary").click();
+
+    // Start date and duration: not in the sentence — any answer.
+    await page.getByText(/¿Cuándo empieza el trabajo\?/).first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    await page.locator(".wiz__opts .wiz-opt:visible").first().click();
+    await page.getByText(/¿Cuánto tiempo tomará el trabajo\?/).first()
+      .waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator(".wiz__opts .wiz-opt:visible").first().click();
+
+    // Payment: the typed 50/50, one tap, "De tu mensaje".
+    await page.getByText(/¿Cuándo quieres recibir el pago\?/).first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
+    const payPrefill = page.locator('[data-testid="wiz-prefill"]:visible');
+    let shown = 0;
+    for (let i = 0; i < 20 && shown === 0; i++) {
+      shown = await payPrefill.count();
+      if (shown === 0) await page.waitForTimeout(250);
+    }
+    expect.eq(
+      shown,
+      1,
+      "the payment step shows the 'De tu mensaje' pre-selection read from 'mitad al empezar y mitad al terminar'",
+    );
+    const text = await payPrefill.innerText();
+    expect(/De tu mensaje/i.test(text), `the confirm says 'De tu mensaje' (${text})`);
+    expect(/50\s*\/\s*50/.test(text), `the pre-selection is 50/50 (${text})`);
+  }));

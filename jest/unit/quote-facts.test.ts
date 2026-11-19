@@ -266,3 +266,40 @@ describe("REQ-330 M21 extractDuration — the typed time to complete", () => {
     expect(src).toMatch(/wizardPrefillFor\(\s*payload\.stepId,\s*quoteFacts,\s*lang,?\s*\)/);
   });
 });
+
+/**
+ * REQ-953 (LOOP-007 q1, q1-28; cites REQ-265): "mitad al empezar y mitad al
+ * terminar" is a 50/50 schedule, but extractPaymentTerms only read a "half"
+ * word next to a DEPOSIT word, so the payment step offered no "From your
+ * message" confirm — only the spec's generic SUGGESTED 50/50.
+ */
+describe("REQ-953 a half-at-start / half-at-finish pair is 50/50", () => {
+  const pt = (s: string) => mod.extractQuoteFacts(s, TODAY).paymentTerms;
+  test.each([
+    "mitad al empezar y mitad al terminar",
+    "la mitad al empezar y la otra mitad al terminar",
+    "half at start and half at the end",
+    "half now, the rest when done",
+  ])("REQ-953: %s → 50_50", (s) => {
+    expect(pt(s)).toBe("50_50");
+  });
+  test("REQ-953: the tester's full Spanish message → 50_50", () => {
+    expect(
+      pt(
+        "Cotización para Juan Pérez, pintar 3 recámaras, mitad al empezar y mitad al terminar",
+      ),
+    ).toBe("50_50");
+  });
+  test.each([
+    "half bath remodel",
+    "quitar la mitad del piso",
+  ])("REQ-953: nothing invented — %s → null", (s) => {
+    expect(pt(s)).toBeNull();
+  });
+  test("REQ-953: the payment step pre-selects 50/50 from the Spanish message", () => {
+    const f = mod.extractQuoteFacts("mitad al empezar y mitad al terminar", TODAY);
+    expect(mod.wizardPrefillFor("payment_terms", f, "es")).toEqual({
+      optionId: "50_50",
+    });
+  });
+});
