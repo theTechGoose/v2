@@ -1358,7 +1358,7 @@ export default function WorkerScreen(
               </div>
               <div class="summary__text">
                 <b data-cy="w-count">
-                  {t(workerTodayKey(liveTasks.length), {
+                  {t(workerTodayKey(liveTasks.length, date === today), {
                     done,
                     n: liveTasks.length,
                   })}

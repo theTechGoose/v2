@@ -4368,6 +4368,7 @@
   "worker.today": "{done} de {n} tareas listas",
   "worker.today.one": "{done} de {n} tarea lista",
   "worker.today.none": "Sin tareas hoy",
+  "worker.day.none": "Sin tareas este día",
   "worker.none": "No tienes tareas este día.",
   "worker.done": "Listo",
   "worker.notePh": "Nota para la oficina (portón, perro, extra…)",
