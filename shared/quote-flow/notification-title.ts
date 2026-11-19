@@ -55,6 +55,7 @@ function fmtCents(cents: number): string {
  *   - `deltaCents` (signed integer cents, a change order) → `{delta}` as
  *     "+$1,600" / "−$1,250.50" (REQ-717). A legacy string `delta` is
  *     pre-formatted and passes through.
+ *   - `feeCents` (integer cents, a chargeback fee) → `{fee}` ("$35").
  *   - `method` (the PaymentMethod enum, "zelle") → its localized phrase.
  */
 function renderParams(
@@ -83,6 +84,11 @@ function renderParams(
     out.delta = `${d >= 0 ? "+" : "−"}${fmtCents(Math.abs(d))}`;
   }
   delete out.deltaCents;
+  // REQ-1134 (LOOP-007 q3-66): a chargeback's fee, as dollars ("$35").
+  if (typeof params.feeCents === "number") {
+    out.fee = fmtCents(params.feeCents);
+  }
+  delete out.feeCents;
   if (typeof params.method === "string") {
     const key = METHOD_PHRASE_KEY[params.method];
     if (key) out.method = tr(key);
