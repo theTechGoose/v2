@@ -8,6 +8,7 @@
 
 import type { CustomerCard } from "../clients/clients.ts";
 import { hasBilled } from "./clients-display.ts";
+import { fmtMoneyTotal } from "./format.ts";
 
 /** the sidebar path that means "the Customers context" (not a folder of NAV) */
 export const CUSTOMERS_CONTEXT = "@customers";
@@ -101,13 +102,13 @@ export function customerNavRows(
     );
 }
 
-/** whole dollars under $1,000, else thousands with one decimal: $980, $4.5k, $12k */
+/**
+ * REQ-1041 (amends REQ-924(a)) — the row's amount is her exact balance, the same figure the Balance
+ * KPI shows: "$1,750", "$12,400", "$1,750.25" (cents dropped only when they are .00). It used to be a
+ * compact "$1.8k" that rounded the debt UP; the row's ellipsis CSS handles anything long.
+ */
 export function shortMoney(cents: number): string {
-  const d = Math.round(Math.max(0, cents) / 100);
-  if (d < 1000) return `$${d}`;
-  const k = d / 1000;
-  const s = k >= 10 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, "");
-  return `$${s}k`;
+  return fmtMoneyTotal(Math.max(0, cents));
 }
 
 /**

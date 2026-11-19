@@ -62,12 +62,41 @@ describe("REQ-924 the sidebar's Customers context", () => {
     expect(by.bp.initials).toBe("BM"); // first + last word, as the sidebar's own initials
   });
 
-  test("short money for the narrow rail: $980, $4.5k, $12k", () => {
+  test("REQ-924/REQ-1041 the rail's amount is the exact balance: $980, $4,550, $12,400", () => {
     expect(shortMoney(98000)).toBe("$980");
-    expect(shortMoney(455000)).toBe("$4.5k");
-    expect(shortMoney(400000)).toBe("$4k");
-    expect(shortMoney(1240000)).toBe("$12k");
+    expect(shortMoney(455000)).toBe("$4,550");
+    expect(shortMoney(400000)).toBe("$4,000");
+    expect(shortMoney(1240000)).toBe("$12,400");
+    expect(shortMoney(175025)).toBe("$1,750.25");
     expect(shortMoney(0)).toBe("$0");
+  });
+
+  /** the dollar figure a sidebar amount claims ("$1,750" → 1750, "$1.8k" → 1800) */
+  const claimedDollars = (s: string): number => {
+    const m = s.match(/^\$([\d,]+(?:\.\d+)?)(k?)$/);
+    if (!m) throw new Error(`not a money string: ${s}`);
+    const n = Number(m[1].replace(/,/g, ""));
+    return m[2] === "k" ? n * 1000 : n;
+  };
+
+  test("REQ-1041 (LOOP-007 q2-25): the sidebar's owed amount is the exact amount, as the KPI shows it — $1,750 owed reads \"$1,750\", never \"$1.8k\"", () => {
+    expect(shortMoney(175000)).toBe("$1,750");
+    expect(shortMoney(175000)).not.toBe("$1.8k");
+    expect(shortMoney(99960)).not.toBe("$1k");
+    expect(shortMoney(1550000)).not.toBe("$16k");
+  });
+
+  test("REQ-1041 (LOOP-007 q2-25): the sidebar never shows more than the customer owes, over a sweep of amounts", () => {
+    const over: string[] = [];
+    for (let cents = 0; cents <= 5_000_000; cents += 2_537) {
+      const shown = shortMoney(cents);
+      if (claimedDollars(shown) > cents / 100) over.push(`${cents}¢ → ${shown}`);
+    }
+    for (const cents of [175000, 175099, 99960, 1050000, 1550000]) {
+      const shown = shortMoney(cents);
+      if (claimedDollars(shown) > cents / 100) over.push(`${cents}¢ → ${shown}`);
+    }
+    expect(over.slice(0, 8)).toEqual([]);
   });
 
   test("the sidebar renders the context: Back to the root, All customers, New customer, one row per customer", () => {
