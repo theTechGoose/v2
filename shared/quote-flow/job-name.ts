@@ -2,7 +2,8 @@
  * Job Name — the short human label for a job, used consistently across the
  * platform (quote heading, chat card, email subject, SMS body, contract hero).
  *
- * REQ-337 (demo m6 / p15-1): the deterministic derivation yields ≤3 words;
+ * REQ-337 (demo m6 / p15-1): the deterministic derivation yields ≤3 words
+ * (REQ-1051: up to JOB_NAME_MAX_WORDS when that keeps every area named);
  * a model-supplied name may run to JOB_NAME_MAX_WORDS / JOB_NAME_MAX_CHARS
  * so it can cover every area named ("Bedroom & Hallway Repaint").
  *
@@ -127,6 +128,16 @@ function summarizeJobNameEs(words: string[], maxWords: number): string {
     start++;
   }
   let window = words.slice(start, start + maxWords);
+  // REQ-1051 (LOOP-007 q2-35, amends REQ-337): a job naming two areas
+  // ("Pintura exterior y reparación de cerca") keeps both — each added area
+  // shortened to what it names ("Pintura exterior y cerca") — rather than a
+  // cut that drops the last. Like a model-supplied name, a name covering
+  // every area may use the full JOB_NAME_MAX_WORDS budget (compactAreas
+  // only returns a name inside it); a one-area job keeps the ≤maxWords cut.
+  if (words.length - start > maxWords) {
+    const areas = compactAreas(words.slice(start).join(" "));
+    if (areas) window = areas.split(/\s+/);
+  }
   // Never end on a stopword — nor on a bare number (REQ-337).
   while (
     window.length > 1 &&
@@ -440,6 +451,12 @@ export function trimTrailingConnectors(name: string): string {
  *  cut mid-word; always at least the first word. REQ-434 (cycle 3, M10): and
  *  never a cut that leaves a connector last ("Renovación de cocina y"). */
 export function fitJobNameToBudget(name: string): string {
+  // REQ-1051 (LOOP-007 q2-35): an over-budget name that lists areas keeps
+  // every area, each shortened, before any cut drops the last one.
+  if (!isValidJobName(name)) {
+    const areas = compactAreas(name);
+    if (areas) return areas;
+  }
   const words = name.trim().split(/\s+/).filter((w) => w.length > 0);
   const out: string[] = [];
   for (const w of words) {
@@ -451,4 +468,58 @@ export function fitJobNameToBudget(name: string): string {
     out.push(w);
   }
   return trimTrailingConnectors(out.join(" "));
+}
+
+/** REQ-1051: the words that join one area of a job to the next. */
+const AREA_JOINERS = new Set(["y", "e", "and", "&", "+"]);
+
+/** REQ-1051: the words that tie an action to what it acts on —
+ *  "reparación DE (la) cerca", "repair OF (the) fence". */
+const OBJECT_MARKERS = new Set(["de", "del", "of"]);
+const ARTICLES = new Set(["la", "el", "los", "las", "the", "a", "an"]);
+
+/** REQ-1051: an area shortened to what it names — the object after its
+ *  "de"/"of" ("reparación de la cerca" → "cerca"); null when it has none. */
+function areaObject(area: string[]): string[] | null {
+  const at = area.findIndex((w, i) =>
+    i > 0 && OBJECT_MARKERS.has(w.toLowerCase())
+  );
+  if (at === -1) return null;
+  const rest = area.slice(at + 1);
+  while (rest.length > 0 && ARTICLES.has(rest[0].toLowerCase())) rest.shift();
+  return rest.length > 0 ? rest : null;
+}
+
+/**
+ * REQ-1051 (LOOP-007 q2-35, amends REQ-337): fit a name that lists two or
+ * more areas ("Pintura exterior y reparación de cerca", 38 chars) to the
+ * budget by shortening each area after the first — the last first — to the
+ * object it names, so every area survives ("Pintura exterior y cerca"). Null when the name
+ * names one area only, or no shortening fits the budget.
+ */
+export function compactAreas(name: string): string | null {
+  const words = name.trim().split(/\s+/).filter((w) => w.length > 0);
+  const areas: string[][] = [[]];
+  const joiners: string[] = [];
+  for (const w of words) {
+    if (AREA_JOINERS.has(w.toLowerCase()) && areas[areas.length - 1].length) {
+      joiners.push(w);
+      areas.push([]);
+    } else {
+      areas[areas.length - 1].push(w);
+    }
+  }
+  if (areas.length < 2 || areas.some((a) => a.length === 0)) return null;
+  const parts = areas.map((a) => [...a]);
+  const join = () =>
+    parts.flatMap((p, i) => (i === 0 ? p : [joiners[i - 1], ...p])).join(" ");
+  // The first area opens the name and says what the job IS ("Renovación de
+  // cocina"); only the areas added after it are shortened.
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const obj = areaObject(parts[i]);
+    if (!obj) continue;
+    parts[i] = obj;
+    if (isValidJobName(join())) return join();
+  }
+  return null;
 }
