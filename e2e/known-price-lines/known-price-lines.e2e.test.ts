@@ -33,6 +33,7 @@ async function signIn(
   http: StoryTools["http"],
   page: StoryTools["page"],
   baseUrl: string,
+  lang: "en" | "es" = "en",
 ): Promise<Record<string, string>> {
   const r = await http("/api/auth/verify", {
     method: "POST",
@@ -58,14 +59,14 @@ async function signIn(
   const res = await http("/api/me", {
     method: "PUT",
     headers: auth,
-    body: JSON.stringify({ language: "en" }),
+    body: JSON.stringify({ language: lang }),
   });
   await res.body?.cancel();
   const [name, value] = cookie.split("=");
   const host = new URL(baseUrl).hostname;
   await page.context().addCookies([
     { name, value, domain: host, path: "/" },
-    { name: "pm_lang", value: "en", domain: host, path: "/" },
+    { name: "pm_lang", value: lang, domain: host, path: "/" },
   ]);
   return auth;
 }
@@ -121,4 +122,59 @@ Deno.test("REQ-259 M23: 'I know my price' with itemised prices → the $14,700 t
       "the quote carries the three typed lines at their prices",
     );
     expect.eq(quote.estimatedTotal, 1470000, "the quote's total is $14,700");
+  }));
+
+/** REQ-952 (LOOP-007 cycle 1, QA issue q1-29): the tester's own sentence — a
+ *  labelled labor/materials split followed by the matching "Total". */
+const Q1_29_SENTENCE =
+  "Instalación de piso de azulejo en baño, 60 pies cuadrados, para Ana López. Mano de obra $1,800, materiales $600. Total $2,400";
+
+Deno.test("REQ-952 q1-29: ES 'Mano de obra $1,800, materiales $600. Total $2,400' → the quote keeps the two typed lines at $2,400", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl, "es");
+    await page.goto("/assistant");
+    const chip = page.locator("button.chat__empty-prompt", {
+      hasText: "Ya tengo el precio, redáctalo.",
+    });
+    await chip.waitFor({ state: "visible", timeout: 20_000 });
+    const composer = page.locator("textarea.composer__input");
+    for (let i = 0; i < 20; i++) {
+      await chip.click().catch(() => {});
+      if (await page.locator(".chat__empty-prompts").count() === 0) break;
+      await page.waitForTimeout(250);
+    }
+    await composer.waitFor({ state: "visible", timeout: 10_000 });
+    await composer.fill(Q1_29_SENTENCE);
+    await page.locator("button.composer__send").click();
+
+    const money = page.locator(".chat__price-capture input.mi__input");
+    await money.waitFor({ state: "visible", timeout: 10_000 });
+    expect.eq(
+      (await money.inputValue()).replace(/\D/g, ""),
+      "2400",
+      "the price picker opens at the stated total",
+    );
+
+    await page.locator(".chat__price-capture button.chat__price-continue")
+      .click();
+    await page.waitForURL(/\/assistant\/[^/?#]+/, { timeout: 20_000 });
+    const convId = new URL(page.url()).pathname.split("/").pop()!;
+    const got = await http(`/api/agents/conversations/${convId}`, {
+      headers: auth,
+    });
+    const snap = await got.json();
+    const quote = snap.quote ?? {};
+    expect(Boolean(quote.id), "the conversation carries the new quote");
+    const lines = (quote.lineItems ?? []).map((
+      li: { description: string; price: number },
+    ) => [li.description, li.price]);
+    expect.eq(
+      JSON.stringify(lines),
+      JSON.stringify([
+        ["Mano de obra", 180000],
+        ["Materiales", 60000],
+      ]),
+      "the quote keeps the contractor's labor/materials split",
+    );
+    expect.eq(quote.estimatedTotal, 240000, "the quote's total is $2,400");
   }));

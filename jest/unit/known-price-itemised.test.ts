@@ -204,3 +204,87 @@ describe("REQ-259 AsstChat wiring — the known-price flow keeps the lines", () 
     );
   });
 });
+
+/**
+ * REQ-952 (LOOP-007 cycle 1, QA issue q1-29) — the assistant merged labor and
+ * materials into one line. The tester typed "…Mano de obra $1,800, materiales
+ * $600. Total $2,400" and the quote got ONE $2,400 line: extractPriceLines
+ * returned [] as soon as any amount carried a total word, without checking
+ * that the labelled amounts add up to that total.
+ */
+const Q1_29_SENTENCE =
+  "Instalación de piso de azulejo en baño, 60 pies cuadrados, para Ana López. Mano de obra $1,800, materiales $600. Total $2,400";
+
+describe("REQ-952 (q1-29) a typed itemisation plus its matching total keeps the lines", () => {
+  let mod: any;
+  beforeAll(() => {
+    mod = require("../../shared/quote-flow/quick-quote-prefill");
+  });
+
+  it("REQ-952 q1-29: the tester's Spanish sentence → Mano de obra $1,800 + Materiales $600, price $2,400", () => {
+    expect(mod.extractPriceCents(Q1_29_SENTENCE)).toBe(240000);
+    expect(mod.extractPriceLines(Q1_29_SENTENCE)).toEqual([
+      { label: "Mano de obra", cents: 180000 },
+      { label: "Materiales", cents: 60000 },
+    ]);
+  });
+
+  it("REQ-952 q1-29: the quote built from the tester's sentence carries two lines, not one $2,400 line", () => {
+    const p = mod.extractQuickQuotePrefill(Q1_29_SENTENCE);
+    expect(p.priceCents).toBe(240000);
+    const items = mod.quoteLineItemsFromPrefill(
+      p.lines,
+      p.priceCents,
+      "Instalación de piso",
+    );
+    expect(items.map((i: any) => [i.description, i.price])).toEqual([
+      ["Mano de obra", 180000],
+      ["Materiales", 60000],
+    ]);
+  });
+
+  it("REQ-952 'labor $1,800, materials $600, total $2,400' → two lines", () => {
+    const s = "labor $1,800, materials $600, total $2,400";
+    expect(mod.extractPriceCents(s)).toBe(240000);
+    expect(mod.extractPriceLines(s)).toEqual([
+      { label: "Labor", cents: 180000 },
+      { label: "Materials", cents: 60000 },
+    ]);
+  });
+
+  it("REQ-952 '…$1,800, materiales $600, $2,400 en total' (total word after) → two lines", () => {
+    const s = "Mano de obra $1,800, materiales $600, $2,400 en total";
+    expect(mod.extractPriceLines(s)).toEqual([
+      { label: "Mano de obra", cents: 180000 },
+      { label: "Materiales", cents: 60000 },
+    ]);
+  });
+
+  it("REQ-952 a total that does NOT match the lines → no lines, the total is the price", () => {
+    const s = "labor $1,800, materials $600, total $2,500";
+    expect(mod.extractPriceCents(s)).toBe(250000);
+    expect(mod.extractPriceLines(s)).toEqual([]);
+    expect(
+      mod.extractPriceLines(
+        "Bathroom: tile $1,200, vanity $800, total $2,500 with fixtures",
+      ),
+    ).toEqual([]);
+  });
+
+  it("REQ-952 deposits still give no lines, even next to a matching total", () => {
+    expect(mod.extractPriceLines("New fence $3,700, $1,000 deposit"))
+      .toEqual([]);
+    expect(
+      mod.extractPriceLines("Patio nuevo — $500 de anticipo, $3,700 en total"),
+    ).toEqual([]);
+    expect(
+      mod.extractPriceLines(
+        "labor $1,800, materials $600, total $2,400, $500 deposit",
+      ),
+    ).toEqual([]);
+  });
+
+  it("REQ-952 a lone total with one other amount is not a list", () => {
+    expect(mod.extractPriceLines("Roof $2,400, total $2,400")).toEqual([]);
+  });
+});
