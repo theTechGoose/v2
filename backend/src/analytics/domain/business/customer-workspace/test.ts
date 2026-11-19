@@ -114,6 +114,7 @@ Deno.test("REQ-924 workspaceSummary — a new customer: everything zero, no last
     owedCents: 0,
     overdueCents: 0,
     billedCents: 0,
+    billedCount: 0,
     paidCents: 0,
     openQuotes: 0,
     openQuotesCents: 0,
@@ -152,4 +153,27 @@ Deno.test("REQ-1063 (LOOP-007 q2, q2-52) workspaceSummary — a running service 
   assertEquals((s as unknown as Record<string, unknown>).recurringEndsOn, "2026-12-31", "the earliest end date among the running services");
   const none = workspaceSummary({ today: "2026-11-19", invoices: [], payments: [], quotes: [], services: [open], unbilledVisitCents: [] });
   assertEquals((none as unknown as Record<string, unknown>).recurringEndsOn, undefined, "no end date, no 'until'");
+});
+
+Deno.test("REQ-1090 q3-17 workspaceSummary — the 'Billed (lifetime)' count covers the same invoices as its amount: a scheduled balance is neither", () => {
+  // QA5: a signed deposit + balance agreement — INV-002 sent $850.10, INV-003 scheduled $3,400.40
+  const s = workspaceSummary({
+    today: "2026-11-19",
+    invoices: [
+      { id: "inv-2", status: "sent", amount: 85010, dueDate: "2026-12-19" },
+      { id: "inv-3", status: "scheduled", amount: 340040, dueDate: "2027-01-19" },
+      { id: "inv-1", status: "draft", amount: 12300, dueDate: "2027-01-19" },
+      { id: "inv-0", status: "void", amount: 45600, dueDate: "2027-01-19" },
+    ],
+    payments: [],
+    quotes: [],
+    services: [],
+    unbilledVisitCents: [],
+  });
+  assertEquals(s.billedCents, 85010, "the amount is the sent deposit only");
+  assertEquals(
+    (s as unknown as { billedCount?: number }).billedCount,
+    1,
+    "the summary carries the count of the invoices summed into billedCents (the tile's 'Invoices: N')",
+  );
 });

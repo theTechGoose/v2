@@ -653,7 +653,9 @@ export default function CustomerWorkspace(
             <div class="cws-kpi__val">{moneyTotal(s.billedCents, lang)}</div>
             <div class="cws-kpi__hint">
               {tFor(lang, "customerWs.kpi.invoices", {
-                count: issuedCount,
+                // REQ-1090: the count of the very invoices summed into the amount above (the backend's
+                // billed set) — a scheduled installment that has not gone out is in neither
+                count: s.billedCount ?? 0,
               })}
             </div>
           </div>

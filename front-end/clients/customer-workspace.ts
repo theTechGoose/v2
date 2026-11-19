@@ -13,6 +13,8 @@ export interface WorkspaceSummary {
   owedCents: number;
   overdueCents: number;
   billedCents: number;
+  /** REQ-1090 — the invoices summed into billedCents (the "Invoices: N" hint) */
+  billedCount: number;
   paidCents: number;
   lastPayment?: { amountCents: number; method: string; receivedAt: string };
   openQuotes: number;
