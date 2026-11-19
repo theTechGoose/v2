@@ -178,6 +178,10 @@ export class CreateQuoteDto {
    *  customer receipt) already ran for this acceptance. */
   @IsOptional() @IsString()
   acceptedNotifiedAt?: string;
+  /** REQ-948: the contractor's decline alert already went for this decline
+   *  (compared with lostAt, so a re-sent and re-declined quote alerts again). */
+  @IsOptional() @IsString()
+  declineNotifiedAt?: string;
   @IsOptional() @IsString()
   declineReason?: string;
   @IsOptional() @IsString()
@@ -247,6 +251,10 @@ export class UpdateQuoteDto {
   acceptedTinMasked?: string;
   @IsOptional() @IsString()
   acceptedNotifiedAt?: string;
+  /** REQ-948: the contractor's decline alert already went for this decline
+   *  (compared with lostAt, so a re-sent and re-declined quote alerts again). */
+  @IsOptional() @IsString()
+  declineNotifiedAt?: string;
   @IsOptional() @IsString()
   declineReason?: string;
   @IsOptional() @IsString()

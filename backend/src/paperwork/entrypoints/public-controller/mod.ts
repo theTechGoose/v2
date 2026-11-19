@@ -16,6 +16,7 @@ import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { SendDecisionAlert } from "@paperwork/domain/coordinators/send-decision-alert/mod.ts"; // REQ-948
 import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { QuoteInquiryStore } from "@paperwork/domain/data/inquiry-store/mod.ts"; // REQ-701
@@ -259,6 +260,9 @@ export class PaperworkPublicController {
     private signedChat?: QuoteSignedPort,
     /** REQ-701: the questions clients send (defaulted for a hand-built controller) */
     private inquiries: QuoteInquiryStore = new QuoteInquiryStore(),
+    /** REQ-948: the customer's decline / change-order decision reaches the
+     *  contractor by email + text (and the customer gets a CO receipt) */
+    private decisionAlert?: SendDecisionAlert,
   ) {}
 
   /**
@@ -658,6 +662,15 @@ export class PaperworkPublicController {
       "change_order_approved",
       { newAmountCents: newAmount },
     );
+    // REQ-948 (LOOP-007 q1-21): the contractor gets a text + email, the
+    // customer an approval receipt — awaited so the comms trail holds them
+    // when the response lands (acceptQuote parity); never fails the approval.
+    await this.decisionAlert?.changeOrderDecided(id).catch((err) => {
+      console.error(
+        `[change-orders/${id}/approve] decision alert failed:`,
+        err,
+      );
+    });
     return ctx.json({ ok: true });
   }
 
@@ -694,6 +707,13 @@ export class PaperworkPublicController {
       "change_order_declined",
       {},
     );
+    // REQ-948 (LOOP-007 q1-21): the contractor gets a text + email.
+    await this.decisionAlert?.changeOrderDecided(id).catch((err) => {
+      console.error(
+        `[change-orders/${id}/decline] decision alert failed:`,
+        err,
+      );
+    });
     return ctx.json({ ok: true });
   }
 
@@ -1058,6 +1078,17 @@ export class PaperworkPublicController {
         reason: dto.reason,
         note: dto.note,
       },
+    });
+    // REQ-948 (LOOP-007 q1-22): like accept (SendAcceptedAlert) and a
+    // question (SendInquiryAlert), a decline reaches the contractor by email
+    // + text with the reason and the note. Best-effort, awaited so the comms
+    // trail holds it when the response lands; the alreadyDeclined return
+    // above and the coordinator's declineNotifiedAt claim stop a second send.
+    await this.decisionAlert?.quoteDeclined(updated.id).catch((err) => {
+      console.error(
+        `[quotes/${updated.id}/decline] decline alert failed:`,
+        err,
+      );
     });
     return ctx.json({ ok: true, quoteId: updated.id });
   }
