@@ -93,6 +93,8 @@ export interface QuoteCard {
   approvedChangeOrdersCents?: number;
   /** REQ-481: numbers of the change orders still waiting on the customer. */
   pendingChangeOrders?: string[];
+  /** REQ-1030: numbers of the pending change orders not sent yet. */
+  unsentChangeOrders?: string[];
   [k: string]: unknown;
 }
 

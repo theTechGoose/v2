@@ -312,6 +312,8 @@ export interface QuoteCard extends Quote {
   approvedChangeOrdersCents?: number;
   /** REQ-481: numbers of this quote's change orders waiting on the customer */
   pendingChangeOrders?: string[];
+  /** REQ-1030: numbers of this quote's pending change orders NOT yet sent */
+  unsentChangeOrders?: string[];
   /** REQ-760 (cycle 5v2, m14): on a draft card — its thread status is
    *  "readyToSend" (terms wizard done, no job-details pick owed). */
   readyToSend?: boolean;

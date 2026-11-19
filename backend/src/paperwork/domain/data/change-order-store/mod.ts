@@ -57,6 +57,8 @@ export class ChangeOrderStore {
         ? { originalAmountCents: Math.round(input.originalAmountCents) }
         : {}),
       status: "pending",
+      // REQ-1030: not sent until SendChangeOrderAlert reaches the customer.
+      sendTracked: true,
       createdAt: now,
       updatedAt: now,
     };
@@ -226,6 +228,25 @@ export class ChangeOrderStore {
       if (result.ok) return next;
     }
     throw new Error(`change order ${id}: decision notice kept losing the race`);
+  }
+
+  /**
+   * REQ-1030 (LOOP-007 q2-14): the approval request reached the customer —
+   * stamp `sentAt` (only the field; a concurrent decision is kept).
+   */
+  async markSent(id: string, at: string = new Date().toISOString()): Promise<
+    ChangeOrder | null
+  > {
+    const kv = await getKv();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const entry = await kv.get<ChangeOrder>([PREFIX, id]);
+      if (!entry.value) return null;
+      const next: ChangeOrder = { ...entry.value, sentAt: at };
+      const result = await kv.atomic().check(entry).set([PREFIX, id], next)
+        .commit();
+      if (result.ok) return next;
+    }
+    throw new Error(`change order ${id}: sent stamp kept losing the race`);
   }
 
   /** @deprecated REQ-200: use `decide` — kept for callers that do not care about the race. */

@@ -468,6 +468,26 @@ export function heroCoWaiting(
   };
 }
 
+/** REQ-1030 (LOOP-007 q2-14): the hero's line for change orders the
+ *  assistant made but never sent (REQ-652) — "CO-001 isn't sent to Maria
+ *  yet." They are not waiting on the customer, and not hidden either. Null
+ *  when there are none. */
+export function heroCoUnsent(
+  unsent: ReadonlyArray<{ number: string; client: string }>,
+): {
+  key: "quotesHero.coUnsent.one" | "quotesHero.coUnsent.other";
+  vars: { number: string; client: string; n: number };
+} | null {
+  if (unsent.length === 0) return null;
+  const first = unsent[0];
+  return {
+    key: unsent.length === 1
+      ? "quotesHero.coUnsent.one"
+      : "quotesHero.coUnsent.other",
+    vars: { number: first.number, client: first.client, n: unsent.length },
+  };
+}
+
 /** REQ-481 (demo-loop cycle 3, M28): a /quotes card's money is the
  *  agreement — the quote plus its approved change orders (what the quote
  *  ledger calls the agreement total), not the bare quote. */

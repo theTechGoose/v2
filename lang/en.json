@@ -2924,6 +2924,8 @@
   "quotesHero.clients.other": "{n} clients",
   "quotesHero.coWaiting.one": "{number} is waiting on {client}.",
   "quotesHero.coWaiting.other": "{n} change orders are waiting on clients — {number} on {client}.",
+  "quotesHero.coUnsent.one": "{number} isn't sent to {client} yet.",
+  "quotesHero.coUnsent.other": "{n} change orders aren't sent yet — {number} for {client}.",
   "quotesHero.cta": "New quote",
   "quoteLimit.message": "You've made your {limit} quotes for this month on Monster Free. Monster has unlimited quotes: upgrade in Settings → Billing, or your {limit} new quotes start again on the 1st.",
   "quoteLimit.upgrade": "See plans",

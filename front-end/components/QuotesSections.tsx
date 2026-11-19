@@ -13,6 +13,7 @@ import {
 } from "../lib/quote-limit.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
 import {
+  heroCoUnsent,
   heroCoWaiting,
   quotesHeroMode,
   quotesSideTopEmpty,
@@ -63,6 +64,8 @@ interface HeroProps {
   readyCount?: number;
   /** REQ-481 (m10): change orders waiting on the customer. */
   pendingChangeOrders?: ReadonlyArray<{ number: string; client: string }>;
+  /** REQ-1030: change orders made but not sent to the customer yet. */
+  unsentChangeOrders?: ReadonlyArray<{ number: string; client: string }>;
   /** REQ-778 (cycle dv1, d8): the month's quotes are used up (Monster Free:
    *  five) — the hero says so and where to upgrade. Absent: under the cap. */
   quoteLimit?: { limit: number } | null;
@@ -83,6 +86,7 @@ export function QuotesHero(
     undeliveredTotal = 0,
     readyCount,
     pendingChangeOrders = [],
+    unsentChangeOrders = [],
     quoteLimit,
     lang = "en",
   }: HeroProps,
@@ -136,6 +140,16 @@ export function QuotesHero(
     ? (
       <p class="qph__sub" data-cy="quotes-hero-co-waiting">
         <strong>{tFor(lang, coWaiting.key, coWaiting.vars)}</strong>
+      </p>
+    )
+    : null;
+  // REQ-1030 (LOOP-007 q2-14): a change order never sent is not waiting on
+  // the customer — it is named as not sent yet.
+  const coUnsent = heroCoUnsent(unsentChangeOrders);
+  const coUnsentLine = coUnsent
+    ? (
+      <p class="qph__sub" data-cy="quotes-hero-co-unsent">
+        <strong>{tFor(lang, coUnsent.key, coUnsent.vars)}</strong>
       </p>
     )
     : null;
@@ -224,6 +238,7 @@ export function QuotesHero(
               <p class="qph__sub">
                 {tFor(lang, "quotesHero.settledSub")}
               </p>
+              {coUnsentLine}
               {draftingNote}
               {undeliveredNote}
             </>
@@ -241,6 +256,7 @@ export function QuotesHero(
               {draftingNote}
               {undeliveredNote}
               {coLine}
+              {coUnsentLine}
             </>
           )
           : (
@@ -266,6 +282,7 @@ export function QuotesHero(
               {draftingNote}
               {undeliveredNote}
               {coLine}
+              {coUnsentLine}
             </>
           )}
         {limitNote}
