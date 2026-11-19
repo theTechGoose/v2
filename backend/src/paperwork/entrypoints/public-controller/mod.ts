@@ -59,6 +59,7 @@ import { SettleSquareCheckouts } from "@paperwork/domain/coordinators/settle-squ
 import { squareCheckoutName, squareReturnUrl } from "#payments/square.ts"; // REQ-803
 import { squareReturnOrigin } from "./square-return.ts"; // REQ-803
 import {
+  hasOnlinePayWay, // REQ-1054
   projectPayMethods,
   type PublicPayMethod,
 } from "#payments/pay-links.ts"; // REQ-630
@@ -833,6 +834,13 @@ export class PaperworkPublicController {
           .map((i) => projectLinkedInvoice(this.payments, i)),
       );
       const signRefusal = signRefusalOf(q);
+      // REQ-1054 (LOOP-007 q2-37): can the customer pay online at all? The
+      // same inputs /i uses (methods + the business's own Stripe / Square) —
+      // with none, /i says "contact your contractor", so /q says no "Pay now".
+      const payOnline = hasOnlinePayWay(contractor?.acceptedPaymentMethods, {
+        card: await this.stripe.isConnected(q.userId).catch(() => false) ||
+          await this.square.isConnected(q.userId).catch(() => false),
+      });
       return ctx.json({
         ...redactQuote(q),
         contractor,
@@ -841,6 +849,7 @@ export class PaperworkPublicController {
         // REQ-925: never a language Settings → "Languages you send in" left out
         ...docLangField(docLang, contractor),
         invoices,
+        payOnline,
         changeOrders: cos.map(projectLinkedChangeOrder),
         ...(changesFromPrevious ? { changesFromPrevious } : {}),
         // REQ-403 (demo m11): the confirmation the signed page may promise —

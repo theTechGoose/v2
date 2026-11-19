@@ -9,6 +9,9 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts"; // REQ-944
+import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts"; // REQ-1054
+import { SquareSettingsStore } from "@users/domain/data/square-settings-store/mod.ts"; // REQ-1054
+import { hasOnlinePayWay } from "#payments/pay-links.ts"; // REQ-1054
 import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
@@ -103,6 +106,9 @@ const APP_URL = (() => {
 export class SendSignedConfirmation {
   /** REQ-944: the business address (its state names the zone when none is picked) */
   private addresses = new BusinessAddressStore();
+  /** REQ-1054: the business's own Stripe / Square — a card is an online way to pay */
+  private stripeSettings = new StripeSettingsStore();
+  private squareSettings = new SquareSettingsStore();
   constructor(
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
@@ -118,6 +124,18 @@ export class SendSignedConfirmation {
     private subscriptions?: QuoteSubscriptionPort,
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
+
+  /** REQ-1054 (LOOP-007 q2-37): the customer can pay online — the same inputs /i uses */
+  private async payOnline(
+    userId: string,
+    apm: unknown,
+  ): Promise<boolean> {
+    const [stripe, square] = await Promise.all([
+      this.stripeSettings.get(userId).catch(() => null),
+      this.squareSettings.get(userId).catch(() => null),
+    ]);
+    return hasOnlinePayWay(apm, { card: !!stripe || !!square });
+  }
 
   async run(
     quoteId: string,
@@ -388,6 +406,8 @@ export class SendSignedConfirmation {
         invoiceAmount: milestoneAmounts[0] ?? 0,
         // REQ-954: the due line names the invoice's stored due date
         ...(invoiceDueDate ? { invoiceDueDate } : {}),
+        // REQ-1054: "pay online" only when the business takes something online
+        payOnline: await this.payOnline(userId, ident?.acceptedPaymentMethods),
         ...(signedOnIso ? { todayIso: signedOnIso } : {}),
         // REQ-699: the customer is told what each period bills
         ...(subscriptionId && recurring ? { recurring } : {}),
@@ -748,6 +768,9 @@ interface SignedHtmlOpts {
   invoiceDueDate?: string;
   /** REQ-954: the signing day (YYYY-MM-DD) — a bill due then is "due today" */
   todayIso?: string;
+  /** REQ-1054 (LOOP-007 q2-37): the customer can pay online (a card, an app, a pay link);
+   *  false → the due line and the button never promise online payment */
+  payOnline?: boolean;
   /** REQ-699: the recurring charge a subscription now bills */
   recurring?: RecurringTerm;
   lang: Lang;
@@ -765,12 +788,25 @@ function invoiceDueLine(opts: SignedHtmlOpts): string {
   const { invoiceDueDate: due, todayIso, lang } = opts;
   // the first invoice always carries one; never invent a deadline
   if (!due) return "";
+  // REQ-1054: no "· pay online" when /i would say "contact your contractor"
+  const online = opts.payOnline !== false;
   if (todayIso && due <= todayIso) {
-    return t(lang, "signedConfirm.email.invoiceDueToday");
+    return t(
+      lang,
+      online
+        ? "signedConfirm.email.invoiceDueToday"
+        : "signedConfirm.email.invoiceDueTodayOffline",
+    );
   }
-  return t(lang, "signedConfirm.email.invoiceDue", {
-    date: escapeHtml(shortDate(due, lang, false)),
-  });
+  return t(
+    lang,
+    online
+      ? "signedConfirm.email.invoiceDue"
+      : "signedConfirm.email.invoiceDueOffline",
+    {
+      date: escapeHtml(shortDate(due, lang, false)),
+    },
+  );
 }
 
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
@@ -900,7 +936,12 @@ ${
                     <a href="${
         escapeAttr(invoiceUrl)
       }" style="display:inline-block;background:${COLOR_PINK};color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;padding:12px 22px;border-radius:12px;box-shadow:0 8px 18px -6px rgba(255,107,107,0.55)">${
-        t(lang, "signedConfirm.email.invoiceCta")
+        t(
+          lang,
+          opts.payOnline === false // REQ-1054
+            ? "signedConfirm.email.invoiceCtaView"
+            : "signedConfirm.email.invoiceCta",
+        )
       }  →</a>
                   </td>
                 </tr>

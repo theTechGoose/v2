@@ -162,8 +162,10 @@ Deno.test("REQ-1054 (LOOP-007 q2-37): no online pay way — the signed /q offers
       },
     });
     await page.goto(`/i/${invId}`);
-    await page.locator("[data-cy='public-invoice-total'], main").first()
-      .waitFor({ timeout: 15_000 });
+    // /i has no `public-invoice-total` / <main> — wait for the claim island
+    // itself, whichever branch it renders (REQ-1054 fixer note)
+    await page.locator("[data-cy='claim-form'], [data-cy='claim-no-methods']")
+      .first().waitFor({ timeout: 15_000 });
     await page.waitForTimeout(500);
     expect.eq(
       await page.locator("[data-cy='claim-no-methods']").count(),
