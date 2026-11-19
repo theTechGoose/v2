@@ -243,3 +243,45 @@ describe("REQ-997 (LOOP-007 q1-84) Assignments counts are pluralised and say rep
     expect(src).toMatch(/tn\("field\.asg\.load/);
   });
 });
+
+/**
+ * REQ-1059 — AMENDMENT of REQ-743 (LOOP-007 cycle 2, q2-48): /field/tasks → Add task read "One
+ * customer, one day or several days in a row — not part of any subscription." REQ-743 listed
+ * `field.tk.skippedGen/addHint` as out of scope and REQ-997 fixed only field.asg.*, so no guard
+ * scanned field.tk.*. Every field.tk.* key now says "repeat visit(s)" / "visita(s) repetida(s)",
+ * and the skipped-generation count is pluralised with tn() like REQ-997's Assignments counts.
+ */
+describe("REQ-1059 (LOOP-007 q2-48) Tasks page copy never says subscription", () => {
+  test("REQ-1059: no field.tk.* copy says subscription (en) / suscripción (es)", () => {
+    const hits = [
+      ...Object.entries(en).filter(([k, v]) =>
+        k.startsWith("field.tk.") && /subscri/i.test(v)
+      ),
+      ...Object.entries(es).filter(([k, v]) =>
+        k.startsWith("field.tk.") && /suscrip/i.test(v)
+      ),
+    ].map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+
+  test("REQ-1059: the Add task hint says a one-off task is not part of a repeat visit, and keeps the several-days sentence (REQ-785)", () => {
+    expect(en["field.tk.addHint"]).toMatch(/repeat visit/i);
+    expect(es["field.tk.addHint"]).toMatch(/visita repetida|visitas repetidas/i);
+    expect(en["field.tk.addHint"]).toMatch(/several days/i);
+    expect(es["field.tk.addHint"]).toMatch(/varios días/i);
+  });
+
+  test("REQ-1059: the skipped-generation count is .one/.other, says repeat visit(s), and the page renders it with tn()", () => {
+    const fill = (s: string, n: number) => s.replace(/\{n\}/g, String(n));
+    const k = "field.tk.skippedGen";
+    expect([k, en[k]]).toEqual([k, undefined]);
+    expect([k, es[k]]).toEqual([k, undefined]);
+    expect(fill(en[`${k}.one`] ?? `<${k}.one>`, 1)).toBe("1 repeat visit with no worker");
+    expect(fill(en[`${k}.other`] ?? `<${k}.other>`, 3)).toBe("3 repeat visits with no worker");
+    expect(fill(es[`${k}.one`] ?? `<${k}.one>`, 1)).toMatch(/^1 visita repetida\b/);
+    expect(fill(es[`${k}.other`] ?? `<${k}.other>`, 3)).toMatch(/^3 visitas repetidas\b/);
+    const src = read("front-end/islands/FieldTasksPage.tsx");
+    expect(src).not.toMatch(/\bt\("field\.tk\.skippedGen"/);
+    expect(src).toMatch(/\btn\("field\.tk\.skippedGen"/);
+  });
+});
