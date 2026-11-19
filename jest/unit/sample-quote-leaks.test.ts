@@ -134,7 +134,10 @@ describe("REQ-360 (m11) the sample fits more trades, in both languages", () => {
     // the REQ-256 trades still win where they did
     expect(inferSampleTrade("Rivera Plumbing LLC")).toBe("plumbing");
     expect(inferSampleTrade("Sparkle Cleaning")).toBe("cleaning");
-    expect(inferSampleTrade("Green Lawn Landscaping")).toBe("landscaping");
+    // REQ-1069 (q2-58): a lawn name is lawn care (a mowing visit) now; the
+    // paver patio stays with hardscape names
+    expect(inferSampleTrade("Green Lawn Landscaping")).toBe("lawncare");
+    expect(inferSampleTrade("Stone Path Landscaping")).toBe("landscaping");
     expect(inferSampleTrade("Acme Holdings")).toBe("general");
   });
 

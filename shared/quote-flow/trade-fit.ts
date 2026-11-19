@@ -22,6 +22,10 @@ export type TradeKind = "service" | "project";
 const SERVICE_SAMPLE_TRADES: ReadonlySet<SampleTrade> = new Set<SampleTrade>([
   "cleaning",
   "landscaping",
+  // REQ-1069 (q2-58): lawn care and pool service split off landscaping —
+  // still service visits.
+  "lawncare",
+  "pool",
   // REQ-360 gave the sample its own junk / moving / pest jobs — service
   // visits too (the stems below already said so).
   "junk",
@@ -127,7 +131,11 @@ export function composerTradeFor(businessName?: string | null): ComposerTrade {
   const name = (businessName ?? "").toLowerCase();
   if (!name.trim()) return "general";
   if (hasStem(name, JUNK_STEMS)) return "junk";
-  const trade: string = inferSampleTrade(name);
+  let trade: string = inferSampleTrade(name);
+  // REQ-1069 (q2-58): landscaping's composer lines were always lawn care
+  // (weekly mowing); pool service has none of its own yet → generic line.
+  if (trade === "lawncare") trade = "landscaping";
+  if (trade === "pool") trade = "general";
   if (trade === "general" && hasStem(name, KITCHEN_BATH_STEMS)) {
     return "kitchenbath";
   }
