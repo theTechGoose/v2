@@ -88,12 +88,17 @@ async function sentInvoice(
   customerId: string,
   job: string,
   cents: number,
+  dueInDays = 7,
+  issued = false,
 ) {
   return await post(http, auth, "/api/invoices", {
     customerId,
     status: "sent",
+    // REQ-1074: a sent bill carries its issue date — without one, the
+    // part payment's "pending" status reads as a draft on /invoices
+    ...(issued ? { issuedDate: inDays(0) } : {}),
     jobName: job,
-    dueDate: inDays(7),
+    dueDate: inDays(dueInDays),
     lineItems: [{ description: job, quantity: 1, unit: "job", price: cents }],
     subtotalCents: cents,
     amount: cents,
@@ -160,4 +165,104 @@ Deno.test("REQ-959 (q1-34): a $400 part payment counts on /invoices 'Paid this m
       heroText,
       "/invoices 'Paid this month' tile equals the /payments hero",
     );
+  }));
+
+/**
+ * REQ-1074 — LOOP-007 cycle 2, q2-63 [BUG_CONTRADICTION]: "/invoices says
+ * $500 was paid this month and also that nothing was paid". A $500 check on
+ * a $1,190.75 bill (due in 30 days, so the hero is the "outstanding" one):
+ * the tile read "$500 · 0 cleared", track 06 "0 invoices — Nothing paid yet
+ * this month", and the hero "$691 on the way" beside the Out tile's
+ * "$690.75".
+ */
+Deno.test("REQ-1074 (q2-63): after a $500 part payment, /invoices never pairs the paid $500 with '0' or 'Nothing paid', and the hero reads $690.75", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await post(http, auth, "/api/customers", {
+      name: "Odalys Ferrer",
+      email: "of@blackhole.postmarkapp.com",
+    });
+    const inv = await sentInvoice(
+      http,
+      auth,
+      customer.id,
+      "Porch rail",
+      119075,
+      30,
+      true,
+    );
+    await post(http, auth, "/api/payments", {
+      invoiceId: inv.id,
+      amount: 50000,
+      method: "check",
+      receivedAt: new Date().toISOString(),
+    });
+
+    await page.goto("/invoices");
+    await page.locator(`text=Porch rail`).first().waitFor({ timeout: 30_000 });
+    const read = await page.evaluate(() => {
+      const norm = (s: string | null | undefined) =>
+        (s ?? "").replace(/\s+/g, " ").trim();
+      const cells = [...document.querySelectorAll(".qkpi__cell")];
+      const cell = (lbl: string) =>
+        cells.find((c) =>
+          norm(c.querySelector(".qkpi__lbl")?.textContent) === lbl
+        );
+      const paid = cell("Paid this month");
+      const out = cell("Out for payment");
+      const track = [...document.querySelectorAll(".qtrack")].find((s) =>
+        norm(s.querySelector(".qtrack__num")?.textContent) === "06"
+      );
+      return {
+        paidVal: norm(paid?.querySelector(".qkpi__val")?.textContent).replace(
+          / /g,
+          "",
+        ),
+        paidSub: norm(paid?.querySelector(".qkpi__sub")?.textContent),
+        outVal: norm(out?.querySelector(".qkpi__val")?.textContent).replace(
+          / /g,
+          "",
+        ),
+        trackCount: norm(track?.querySelector(".qtrack__count")?.textContent),
+        trackBody: norm(track?.querySelector(".qtrack__body")?.textContent),
+        hero: norm(
+          document.querySelector('[data-cy="forecast-hero"]')?.textContent,
+        ),
+      };
+    });
+    expect.eq(
+      read.paidVal,
+      "$500",
+      "the Paid this month tile counts the $500 check (REQ-959)",
+    );
+    expect.eq(
+      read.outVal,
+      "$690.75",
+      `the Out for payment tile is the balance to the cent (screen: ${
+        JSON.stringify(read)
+      })`,
+    );
+    // every contradiction at once, so one run shows the whole screen
+    const problems: string[] = [];
+    if (/^0\b/.test(read.paidSub)) {
+      problems.push(
+        `the tile subline starts with 0 beside $500 (got "${read.paidSub}")`,
+      );
+    }
+    if (/^0\b/.test(read.trackCount)) {
+      problems.push(
+        `track 06 counts 0 beside a $500 Paid this month (got "${read.trackCount}")`,
+      );
+    }
+    if (/Nothing paid yet this month/.test(read.trackBody)) {
+      problems.push(
+        `track 06 says "Nothing paid yet this month" while $500 was paid (got "${read.trackBody}")`,
+      );
+    }
+    if (!read.hero.includes("$690.75")) {
+      problems.push(
+        `the hero total does not read $690.75 like the Out tile (got "${read.hero}")`,
+      );
+    }
+    expect(problems.length === 0, problems.join(" | "));
   }));
