@@ -775,7 +775,31 @@ export class RenderQuotePdf {
       borderColor: LINE,
       borderWidth: 0.6,
     });
-    page.drawText(t(lang, "renderQuotePdf.sig.yourSignature"), {
+    // REQ-967 (LOOP-007 q1-44): once signed, the title names the signer by
+    // their typed name, like the web card (REQ-692) — "LINDA PARK'S
+    // SIGNATURE" / "FIRMA DE LINDA PARK". "YOUR SIGNATURE" is the REQ-032
+    // prompt for the box still to be signed; on a countersigned record it
+    // would point at whoever is reading it.
+    const signedBy = quote.acceptedName?.trim();
+    const isSigned =
+      !!(quote.acceptedAt || signedBy || quote.acceptedSignature);
+    let custTitle = !isSigned
+      ? t(lang, "renderQuotePdf.sig.yourSignature")
+      : signedBy
+      ? t(lang, "renderQuotePdf.sig.signatureOf", {
+        name: signedBy.toLocaleUpperCase(lang),
+      })
+      : t(lang, "renderQuotePdf.sig.clientSigned");
+    // A long name must not run out of the box.
+    const custTitleMaxW = halfW - 24;
+    if (bold.widthOfTextAtSize(custTitle, 8) > custTitleMaxW) {
+      while (
+        custTitle.length > 1 &&
+        bold.widthOfTextAtSize(custTitle + "…", 8) > custTitleMaxW
+      ) custTitle = custTitle.slice(0, -1);
+      custTitle = custTitle.trimEnd() + "…";
+    }
+    page.drawText(custTitle, {
       x: cx + 12,
       y: y - 16,
       size: 8,

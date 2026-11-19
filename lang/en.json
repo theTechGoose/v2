@@ -3155,6 +3155,7 @@
   "renderQuotePdf.sig.bySigningNamed": "By signing below, {name} agrees to everything above.",
   "renderQuotePdf.sig.contractorSignature": "CONTRACTOR SIGNATURE",
   "renderQuotePdf.sig.yourSignature": "YOUR SIGNATURE",
+  "renderQuotePdf.sig.signatureOf": "{name}'S SIGNATURE",
   "renderQuotePdf.sig.by": "By: {name}",
   "renderQuotePdf.sig.clientSigned": "CLIENT SIGNED",
   "renderQuotePdf.sig.contractor": "CONTRACTOR",
