@@ -174,9 +174,14 @@ export function moneyAmounts(text: string): MoneyAmount[] {
 const PRICE_LABEL = String
   .raw`(mano\s+de\s+obra|labou?r|materiales|materials?|suministros|supplies|total|precio|price)`;
 /** What may sit between the label and its amount: nothing, a colon or an
- *  equals sign, or one linking word ("material de 1350", "labor is 4200"). */
+ *  equals sign, or one linking word ("material de 1350", "labor is 4200"),
+ *  then — REQ-1097 (LOOP-007 cycle 3, q3-22) — one hedge word: "materials
+ *  around 600", "labor ~1400", "materiales unos 600", "mano de obra
+ *  alrededor de 1400". Never "cerca" (REQ-1023). */
+const LABEL_HEDGE = String
+  .raw`(?:(?:around|about|roughly|approx\.?|approximately|like|maybe|est\.?|estimated|unos|unas|como|aprox\.?|aproximadamente|alrededor\s+de)\s+|~\s*)`;
 const LABEL_LINK = String
-  .raw`\s*(?:[:=]\s*|-\s*|(?:de|of|is|es|son|are|was|fue)\s+)?\$?\s?`;
+  .raw`\s*(?:[:=]\s*|-\s*|(?:de|of|is|es|son|are|was|fue)\s+)?${LABEL_HEDGE}?\$?\s?`;
 /** What may follow a BARE labelled amount for it to be money: the end, a
  *  pause, another price label, a joining word or a currency — never "total 2
  *  rooms", "material 3 coats" or "materials 10%". */

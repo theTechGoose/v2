@@ -977,15 +977,43 @@ export function missedTypedPrices(
   const total = amounts.reduce((a, b) => a + b, 0);
   if (total === typed.reduce((a, b) => a + b, 0)) return [];
   const itemCents = items.map((a) => a.cents);
+  const loose = typedNumbers(s);
   return items.filter((a, i) => {
     if (amounts.includes(a.cents)) return false;
     if (subsetSums(amounts, a.cents)) return false;
     // one line carrying this item together with other typed items
     const others = itemCents.filter((_, j) => j !== i);
-    return !amounts.some((line) =>
-      line > a.cents && subsetSums(others, line - a.cents)
-    );
+    return !amounts.some((line) => {
+      if (line <= a.cents) return false;
+      const rest = line - a.cents;
+      if (subsetSums(others, rest)) return true;
+      // REQ-1097 (q3-22): …or with a number typed in a way the label reader
+      // cannot read ("materials around 600", "clean them 175") — an unread
+      // figure still counts as folded, never as a reason to bill twice.
+      const own = loose.filter((n) => n.start < a.start || n.start >= a.end);
+      return own.some((n) =>
+        n.cents === rest ||
+        (n.cents < rest && subsetSums(others, rest - n.cents))
+      );
+    });
   });
+}
+
+/** REQ-1097 (LOOP-007 cycle 3, q3-22): every plain number typed in the
+ *  message, read as dollars — a fallback for prices the label reader misses.
+ *  Only used to accept a fold, never to add a line. */
+function typedNumbers(s: string): { cents: number; start: number }[] {
+  const out: { cents: number; start: number }[] = [];
+  for (
+    const m of s.matchAll(
+      /(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(?![\d%]|[.,]\d)/g,
+    )
+  ) {
+    const whole = Number(m[1].replace(/,/g, ""));
+    const cents = whole * 100 + Number((m[2] ?? "0").padEnd(2, "0"));
+    if (cents > 0) out.push({ cents, start: m.index! });
+  }
+  return out;
 }
 
 /** "Mano de obra" / "Materiales" — the label as a line's description. */
