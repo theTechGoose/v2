@@ -85,6 +85,8 @@ import { isPartlyPaid } from "../../shared/documents/invoice-status.ts"; // REQ-
 import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { sendInvoiceNudge } from "../lib/invoice-nudge.ts";
+// REQ-1112 (LOOP-007 q3-37): every /invoices nudge confirms with the preview
+import InvoiceNudgeDialog from "../components/InvoiceNudgeDialog.tsx";
 import {
   outReadKey,
   paidReadKey,
@@ -157,6 +159,7 @@ import {
   describeReminderCadence,
   invoiceReminderState,
   manualReminderDay,
+  type ReminderDay,
   type ReminderSettings,
   reminderSettingsOf,
 } from "../../shared/quote-flow/reminder-settings.ts"; // REQ-623, REQ-704
@@ -593,6 +596,43 @@ interface InvoiceSendSheet {
   send: (pick: SendDialogPick) => Promise<void>;
 }
 
+/** REQ-1112 (LOOP-007 q3-37): a card's / the panel's reminder nudge, asked
+ *  first — InvoiceNudgeDialog shows the backend preview, and only its Send
+ *  runs the card's own nudge (which owns the busy state and the note). */
+interface InvoiceNudgeSheet {
+  inv: EnrichedInvoice;
+  send: (day: ReminderDay) => Promise<void>;
+}
+
+/** REQ-1112: the nudge dialog for a sheet — the page and the panel draw it
+ *  outside the (transformed) cards, like the send sheet (REQ-727). */
+function InvoiceNudgeSheetDialog(
+  { lang, sheet, onClose }: {
+    lang: Lang;
+    sheet: InvoiceNudgeSheet;
+    onClose: () => void;
+  },
+) {
+  const { inv } = sheet;
+  return (
+    <InvoiceNudgeDialog
+      lang={lang}
+      invoice={{
+        id: inv.id,
+        number: inv.invoiceRef,
+        dueDate: inv.dueDate,
+        status: inv.stage === "claimed" ? "claimed" : inv.status,
+      }}
+      customerName={inv.client}
+      onCancel={onClose}
+      onSend={async (day) => {
+        await sheet.send(day);
+        onClose();
+      }}
+    />
+  );
+}
+
 /** REQ-554 (m52): a half-delivered send — what went in green, only what
  *  failed in red, on a neutral amber note (not the failure red). */
 function PartialSendNote(
@@ -636,6 +676,10 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [cardFlash, setCardFlash] = useState<CardFlash | null>(null);
   /** REQ-727: the send sheet a card's "Send now" / "Finish + send" opened. */
   const [sendSheet, setSendSheet] = useState<InvoiceSendSheet | null>(null);
+  // REQ-1112: a card's nudge dialog, drawn here outside the cards
+  const [nudgeSheet, setNudgeSheet] = useState<InvoiceNudgeSheet | null>(
+    null,
+  );
   const [sendFlash] = useState<
     {
       text: string;
@@ -1058,6 +1102,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             onRefresh={refreshInvoices}
             onFlash={setCardFlash}
             onSendSheet={setSendSheet}
+            onNudgeSheet={setNudgeSheet}
           />
         </div>
       )
@@ -1073,6 +1118,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
           onRefresh={refreshInvoices}
           onFlash={setCardFlash}
           onSendSheet={setSendSheet}
+          onNudgeSheet={setNudgeSheet}
         />
       );
   const planDelete = bulkPlan(picked, "delete");
@@ -1586,6 +1632,13 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             await sendSheet.send(pick);
             setSendSheet(null);
           }}
+        />
+      )}
+      {nudgeSheet && (
+        <InvoiceNudgeSheetDialog
+          lang={lang}
+          sheet={nudgeSheet}
+          onClose={() => setNudgeSheet(null)}
         />
       )}
     </>
@@ -2230,16 +2283,21 @@ function InvoiceDetail(
   // REQ-727 (cycle 5, c4-M16): the panel's Send now / Finish + send open
   // the send sheet too — here, over the panel; nothing is sent until its Send.
   const [sendSheet, setSendSheet] = useState<InvoiceSendSheet | null>(null);
+  // REQ-1112 (q3-37): the panel's nudge asks first too, over the panel
+  const [nudgeSheet, setNudgeSheet] = useState<InvoiceNudgeSheet | null>(
+    null,
+  );
   const dispatch = useInvoiceDispatch(inv, lang, {
     onFlash,
     onRefresh: onChanged,
     onSendSheet: setSendSheet,
+    onNudgeSheet: setNudgeSheet,
   });
   function runStageAction(kind: StageActionKind, e: Event) {
     if (kind === "sendNow" || kind === "finishSend") {
       return dispatch.openSendSheet(e);
     }
-    return dispatch.doSendNudge(e);
+    return dispatch.askNudge(e);
   }
   type Mode = "none" | "edit" | "discount" | "co" | "pay";
   // REQ-018: /invoices?open=<id>&pay=1 lands straight on "Payment received".
@@ -2780,6 +2838,13 @@ function InvoiceDetail(
             await sendSheet.send(pick);
             setSendSheet(null);
           }}
+        />
+      )}
+      {nudgeSheet && (
+        <InvoiceNudgeSheetDialog
+          lang={lang}
+          sheet={nudgeSheet}
+          onClose={() => setNudgeSheet(null)}
         />
       )}
 
@@ -3591,13 +3656,15 @@ function worded(word: (lang: Lang) => string): Worded {
 function useInvoiceDispatch(
   inv: EnrichedInvoice,
   lang: Lang,
-  { onFlash, onRefresh, now, onSendSheet }: {
+  { onFlash, onRefresh, now, onSendSheet, onNudgeSheet }: {
     onFlash: (f: CardFlash | null) => void;
     onRefresh: () => void | Promise<void>;
     /** REQ-704 — "today" for the reminder a nudge sends (the card's clock) */
     now?: Date;
     /** REQ-727: where the send sheet opens (the page, or the panel) */
     onSendSheet: (sheet: InvoiceSendSheet) => void;
+    /** REQ-1112: where the nudge dialog opens (the page, or the panel) */
+    onNudgeSheet: (sheet: InvoiceNudgeSheet) => void;
   },
 ) {
   // REQ-704 (cycle 5, m60): the rung a manual nudge sends (-3 before the due
@@ -3805,10 +3872,9 @@ function useInvoiceDispatch(
   /** REQ-021 (NW-31a): a nudge is the reminder CADENCE (REQ-704: -3 before
    *  the due date, 0 on it, then day 3 / 7 / 14 / 30 by how overdue the
    *  invoice is), never the full invoice re-texted. */
-  async function doSendNudge(e: Event) {
-    e.stopPropagation();
+  async function doSendNudge(e: Event | null, day: ReminderDay = nudgeDay) {
+    e?.stopPropagation();
     if (busy) return;
-    const day = nudgeDay;
     setBusy(true);
     setSendFail(null);
     setSendNote(null);
@@ -3825,6 +3891,17 @@ function useInvoiceDispatch(
     } finally {
       setBusy(false);
     }
+  }
+  /** REQ-1112 (LOOP-007 q3-37; amends REQ-477): a nudge sends nothing
+   *  itself — it opens InvoiceNudgeDialog (the backend's reminder preview +
+   *  Send / Cancel, REQ-704 / REQ-1031), and only its Send runs
+   *  doSendNudge, for the step the dialog previewed. */
+  function askNudge(e: Event) {
+    e.stopPropagation();
+    if (busy) return;
+    setSendFail(null);
+    setSendNote(null);
+    onNudgeSheet({ inv, send: (day) => doSendNudge(null, day) });
   }
   /** REQ-727 (demo-loop cycle 5, c4-M16): "Send now" / "Finish + send" send
    *  nothing themselves — they open the send sheet (the channel, the
@@ -3855,6 +3932,7 @@ function useInvoiceDispatch(
     doFinishDraft,
     openSendSheet,
     doSendNudge,
+    askNudge,
     needContact,
     contactFix,
   };
@@ -3871,6 +3949,7 @@ function InvoiceCard(
     onRefresh,
     onFlash,
     onSendSheet,
+    onNudgeSheet,
   }: {
     inv: EnrichedInvoice;
     idx: number;
@@ -3880,6 +3959,8 @@ function InvoiceCard(
     onOpen: (id: string) => void;
     /** REQ-727: "Send now" / "Finish + send" open the page's send sheet */
     onSendSheet: (sheet: InvoiceSendSheet) => void;
+    /** REQ-1112: a nudge opens the page's nudge dialog first */
+    onNudgeSheet: (sheet: InvoiceNudgeSheet) => void;
     /** REQ-489: opens this invoice in pay mode in place (no page load). */
     onPaymentReceived: (id: string) => void;
     /** REQ-554 (demo cycle 4, M9/m43): the page's re-read (list, forecast,
@@ -3901,8 +3982,15 @@ function InvoiceCard(
     sendNote,
     openSendSheet,
     doSendNudge,
+    askNudge,
     contactFix,
-  } = useInvoiceDispatch(inv, lang, { onFlash, onRefresh, now, onSendSheet });
+  } = useInvoiceDispatch(inv, lang, {
+    onFlash,
+    onRefresh,
+    now,
+    onSendSheet,
+    onNudgeSheet,
+  });
   // REQ-250 (demo m12): a nudge on a CLAIMED invoice — the customer said they
   // paid — asks first, inline, naming the claim.
   const [nudgeAsk, setNudgeAsk] = useState(false);
@@ -4169,7 +4257,8 @@ function InvoiceCard(
     if (inv.stage === "out" || inv.stage === "partly") {
       return doPaymentReceived(e);
     }
-    if (inv.stage === "overdue") return doSendNudge(e);
+    // REQ-1112 (q3-37): "Send nudge" asks first, with the preview
+    if (inv.stage === "overdue") return askNudge(e);
     if (inv.stage === "scheduled" || inv.stage === "drafting") {
       return openSendSheet(e);
     }
@@ -5005,9 +5094,10 @@ function InvoiceCard(
               type="button"
               data-cy="invoice-nudge"
               onClick={(e) => {
-                // REQ-250: a claimed card asks first; REQ-477: an out card
-                // (sent, not yet overdue) sends the reminder straight away.
-                if (inv.stage !== "claimed") return doSendNudge(e);
+                // REQ-250: a claimed card asks first, naming the claim;
+                // REQ-1112 (amends REQ-477): any other card asks first too,
+                // with the preview (InvoiceNudgeDialog).
+                if (inv.stage !== "claimed") return askNudge(e);
                 e.stopPropagation();
                 setNudgeAsk(true);
               }}
