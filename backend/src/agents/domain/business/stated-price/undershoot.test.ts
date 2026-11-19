@@ -200,3 +200,80 @@ for (const variant of ["same job", "a different summary"] as const) {
     assertEquals(sum(out.payload.lineItems), 870_000);
   });
 }
+
+// ---------------------------------------------------------------------------
+// REQ-1018 (LOOP-007 cycle 2, q2-1) — the ×10 rate slip in Spanish
+// ---------------------------------------------------------------------------
+
+/** The tester's exact message (fleet-r66a3e3fc-0 stdout:61). */
+const Q2_1_TEXT =
+  "Cotización para Rosa Delgado: cambiar el piso de la cocina, 200 pies cuadrados de porcelanato, $9 por pie cuadrado con material y mano de obra.";
+
+Deno.test("REQ-1018 q2-1 fixRateSlips: '$9 por pie cuadrado' + '200 pies cuadrados' saved at $18,000 is the ×10 slip — the line becomes $1,800", () => {
+  // the quantity in the line's own description
+  assertEquals(
+    fixRateSlips(
+      [{
+        description:
+          "Cambio de piso de cocina (200 pies cuadrados, porcelanato)",
+        amountCents: 1_800_000,
+      }],
+      Q2_1_TEXT,
+    )?.[0].amountCents,
+    180_000,
+  );
+  // the line names no quantity — the one typed in the message
+  assertEquals(
+    fixRateSlips(
+      [{ description: "Cambio de piso de cocina", amountCents: 1_800_000 }],
+      Q2_1_TEXT,
+    )?.[0].amountCents,
+    180_000,
+  );
+});
+
+Deno.test("REQ-1018 q2-1 fixRateSlips: Spanish square units read the same on the rate and on the quantity — 'el pie cuadrado', '/pie²', 'por metro cuadrado'", () => {
+  assertEquals(
+    fixRateSlips(
+      [{ description: "Piso de porcelanato", amountCents: 1_800_000 }],
+      "200 pies cuadrados de porcelanato a $9 el pie cuadrado",
+    )?.[0].amountCents,
+    180_000,
+    "'$9 el pie cuadrado'",
+  );
+  assertEquals(
+    fixRateSlips(
+      [{ description: "Piso de porcelanato", amountCents: 1_800_000 }],
+      "200 pies cuadrados de porcelanato, $9/pie²",
+    )?.[0].amountCents,
+    180_000,
+    "'$9/pie²'",
+  );
+  assertEquals(
+    fixRateSlips(
+      [{ description: "Losa de terraza", amountCents: 800_000 }],
+      "terraza de 20 metros cuadrados, $40 por metro cuadrado",
+    )?.[0].amountCents,
+    80_000,
+    "'$40 por metro cuadrado' + '20 metros cuadrados'",
+  );
+});
+
+Deno.test("REQ-1018 q2-1 settleCreateQuote: the Spanish first draft at $18,000 is saved at $1,800", async () => {
+  const out = await settleCreateQuote({
+    payload: {
+      summary: "Cambio de piso de cocina — Rosa Delgado",
+      lineItems: [{
+        description:
+          "Cambio de piso de cocina (200 pies cuadrados, porcelanato)",
+        amountCents: 1_800_000,
+      }],
+    },
+    userText: Q2_1_TEXT,
+    lang: "es",
+    reask: noReask,
+  });
+  assertEquals(out.kind, "save", JSON.stringify(out));
+  if (out.kind !== "save") return;
+  assertEquals(sum(out.payload.lineItems), 180_000);
+});

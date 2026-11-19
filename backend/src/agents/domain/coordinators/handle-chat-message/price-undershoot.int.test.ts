@@ -218,3 +218,43 @@ Deno.test("REQ-651 B1 (pair 7): 'about 1200 extra' answered with a $150 change_o
   assertStringIncludes(reply, "$1,200");
   await resetKv();
 });
+
+Deno.test("REQ-1018 q2-1: '200 pies cuadrados … $9 por pie cuadrado' answered with an $18,000 create_quote saves $1,800 — never the model's ×10", async () => {
+  const ctx = await fresh();
+  const kv = await getKv();
+  const user = await kv.get<Record<string, unknown>>(["user", "u-1"]);
+  await kv.set(["user", "u-1"], { ...user.value, language: "es" });
+  await ctx.customers.create("u-1", { name: "Rosa Delgado" });
+  // gpt-4o-mini's create_quote (fleet-r66a3e3fc-0 stdout:61-64): one line
+  // at 1,800,000 cents — 200 × $9 = $1,800 slipped by ×10.
+  ctx.llm.setHandler(() => ({
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Cambio de piso · Rosa Delgado",
+        customerName: "Rosa Delgado",
+        lineItems: [{
+          description:
+            "Cambio de piso de cocina (200 pies cuadrados, porcelanato)",
+          amountCents: 1_800_000,
+        }],
+      },
+    },
+  }));
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content:
+      "Cotización para Rosa Delgado: cambiar el piso de la cocina, 200 pies cuadrados de porcelanato, $9 por pie cuadrado con material y mano de obra.",
+  });
+  const quotes = await ctx.quotes.listByUser("u-1");
+  assertEquals(quotes.length, 1, "one draft quote is saved");
+  assertEquals(storedTotal(quotes[0]), 180_000);
+  assertEquals(quotes[0].estimatedTotal, 180_000);
+  const reply = replyOf(result.newMessages);
+  assert(!reply.includes("18,000"), reply);
+  assert(!reply.includes("18.000"), reply);
+  await resetKv();
+});
