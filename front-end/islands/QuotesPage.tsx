@@ -77,6 +77,8 @@ import {
 } from "../lib/quote-panel-send.ts"; // REQ-570 + REQ-686
 import { assistantClient } from "../clients/assistant.ts"; // REQ-686
 import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
+import { defaultSendLang } from "../lib/send-dialog.ts"; // REQ-971
+import { quoteTextLang } from "../../shared/quote-flow/quote-translations.ts"; // REQ-971
 import {
   changeOrderBody,
   changeOrderRowActions,
@@ -1912,6 +1914,14 @@ function OpenQuotePanel(
               ? { id: q.customerId, name: q.customerName }
               : null)}
           initialChannel={sendChannel}
+          // REQ-971 (q1-49): the customer's language, else the quote's own
+          // (REQ-710 stamp, else its text), else the app language
+          initialSendLang={defaultSendLang(
+            state.customer,
+            lang,
+            undefined,
+            q.lang ?? quoteTextLang(q),
+          )}
           onClose={() => setSendChannel(null)}
           onSent={(r) => {
             setSendChannel(null);

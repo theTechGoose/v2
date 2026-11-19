@@ -249,14 +249,21 @@ export function sendOpenLabelKey(channel: SendChannel): string {
  * Spanish") when one is on file, else the app language. The contractor can
  * still pick the other one for this send. REQ-925: never a language outside
  * Settings → "Languages you send in" (when the account has stored them).
+ * REQ-971 (REQ-715 AMENDMENT, LOOP-007 q1-49): between the two, the
+ * document's own language (`docLang` — a quote's `lang`, stamped from its
+ * typed text by REQ-710): a quote typed in Spanish for a customer with no
+ * language starts on Español even in an English app. Customer.language is
+ * still never inferred from it.
  */
 export function defaultSendLang(
   customer: { language?: string | null } | null | undefined,
   appLang: string,
   sendLanguages?: readonly string[] | null,
+  docLang?: string | null,
 ): CommsLang {
   return clampToSendLanguages(
-    asCommsLang(customer?.language) ?? (appLang === "es" ? "es" : "en"),
+    asCommsLang(customer?.language) ?? asCommsLang(docLang) ??
+      (appLang === "es" ? "es" : "en"),
     sendLanguages,
   );
 }

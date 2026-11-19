@@ -58,6 +58,7 @@ import {
   descriptionLines,
   lineItemDescription,
   previewTranslationMissing,
+  quoteTextLang,
 } from "../../shared/quote-flow/quote-translations.ts";
 import { clientsClient } from "../clients/clients.ts";
 import { readCached, refreshDash, subscribeDash } from "../lib/dash-cache.ts";
@@ -1398,8 +1399,12 @@ export default function AsstChat({
    *  contractor flips it with the "Preview in" toggle; defaults to REQ-715
    *  the customer's own language, else their app language, until they
    *  explicitly pick one. */
+  // REQ-971 (q1-49): the quote's own language — its stored stamp (REQ-710),
+  // else what its text reads in — so a quote typed in Spanish for a customer
+  // with no language previews and sends in Spanish.
+  const quoteLang = quote?.lang ?? quoteTextLang(quote);
   const [previewLang, setPreviewLang] = useState<"en" | "es">(
-    defaultSendLang(customer, lang, sendLanguages),
+    defaultSendLang(customer, lang, sendLanguages, quoteLang),
   );
   // Until the contractor explicitly taps a "Preview in" pill, keep the preview
   // following their app language — so a Spanish-app contractor sees the quote
@@ -1410,9 +1415,9 @@ export default function AsstChat({
   const previewLangPickedRef = useRef(false);
   useEffect(() => {
     if (!previewLangPickedRef.current) {
-      setPreviewLang(defaultSendLang(customer, lang, sendLanguages));
+      setPreviewLang(defaultSendLang(customer, lang, sendLanguages, quoteLang));
     }
-  }, [lang, customer?.language, sendLanguages?.join(",")]);
+  }, [lang, customer?.language, sendLanguages?.join(","), quoteLang]);
   /**
    * Tracks `continue_cta` messages whose Review button has been clicked.
    * Drives the inline "Drafted ✓" confirmation state — replaces the
