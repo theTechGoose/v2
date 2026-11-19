@@ -172,3 +172,72 @@ Deno.test("REQ-625 PUT /customers/:id — a legacy free-text address still write
     assertEquals(bad.ok, false);
   });
 });
+
+// REQ-992 (LOOP-007 cycle 1, q1-74): "Texasssss" / "ABCDE" were stored and
+// composed into "1200 Barton Springs Rd, Austin, Texasssss ABCDE", the one
+// address every invoice, quote and PDF reads. POST and PUT must refuse them
+// with a 400 naming the key, and a refused PUT must leave the address alone.
+Deno.test("REQ-992 q1-74 POST and PUT /customers refuse ZIP 'ABCDE' and state 'Texasssss' with 400; the stored address is unchanged", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const h = { ...J, "x-session-id": sid };
+    const base = {
+      name: "Ana Barton",
+      street: "1200 Barton Springs Rd",
+      city: "Austin",
+    };
+
+    const badZipPost = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ ...base, state: "TX", zip: "ABCDE" }),
+    });
+    const badZipBody = await badZipPost.text();
+    assertEquals(badZipPost.status, 400, badZipBody);
+    assertEquals(badZipBody.includes("customer.invalidZip"), true, badZipBody);
+
+    const badStatePost = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ ...base, state: "Texasssss", zip: "78704" }),
+    });
+    const badStateBody = await badStatePost.text();
+    assertEquals(badStatePost.status, 400, badStateBody);
+    assertEquals(
+      badStateBody.includes("customer.invalidState"),
+      true,
+      badStateBody,
+    );
+
+    const none = await fetch(`http://localhost:${port}/customers`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json());
+    assertEquals(none.length, 0, "nothing saved after the refusals");
+
+    const created = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ ...base, state: "TX", zip: "78704" }),
+    }).then((r) => r.json());
+    assertEquals(created.address, "1200 Barton Springs Rd, Austin, TX 78704");
+
+    const put = await fetch(
+      `http://localhost:${port}/customers/${created.id}`,
+      {
+        method: "PUT",
+        headers: h,
+        body: JSON.stringify({ state: "Texasssss", zip: "ABCDE" }),
+      },
+    );
+    const putBody = await put.text();
+    assertEquals(put.status, 400, putBody);
+
+    const got = await fetch(
+      `http://localhost:${port}/customers/${created.id}`,
+      { headers: { "x-session-id": sid } },
+    ).then((r) => r.json());
+    assertEquals(got.address, "1200 Barton Springs Rd, Austin, TX 78704");
+    assertEquals(got.state, "TX");
+    assertEquals(got.zip, "78704");
+  });
+});
