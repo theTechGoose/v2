@@ -47,7 +47,14 @@ Deno.test("REQ-926 withChargebackFee: an amount-only invoice first gets its amou
     2500,
   );
   assertEquals(patch.lineItems, [
-    { description: "Fence stain", quantity: 1, unit: "ea", price: 40000 },
+    // REQ-1124: the made-up base line is tagged as the chargeback's own
+    {
+      description: "Fence stain",
+      quantity: 1,
+      unit: "ea",
+      price: 40000,
+      chargebackBase: "pay-2",
+    },
     {
       description: "Chargeback fee",
       quantity: 1,

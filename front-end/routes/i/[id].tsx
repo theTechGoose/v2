@@ -487,7 +487,7 @@ function InvoiceDoc(
         invoice.jobDetails?.jobName,
       summary: invoice.jobDetails?.summaryByLang?.[lang] ??
         invoice.jobDetails?.summary,
-      lineDescriptions: items.map((it) => it.description),
+      lines: items, // REQ-1124: a chargeback's own lines never title it
       number: docNumber,
     },
     lang,
