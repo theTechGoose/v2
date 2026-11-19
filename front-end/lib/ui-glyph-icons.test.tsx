@@ -197,3 +197,68 @@ Deno.test("REQ-366 setup-m4: the customer's signature pad draws its sign-here ma
     "the sign-here mark is an <Icon name=x>",
   );
 });
+
+/**
+ * REQ-1147 (LOOP-007 cycle 3, q3-78) — Raphael: "test every single aspect of
+ * this application … one Opus agent per issue to do root cause analysis, then
+ * one to write the test, then one to fix it and make it green."
+ *
+ * QA: "Emoji in menus and the activity feed". REQ-924's customer workspace
+ * (1c0be6f7) drew its icons as emoji literals — the More menu's 💬 / 🔁 next to
+ * the SVG pencil of "Edit", the header's 📍 next to the SVG phone / mail, the
+ * service card's 📍 next to its SVG repeat icon, the activity feed's
+ * 💵 🧾 📝 🔁 dots — and the customers sidebar's 🔁 schedule line. Emoji draw
+ * through the OS colour-emoji font, so one menu / row mixes two icon styles,
+ * and DINGBAT / MISC_TECHNICAL above never covered U+1F300–1FAFF or
+ * U+2600–26FF. The owner call (REQ-1147, amending REQ-366 / REQ-1070): emoji
+ * are not UI icons on app surfaces; copy emoji inside message text stay.
+ *
+ * Scope: the surfaces where QA saw the emoji used as icons — the customer
+ * workspace, the customers sidebar, and the same 💬 note icon in the field
+ * task list and the worker screen. Each uses the matching SVG from
+ * lib/dash-icons.tsx (ICN.msg / repeat / pin / pay / invoice / quote).
+ */
+const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}]/u;
+const EMOJI_ICON_SURFACES = [
+  "islands/CustomerWorkspace.tsx",
+  "components/CustomersNav.tsx",
+  "islands/FieldTasksPage.tsx",
+  "islands/WorkerScreen.tsx",
+];
+
+Deno.test("REQ-1147 (LOOP-007 q3-78): the customer workspace, customers sidebar, field tasks and worker screen draw no emoji as an icon (U+1F300–1FAFF, U+2600–26FF)", async () => {
+  const hits: string[] = [];
+  for (const rel of EMOJI_ICON_SURFACES) {
+    const lines = codeLines(await Deno.readTextFile(join(FE, rel)));
+    lines.forEach((l, i) => {
+      if (EMOJI.test(l)) hits.push(`front-end/${rel}:${i + 1}: ${l.trim()}`);
+    });
+  }
+  assertEquals(
+    hits,
+    [],
+    "emoji icons draw through the OS colour-emoji font next to stroke SVG icons — use <I d={ICN.…}/> / <Icon name=…/>:\n" +
+      hits.join("\n"),
+  );
+});
+
+Deno.test("REQ-1147 (LOOP-007 q3-78): the customer activity feed's .cws-dot draws an SVG icon, not an emoji", async () => {
+  const src = await Deno.readTextFile(join(FE, "islands/CustomerWorkspace.tsx"));
+  const start = src.indexOf("function Activity(");
+  assert(start > 0, "CustomerWorkspace has its Activity() feed");
+  const end = src.indexOf("\nfunction ", start + 1);
+  const body = src.slice(start, end > 0 ? end : undefined);
+  const icons = [...body.matchAll(/icon:\s*([^,\n]+)/g)].map((m) => m[1].trim());
+  assert(icons.length >= 4, `the feed has its four item kinds:\n${icons.join("\n")}`);
+  assertEquals(
+    icons.filter((v) => EMOJI.test(v)),
+    [],
+    "activity items carry an ICN path, not an emoji string",
+  );
+  const dot = body.match(/<span class="cws-dot"[^>]*>([\s\S]*?)<\/span>/);
+  assert(dot, "the feed renders each item in <span class=\"cws-dot\">");
+  assert(
+    /<I\s+d=\{/.test(dot[1]) || /<Icon\s/.test(dot[1]),
+    `the dot renders an SVG (<I d={…}/>), not the icon string as text:\n${dot[0]}`,
+  );
+});
