@@ -24,13 +24,19 @@ const en = (k: string, v?: Record<string, string | number>) => tFor("en", k, v);
 const es = (k: string, v?: Record<string, string | number>) => tFor("es", k, v);
 
 Deno.test("REQ-725: a paid card's note is one plain line — today, then the monthly price on the 1st (demo-loop c5 m3)", () => {
+  // REQ-970 (q1-51) amends the line: picked Nov 12, Dec 1 is the prorated catch-up, so the full
+  // price is named from Jan 1; picked ON a 1st, the next 1st IS the full price and the line stays plain
   assertEquals(
     wizardPlanNote(en, null, "monster", NOW, "en"),
-    "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next",
+    "$99 today, a smaller catch-up bill on the next 1st, then $99 on the 1st of each month from Jan 1 — you'll pay on a secure payment page next",
   );
   assertEquals(
     wizardPlanNote(es, null, "monster", NOW, "es"),
-    "$99 hoy, luego $99 el día 1 de cada mes — pagarás en una página de pago segura a continuación",
+    "$99 hoy, un cobro de ajuste menor el próximo día 1, luego $99 el día 1 de cada mes desde el 1 ene — pagarás en una página de pago segura a continuación",
+  );
+  assertEquals(
+    wizardPlanNote(en, null, "monster", "2026-11-01T12:00:00.000Z", "en"),
+    "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next",
   );
 });
 
