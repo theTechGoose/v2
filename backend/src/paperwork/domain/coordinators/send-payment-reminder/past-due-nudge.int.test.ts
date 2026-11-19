@@ -132,3 +132,44 @@ Deno.test("REQ-938 (LOOP-007 q1-14): a recorded day-30 owner alert never stops t
     await resetKv();
   }
 });
+
+// REQ-1111 (LOOP-007 cycle 3, q3-36): the nudge email names the due date in
+// the long form every other paperwork email uses, never the stored ISO.
+const LONG_DUE = { en: "November 1, 2026", es: "1 de noviembre de 2026" } as const;
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-1111 (LOOP-007 q3, q3-36): the ${lang} Send nudge email reads the due date "${LONG_DUE[lang]}", never ${DUE}`, async () => {
+    const r = await rig();
+    try {
+      const customers = new CustomerStore();
+      const reader = await customers.create(r.owner.id, {
+        name: lang === "es" ? "Carmen Ortega" : "Dana Ruiz",
+        email: `reader-${lang}@example.com`,
+        language: lang,
+      } as never);
+      const inv = await r.invoices.create(r.owner.id, {
+        customerId: reader.id,
+        amount: 225_30,
+        status: "sent",
+        issuedDate: "2026-10-02",
+        dueDate: DUE,
+      } as never);
+      const day = manualReminderDay(DUE, TODAY);
+      await r.reminders.runForInvoice(r.owner.id, inv.id, day, NOW);
+      const mail = r.emails.find((e) => e.to === `reader-${lang}@example.com`);
+      assert(mail, `the nudge emailed her (${JSON.stringify(r.emails.map((e) => e.to))})`);
+      // the CTA href may carry anything; read the visible text only
+      const text = mail.htmlBody.replace(/href="[^"]*"/g, "").replace(/<[^>]+>/g, " ");
+      const dueLine = text.match(/(?:Due|Vence)[^\n]*?(?=\s{2,}|$)/)?.[0] ?? "(no due line)";
+      assert(
+        !/\d{4}-\d{2}-\d{2}/.test(text),
+        `the ${lang} nudge email prints a raw ISO date: "${dueLine.trim()}"`,
+      );
+      assert(
+        text.includes(LONG_DUE[lang]),
+        `the ${lang} nudge email never names "${LONG_DUE[lang]}" (got "${dueLine.trim()}")`,
+      );
+    } finally {
+      await resetKv();
+    }
+  });
+}

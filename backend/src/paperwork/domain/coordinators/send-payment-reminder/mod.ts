@@ -30,6 +30,7 @@ import {
 } from "#quote-flow/reminder-settings.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
+import { fmtPaperworkDate } from "#quote-flow/email-format.ts"; // REQ-1111
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
 import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts"; // REQ-784
@@ -482,7 +483,12 @@ export function composeReminderCopy(opts: {
     : day === 7
     ? t(lang, "paymentReminder.tone.day7", { businessName })
     : t(lang, "paymentReminder.tone.day14", { businessName });
-  const dueLine = invoice.dueDate ? t(lang, "paymentReminder.dueSuffix", { dueDate: invoice.dueDate }) : "";
+  // REQ-1111 (LOOP-007 q3, q3-36): the due date reads in the long form every
+  // other paperwork email uses ("November 19, 2026" / "19 de noviembre de
+  // 2026"), never the stored ISO "2026-11-19".
+  const dueLine = invoice.dueDate
+    ? t(lang, "paymentReminder.dueSuffix", { dueDate: fmtPaperworkDate(invoice.dueDate, lang) })
+    : "";
   // REQ-204 / REQ-201: every reminder names the bill — "INV-5000 · Version 2"
   const ref = docRef(invoice);
   const refVersion = docRefWithVersion(invoice, lang);
