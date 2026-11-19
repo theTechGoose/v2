@@ -31,15 +31,18 @@ async function crewOf(w: FieldWorker, crews: CrewStore): Promise<Crew | null> {
 /**
  * REQ-285 — what the worker's screen gets: who, the role, and the language the screen opens in (REQ-155's
  * rule: theirs, else the owner's). REQ-840 — the crew's name; a worker who leads their crew is a foreman.
+ * REQ-1008 — `crewLead: true` when that foreman power is only their own crew's (not the account-wide role).
  */
 async function publicWorker(w: FieldWorker, users: UserStore, crews: CrewStore) {
   const owner = w.language ? {} : await users.get(w.userId).catch(() => ({}));
   const crew = await crewOf(w, crews);
-  const foreman = w.role === "foreman" || (!!crew && crew.foremanId === w.id);
+  const accountWide = w.role === "foreman";
+  const leadsCrew = !accountWide && !!crew && crew.foremanId === w.id;
   return {
     id: w.id,
     name: w.name,
-    role: foreman ? "foreman" as const : "worker" as const,
+    role: accountWide || leadsCrew ? "foreman" as const : "worker" as const,
+    ...(leadsCrew ? { crewLead: true as const } : {}),
     language: workerLang(w, owner),
     ...(crew ? { crewId: crew.id, crewName: crew.name } : {}),
   };
