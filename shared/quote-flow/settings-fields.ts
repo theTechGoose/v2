@@ -28,3 +28,43 @@ export function businessNameError(
   if (!(current ?? "").trim()) return null;
   return next === "" ? "settings.businessNameRequired" : "welcome.nameBlank";
 }
+
+/**
+ * REQ-978 (LOOP-007 q1, q1-58) — the number fields follow the same pattern: a bad value is
+ * refused with a dictionary key shown under the field, never put back silently.
+ *
+ * - Days to pay an invoice (REQ-174): a whole number from 0 to 365.
+ * - Overhead per visit (REQ-788 + AMENDMENT): not blank, ≥ 0, and ≤ 100 in % mode.
+ * - A money amount (REQ-926 chargeback fee): not blank, ≥ 0.
+ */
+export function netDaysError(
+  raw: string | null | undefined,
+): "settings.netDaysInvalid" | null {
+  const s = (raw ?? "").trim();
+  if (!s) return "settings.netDaysInvalid";
+  const n = Number(s);
+  return Number.isInteger(n) && n >= 0 && n <= 365
+    ? null
+    : "settings.netDaysInvalid";
+}
+
+export function moneyError(
+  raw: string | null | undefined,
+): "settings.moneyInvalid" | null {
+  const s = (raw ?? "").trim();
+  if (!s) return "settings.moneyInvalid";
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? null : "settings.moneyInvalid";
+}
+
+export function overheadError(
+  raw: string | null | undefined,
+  mode: "flat" | "percent",
+): "settings.overheadPctInvalid" | "settings.moneyInvalid" | null {
+  if (mode !== "percent") return moneyError(raw);
+  const s = (raw ?? "").trim();
+  const n = Number(s);
+  return s && Number.isFinite(n) && n >= 0 && n <= 100
+    ? null
+    : "settings.overheadPctInvalid";
+}

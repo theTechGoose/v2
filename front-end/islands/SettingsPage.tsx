@@ -105,7 +105,10 @@ import { normalizeWebsiteUrl } from "../../shared/quote-flow/format-helpers.ts";
 import {
   accountEmailError,
   businessNameError,
-} from "../../shared/quote-flow/settings-fields.ts"; // REQ-501
+  moneyError,
+  netDaysError,
+  overheadError,
+} from "../../shared/quote-flow/settings-fields.ts"; // REQ-501, REQ-978
 import {
   businessTimezone,
   PICKER_TIMEZONES,
@@ -521,6 +524,11 @@ function EditCard(
   // saved — the stored value stays (the keys come from shared/quote-flow/settings-fields.ts)
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [bizErr, setBizErr] = useState<string | null>(null);
+  // REQ-978 (q1-58): the number fields too — a bad value shows its message, stays on screen, and
+  // nothing is saved; it is never silently put back to the stored value
+  const [netDaysErr, setNetDaysErr] = useState<string | null>(null);
+  const [overheadErr, setOverheadErr] = useState<string | null>(null);
+  const [cbFeeErr, setCbFeeErr] = useState<string | null>(null);
   // REQ-511 (demo m41): the logo's own error, drawn in the logo row — not at
   // the bottom of the card, under the languages and off-screen
   const [logoErr, setLogoErr] = useState<string | null>(null);
@@ -761,24 +769,35 @@ function EditCard(
             data-cy="settings-net-days"
             value={netDays}
             disabled={busy === "identity"}
+            aria-invalid={netDaysErr ? "true" : undefined}
             onInput={(e) => {
               setSaved(false);
               setNetDays((e.target as HTMLInputElement).value);
+              setNetDaysErr(null);
             }}
             onBlur={() => {
-              const n = Number(netDays);
-              if (!Number.isInteger(n) || n < 0 || n > 365) {
-                setNetDays(
-                  String(accountNetDays(snapshot.identity?.invoiceNetDays)),
-                );
-                return;
-              }
+              const key = netDaysError(netDays);
+              setNetDaysErr(key);
+              if (key) return;
+              const n = Number(netDays.trim());
+              setNetDays(String(n));
               if (n !== accountNetDays(snapshot.identity?.invoiceNetDays)) {
                 saveIdentity({ invoiceNetDays: n });
               }
             }}
             aria-label={t.netDays}
           />
+          {netDaysErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-net-days-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, netDaysErr)}
+              </span>
+            )
+            : null}
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
             {t.netDaysHint}
           </span>
@@ -809,6 +828,7 @@ function EditCard(
                   onClick={() => {
                     if (overheadMode === m) return;
                     setOverhead(overheadShown(m));
+                    setOverheadErr(null);
                     saveIdentity({ fieldOverheadMode: m });
                   }}
                 >
@@ -827,31 +847,25 @@ function EditCard(
               data-cy="settings-overhead"
               value={overhead}
               disabled={busy === "identity"}
-              onInput={(e) => setOverhead((e.target as HTMLInputElement).value)}
+              aria-invalid={overheadErr ? "true" : undefined}
+              onInput={(e) => {
+                setSaved(false);
+                setOverhead((e.target as HTMLInputElement).value);
+                setOverheadErr(null);
+              }}
               onBlur={() => {
+                const key = overheadError(overhead, overheadMode);
+                setOverheadErr(key);
+                if (key) return;
                 if (overheadMode === "percent") {
                   const current = snapshot.identity?.fieldOverheadPct ?? 0;
                   const pct = Math.round(Number(overhead) * 100) / 100;
-                  if (
-                    overhead.trim() === "" || !Number.isFinite(pct) ||
-                    pct < 0 || pct > 100
-                  ) {
-                    setOverhead(String(current));
-                    return;
-                  }
                   setOverhead(String(pct));
                   if (pct !== current) saveIdentity({ fieldOverheadPct: pct });
                   return;
                 }
                 const current = snapshot.identity?.fieldOverheadCents ?? 0;
                 const cents = Math.round(Number(overhead) * 100);
-                if (
-                  overhead.trim() === "" || !Number.isFinite(cents) ||
-                  cents < 0
-                ) {
-                  setOverhead((current / 100).toFixed(2));
-                  return;
-                }
                 setOverhead((cents / 100).toFixed(2));
                 if (cents !== current) {
                   saveIdentity({ fieldOverheadCents: cents });
@@ -860,6 +874,17 @@ function EditCard(
               aria-label={t.overhead}
             />
           </div>
+          {overheadErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-overhead-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, overheadErr)}
+              </span>
+            )
+            : null}
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
             {t.overheadHint}
           </span>
@@ -877,13 +902,17 @@ function EditCard(
             data-cy="settings-chargeback-fee"
             value={cbFee}
             disabled={busy === "identity"}
-            onInput={(e) => setCbFee((e.target as HTMLInputElement).value)}
+            aria-invalid={cbFeeErr ? "true" : undefined}
+            onInput={(e) => {
+              setSaved(false);
+              setCbFee((e.target as HTMLInputElement).value);
+              setCbFeeErr(null);
+            }}
             onBlur={() => {
+              const key = moneyError(cbFee);
+              setCbFeeErr(key);
+              if (key) return;
               const cents = Math.round(Number(cbFee) * 100);
-              if (cbFee.trim() === "" || !Number.isFinite(cents) || cents < 0) {
-                setCbFee((savedCbFee / 100).toFixed(2));
-                return;
-              }
               setCbFee((cents / 100).toFixed(2));
               if (cents !== savedCbFee) {
                 saveIdentity({ chargebackFeeCents: cents });
@@ -891,6 +920,17 @@ function EditCard(
             }}
             aria-label={t.chargebackFee}
           />
+          {cbFeeErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-chargeback-fee-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, cbFeeErr)}
+              </span>
+            )
+            : null}
           <span style="display:block;margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)">
             {t.chargebackFeeHint}
           </span>
