@@ -19,8 +19,8 @@ import {
 } from "../clients/dashboard.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
 import {
-  type FieldWorker,
   fieldClient,
+  type FieldWorker,
   type SubscriptionView,
 } from "../clients/field.ts";
 import { knownServiceAddress } from "../lib/field.ts";
@@ -29,6 +29,7 @@ import { ApiError } from "../lib/api.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import { fmtMoneyExact } from "../lib/format.ts";
 import { shortDate } from "../../shared/documents/linked-view.ts";
+import { workOrderQuoteOptions } from "../../shared/documents/work-order-quotes.ts";
 
 const STATUSES: WorkOrderStatus[] = [
   "open",
@@ -334,9 +335,8 @@ function NewWorkOrderModal(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const quotes = lists.quotes.filter((q) =>
-    !customerId || q.customerId === customerId
-  );
+  // REQ-1058 — never the onboarding sample quote
+  const quotes = workOrderQuoteOptions(lists.quotes, customerId);
   const invoices = lists.invoices.filter((i) =>
     !customerId || i.customerId === customerId
   );

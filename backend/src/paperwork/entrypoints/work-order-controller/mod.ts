@@ -78,7 +78,8 @@ export class WorkOrderController {
         detail: (err as Error).message,
       }, 400);
     }
-    const bad = await assignWorker(this.workers, dto, user.id);
+    const bad = await assignWorker(this.workers, dto, user.id) ??
+      await refuseSampleQuote(this.quotes, dto.quoteId, user.id);
     if (bad) return ctx.json(bad, 400);
     const created = await this.store.create(user.id, dto, { requestId });
     return ctx.json(await withLinks(this, created, user.id));
@@ -108,7 +109,8 @@ export class WorkOrderController {
         detail: (err as Error).message,
       }, 400);
     }
-    const bad = await assignWorker(this.workers, dto, user.id);
+    const bad = await assignWorker(this.workers, dto, user.id) ??
+      await refuseSampleQuote(this.quotes, dto.quoteId, user.id);
     if (bad) return ctx.json(bad, 400);
     const by = await publisherOf(ctx, this.sessions, this.users, user);
     const next = await this.store.update(id, user.id, dto, by);
@@ -171,6 +173,26 @@ async function assignWorker(
   dto.assigneeWorkerId = w.id;
   if (!dto.assignee?.trim()) dto.assignee = w.name;
   return null;
+}
+
+/**
+ * REQ-1058 — a work order never links to the onboarding sample quote (P-15,
+ * `isSample`; REQ-360: the sample never passes for real data).
+ */
+async function refuseSampleQuote(
+  quotes: QuoteStore,
+  quoteId: string | undefined,
+  userId: string,
+): Promise<{ ok: false; reason: string; detail: string } | null> {
+  const id = quoteId?.trim();
+  if (!id) return null;
+  const q = await quotes.getOwned(id, userId).catch(() => null);
+  if (!q?.isSample) return null;
+  return {
+    ok: false,
+    reason: "invalid",
+    detail: "quoteId is the onboarding sample quote, not a real quote",
+  };
 }
 
 function summary(wo: WorkOrder) {
