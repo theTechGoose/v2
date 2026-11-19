@@ -27,8 +27,11 @@ const KEYS = [
   "field.tk.crewGroup",
   "field.asg.crews",
   "field.asg.noCrews",
-  "field.asg.crewLoad",
-  "field.asg.unstaffedCrews",
+  // REQ-997: the two count keys are .one/.other plurals now
+  "field.asg.crewLoad.one",
+  "field.asg.crewLoad.other",
+  "field.asg.unstaffedCrews.one",
+  "field.asg.unstaffedCrews.other",
   "field.asg.manageCrews",
   "worker.crewChip",
 ];

@@ -2032,7 +2032,7 @@ Deno.test("REQ-841: a grass crew and a mulch crew → a visit with Lawn cut + Mu
     await page.goto("/field/assignments");
     const region = page.locator("[data-cy='asg-region']").first();
     await region.waitFor({ timeout: 20_000 });
-    await expect.see("1 zones with no crew");
+    await expect.see("1 zone with no crew"); // REQ-997: was "1 zones with no crew"
     const toggles = region.locator("[data-cy='asg-region-crew']");
     expect.eq(await toggles.count(), 2, "both crews offered on the zone");
     // the toggles are controlled: they flip once the server has answered, so click + wait, not check()
@@ -2052,7 +2052,7 @@ Deno.test("REQ-841: a grass crew and a mulch crew → a visit with Lawn cut + Mu
       undefined,
       { timeout: 15_000 },
     );
-    await expect.notSee("zones with no crew");
+    await expect.notSee("with no crew"); // REQ-997: singular "1 zone with no crew" too
 
     await page.goto("/field/tasks");
     await page.locator("[data-cy='tk-task']").first().waitFor({
