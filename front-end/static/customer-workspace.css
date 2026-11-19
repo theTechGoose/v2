@@ -43,6 +43,8 @@
 .cws-tab--on { color: var(--fg); border-bottom-color: var(--brand-green, #519843); font-weight: 800; }
 .cws-tab__n { font-size: 11px; background: var(--mint-300, #ddebdd); padding: 1px 6px; border-radius: 999px; margin-left: 5px; }
 .cws-body { padding: 20px 28px 60px; max-width: 1200px; }
+/* REQ-1108: More → Send a text scrolls the thread card to the top, clear of the sticky tabs */
+.cws-msgs__thread { scroll-margin-top: 64px; }
 
 /* money summary */
 .cws-money { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }

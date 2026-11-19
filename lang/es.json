@@ -6141,6 +6141,8 @@
   "customerWs.act.sendInvoice": "Enviar factura",
   "customerWs.act.startService": "Iniciar servicio recurrente",
   "customerWs.act.text": "Enviar un mensaje de texto",
+  "customerWs.act.getLineToText": "Consigue una línea para enviar textos",
+  "customerWs.act.addPhoneToText": "Agrega un teléfono para enviar textos",
   "customerWs.act.visit": "Visita de {service} hecha",
   "customerWs.act.visitUnbilled": "Visita de {service} hecha — sin facturar",
   "customerWs.act.quote.accepted": "Cotización {number} aceptada y firmada",

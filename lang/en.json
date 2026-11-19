@@ -6140,6 +6140,8 @@
   "customerWs.act.sendInvoice": "Send invoice",
   "customerWs.act.startService": "Start recurring service",
   "customerWs.act.text": "Send a text",
+  "customerWs.act.getLineToText": "Get a phone line to text",
+  "customerWs.act.addPhoneToText": "Add a phone to text",
   "customerWs.act.visit": "{service} visit done",
   "customerWs.act.visitUnbilled": "{service} visit done — not billed yet",
   "customerWs.act.quote.accepted": "Quote {number} accepted & signed",
