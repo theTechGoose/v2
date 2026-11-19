@@ -108,6 +108,7 @@ import { restoredPickerAction } from "../lib/picker-restore.ts"; // REQ-662
 import { attachBottomPin } from "../lib/chat-bottom-pin.ts";
 import {
   chatChangeOrderLink,
+  chatEarlierChangeOrderLinks, // REQ-1098
   chatQuoteLink,
   liveChangeOrderSendId,
 } from "../lib/chat-quote-link.ts";
@@ -10754,6 +10755,24 @@ export default function AsstChat({
                         );
                         return (
                           <div data-cy="msg-co-link">
+                            {
+                              // REQ-1098: every change order the reply made
+                              // is linked, not only the last.
+                              chatEarlierChangeOrderLinks(m.payload).map((e) => (
+                                <a
+                                  key={e.changeOrderId}
+                                  data-cy="msg-co-open-earlier"
+                                  href={e.path}
+                                  target="_blank"
+                                  rel="noopener"
+                                  style={outlined}
+                                >
+                                  {tFor(lang, "asstChat.changeOrderLink.open", {
+                                    number: e.number ?? "CO",
+                                  })}
+                                </a>
+                              ))
+                            }
                             {offerSend && (
                               <button
                                 type="button"

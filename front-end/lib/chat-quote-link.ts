@@ -127,6 +127,25 @@ export function chatChangeOrderLink(
 }
 
 /**
+ * REQ-1098 (LOOP-007 cycle 3, q3-23) — a reply that still made more than one
+ * change order (the owner asked for separate ones) carries them all in
+ * `payload.changeOrders`; the chat links every one, not only the last
+ * (`payload.changeOrder`, which `chatChangeOrderLink` reads). These are the
+ * ones BEFORE the last, in the order they were made.
+ */
+export function chatEarlierChangeOrderLinks(
+  payload: unknown,
+): ChatChangeOrderLink[] {
+  if (!payload || typeof payload !== "object") return [];
+  const all = (payload as Record<string, unknown>).changeOrders;
+  if (!Array.isArray(all)) return [];
+  const last = chatChangeOrderLink(payload)?.changeOrderId;
+  return all
+    .map((changeOrder) => chatChangeOrderLink({ changeOrder }))
+    .filter((l): l is ChatChangeOrderLink => !!l && l.changeOrderId !== last);
+}
+
+/**
  * REQ-652 (demo-loop cycle 5, M8) — the reply whose change order offers
  * "Send CO-001": the NEWEST message, when it is the assistant's and its
  * change order was made but not sent. An older reply never offers it (the

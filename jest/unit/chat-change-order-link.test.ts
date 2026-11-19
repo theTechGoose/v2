@@ -177,3 +177,32 @@ describe("REQ-652 M8 an unsent chat change order offers Send / Copy link / Previ
     }
   });
 });
+
+// REQ-1098 (LOOP-007 cycle 3, q3-23): a reply that still made two change
+// orders linked only the last ("View CO-002 as customer"); it links each.
+describe("REQ-1098 chatEarlierChangeOrderLinks — every change order a reply made is linked", () => {
+  const co = (id: string, number: string) => ({
+    kind: "change_order",
+    changeOrderId: id,
+    changeOrderNumber: number,
+    approvalPath: `/co/${id}`,
+  });
+  it("returns the change orders before the last one, in order", () => {
+    expect(
+      mod().chatEarlierChangeOrderLinks({
+        changeOrder: co("co2", "CO-002"),
+        changeOrders: [co("co1", "CO-001"), co("co2", "CO-002")],
+      }),
+    ).toEqual([{ changeOrderId: "co1", number: "CO-001", path: "/co/co1" }]);
+  });
+  it("one change order (no changeOrders list) has no earlier links", () => {
+    expect(
+      mod().chatEarlierChangeOrderLinks({ changeOrder: co("co1", "CO-001") }),
+    ).toEqual([]);
+  });
+  it("AsstChat renders the earlier links beside the last", () => {
+    const src = read("front-end/islands/AsstChat.tsx");
+    expect(src).toMatch(/chatEarlierChangeOrderLinks\(m\.payload\)/);
+    expect(src).toMatch(/data-cy="msg-co-open-earlier"/);
+  });
+});

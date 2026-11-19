@@ -293,15 +293,20 @@ Deno.test("REQ-1098 (REQ-1025 AMENDMENT q3-23): 'add garage $1,150 and fence boa
       "GET",
       `/api/invoices/${inv.id}/change-orders`,
     ) as { id: string; number?: string; deltaAmountCents: number }[];
+    // expect.eq compares with !== — arrays and objects go in as JSON.
     expect.eq(
-      cos.map((c) => c.deltaAmountCents),
-      [124550],
+      JSON.stringify(cos.map((c) => c.deltaAmountCents)),
+      JSON.stringify([124550]),
       "one change order for $1,150 + $95.50",
     );
     const outcome = reply.payload?.changeOrder ?? {};
     expect.eq(
-      { kind: outcome.kind, sent: outcome.sent, id: outcome.changeOrderId },
-      { kind: "change_order", sent: true, id: cos[0]?.id },
+      JSON.stringify({
+        kind: outcome.kind,
+        sent: outcome.sent,
+        id: outcome.changeOrderId,
+      }),
+      JSON.stringify({ kind: "change_order", sent: true, id: cos[0]?.id }),
       "the payload names the one sent change order",
     );
     let mails: Row[] = [];

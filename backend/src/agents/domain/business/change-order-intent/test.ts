@@ -1051,7 +1051,12 @@ Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: deltas that add up to the typed 
   assertEquals(out[1].type, "revise_quote");
 });
 
-Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: items each priced as typed, a new total, or nothing typed stay apart", () => {
+// REQ-1098 (REQ-1025 AMENDMENT q3-23): the first assertion used to pin
+// "items each priced as typed stay apart" — that made two change orders (two
+// emails, two approvals) for one turn. They now merge at the sum, each item
+// keeping its price; only an explicit "separate change orders" keeps them
+// apart.
+Deno.test("REQ-1025 q2-7 / REQ-1098 mergeChangeOrderCalls: items each priced as typed merge at the sum (apart only when separate ones are asked for); a new total or nothing typed stay apart", () => {
   const each = [
     {
       type: "change_order",
@@ -1064,6 +1069,19 @@ Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: items each priced as typed, a ne
   ];
   assertEquals(
     mergeChangeOrderCalls(each, "add niche $500 and glass door $1,200"),
+    [{
+      type: "change_order",
+      payload: {
+        description: "Niche ($500.00) and glass door ($1,200.00)",
+        deltaAmountCents: 170_000,
+      },
+    }],
+  );
+  assertEquals(
+    mergeChangeOrderCalls(
+      each,
+      "add niche $500 and glass door $1,200 as two separate change orders",
+    ),
     each,
   );
   assertEquals(
