@@ -167,3 +167,30 @@ describe("REQ-627 the customer's link of a voided invoice", () => {
     }
   });
 });
+
+describe("REQ-983 (LOOP-007 q1-67) a cancelled /i/:id footer does not thank for or ask about payment", () => {
+  const page = read("front-end/routes/i/[id].tsx");
+  const footer = page.slice(page.indexOf('data-cy="invoice-thanks"'));
+  test("REQ-983: the thanks line picks thanksCancelled when voided", () => {
+    expect(footer).toMatch(
+      /voided\s*\?\s*"publicInvoice\.footer\.thanksCancelled"\s*:\s*"publicInvoice\.footer\.thanks"/,
+    );
+  });
+  test("REQ-983: the question lead-in picks questionsCancelled first when voided", () => {
+    const q = footer.slice(footer.indexOf("data-invoice-question"));
+    expect(q).toMatch(/voided\s*\?\s*"publicInvoice\.footer\.questionsCancelled"/);
+    expect(q.indexOf('"publicInvoice.footer.questionsCancelled"')).toBeLessThan(
+      q.indexOf('"publicInvoice.footer.questionsPaid"'),
+    );
+  });
+  test("REQ-983: both cancelled strings exist in both languages and carry no payment wording", () => {
+    for (const k of ["publicInvoice.footer.thanksCancelled", "publicInvoice.footer.questionsCancelled"]) {
+      for (const dict of [en, es]) {
+        expect([k, typeof dict[k]]).toEqual([k, "string"]);
+        expect([k, dict[k]]).not.toEqual([k, expect.stringMatching(/payment|paying|pago|pagar/i)]);
+      }
+    }
+    expect(en["publicInvoice.footer.thanksCancelled"]).toContain("{business}");
+    expect(es["publicInvoice.footer.thanksCancelled"]).toContain("{business}");
+  });
+});

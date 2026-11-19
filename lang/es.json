@@ -6218,6 +6218,8 @@
   "decisionAlert.coReceipt.sms": "aprobaste un cambio con {business}: {what} ({delta}). El nuevo total de tu factura es {total} → {url}",
   "invoicesPage.back.cantText": "No puede recibir textos",
   "invoicesPage.back.fixPhone": "Corregir teléfono",
+  "publicInvoice.footer.thanksCancelled": "Gracias por confiar en {business} para el cuidado de tu propiedad — es un gusto atenderte.",
+  "publicInvoice.footer.questionsCancelled": "Si tienes alguna pregunta sobre esta factura cancelada,",
   "comms.a2p.title": "Registro para mensajes de texto",
   "comms.a2p.sub": "Las operadoras solo entregan mensajes de empresas desde un número registrado (A2P 10DLC). Complétalo una vez y lo presentamos a Twilio para este número.",
   "comms.a2p.state.none": "Sin registrar",

@@ -99,7 +99,7 @@ const mkInvoice = (
   body: Record<string, unknown>,
 ) => call(http, auth, "POST", "/api/invoices", { amount: 6500, ...body });
 
-Deno.test("REQ-627: a sent invoice is voided, not deleted — it stays as Cancelled with the reason, and the customer's link says it's cancelled and can't be paid", (t) =>
+Deno.test("REQ-627 + REQ-983: a sent invoice is voided, not deleted — it stays as Cancelled with the reason, and the customer's link says it's cancelled and can't be paid, with a footer that neither thanks for nor asks about payment", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
     const customer = await seedBusiness(http, auth);
@@ -139,6 +139,28 @@ Deno.test("REQ-627: a sent invoice is voided, not deleted — it stays as Cancel
       await page.locator("[data-cy='claim-submit']").count(),
       0,
       "no way to pay it",
+    );
+    // REQ-983 (LOOP-007 q1-67): the footer agrees with the cancelled state —
+    // no thanks for "prompt payment", no question "before paying"
+    const footer = await page.evaluate(() => ({
+      thanks: document.querySelector("[data-cy='invoice-thanks']")
+        ?.textContent ?? null,
+      question: document.querySelector("[data-invoice-question]")
+        ?.textContent ?? null,
+    }));
+    expect(
+      footer.thanks !== null && footer.question !== null,
+      `REQ-983: the footer renders its thanks and question lead-in: ${
+        JSON.stringify(footer)
+      }`,
+    );
+    expect(
+      !/prompt payment/i.test(footer.thanks ?? ""),
+      `REQ-983: a cancelled invoice does not thank for prompt payment: ${footer.thanks}`,
+    );
+    expect(
+      !/before paying/i.test(footer.question ?? ""),
+      `REQ-983: a cancelled invoice does not ask for questions before paying: ${footer.question}`,
     );
     // the list keeps it, in the Cancelled track
     await page.goto("/invoices");

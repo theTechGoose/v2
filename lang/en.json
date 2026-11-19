@@ -6218,6 +6218,8 @@
   "decisionAlert.coReceipt.sms": "you approved a change for {business}: {what} ({delta}). Your new invoice total is {total} → {url}",
   "invoicesPage.back.cantText": "Can't receive texts",
   "invoicesPage.back.fixPhone": "Fix the phone",
+  "publicInvoice.footer.thanksCancelled": "Thank you for trusting {business} with your property — it's a pleasure to take care of it.",
+  "publicInvoice.footer.questionsCancelled": "If you have a question about this cancelled invoice,",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",
