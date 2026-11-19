@@ -6217,6 +6217,8 @@
   "decisionAlert.coReceipt.body": "Keep this email as your receipt. {business} has been told and can go ahead with the work.",
   "decisionAlert.coReceipt.cta": "View your invoice",
   "decisionAlert.coReceipt.sms": "you approved a change for {business}: {what} ({delta}). Your new invoice total is {total} → {url}",
+  "invoicesPage.back.cantText": "Can't receive texts",
+  "invoicesPage.back.fixPhone": "Fix the phone",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",

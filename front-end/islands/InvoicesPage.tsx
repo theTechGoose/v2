@@ -148,7 +148,8 @@ import {
   canTextClient,
   invoiceContactEmail,
   invoiceTextPhone,
-} from "../lib/invoice-text-client.ts"; // REQ-691, REQ-985
+  textClientState,
+} from "../lib/invoice-text-client.ts"; // REQ-691, REQ-982, REQ-985
 import { InvoiceStageActions } from "../components/InvoiceStageActions.tsx"; // REQ-702
 import {
   describeReminderCadence,
@@ -5039,11 +5040,34 @@ function InvoiceCard(
             )
             : canTextClient(inv.textPhone)
             // REQ-691 (demo p15, cycle 5): only a phone that can take a text
-            // gets "Text client"; otherwise the fix — add one on their card.
+            // gets "Text client"; otherwise the fix, on their card.
             ? (
               <button type="button" onClick={doSendText} disabled={busy}>
                 {tFor(lang, "invoicesPage.back.textClient")}
               </button>
+            )
+            : textClientState(inv.textPhone) === "cantText"
+            // REQ-982 (LOOP-007 q1-65): a phone on file that can't receive
+            // texts (fictional 555) says so — it is not a missing phone.
+            ? (
+              <a
+                href={customerFixHref(inv.customerId)}
+                data-cy="invoice-cant-text"
+                title={tFor(lang, "asstChat.send.cantText")}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "invoicesPage.back.cantText")}
+              </a>
+            )
+            : textClientState(inv.textPhone) === "invalid"
+            ? (
+              <a
+                href={customerFixHref(inv.customerId)}
+                data-cy="invoice-fix-phone"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "invoicesPage.back.fixPhone")}
+              </a>
             )
             : (
               <a

@@ -178,3 +178,61 @@ Deno.test("REQ-691 (demo p15, cycle 5): preview Ask is as muted as Decline; Text
       `"Text client" stays for a textable phone: ${withPhone}`,
     );
   }));
+
+/**
+ * REQ-982 (LOOP-007 cycle 1, q1-65; AMENDMENT to REQ-691): Dana has
+ * (843) 555-0142 on file — the reserved 555-01XX block, which can't take a
+ * text. Her paid invoice's card said "Add a phone", as if she had none. It
+ * must say her number can't receive texts instead, and not offer Add a phone.
+ */
+Deno.test("REQ-982 (LOOP-007 q1-65): a customer whose phone can't receive texts is not offered Add a phone on her paid invoice card", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, "en");
+    const dana = await post(http, auth, "/api/customers", {
+      name: "Dana Reserved",
+      phoneNumber: "(843) 555-0142",
+    });
+    expect.eq(
+      typeof dana.phoneNumber === "string" &&
+        dana.phoneNumber.replace(/\D/g, "").endsWith("8435550142"),
+      true,
+      `Dana's phone is on file (${dana.phoneNumber})`,
+    );
+    await post(http, auth, "/api/invoices", {
+      customerId: dana.id,
+      lineItems: [{
+        description: "Gutter cleaning",
+        quantity: 1,
+        unit: "job",
+        price: 18000,
+      }],
+      amount: 18000,
+      status: "paid",
+      paidAt: new Date().toISOString(),
+      dueDate: iso(0),
+      jobName: "Dana gutters",
+    });
+
+    await page.goto("/invoices");
+    const card = page.locator("article.qcard", { hasText: "Dana gutters" })
+      .first();
+    await card.waitFor({ timeout: 15_000 });
+    const foot = card.locator(".qcard__back-foot");
+    const text = (await foot.innerText()).trim();
+
+    expect.eq(
+      await card.locator("[data-cy='invoice-add-phone']").count(),
+      0,
+      `no "Add a phone" for a customer whose phone is on file: ${text}`,
+    );
+    expect.eq(
+      /\bText client\b/.test(text),
+      false,
+      `no "Text client" for a number that can't take a text: ${text}`,
+    );
+    expect.eq(
+      /can['’]t (receive|take) texts?/i.test(text),
+      true,
+      `the card says her number can't receive texts: ${text}`,
+    );
+  }));

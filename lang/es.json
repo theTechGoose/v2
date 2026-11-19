@@ -6217,6 +6217,8 @@
   "decisionAlert.coReceipt.body": "Guarda este correo como tu comprobante. {business} ya está al tanto y puede seguir con el trabajo.",
   "decisionAlert.coReceipt.cta": "Ver tu factura",
   "decisionAlert.coReceipt.sms": "aprobaste un cambio con {business}: {what} ({delta}). El nuevo total de tu factura es {total} → {url}",
+  "invoicesPage.back.cantText": "No puede recibir textos",
+  "invoicesPage.back.fixPhone": "Corregir teléfono",
   "comms.a2p.title": "Registro para mensajes de texto",
   "comms.a2p.sub": "Las operadoras solo entregan mensajes de empresas desde un número registrado (A2P 10DLC). Complétalo una vez y lo presentamos a Twilio para este número.",
   "comms.a2p.state.none": "Sin registrar",
