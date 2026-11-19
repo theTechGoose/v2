@@ -37,8 +37,18 @@ const DEPOSIT_WORD =
 /** Text that only separates two amounts as alternatives ("$3,000 - $4,000",
  *  "$3,000 to $4,000", "$3,000 or $4,000") — a range, not a list. */
 const RANGE_GAP = /^\s*(-|–|—|to|or|a|o|hasta)\s*$/i;
-/** Where one item's text ends and the next begins. */
-const ITEM_BREAK = /[,;:\n]/;
+/** Where one item's text ends and the next begins: a comma, semicolon,
+ *  colon, newline, or (REQ-952) a sentence-ending period ("…materiales $600.
+ *  Total $2,400" — the "Total" belongs to the next sentence, not to $600). */
+const ITEM_BREAK = /[,;:\n]|\.(?=\s|$)/;
+const ITEM_BREAK_ALL = /[,;:\n]|\.(?=\s|$)/g;
+
+/** Index of the last item break in `s`, -1 when there is none. */
+function lastBreak(s: string): number {
+  let at = -1;
+  for (const m of s.matchAll(ITEM_BREAK_ALL)) at = m.index;
+  return at;
+}
 
 interface Amount {
   cents: number;
@@ -65,16 +75,12 @@ function scanAmounts(raw: string): Amount[] {
     const prevEnd = i > 0 ? found[i - 1].end : 0;
     const nextStart = i + 1 < found.length ? found[i + 1].start : raw.length;
     const gapBefore = raw.slice(prevEnd, f.start);
-    const breakAt = Math.max(
-      ...[",", ";", ":", "\n"].map((c) => gapBefore.lastIndexOf(c)),
-    );
+    const breakAt = lastBreak(gapBefore);
     const before = breakAt >= 0 ? gapBefore.slice(breakAt + 1) : gapBefore;
     let colonLabel = "";
     if (breakAt >= 0 && gapBefore[breakAt] === ":" && !before.trim()) {
       const head = gapBefore.slice(0, breakAt);
-      const prevBreak = Math.max(
-        ...[",", ";", ":", "\n"].map((c) => head.lastIndexOf(c)),
-      );
+      const prevBreak = lastBreak(head);
       colonLabel = head.slice(prevBreak + 1);
     }
     const gapAfter = raw.slice(f.end, nextStart);
@@ -149,23 +155,33 @@ export function extractPriceCents(raw: string): number | null {
  * REQ-259: the priced lines of an itemised sentence — each amount with the
  * words naming it (before it, else after it, within its own item):
  *   "demo $2,500, cabinets $8,000" → [{Demo, 250000}, {Cabinets, 800000}].
- * [] when the sentence is not a list of labelled items: one amount, a total,
- * a deposit, a range, or any amount without a label.
+ * REQ-952: a stated total next to the list is not a line — "labor $1,800,
+ * materials $600, total $2,400" → [{Labor, 180000}, {Materials, 60000}] —
+ * but only when the labelled lines add up EXACTLY to that one total.
+ * [] when the sentence is not a list of labelled items: one amount, a total
+ * that doesn't match its lines (or more than one total), a deposit, a range,
+ * or any amount without a label.
  */
 export function extractPriceLines(raw: string): PriceLine[] {
   const amounts = scanAmounts(raw).filter((a) => a.cents > 0);
   if (amounts.length < 2) return [];
   if (amounts.some((a) => a.negative)) return []; // REQ-680
-  if (amounts.some((a) => hasWord(a, TOTAL_WORD) || hasWord(a, DEPOSIT_WORD))) {
-    return [];
-  }
+  if (amounts.some((a) => hasWord(a, DEPOSIT_WORD))) return [];
   if (isRange(raw, amounts)) return [];
+  const totals = amounts.filter((a) => hasWord(a, TOTAL_WORD));
+  if (totals.length > 1) return [];
+  const items = amounts.filter((a) => !totals.includes(a));
+  if (items.length < 2) return [];
   const lines: PriceLine[] = [];
-  for (const a of amounts) {
+  for (const a of items) {
     const label = cleanLabel(a.before) || cleanLabel(a.after) ||
       cleanLabel(a.colonLabel);
     if (!label) return [];
     lines.push({ label, cents: a.cents });
+  }
+  if (totals.length === 1) {
+    const sum = lines.reduce((s, l) => s + l.cents, 0);
+    if (sum !== totals[0].cents) return [];
   }
   return lines;
 }
