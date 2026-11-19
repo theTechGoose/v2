@@ -1122,11 +1122,13 @@ Deno.test("REQ-386 m17 handle-wizard-answer: the customer transcript line carrie
   });
   assertEquals(
     r.newMessages[0].content,
-    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+    // REQ-1088 (q3-5): the job address the step settled on, tidy
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin, TX 78745",
   );
   assertEquals(
     r.conversation.preview,
-    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+    // REQ-1088 (q3-5): the job address the step settled on, tidy
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin, TX 78745",
   );
   await resetKv();
 });
@@ -1512,7 +1514,8 @@ Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active with an address o
   });
   assertEquals(
     r.newMessages[0].content,
-    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+    // REQ-1088 (q3-5): the job address the step settled on, tidy
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin, TX 78745",
   );
   await resetKv();
 });
@@ -1645,5 +1648,54 @@ Deno.test("REQ-625 handle-wizard-answer: the assistant's new customer carries th
   assertEquals(saved.zip, "78735");
   assertEquals(saved.address, "4410 Ranch Rd, Austin, TX 78735");
   assertEquals(saved.notes, "Gate code 4411");
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-1088 (LOOP-007 cycle 3, q3-5): QA5 typed no address in the chat, then
+// "Use María José Peña" at the customer step. applyServiceAddress copied the
+// customer record's raw "12 oak st, myrtle beach, sc 29577" onto the quote
+// with only .trim() — the REQ-1047 tidy step never ran on this path.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-1088 q3-5 handle-wizard-answer: picking a customer whose address is lowercase stores the quote's serviceAddress tidy", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes, customers } =
+    await setupTermsConversationWithQuote();
+  const maria = await customers.create("u-1", {
+    name: "María José Peña",
+    address: "12 oak st, myrtle beach, sc 29577",
+  });
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "pick_existing",
+    customer: { id: maria.id },
+  });
+  assertEquals(
+    (await quotes.getOwned(quote.id, "u-1")).serviceAddress,
+    "12 Oak St, Myrtle Beach, SC 29577",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-1088 q3-5 handle-wizard-answer: an address typed at the customer step ('2210 Burnet Rd Austin TX 78757') is stored tidy", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, conv, quote, quotes } = await setupTermsConversationWithQuote();
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    stepId: "customer",
+    optionId: "create_new",
+    serviceAddress: "2210 Burnet Rd Austin TX 78757",
+    customer: { create: { name: "Lupe Garza", phoneNumber: "5125550142" } },
+  });
+  assertEquals(
+    (await quotes.getOwned(quote.id, "u-1")).serviceAddress,
+    "2210 Burnet Rd, Austin, TX 78757",
+  );
   await resetKv();
 });

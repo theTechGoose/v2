@@ -122,3 +122,40 @@ Deno.test("REQ-625 addressWrite — a write that touches no address field change
   assertEquals(addressWrite({ address: "1 Main" }, {}), {});
   assertEquals(addressWrite(undefined, {}), {});
 });
+
+// REQ-1088 (LOOP-007 cycle 3, q3-6): a customer written with lowercase parts
+// ("45 palmetto dr" / "conway" / "sc") or a lowercase free-text address is
+// stored as given, so the invoice bill-to, /i and the email print it raw.
+Deno.test("REQ-1088 q3-6 addressWrite — lowercase parts are stored tidy: '45 Palmetto Dr, Conway, SC 29526'", () => {
+  const w = addressWrite(undefined, {
+    street: "45 palmetto dr",
+    city: "conway",
+    state: "sc",
+    zip: "29526",
+  });
+  assertEquals(w.address, "45 Palmetto Dr, Conway, SC 29526");
+});
+
+Deno.test("REQ-1088 q3-5 addressWrite — a lowercase free-text address is stored tidy: '12 Oak St, Myrtle Beach, SC 29577'", () => {
+  const w = addressWrite(undefined, {
+    address: "12 oak st, myrtle beach, sc 29577",
+  });
+  assertEquals(w.address, "12 Oak St, Myrtle Beach, SC 29577");
+});
+
+Deno.test("REQ-1088 addressWrite — a formatted address is stored unchanged", () => {
+  assertEquals(
+    addressWrite(undefined, {
+      street: "12 Oak St",
+      city: "Austin",
+      state: "TX",
+      zip: "78701",
+    }).address,
+    "12 Oak St, Austin, TX 78701",
+  );
+  assertEquals(
+    addressWrite(undefined, { address: "12 Oak St, Austin, TX 78701" })
+      .address,
+    "12 Oak St, Austin, TX 78701",
+  );
+});

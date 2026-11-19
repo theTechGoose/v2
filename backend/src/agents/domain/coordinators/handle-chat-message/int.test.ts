@@ -3406,11 +3406,12 @@ Deno.test("REQ-435 M4 handle-chat-message integration: the draft action_card car
       "Paint my living room and hallway, $1,850. It's for Linda Moreno. Her phone 512-555-0177, linda.moreno@example.com, 4410 Avenue F Austin TX 78751",
   });
   const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
-  assertEquals(stored.serviceAddress, "4410 Avenue F Austin TX 78751");
+  // REQ-1088 (q3-5): stored tidy — the commas follow the structure, not case
+  assertEquals(stored.serviceAddress, "4410 Avenue F, Austin, TX 78751");
   const card = result.newMessages.find((m) => m.kind === "action_card");
   assertEquals(
     (card?.payload as { serviceAddress?: string } | undefined)?.serviceAddress,
-    "4410 Avenue F Austin TX 78751",
+    "4410 Avenue F, Austin, TX 78751",
   );
   await resetKv();
 });
@@ -3654,4 +3655,15 @@ Deno.test("REQ-1060 q2-46 handle-chat-message integration: a no-prose revision o
   assert(reply.includes("30%"), `the reply names the typed 30%: ${reply}`);
   assert(reply.toLowerCase().includes("deposit"), reply);
   await resetKv();
+});
+
+// REQ-1088 (LOOP-007 cycle 3, q3-5): QA1/QA2 typed ordinary mixed-case
+// addresses with no comma before the city/state; the REQ-1047 tidy read "has
+// a capital letter" as "already formatted" and stored them without commas.
+Deno.test("REQ-1088 q3-5 handle-chat-message integration: a typed mixed-case '2210 Burnet Rd Austin TX 78757' is stored '2210 Burnet Rd, Austin, TX 78757'", async () => {
+  const stored = await runWithModelAddress(
+    "Quote for Lupe Garza, 2210 Burnet Rd Austin TX 78757: repair the bathroom door $250",
+    "2210 Burnet Rd Austin TX 78757",
+  );
+  assertEquals(stored.serviceAddress, "2210 Burnet Rd, Austin, TX 78757");
 });

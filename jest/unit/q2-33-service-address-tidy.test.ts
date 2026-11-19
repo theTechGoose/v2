@@ -56,12 +56,20 @@ describe("REQ-1047 q2-33 tidyServiceAddress — a typed address is stored tidy, 
       const ok of [
         "1418 Oak Hollow Dr, Austin, TX 78745",
         "905 Calle del Sol, San Antonio, TX 78207",
-        "4410 Avenue F Austin TX 78751",
+        "4410 Avenue F, Austin, TX 78751",
         "123 McKinney Ave, Austin, TX",
       ]
     ) {
       expect(tidy(ok)).toBe(ok);
     }
+  });
+
+  // REQ-1088 (LOOP-007 q3-5): the commas follow the structure, not the letter
+  // case — a mixed-case address with no commas is not "already formatted".
+  test("REQ-1088 a mixed-case '4410 Avenue F Austin TX 78751' gets its commas", () => {
+    expect(tidy("4410 Avenue F Austin TX 78751")).toBe(
+      "4410 Avenue F, Austin, TX 78751",
+    );
   });
 });
 

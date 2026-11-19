@@ -424,7 +424,8 @@ Deno.test("REQ-435 M4 lock-quote integration: the locked action_card carries the
     assertEquals(
       (r.newMessages[0].payload as { serviceAddress?: string } | undefined)
         ?.serviceAddress,
-      "4410 Avenue F Austin TX 78751",
+      // REQ-1088 (q3-5): the quote store keeps the address tidy
+      "4410 Avenue F, Austin, TX 78751",
     );
   });
 });

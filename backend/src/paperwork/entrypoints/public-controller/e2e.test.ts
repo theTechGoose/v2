@@ -687,7 +687,8 @@ Deno.test("REQ-263 public e2e: a quote's serviceAddress is saved, editable, and 
     );
     pub = await fetch(`http://localhost:${PORT}/quotes/${created.id}/public`)
       .then((r) => r.json());
-    assertEquals(pub.serviceAddress, "412 Oak St, Austin TX 78704");
+    // REQ-1088 (q3-5): stored tidy — ", " before the state
+    assertEquals(pub.serviceAddress, "412 Oak St, Austin, TX 78704");
 
     // not a string → refused, nothing stored
     const bad = await fetch(`http://localhost:${PORT}/quotes`, {
