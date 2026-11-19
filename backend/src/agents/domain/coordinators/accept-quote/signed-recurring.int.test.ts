@@ -116,7 +116,7 @@ Deno.test("REQ-699 M20: a signed monthly quote's divider says it bills 'Mensual 
     assert(d, JSON.stringify(thread.messages));
     assertEquals(
       d.content,
-      `María López firmó ${quote.number} · Mensual · $180/mes — se cobra desde Campo → Suscripciones`,
+      `María López firmó ${quote.number} · Mensual · $180/mes — se cobra desde Campo → Visitas repetidas`,
     );
     assertEquals(d.payload?.invoiceId, undefined, "no one-off invoice");
     const subs = await call("GET", "/field/subscriptions", auth);
@@ -169,7 +169,7 @@ Deno.test("REQ-699 recordSigned: 'billed from Field → Subscriptions' only when
     const made = await divider("sub-1");
     assertEquals(
       made.content,
-      `María López signed ${made.number} · Monthly · $180/mo — billed from Field → Subscriptions`,
+      `María López signed ${made.number} · Monthly · $180/mo — billed from Field → Repeat visits`,
     );
     const none = await divider();
     assertEquals(none.content, `María López signed ${none.number}`);
