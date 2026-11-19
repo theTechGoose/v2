@@ -1,6 +1,6 @@
 import { Injectable } from "#danet/core";
 import { t } from "@core/i18n/mod.ts";
-import { appUrl } from "@users/domain/business/app-url/mod.ts";
+import { adminSignInUrl, appUrl } from "@users/domain/business/app-url/mod.ts";
 import { AccountAdminStore } from "@users/domain/data/account-admin-store/mod.ts";
 import {
   type Session,
@@ -114,7 +114,7 @@ export class AccountAdmins {
     const who = realName(owner.name);
     const biz = identity?.businessName?.trim();
     const ownerText = who && biz ? `${who} (${biz})` : accountLabel(owner, biz);
-    const url = appUrl();
+    const url = adminSignInUrl(appUrl(), lang); // REQ-1061
     const body = t(lang, "sms.adminInvite", { owner: ownerText, url });
     const sent = await this.sms.send({ to: phone, body });
     if (!sent.ok) {

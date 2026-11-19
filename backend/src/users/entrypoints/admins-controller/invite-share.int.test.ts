@@ -62,10 +62,12 @@ Deno.test("REQ-601 (cycle 4, M12) an editor invite that could not be texted answ
     }, O);
     assertEquals(carol.status, 201, JSON.stringify(carol.body));
     assertEquals(carol.body.texted, false);
-    assertEquals(carol.body.signInUrl, appUrl());
+    // REQ-1061: the sign-in page in the owner's language, not the bare site root
+    const signIn = `${appUrl()}/login?lang=en`;
+    assertEquals(carol.body.signInUrl, signIn);
     assertEquals(
       carol.body.shareText,
-      t("en", "sms.adminInvite", { owner: "Hank Miller", url: appUrl() }),
+      t("en", "sms.adminInvite", { owner: "Hank Miller", url: signIn }),
       "the shared text is the invite SMS, word for word",
     );
   } finally {
