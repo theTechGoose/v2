@@ -1577,6 +1577,43 @@ for (const [lang, line] of [
   });
 }
 
+// REQ-936 — LOOP-007 cycle 1, issue q1-3: the message said "30% deposit up
+// front, rest when done"; the payment step's "From your message" one-tap
+// stored the plain "Deposit + balance" and billed the legacy 20% ($4,650 of
+// $23,250). Taking the prefill as-is must store and bill the stated 30%.
+Deno.test("REQ-936 (LOOP-007 q1-3) handle-wizard-answer: the prefill from '30% deposit up front, rest when done' stores 'Deposit 30% + balance' and bills 697500 / 1627500 cents of $23,250", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = await answerUpToPayment("en");
+  const facts = extractQuoteFacts(
+    "Kitchen remodel for Dana Reyes, $23,250. 30% deposit up front, rest when done.",
+    new Date(2026, 10, 18),
+  );
+  const prefill = wizardPrefillFor("payment_terms", facts, "en");
+  assert(prefill, "the payment step has a prefill");
+  assertEquals(prefill.optionId, "deposit_bal");
+  // exactly what the AsstChat "Use this" button posts
+  const r = await ctx.flow.run({
+    userId: ctx.user.id,
+    conversationId: ctx.conv.id,
+    stepId: "payment_terms",
+    optionId: prefill.optionId,
+    ...(prefill.customValue ? { customValue: prefill.customValue } : {}),
+  });
+  assert(
+    (r.newMessages[0].content ?? "").includes(
+      "Payment: Deposit 30% + balance",
+    ),
+    `transcript: ${r.newMessages[0].content}`,
+  );
+  const q = await ctx.quotes.getOwned(ctx.quote.id, ctx.user.id);
+  const pay = q?.terms?.find((x) => x.stepId === "payment_terms");
+  assertEquals(pay?.value, "Deposit 30% + balance");
+  const [dep, bal] = computePaymentSplit(pay!.value, 2_325_000);
+  assertEquals([dep.amountCents, bal.amountCents], [697_500, 1_627_500]);
+  await resetKv();
+});
+
 Deno.test("REQ-625 handle-wizard-answer: the assistant's new customer carries the full form — address parts, composed address, notes", async () => {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
