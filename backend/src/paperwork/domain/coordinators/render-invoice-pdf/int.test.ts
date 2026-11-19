@@ -487,3 +487,75 @@ Deno.test("REQ-928 invoice PDFs: a paid invoice prints 'Paid <date> · Electroni
   }
   await resetKv();
 });
+
+// REQ-966 (LOOP-007 q1, q1-41) — an amount-only invoice (no quote, no job
+// name) that is partly paid (stored status "pending") and past its due date.
+// The /i page shows the pill "Past due" / "Vencida" and the heading
+// "Project" / "Proyecto" (publicInvoice.jobNameFallback). The PDF printed
+// the raw enum "PENDING" and the quote PDF's "Service Agreement".
+const pastDay = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+const overdueAmountOnly = () => ({
+  status: "pending",
+  amount: 120000,
+  paidCents: 40000,
+  issuedDate: pastDay(40),
+  dueDate: pastDay(10),
+});
+const anyOf = (up: string, words: string[]) =>
+  words.some((w) => up.includes(hexOf(w)));
+
+for (
+  const [lang, identity, want] of [
+    ["en", {}, {
+      past: ["PAST DUE", "Past due", "OVERDUE", "Overdue"],
+      title: "Project",
+      notTitle: "Service Agreement",
+    }],
+    ["es", { commsLanguage: "es" }, {
+      past: ["VENCIDA", "Vencida"],
+      title: "Proyecto",
+      notTitle: "Acuerdo De Servicio",
+    }],
+  ] as const
+) {
+  Deno.test(`REQ-966 q1-41 render-invoice-pdf (${lang}): a past-due, partly-paid, amount-only invoice is stamped past due and titled like /i — not 'PENDING', not '${want.notTitle}'`, async () => {
+    const up = await renderOne(overdueAmountOnly(), identity);
+    const wrong: string[] = [];
+    const check = (ok: boolean, msg: string) => ok || wrong.push(msg);
+    check(
+      !up.includes(hexOf("PENDING")),
+      `${lang}: the raw stored status 'PENDING' is not printed`,
+    );
+    check(
+      anyOf(up, [...want.past]),
+      `${lang}: the past-due label (${want.past.join(" / ")}) is printed, as on /i`,
+    );
+    check(
+      !up.includes(hexOf(want.notTitle)) &&
+        !up.includes(hexOf(want.notTitle.toUpperCase())),
+      `${lang}: the invoice is not titled '${want.notTitle}' (the quote PDF's fallback)`,
+    );
+    check(
+      up.includes(hexOf(want.title)),
+      `${lang}: the hero title falls back to '${want.title}', as /i does`,
+    );
+    assertEquals(wrong, [], `${lang}: the PDF disagrees with /i`);
+  });
+}
+
+// REQ-966 (q1-41) — a paid amount-only invoice (INV-001 in the run) is not
+// titled "Service Agreement" either.
+Deno.test("REQ-966 q1-41 render-invoice-pdf: a paid amount-only invoice is titled 'Project', not 'Service Agreement'", async () => {
+  const up = await renderOne({
+    status: "paid",
+    amount: 50000,
+    paidCents: 50000,
+    paidAt: new Date(Date.now() - 86_400_000).toISOString(),
+    dueDate: pastDay(1),
+  });
+  const wrong: string[] = [];
+  if (up.includes(hexOf("Service Agreement"))) wrong.push("titled 'Service Agreement'");
+  if (!up.includes(hexOf("Project"))) wrong.push("no /i fallback title 'Project'");
+  assertEquals(wrong, [], "the paid invoice's PDF title matches /i");
+});
