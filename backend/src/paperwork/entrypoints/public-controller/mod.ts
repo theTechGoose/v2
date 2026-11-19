@@ -62,7 +62,7 @@ import {
 } from "#payments/pay-links.ts"; // REQ-630
 import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 import { docNumberOf } from "#documents/numbering.ts";
-import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
+import { agreedTotalCents, agreementLineItems } from "#documents/ledger.ts"; // REQ-679, REQ-950
 import {
   invoiceBalance,
   invoiceState,
@@ -1210,6 +1210,12 @@ export class PaperworkPublicController {
       // amount due. Absent for standalone invoices.
       let agreementTotal: number | undefined;
       if (quote && quote.userId === i.userId) {
+        // REQ-679 (cycle 5, M18): the agreement is the quote PLUS its
+        // approved change orders — approving one revises only its invoice.
+        const quoteCos = await this.changeOrders.listByQuote(
+          i.userId,
+          quote.id,
+        ).catch(() => [] as ChangeOrder[]);
         jobDetails = {
           summary: quote.summary,
           jobName: quote.jobName,
@@ -1217,14 +1223,14 @@ export class PaperworkPublicController {
           descriptionByLang: quote.descriptionByLang,
           jobNameByLang: quote.jobNameByLang,
           summaryByLang: quote.summaryByLang,
-          lineItems: quote.lineItems,
+          // REQ-950 (q1-24): the approved change orders are itemized after
+          // the quote's lines, so the rows add up to the agreement value.
+          lineItems: quote.lineItems?.length
+            ? agreementLineItems(quote.lineItems, quoteCos) as Quote[
+              "lineItems"
+            ]
+            : quote.lineItems,
         };
-        // REQ-679 (cycle 5, M18): the agreement is the quote PLUS its
-        // approved change orders — approving one revises only its invoice.
-        const quoteCos = await this.changeOrders.listByQuote(
-          i.userId,
-          quote.id,
-        ).catch(() => [] as ChangeOrder[]);
         const agreed = agreedTotalCents(quote, quoteCos);
         agreementTotal = typeof quote.estimatedTotal === "number"
           ? agreed

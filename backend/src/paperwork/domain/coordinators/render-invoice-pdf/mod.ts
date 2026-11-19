@@ -39,7 +39,11 @@ import {
   visitPeriodOf,
 } from "#quote-flow/visit-groups.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
-import { agreedTotalCents, installmentSchedule } from "#documents/ledger.ts"; // REQ-679
+import {
+  agreedTotalCents,
+  agreementLineItems,
+  installmentSchedule,
+} from "#documents/ledger.ts"; // REQ-679, REQ-950
 import { isInvoiceIssued } from "#documents/versions.ts";
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import {
@@ -723,7 +727,9 @@ export class RenderInvoicePdf {
         color: LINE,
       });
       y -= 14;
-      for (const li of quote.lineItems) {
+      // REQ-950 (q1-24): the approved change orders are itemized after the
+      // quote's lines, so the rows add up to the AGREEMENT VALUE below.
+      for (const li of agreementLineItems(quote.lineItems, quoteCos)) {
         addPageIfNeeded(28);
         const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
         // REQ-710 (cycle 5, M4): the line in the PDF's language.

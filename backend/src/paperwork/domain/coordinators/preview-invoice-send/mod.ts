@@ -5,6 +5,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
+import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import {
   renderInvoiceHtml,
   renderInvoiceSubject,
@@ -66,6 +67,8 @@ export class PreviewInvoiceSend {
     private users: UserStore,
     private identity: BusinessIdentityStore,
     private shortlinks: ShortLinkStore,
+    /** REQ-950: the agreement's approved change orders, itemized like the sent email */
+    private changeOrders: ChangeOrderStore = new ChangeOrderStore(),
   ) {}
 
   async run(
@@ -112,6 +115,14 @@ export class PreviewInvoiceSend {
           safeSender,
           senderBiz,
           quote,
+          false,
+          // REQ-679 / REQ-950: the same agreement (and its itemized change
+          // orders) the sent email carries.
+          quote
+            ? await this.changeOrders.listByQuote(userId, quote.id).catch(
+              () => [],
+            )
+            : [],
         ),
       };
     }
