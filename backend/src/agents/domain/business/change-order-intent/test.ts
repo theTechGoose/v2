@@ -973,3 +973,20 @@ Deno.test("REQ-769 M10 parseNamedQuoteChange: not a named add — left to the mo
     ]
   ) assertEquals(parseNamedQuoteChange(s), undefined, s);
 });
+
+// REQ-1025 (LOOP-007 cycle 2, q2-7): QA's exact message names the quote, the
+// work and the amount, but the parser read no description, so the turn went
+// to the model (which made two change_order calls and a contradictory reply).
+Deno.test("REQ-1025 q2-7 parseChangeOrderRequest: QA's message → Q-001, a description naming both items, +$2,800", () => {
+  const r = parseChangeOrderRequest(
+    "change order for maria gonzalez master bath Q-001: she wants to add a recessed shampoo niche and a frameless glass door, add $2,800",
+  );
+  assertEquals(r?.quoteNumber, "Q-001");
+  assertEquals(r?.deltaAmountCents, 280_000);
+  const d = (r?.description ?? "").toLowerCase();
+  assertEquals(
+    d.includes("shampoo niche") && d.includes("glass door"),
+    true,
+    `description names both items (got ${JSON.stringify(r?.description)})`,
+  );
+});
