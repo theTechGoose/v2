@@ -67,6 +67,7 @@ import { stripeClient, type StripeStatus } from "../clients/stripe.ts"; // REQ-2
 import { checkKeyPair, maskSecret } from "../../shared/payments/stripe-keys.ts"; // REQ-212
 import { squareClient, type SquareStatus } from "../clients/square.ts"; // REQ-803
 import { squareTokenInfo } from "../../shared/payments/square.ts"; // REQ-803
+import { merchantPreview } from "../lib/merchant-preview.ts"; // REQ-1044
 import SystemsTab from "../components/SystemsTab.tsx"; // REQ-912
 
 /** REQ-803 — one card provider at a time: the Stripe and Square cards tell each other when
@@ -2188,11 +2189,8 @@ function CardPaymentsCard(
     }
   }
 
-  const merchantName = status?.merchant.name ||
-    snapshot.identity?.businessName ||
-    snapshot.identity?.legalName || snapshot.user?.name || "";
-  const logoFileId = status?.merchant.logoFileId ??
-    snapshot.identity?.logoFileId;
+  // REQ-1044: the live snapshot beats the status fetched on mount (a rename shows at once)
+  const { name: merchantName, logoFileId } = merchantPreview(snapshot, status);
   const logoUrl = logoFileId ? `/api/files/${logoFileId}` : null;
   const connected = status?.connected === true ? status : null;
 
@@ -2471,11 +2469,8 @@ function SquarePaymentsCard(
     }
   }
 
-  const merchantName = status?.merchant.name ||
-    snapshot.identity?.businessName ||
-    snapshot.identity?.legalName || snapshot.user?.name || "";
-  const logoFileId = status?.merchant.logoFileId ??
-    snapshot.identity?.logoFileId;
+  // REQ-1044: the live snapshot beats the status fetched on mount (a rename shows at once)
+  const { name: merchantName, logoFileId } = merchantPreview(snapshot, status);
   const logoUrl = logoFileId ? `/api/files/${logoFileId}` : null;
   const connected = status?.connected === true ? status : null;
   const stripeOn = status?.connected === false &&
