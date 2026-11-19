@@ -285,3 +285,60 @@ describe("REQ-1059 (LOOP-007 q2-48) Tasks page copy never says subscription", ()
     expect(src).toMatch(/\btn\("field\.tk\.skippedGen"/);
   });
 });
+
+/**
+ * REQ-1148 — AMENDMENT of REQ-743 (LOOP-007 cycle 3, q3-79): one thing, three names. The sidebar
+ * and /field/subscriptions say "Repeat visits / Visitas repetidas"; Settings → Edit your details
+ * still said "every subscription / cada suscripción" (`settings.netDaysHint`, REQ-743 left it out
+ * of scope), and the REQ-924 customer page said "Recurring / recurring service / servicio
+ * recurrente" — its "Start recurring service" opens the "New repeat visit" form. The guard above
+ * only checked named keys and only banned "subscription", so it now scans the whole vocabulary:
+ * every settings.*, customerWs.*, field.*, clientsBoard.* and nav.* value in both dictionaries.
+ */
+const VOCAB_NS = /^(settings|customerWs|field|clientsBoard|nav)\./;
+// intentional plan-billing copy (the owner's own DocuMonster plan), if any, goes here
+const PLAN_BILLING_ALLOW = new Set<string>([]);
+
+describe("REQ-1148 (LOOP-007 q3-79) one name for repeat visits across Settings, the customer page, Field and nav", () => {
+  test("REQ-1148: no settings/customerWs/field/clientsBoard/nav copy says subscription or recurring (en)", () => {
+    const hits = Object.entries(en)
+      .filter(([k, v]) =>
+        VOCAB_NS.test(k) && !PLAN_BILLING_ALLOW.has(k) &&
+        /subscri|\brecurring\b|recurring service/i.test(v)
+      )
+      .map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+
+  test("REQ-1148: no settings/customerWs/field/clientsBoard/nav copy says suscripción or recurrente (es)", () => {
+    const hits = Object.entries(es)
+      .filter(([k, v]) =>
+        VOCAB_NS.test(k) && !PLAN_BILLING_ALLOW.has(k) &&
+        /suscrip|recurrente|servicio recurrente/i.test(v)
+      )
+      .map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+
+  test("REQ-1148: the Settings net-days hint calls them repeat visits", () => {
+    expect(en["settings.netDaysHint"]).toMatch(/repeat visit/i);
+    expect(es["settings.netDaysHint"]).toMatch(/visita repetida|visitas repetidas/i);
+  });
+
+  test("REQ-1148: the customer page's tab is named exactly as the sidebar names the page", () => {
+    expect(en["customerWs.tab.recurring"]).toBe(en["nav.subscriptions"]);
+    expect(es["customerWs.tab.recurring"]).toBe(es["nav.subscriptions"]);
+    for (const k of ["customerWs.act.startService", "customerWs.act.newService", "customerWs.ov.services", "customerWs.kpi.recurring"]) {
+      expect([k, en[k]]).toEqual([k, expect.stringMatching(/repeat visit/i)]);
+      expect([k, es[k]]).toEqual([k, expect.stringMatching(/visitas? repetidas?/i)]);
+    }
+  });
+
+  test("REQ-1148: no copy anywhere points to a 'Field → Subscriptions' menu that is now called Repeat visits", () => {
+    const hits = [
+      ...Object.entries(en).filter(([, v]) => /→\s*Subscriptions/i.test(v)),
+      ...Object.entries(es).filter(([, v]) => /→\s*Suscripciones/i.test(v)),
+    ].map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+});
