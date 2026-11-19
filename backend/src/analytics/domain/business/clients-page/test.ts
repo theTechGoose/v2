@@ -124,3 +124,24 @@ Deno.test("REQ-696 (cycle 5, M5) clients-page — the owed total counts open rec
   assertEquals(summarize(cards, 200_00).owedCents, 300_00);
   assertEquals(clientsPage(cards, {}, 200_00).summary.owedCents, 300_00);
 });
+
+// REQ-1138 (LOOP-007 q3, q3-69): after a customer who still owed $820.67 was deleted, the /customers
+// hero said "$1,671 owed" while the "Owe you" chip counted only María (or "$821" with "Owe you 0").
+// The headline owed figure is the sum of what the cards (and so the chips) carry; the open receivables
+// no card carries are reported on their own, never folded into the headline.
+Deno.test("REQ-1138 (LOOP-007 q3, q3-69) clients-page — the headline owed equals the sum of the card balances the 'Owe you' chip counts; the unassigned debt is reported separately", () => {
+  const maria = card({ name: "María", status: "owes", balanceCents: 850_10 });
+  const orphaned = 820_67; // Lucía's part-paid invoice, her customer deleted
+  const s = summarize([maria], orphaned);
+  assertEquals(countByStatus([maria]).owes, 1);
+  assertEquals(s.owedCents, 850_10, "the headline owed is what the cards carry (got the deleted customer's balance folded in)");
+  assertEquals((s as unknown as { unassignedOwedCents?: number }).unassignedOwedCents, orphaned, "the orphaned debt is its own field");
+
+  const none = summarize([], orphaned);
+  assertEquals(countByStatus([]).owes, 0);
+  assertEquals(none.owedCents, 0, "no card owes → the headline owed is $0, matching 'Owe you 0'");
+  assertEquals((none as unknown as { unassignedOwedCents?: number }).unassignedOwedCents, orphaned);
+
+  const page = clientsPage([maria], {}, orphaned);
+  assertEquals(page.summary.owedCents, page.items.filter((c) => c.status === "owes").reduce((a, c) => a + c.balanceCents, 0), "clientsPage's headline agrees with its owes cards");
+});
