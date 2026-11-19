@@ -959,6 +959,33 @@ export function renderQuoteSubject(
 const START_PRESET = /^(?:right away|next week|next month)$/i;
 
 /**
+ * REQ-682 / REQ-1101 — the quote's set start, ready to drop into a "Work
+ * starts …" sentence: the ISO `startDate` (else an ISO start term) as a
+ * formatted `date`; a preset or custom start term as `when` (a preset reads
+ * lower-case mid-sentence: "Work starts next week"); null when there is no
+ * start or it is TBD. One rule for the quote email's step 3 and the signed
+ * confirmation's closing sentence, so neither promises a start-day step the
+ * agreement already settles.
+ */
+export function quoteStartWhen(
+  q: Pick<Quote, "startDate" | "terms">,
+  lang: Lang,
+): { date: string } | { when: string } | null {
+  const startTerm = q.terms?.find((x) => x.stepId === "start_date")?.value
+    ?.trim();
+  const startIso = (q.startDate && termDateIso(q.startDate)) ||
+    termDateIso(startTerm);
+  if (startIso) return { date: formatTermDate(startIso, lang) };
+  if (!startTerm || isTbdTermValue(startTerm)) return null;
+  const localized = localizeTermValue(startTerm, lang === "es" ? "es" : "en");
+  return {
+    when: START_PRESET.test(startTerm)
+      ? localized.charAt(0).toLocaleLowerCase(lang) + localized.slice(1)
+      : localized,
+  };
+}
+
+/**
  * REQ-682 (demo-loop cycle 5, m28) — the quote email's "What happens next"
  * steps, built from the quote and the send instead of four fixed strings:
  *   3. a set start (the ISO `startDate`, else the start term) → "Work starts
@@ -975,25 +1002,16 @@ export function quoteEmailSteps(
   lang: Lang,
   opts: { textable: boolean },
 ): [string, string, string][] {
-  const startTerm = q.terms?.find((x) => x.stepId === "start_date")?.value
-    ?.trim();
-  const startIso = (q.startDate && termDateIso(q.startDate)) ||
-    termDateIso(startTerm);
+  const start = quoteStartWhen(q, lang);
   let step3: [string, string];
-  if (startIso) {
+  if (start && "date" in start) {
     step3 = [
-      t(lang, "paperworkEmail.quote.step3StartsOnTitle", {
-        date: formatTermDate(startIso, lang),
-      }),
+      t(lang, "paperworkEmail.quote.step3StartsOnTitle", { date: start.date }),
       t(lang, "paperworkEmail.quote.step3StartsSub"),
     ];
-  } else if (startTerm && !isTbdTermValue(startTerm)) {
-    const localized = localizeTermValue(startTerm, lang === "es" ? "es" : "en");
-    const when = START_PRESET.test(startTerm)
-      ? localized.charAt(0).toLocaleLowerCase(lang) + localized.slice(1)
-      : localized;
+  } else if (start) {
     step3 = [
-      t(lang, "paperworkEmail.quote.step3StartsTitle", { when }),
+      t(lang, "paperworkEmail.quote.step3StartsTitle", { when: start.when }),
       t(lang, "paperworkEmail.quote.step3StartsSub"),
     ];
   } else {
