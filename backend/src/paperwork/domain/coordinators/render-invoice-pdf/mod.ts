@@ -227,6 +227,9 @@ export class RenderInvoicePdf {
     // downloads the PDF, so a draft / scheduled one says so, as its /i does.
     const flags = invoicePillFlags(invoice, new Date());
     const paid = invoice.status === "paid" || !!invoice.paidAt;
+    // REQ-1136 (q3-62): a cancelled bill owes nothing — the money card, the
+    // payment instructions and How to pay all agree with /i (REQ-627).
+    const voided = invoice.status === "void";
     const payState = paymentStateLines(invoice, lang);
     const pill = invoiceStatusPill(
       {
@@ -385,14 +388,19 @@ export class RenderInvoicePdf {
       color: GREEN_BG,
     });
     // REQ-201/202: "PAID <date>", "Paid $X · Balance $Y" on a partial
-    // payment, else "Amount due · Due <date>".
-    const partial = !paid && (invoice.paidCents ?? 0) > 0;
+    // payment, else "Amount due · Due <date>". REQ-1136: a void bill reads
+    // "CANCELLED — NOTHING DUE · $0.00", as /i does — never "Due <date>".
+    const partial = !voided && !paid && (invoice.paidCents ?? 0) > 0;
     page.drawText(
-      (paid ? renderWord(lang, "paid") : t(lang, "publicInvoice.amountDue"))
+      (voided
+        ? t(lang, "publicInvoice.cancelled.label")
+        : paid
+        ? renderWord(lang, "paid")
+        : t(lang, "publicInvoice.amountDue"))
         .toUpperCase(),
       { x: M + 16, y: y - 22, size: 9, font: bold, color: GREEN },
     );
-    const sub = paid
+    const sub = voided ? undefined : paid
       // REQ-928: when and how — "Paid November 11, 2026 · Electronic (Venmo)"
       ? paidLine(
         (k, v) => t(lang, k, v),
@@ -415,7 +423,9 @@ export class RenderInvoicePdf {
       });
     }
     const dueStr = fmtUSD(
-      partial
+      voided
+        ? 0
+        : partial
         ? Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0))
         : invoice.amount,
     );
@@ -428,6 +438,25 @@ export class RenderInvoicePdf {
       color: TEAL,
     });
     y -= 78;
+    if (voided) {
+      // REQ-1136: /i's own sentence — who cancelled it, when, don't pay it
+      addPageIfNeeded(30);
+      y = drawWrappedText(
+        page,
+        t(lang, "publicInvoice.cancelled.note", {
+          business: businessName ?? contractor?.name ?? "",
+          date: fmtDate(invoice.voidedAt ?? invoice.updatedAt, tz),
+        }),
+        M,
+        y,
+        W - 2 * M,
+        reg,
+        9.5,
+        PINK_DARK,
+        13,
+      );
+      y -= 10;
+    }
     if (payState.overpaid) {
       // REQ-202: an overpayment is flagged, never hidden
       page.drawText(payState.overpaid, {
@@ -510,7 +539,9 @@ export class RenderInvoicePdf {
           y -= 4;
         }
       }
-      if (invoice.paymentInstructions?.trim()) {
+      // REQ-1136: no payment instructions on a bill not to pay
+      const instructions = voided ? "" : invoice.paymentInstructions?.trim();
+      if (instructions) {
         addPageIfNeeded(40);
         page.drawText(renderWord(lang, "paymentInstructions"), {
           x: M,
@@ -534,14 +565,14 @@ export class RenderInvoicePdf {
         );
         y -= 4;
       }
-      if (rows.length || invoice.paymentInstructions?.trim()) y -= 10;
+      if (rows.length || instructions) y -= 10;
     }
 
     // REQ-805 — how to pay, as the site offers it: every way the business
     // switched on (its own payment links, "Xpress Pay", by name and URL),
     // then the invoice's own pay page. Not on a paid or cancelled bill.
     {
-      const ways = invoice.status === "void" || paid ? [] : payOptionLines(
+      const ways = voided || paid ? [] : payOptionLines(
         ident?.acceptedPaymentMethods,
         lang,
         businessAddressLine(addr),
