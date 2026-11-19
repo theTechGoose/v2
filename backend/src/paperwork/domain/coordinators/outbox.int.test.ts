@@ -461,7 +461,8 @@ Deno.test("REQ-784 d12: the receipt, the signed copy, an overdue reminder and an
       r.commsLog,
     ).run(signedQuote.id);
 
-    // receipt (email + text)
+    // receipt (email + text) — REQ-1116: for a part payment; a claim that
+    // closes the bill gets the PAID invoice email instead of a receipt email
     const payments = new PaymentStore();
     const receiptPdf = new RenderReceiptPdf();
     receiptPdf.run = () => Promise.resolve(new Uint8Array([37, 80, 68, 70]));
@@ -471,7 +472,7 @@ Deno.test("REQ-784 d12: the receipt, the signed copy, an overdue reminder and an
       status: "claimed",
       paymentIntent: {
         method: "zelle",
-        amount: 450_00,
+        amount: 200_00,
         claimedAt: new Date().toISOString(),
       },
     });

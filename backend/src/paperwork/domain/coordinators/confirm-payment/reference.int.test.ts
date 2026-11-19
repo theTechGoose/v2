@@ -75,7 +75,7 @@ function rig() {
   return { flow, invoices, payments, customers, mails, pdfRefs };
 }
 
-/** a sent invoice the customer claimed by Zelle, ref ZL-930 */
+/** a sent $500 invoice the customer part-claimed ($300) by Zelle, ref ZL-930 */
 async function claimed(r: ReturnType<typeof rig>) {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("TWILIO_ACCOUNT_SID");
@@ -90,8 +90,11 @@ async function claimed(r: ReturnType<typeof rig>) {
     {
       customerId: c.id,
       status: "claimed",
-      amount: 300_00,
-      lineItems: [{ description: "Mowing", quantity: 1, price: 300_00 }],
+      // REQ-1116: the $300 claim leaves $200 due, so the receipt email (the
+      // one REQ-930 checks) is sent — a claim that closes the bill gets the
+      // PAID invoice email instead, its PDF built from the Payment row.
+      amount: 500_00,
+      lineItems: [{ description: "Mowing", quantity: 1, price: 500_00 }],
       paymentIntent: {
         method: "zelle",
         amount: 300_00,

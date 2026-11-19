@@ -104,9 +104,11 @@ Deno.test("REQ-1017 / REQ-175 confirm-payment: the receipt email carries the cus
         status: "claimed",
         amount: 450_00,
         lineItems: [{ description: "Gutters", quantity: 1, price: 450_00 }],
+        // REQ-1116: a part payment — the receipt email goes only when a
+        // balance is left (a closing claim gets the PAID invoice email)
         paymentIntent: {
           method: "zelle",
-          amount: 450_00,
+          amount: 200_00,
           reference: "ZL-1017",
           claimedAt: new Date().toISOString(),
         },
