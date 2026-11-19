@@ -448,3 +448,46 @@ describe("REQ-041 NW-48 the customer SMS puts the link on its own line", () => {
     expect(es["paperworkSms.body.ready"]).toMatch(/:\n\{url\}$/);
   });
 });
+
+// REQ-969 (LOOP-007 q1, q1-46): the onboarding state step said the state "sets the
+// governing state on your agreements", but REQ-015 fixed the clause to "the laws of
+// the state where the work is performed" — no state is ever put into it. The picked
+// state only goes on the business address, so the copy must say that instead.
+describe("REQ-969 q1-46 onboarding copy does not promise a governing state the agreement never names", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path");
+
+  it("REQ-969 the state step's 'why' line is the one WelcomeWizard renders", () => {
+    const src: string = fs.readFileSync(
+      path.join(__dirname, "../../front-end/islands/WelcomeWizard.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/why=\{t\("welcome\.state\.why"\)\}/);
+  });
+
+  it("REQ-969 welcome.state.why (en + es) makes no governing-state claim", () => {
+    expect(en["welcome.state.why"]).not.toMatch(/govern/i);
+    expect(es["welcome.state.why"]).not.toMatch(/\brige\b|regul|gobiern/i);
+  });
+
+  it("REQ-969 welcome.state.why (en + es) says the state goes on the business address", () => {
+    expect(en["welcome.state.why"]).toMatch(/address/i);
+    expect(es["welcome.state.why"]).toMatch(/direcci[oó]n/i);
+  });
+
+  it("REQ-969 assistantDemo.continueCta.sub (en + es) does not list a governing-state question", () => {
+    expect(en["assistantDemo.continueCta.sub"]).not.toMatch(/governing state/i);
+    expect(es["assistantDemo.continueCta.sub"]).not.toMatch(/estado regulador|estado que rige/i);
+  });
+
+  it.each(["quoteDoc.clause.governingLaw.body", "renderQuotePdf.clause.governingLaw.body"])(
+    "REQ-969 %s stays REQ-015's fixed wording with no state placeholder (en + es)",
+    (key) => {
+      expect(en[key]).not.toMatch(/\{\w+\}/);
+      expect(es[key]).not.toMatch(/\{\w+\}/);
+      expect(en[key]).toMatch(/the state where the work is performed/);
+    },
+  );
+});
