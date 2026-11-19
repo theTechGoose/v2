@@ -332,7 +332,13 @@ function DashboardSkeleton() {
   );
 }
 
-export default function DashboardPage(_props: { lang?: Lang } = {}) {
+export default function DashboardPage(
+  { timeZone }: {
+    lang?: Lang;
+    /** REQ-1039 / REQ-944: the business's zone (/me businessTimezone) for the money bar's days */
+    timeZone?: string;
+  } = {},
+) {
   // Reactive UI language — seeded from the profile cache, flipped live by
   // Settings. (The old `lang` prop is superseded by this shared signal.)
   const lang = langSignal.value;
@@ -592,6 +598,7 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
         upcoming={upcomingLine}
         emptyKey={outstandingEmpty}
         pending={listsPending}
+        timeZone={timeZone}
       />
       <Kpis
         activeJobs={kpis.activeJobs}

@@ -62,7 +62,7 @@ export default define.page(function Dashboard(ctx) {
           />
           <div class="content">
             {askName && <StaffNamePrompt />}
-            <DashboardPage />
+            <DashboardPage timeZone={user?.businessTimezone} />
             <SiteFooter lang={lang} compact />
           </div>
         </main>

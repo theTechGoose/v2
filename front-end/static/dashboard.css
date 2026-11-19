@@ -2248,7 +2248,6 @@ body {
 .moneybar__row-job {
   font-weight: 600;
   color: var(--fg-muted);
-  margin-left: 4px;
 }
 .moneybar__row-meta {
   font-size: 11px;

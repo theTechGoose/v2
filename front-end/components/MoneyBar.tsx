@@ -12,6 +12,12 @@ import { SkelBlock } from "./Skeletons.tsx";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { fmtMoneyExact, fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
+// REQ-1039: the app's one language-aware short date ("4 dic" / "Dec 4"), and the business's day
+import { shortDate } from "../../shared/documents/linked-view.ts";
+import {
+  DEFAULT_TIMEZONE,
+  todayInZone,
+} from "../../shared/quote-flow/business-timezone.ts";
 import {
   defaultBucket,
   type MoneyBarData,
@@ -40,18 +46,19 @@ const VIEW_ALL: Record<MoneyBucketKey, string> = {
 const plural = (lang: Lang, key: string, n: number) =>
   tFor(lang, `${key}.${n === 1 ? "one" : "other"}`, { n });
 
-function shortDate(iso: string | undefined, lang: Lang): string {
-  if (!iso) return "";
-  const d = iso.length === 10 ? new Date(iso + "T00:00:00") : new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${tFor(lang, `common.monthShort.${d.getMonth()}`)} ${d.getDate()}`;
-}
+/** REQ-1039: the whole-day count between two calendar days (YYYY-MM-DD) */
+const dayDiff = (from: string, to: string) =>
+  Math.round(
+    (Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) /
+      86_400_000,
+  );
 
 function itemMeta(
   item: MoneyBarItem,
   bucket: MoneyBucketKey,
   lang: Lang,
   now: Date,
+  timeZone: string,
 ): { text: string; tone: "danger" | "warn" | "ok" | "muted" } {
   const num = item.number;
   switch (bucket) {
@@ -66,10 +73,8 @@ function itemMeta(
       };
     }
     case "open": {
-      const due = new Date((item.dueDate ?? "") + "T00:00:00");
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+      // REQ-1039 / REQ-944: count from today in the business's zone, not the browser's midnight
+      const days = dayDiff(todayInZone(timeZone, now), item.dueDate ?? "");
       if (Number.isFinite(days) && days <= 5) {
         return {
           text: tFor(
@@ -85,7 +90,7 @@ function itemMeta(
       }
       return {
         text: tFor(lang, "invoices.dash.dueOn", {
-          date: shortDate(item.dueDate, lang),
+          date: shortDate(item.dueDate, lang, false),
           num,
         }),
         tone: "ok",
@@ -94,7 +99,7 @@ function itemMeta(
     case "paid":
       return {
         text: tFor(lang, "moneyBar.paidOn", {
-          date: shortDate(item.paidAt, lang),
+          date: shortDate(item.paidAt, lang, false, timeZone),
           num,
         }) + howOf(item.paidMethods, lang),
         tone: "ok",
@@ -102,7 +107,7 @@ function itemMeta(
     case "estimates":
       return {
         text: tFor(lang, "moneyBar.sentOn", {
-          date: shortDate(item.sentAt, lang),
+          date: shortDate(item.sentAt, lang, false, timeZone),
           num,
         }),
         tone: "muted",
@@ -127,6 +132,7 @@ export function MoneyBar(
     upcoming = null,
     emptyKey = null,
     pending = false,
+    timeZone = DEFAULT_TIMEZONE,
   }: {
     data: MoneyBarData;
     lang?: Lang;
@@ -137,6 +143,9 @@ export function MoneyBar(
     emptyKey?: string | null;
     /** REQ-728: the lists have not landed — a skeleton stands where the rows go. */
     pending?: boolean;
+    /** REQ-1039 / REQ-944: the business's IANA zone (/me businessTimezone) — paid/sent days and
+     *  days-until-due are that zone's, never the browser's. */
+    timeZone?: string;
   },
 ) {
   const [picked, setPicked] = useState<MoneyBucketKey | null>(null);
@@ -288,7 +297,7 @@ export function MoneyBar(
                 </a>
               </div>
               {current.items.map((item) => {
-                const meta = itemMeta(item, current.key, lang, now);
+                const meta = itemMeta(item, current.key, lang, now, timeZone);
                 return (
                   <a
                     class="moneybar__row"
@@ -301,6 +310,8 @@ export function MoneyBar(
                     <span class="moneybar__row-main">
                       <span class="moneybar__row-client">
                         {item.title}
+                        {/* REQ-1039: a real space, not CSS margin — "Rosa Delgado · Instalación" */}
+                        {item.job && " "}
                         {item.job && (
                           <span class="moneybar__row-job">· {item.job}</span>
                         )}

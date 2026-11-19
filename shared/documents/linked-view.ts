@@ -118,23 +118,47 @@ const SHORT_MONTHS: Record<Lang, readonly string[]> = {
   ],
 };
 
-/** "Nov 6, 2026" / "6 nov 2026"; a bare date-only string is read as noon UTC. */
+/** "Nov 6, 2026" / "6 nov 2026"; a bare date-only string is read as noon UTC.
+ *  REQ-1039 / REQ-944: a full instant prints its calendar day in `timeZone`
+ *  (the business's zone) when one is given — UTC otherwise; a bare
+ *  YYYY-MM-DD is already a day and keeps it. */
 export function shortDate(
   iso: string | undefined,
   lang: Lang = "en",
   withYear = true,
+  timeZone?: string,
 ): string {
   if (!iso) return "";
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
   const d = new Date(dateOnly ? `${iso}T12:00:00Z` : iso);
   if (Number.isNaN(+d)) return iso;
-  const day = d.getUTCDate();
-  const month = SHORT_MONTHS[lang === "es" ? "es" : "en"][d.getUTCMonth()];
-  const year = d.getUTCFullYear();
+  const [year, monthIdx, day] = dateOnly || !timeZone
+    ? [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]
+    : zonedYmd(d, timeZone);
+  const month = SHORT_MONTHS[lang === "es" ? "es" : "en"][monthIdx];
   if (lang === "es") {
     return withYear ? `${day} ${month} ${year}` : `${day} ${month}`;
   }
   return withYear ? `${month} ${day}, ${year}` : `${month} ${day}`;
+}
+
+/** [year, month 0-11, day] of an instant in `tz`; UTC when the zone is unknown */
+function zonedYmd(d: Date, tz: string): [number, number, number] {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+    }).formatToParts(d);
+    const get = (t: string) =>
+      Number(parts.find((p) => p.type === t)?.value ?? NaN);
+    const y = get("year"), m = get("month"), day = get("day");
+    if (![y, m, day].some(Number.isNaN)) return [y, m - 1, day];
+  } catch {
+    // an unknown zone falls through to UTC
+  }
+  return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
 }
 
 export function stateLabel(
