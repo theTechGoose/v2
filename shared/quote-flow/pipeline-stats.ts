@@ -78,6 +78,33 @@ export function classifyQuoteForPipeline(quote: PipelineQuote): PipelineClass {
   return "draft";
 }
 
+/** The fields isQuoteOut reads — no index signature, so any quote shape
+ *  (the backend Quote, a front-end QuoteCard, a MoneyBarQuote) fits. */
+export interface OutQuote {
+  status?: string | null;
+  sentAt?: string | null;
+  acceptedAt?: string | null;
+  lostAt?: string | null;
+  lastDelivery?: QuoteDelivery | null;
+  deliveredAt?: string | null;
+  sentVia?: string | null;
+}
+
+/**
+ * REQ-956 (LOOP-007 q1-31): the ONE "out with the customer, awaiting an
+ * answer" test — sent OR viewed (the customer's first /q open flips sent →
+ * viewed), never undelivered, never won or lost. Every surface that counts
+ * pending quotes (the dashboard KPI and its value, the money bar's estimates,
+ * the awaiting-signature panel, customer cards) uses this, so it agrees with
+ * /quotes' "OUT FOR RESPONSE". Never filter on the `status === "sent"` literal.
+ */
+export function isQuoteOut(quote: OutQuote): boolean {
+  return classifyQuoteForPipeline({
+    ...quote,
+    status: quote.status ?? undefined,
+  }) === "awaiting";
+}
+
 /** Sample quotes (P-15): explicit flag or the onboarding summary tag. */
 export function isSampleQuote(
   quote: { summary?: string | null; isSample?: boolean },

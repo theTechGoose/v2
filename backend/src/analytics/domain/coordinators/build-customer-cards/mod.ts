@@ -28,6 +28,7 @@ import {
   balanceSubLabel,
   type BalanceSubParts,
 } from "#quote-flow/balance-sub.ts";
+import { isQuoteOut } from "#quote-flow/pipeline-stats.ts";
 
 const MS_PER_DAY = 86_400_000;
 const TWELVE_MONTHS_MS = 365 * MS_PER_DAY;
@@ -364,8 +365,9 @@ export function deriveStatus(args: {
   // first job with its deposit paid and its balance scheduled is "active".
   if (activeJobs > 0) return "active";
   if (myQuotes.length > 0 && acceptedQuotes.length === 0) {
+    // REQ-956: a quote the customer has opened (viewed) is still open
     const onlyOpen = myQuotes.every((q) =>
-      q.status === "draft" || q.status === "sent"
+      q.status === "draft" || isQuoteOut(q)
     );
     if (onlyOpen) return "lead";
   }
@@ -425,7 +427,8 @@ export function buildBalanceSub(
       ...(dates[0] ? { date: dates[0].slice(0, 10) } : {}),
     };
   }
-  const openQuote = quotes.find((q) => q.status === "sent");
+  // REQ-956: a quote the customer has opened (viewed) is still out
+  const openQuote = quotes.find(isQuoteOut);
   if (openQuote) {
     // estimatedTotal is INTEGER CENTS now (audit1 #3).
     return { kind: "quoteOut", amountCents: openQuote.estimatedTotal ?? 0 };

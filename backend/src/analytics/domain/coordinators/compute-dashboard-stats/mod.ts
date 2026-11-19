@@ -1,6 +1,7 @@
 import { Injectable } from "#danet/core";
 import {
   aggregatePipeline,
+  isQuoteOut,
   isSampleQuote,
 } from "#quote-flow/pipeline-stats.ts";
 import { isUndelivered } from "#quote-flow/delivery.ts";
@@ -67,13 +68,15 @@ export class ComputeDashboardStats {
     const quoteCounts = {
       total: realQuotes.length,
       draft: realQuotes.filter((q) => q.status === "draft").length,
-      sent: realQuotes.filter((q) => q.status === "sent").length,
+      // REQ-956: "sent" = out for response — sent OR viewed (the customer's
+      // first /q open flips sent → viewed), the /quotes "awaiting" class.
+      sent: realQuotes.filter(isQuoteOut).length,
       accepted: realQuotes.filter((q) => q.status === "accepted").length,
       // REQ-566 (demo-loop cycle 4, m11): of the drafts, those whose send
       // reached nobody — the dashboard says "Not delivered", not "ready".
-      undelivered: realQuotes.filter((q) =>
-        q.status === "draft" && isUndelivered(q)
-      ).length,
+      undelivered:
+        realQuotes.filter((q) => q.status === "draft" && isUndelivered(q))
+          .length,
       readyToSend: await this.countReadyToSend(
         userId,
         realQuotes.filter((q) => q.status === "draft"),
@@ -93,10 +96,10 @@ export class ComputeDashboardStats {
     };
 
     // Quoted value: sum of estimatedTotal across quotes that are still
-    // open (sent but not accepted/declined). Audit1 #3 — estimatedTotal
-    // is now stored as INTEGER CENTS, so this is a passthrough sum.
+    // open (sent or viewed, not accepted/declined — REQ-956). Audit1 #3 —
+    // estimatedTotal is INTEGER CENTS, so this is a passthrough sum.
     const quotedValueCents = realQuotes
-      .filter((q) => q.status === "sent")
+      .filter(isQuoteOut)
       .reduce((sum, q) => sum + (q.estimatedTotal ?? 0), 0);
 
     // UX-02: the won bucket — the accepted value must not vanish the moment
