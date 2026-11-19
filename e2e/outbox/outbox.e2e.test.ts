@@ -418,7 +418,9 @@ Deno.test('REQ-1016 (LOOP-007 q1, q1-102): the Spanish paid email of an amount-o
       "iframe[data-cy='outbox-email-frame']",
     ).locator("html").getAttribute("lang");
     expect.eq(docLang, "es", "the opened email's <html lang>");
+  }));
 
+/**
  * REQ-991 (LOOP-007 cycle 1, q1-73): "Outbox table shows only 3 of 8
  * columns at 390px" — on a phone every column, the status chip and the
  * row's Open button are on screen, with no hidden sideways scroller.
