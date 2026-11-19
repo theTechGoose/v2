@@ -62,7 +62,7 @@ export default function InvoiceSendDialog(
       customer={customer}
       initialChannel={defaultSendChannel(onFile)}
       paper
-      initialSendLang={invoiceSheetLang(invoice)}
+      initialSendLang={invoiceSheetLang(invoice, customer)}
       loadDefaultLang={() =>
         dashboardClient.invoiceSendPreview(
           invoice.id,

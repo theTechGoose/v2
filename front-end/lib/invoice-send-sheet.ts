@@ -95,13 +95,16 @@ export function invoiceSendContact(
   };
 }
 
-/** "Sends in" starts on the invoice's own typed language (REQ-497) when the
- *  page knows it; undefined → the sheet asks the server, which also knows
- *  the language a quote-linked invoice's quote went out in. */
+/** "Sends in" starts on the customer's language (REQ-715 / REQ-934) — the
+ *  same order as invoiceDocLang — else the invoice's own typed language
+ *  (REQ-497) when the page knows it; undefined → the sheet asks the server,
+ *  which also knows the language a quote-linked invoice's quote went out in. */
 export function invoiceSheetLang(
   inv: { lang?: string | null },
+  customer?: { language?: string | null } | null,
 ): "en" | "es" | undefined {
-  return inv.lang === "en" || inv.lang === "es" ? inv.lang : undefined;
+  const pick = (l?: string | null) => l === "en" || l === "es" ? l : undefined;
+  return pick(customer?.language) ?? pick(inv.lang);
 }
 
 /**
