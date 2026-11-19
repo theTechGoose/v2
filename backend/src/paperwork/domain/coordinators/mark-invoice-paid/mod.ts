@@ -141,6 +141,11 @@ export class MarkInvoicePaid {
         customer,
         contractor,
         ...(businessName ? { businessName } : {}),
+        // REQ-1110 (q3-34): the closing payment's amount — after part
+        // payments it is less than the invoice total; nothing is left due
+        amount: last?.amount ?? invoice.amount ?? 0,
+        totalCents: invoice.amount ?? 0,
+        balanceCents: 0,
         method: (last?.method ?? "other") as PaymentMethod,
         ...(last?.reference ? { reference: last.reference } : {}),
         confirmedAt: invoice.paidAt ?? last?.receivedAt ??

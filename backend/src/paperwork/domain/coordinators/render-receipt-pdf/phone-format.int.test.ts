@@ -66,6 +66,7 @@ Deno.test("REQ-965 (q1-42) receipt PDF: the footer contact line prints the contr
       updatedAt: "2026-01-01T00:00:00Z",
     } as User,
     businessName: "Reyes Roofing",
+    amount: 500_00,
     method: "check",
     confirmedAt: "2026-11-18T12:00:00Z",
     lang: "en",

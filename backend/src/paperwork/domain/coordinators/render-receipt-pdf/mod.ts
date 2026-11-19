@@ -23,6 +23,16 @@ export interface RenderReceiptPdfInput {
   customer?: Customer;
   contractor: User | undefined;
   businessName?: string;
+  /** REQ-1110 (q3-34): the money this receipt is for, in cents — the
+   *  payment received, never the invoice total (a part payment is less). */
+  amount: number;
+  /** REQ-1110: the invoice total, in cents — context for the balance line;
+   *  defaults to `invoice.amount`. */
+  totalCents?: number;
+  /** REQ-1110: what is still due after this payment, in cents. Above zero,
+   *  the receipt prints "Balance still due: $X of $Y" (REQ-1071 parity with
+   *  the email it rides with). */
+  balanceCents?: number;
   /** What method the contractor recorded as having received. */
   method: PaymentMethod;
   /** Free-text reference (check #, transaction ID, etc.). */
@@ -63,7 +73,10 @@ export class RenderReceiptPdf {
       method,
       reference,
       confirmedAt,
+      amount,
     } = input;
+    const totalCents = input.totalCents ?? invoice.amount ?? 0;
+    const balanceCents = Math.max(0, input.balanceCents ?? 0);
     const lang: Lang = input.lang ?? contractor?.language ?? "en";
     // REQ-204: the receipt shows the customer the bill was issued to
     const customer = customerOnDocument(invoice, input.customer);
@@ -164,7 +177,8 @@ export class RenderReceiptPdf {
       font: bold,
       color: rgb(0.32, 0.60, 0.26),
     });
-    page.drawText(fmtMoney(invoice.amount ?? 0), {
+    // REQ-1110 (q3-34): the payment received — never the invoice total
+    page.drawText(fmtMoney(amount ?? 0), {
       x: M + 18,
       y: H - 218,
       size: 32,
@@ -187,6 +201,24 @@ export class RenderReceiptPdf {
         font: reg,
         color: rgb(0.42, 0.48, 0.49),
       });
+    }
+
+    // REQ-1110 (q3-34): a part payment says what is still due, as the
+    // receipt email does (REQ-1071)
+    if (balanceCents > 0) {
+      page.drawText(
+        t(lang, "receiptPdf.balanceDue", {
+          balance: fmtMoney(balanceCents),
+          total: fmtMoney(totalCents),
+        }),
+        {
+          x: M,
+          y: H - 258,
+          size: 10,
+          font: bold,
+          color: rgb(0.08, 0.28, 0.32),
+        },
+      );
     }
 
     // Invoice / customer block

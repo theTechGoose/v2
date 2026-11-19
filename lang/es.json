@@ -3126,6 +3126,7 @@
   "quotesTip.default": "Las cotizaciones que se abren 3 veces o más en 24 horas se cierran el 78% de las veces cuando se les da seguimiento el mismo día.",
   "quotesTip.title": "Consejo del monstruo",
   "receiptPdf.amountReceived": "MONTO RECIBIDO",
+  "receiptPdf.balanceDue": "Saldo pendiente: {balance} de {total}",
   "receiptPdf.confirmed": "Confirmado {date}",
   "receiptPdf.contractorFallback": "Contratista",
   "receiptPdf.customerHeader": "CLIENTE",

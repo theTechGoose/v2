@@ -102,6 +102,7 @@ async function renderAll(s: Awaited<ReturnType<typeof seed>>) {
     customer: s.customer,
     contractor,
     ...(ident?.businessName ? { businessName: ident.businessName } : {}),
+    amount: s.inv.amount ?? 0,
     method: "zelle",
     confirmedAt: new Date().toISOString(),
     logo,
