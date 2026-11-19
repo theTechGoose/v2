@@ -315,10 +315,15 @@ export default function FieldServicesPage(
                         </span>
                       )}
                     </span>
-                    <span class="chip" data-cy="svc-used-by">
-                      {t("field.svc.usedBy", {
-                        subs: ty.usedBy?.subscriptions ?? 0,
-                        ckls: ty.usedBy?.checklists ?? 0,
+                    <span class="chip chip--plain" data-cy="svc-used-by">
+                      {t("field.svc.usedByLine", {
+                        list: [
+                          tn(
+                            "field.svc.mc.subs",
+                            ty.usedBy?.subscriptions ?? 0,
+                          ),
+                          tn("field.svc.mc.ckls", ty.usedBy?.checklists ?? 0),
+                        ].join(" · "),
                       })}
                     </span>
                   </div>

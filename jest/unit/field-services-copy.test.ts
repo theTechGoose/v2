@@ -18,7 +18,7 @@ const JARGON =
 
 const KEYS = [
   "nav.services",
-  ...["docTitle", "eyebrow", "title", "sub", "new", "editTitle", "name", "namePh", "description", "descriptionPh", "nameRequired", "empty", "usedBy", "archive", "restore", "archived", "showArchived", "delete", "confirmDelete", "inUse", "nameTaken"].map((k) => `field.svc.${k}`),
+  ...["docTitle", "eyebrow", "title", "sub", "new", "editTitle", "name", "namePh", "description", "descriptionPh", "nameRequired", "empty", "usedByLine", "archive", "restore", "archived", "showArchived", "delete", "confirmDelete", "inUse", "nameTaken"].map((k) => `field.svc.${k}`),
   ...["title", "sub", "new", "editTitle", "name", "namePh", "color", "members", "membersNone", "foreman", "foremanNone", "leads", "services", "anyService", "servicesHint", "coversAll", "coversAllHint", "zones.one", "zones.other", "empty", "delete", "confirmDelete", "inUse", "nameTaken", "foremanNotMember", "typeClaimed", "none", "select"].map((k) => `field.crew.${k}`),
   ...["title", "sub", "markOut", "outTitle", "from", "to", "what", "cover", "coverBy", "coverPick", "defer", "skip", "note", "notePh", "empty", "remove", "badDates", "coverRequired", "dispCover", "dispDefer", "dispSkip", "memberHint"].map((k) => `field.away.${k}`),
   "field.tk.coverFor",
