@@ -1202,7 +1202,7 @@ export default function FieldSubscriptionsPage(
                 ))}
               </div>
               <div class="items__row" style="margin-top:6px">
-                {/* REQ-921: a service from the catalogue — never one made up here */}
+                {/* REQ-921: a service from the catalogue (REQ-979: a new one is added to it first) */}
                 <ServiceSelect
                   catalog={(catalog ?? []).filter((c) =>
                     !form.items.some((it) => it.id === c.id)
@@ -1215,6 +1215,20 @@ export default function FieldSubscriptionsPage(
                   onPick={(id) => {
                     patch({ pickId: id });
                     setTimeout(() => priceRef.current?.focus(), 0);
+                  }}
+                  onCreate={async (name) => {
+                    // REQ-979: a typed name becomes a real catalogue service, then the pick
+                    try {
+                      const svc = await fieldClient.createTaskType({ name });
+                      setCatalog((c) => [
+                        ...(c ?? []).filter((x) => x.id !== svc.id),
+                        svc,
+                      ]);
+                      patch({ pickId: svc.id });
+                      setTimeout(() => priceRef.current?.focus(), 0);
+                    } catch (e) {
+                      setLoadErr(e instanceof Error ? e.message : String(e));
+                    }
                   }}
                   style="flex:1"
                 />

@@ -2,7 +2,8 @@
  * REQ-921 — services are the only thing a business offers. On the real
  * shell: New invoice has no "What's it for" / "Details"; each line is the
  * house search picker over the services (the live catalogue, A→Z, nothing
- * archived, nothing typed becomes a line)
+ * archived, nothing typed becomes a line — REQ-979: a typed name may be
+ * added to the catalogue first)
  * + price, with + to add a row and − to remove one; the saved invoice bills
  * exactly those services. A repeat visit picks its services from the same
  * dropdown and can no longer make one up.
@@ -135,7 +136,8 @@ Deno.test("REQ-921: New invoice lines are a service dropdown + price with + and 
       JSON.stringify(["Edging", "Mowing"]),
       "the picker lists the live services only (the archived one is out)",
     );
-    // typing narrows it; a name that is no service offers nothing to add
+    // typing narrows it; REQ-979 (amends REQ-921): a name that is no service
+    // offers to add it to the catalogue — it never bills as free text
     const box0 = page.locator(`${svc0} [data-cy='search-select-input']`);
     await box0.click();
     await box0.fill("mow");
@@ -148,11 +150,12 @@ Deno.test("REQ-921: New invoice lines are a service dropdown + price with + and 
       "typing narrows the services",
     );
     await box0.fill("Snow plowing");
-    await page.locator(`${svc0} [data-cy='search-select-empty']`).waitFor();
+    await page.locator(`${svc0} [data-cy='search-select-create']`).waitFor();
     expect.eq(
-      await page.locator(`${svc0} [data-cy='search-select-create']`).count(),
-      0,
-      "no '+ Add' row — a line can only be a service",
+      (await page.locator(`${svc0} [data-cy='search-select-create']`)
+        .innerText()).trim(),
+      '+ Add "Snow plowing" as a service',
+      "REQ-979: the only '+ Add' row adds a catalogue service (not picked here)",
     );
     await box0.fill("");
     await box0.press("Escape");

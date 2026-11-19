@@ -1974,6 +1974,7 @@
   "serviceLines.manage": "Add services",
   "serviceLines.err.pick": "Pick a service on every line.",
   "serviceLines.err.price": "Give every service a price above $0.",
+  "serviceLines.create": "+ Add \"{name}\" as a service",
   "invoices.form.removeLine": "Remove",
   "invoices.form.subtotal": "Subtotal",
   "invoices.form.discount": "Discount (USD)",

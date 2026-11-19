@@ -72,6 +72,26 @@ export function serviceRowsToLines(
     }));
 }
 
+/** REQ-979 — the Amount box is locked (it shows the lines' subtotal) only
+ *  while some row bills a service. An untouched empty row, or a price with no
+ *  service picked yet, leaves the one-amount bill editable. Same test as
+ *  serviceRowsToLines, so the lock and the totals never disagree. */
+export function amountLocked(rows: readonly ServiceRow[]): boolean {
+  return rows.some((r) => r.name.trim() !== "");
+}
+
+/** REQ-979 — the rows the form checks: a row with neither a service nor a
+ *  price is an untouched blank, not a line, and never blocks a save */
+export function touchedServiceRows(rows: readonly ServiceRow[]): ServiceRow[] {
+  return rows.filter((r) => r.name.trim() || String(r.price).trim());
+}
+
+/** REQ-979 — a row carries a price but no service: say so beside the lines
+ *  instead of a silent $0.00 subtotal */
+export function pricedRowWithoutService(rows: readonly ServiceRow[]): boolean {
+  return rows.some((r) => !r.name.trim() && String(r.price).trim() !== "");
+}
+
 /** the row-level problem, as an i18n key — null when every row bills */
 export function serviceRowsError(
   rows: readonly ServiceRow[],

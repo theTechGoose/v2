@@ -29,14 +29,17 @@ import { clientsClient } from "../clients/clients.ts";
 import { fieldClient } from "../clients/field.ts"; // REQ-921
 import ServiceSelect from "../components/ServiceSelect.tsx"; // REQ-921
 import {
+  amountLocked,
   type CatalogService,
   emptyServiceRow,
   jobNameFromServices,
   pickService,
+  pricedRowWithoutService,
   type ServiceRow,
   serviceRowsError,
   serviceRowsToLines,
-} from "../../shared/documents/service-lines.ts"; // REQ-921
+  touchedServiceRows,
+} from "../../shared/documents/service-lines.ts"; // REQ-921, REQ-979
 import type { QuoteCard } from "../clients/quotes.ts";
 // REQ-727 (demo-loop cycle 5, c4-M16): every send goes through the send sheet
 import InvoiceSendDialog from "../components/InvoiceSendDialog.tsx";
@@ -2908,6 +2911,23 @@ function InvoiceDetail(
                       )
                     );
                   }}
+                  onCreate={async (name) => {
+                    // REQ-979: a typed name becomes a real catalogue service, then the line's
+                    try {
+                      const svc = await fieldClient.createTaskType({ name });
+                      setEditCatalog((c) => [
+                        ...c.filter((x) => x.id !== svc.id),
+                        { id: svc.id, name: svc.name },
+                      ]);
+                      setEditItems((items) =>
+                        items.map((it, j) =>
+                          j === i ? { ...it, description: svc.name } : it
+                        )
+                      );
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : String(e));
+                    }
+                  }}
                   style="flex:1;min-width:160px"
                 />
                 {li.quantity !== 1 && (
@@ -5445,6 +5465,9 @@ export function NewInvoiceModal(
   }
 
   const formLines = toFormLines(lines);
+  // REQ-979: Amount shows the lines' subtotal (read-only) only while a row
+  // bills a service — the same rows the totals count, never the raw row count
+  const amountIsLines = amountLocked(lines);
   const totals = computeTotals({
     lineItems: formLines,
     amountCents: dollarsToCents(amount),
@@ -5560,8 +5583,9 @@ export function NewInvoiceModal(
       setError(null);
       return;
     }
-    // REQ-921: every row bills a picked service at a price
-    const rowErr = serviceRowsError(lines);
+    // REQ-921: every row bills a picked service at a price. REQ-979: an
+    // untouched blank row is no line — the one-amount bill saves past it
+    const rowErr = serviceRowsError(touchedServiceRows(lines));
     if (rowErr) {
       setError(tFor(lang, rowErr));
       return;
@@ -5802,6 +5826,24 @@ export function NewInvoiceModal(
 
   function setLine(i: number, patch: Partial<TypedLine>) {
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  }
+  /** REQ-979: "+ Add "<name>" as a service" on row i — the name becomes a real
+   *  catalogue service (the /field/services list) and the row bills it */
+  async function createServiceForLine(i: number, name: string) {
+    try {
+      const svc = await fieldClient.createTaskType({ name });
+      const entry: CatalogService = { id: svc.id, name: svc.name };
+      setCatalog((c) => [...(c ?? []).filter((x) => x.id !== svc.id), entry]);
+      setLines((ls) =>
+        ls.map((x, j) => (j === i ? pickService(x, svc.id, [entry]) : x))
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : tFor(lang, "serviceLines.err.pick"),
+      );
+    }
   }
   function setBill(patch: Partial<BillTo>) {
     setBillTo((b) => ({ ...b, ...patch }));
@@ -6147,6 +6189,7 @@ export function NewInvoiceModal(
                         j === i ? pickService(x, id, catalog ?? []) : x
                       )
                     )}
+                  onCreate={(name) => createServiceForLine(i, name)}
                   style="width:100%"
                 />
                 <input
@@ -6178,6 +6221,19 @@ export function NewInvoiceModal(
             ))}
           </div>
         )}
+        {
+          /* REQ-979: a price on a row with no service would bill nothing — say
+            so here, not with a silent $0.00 (once only: a refused save says it below) */
+        }
+        {pricedRowWithoutService(lines) &&
+          error !== tFor(lang, "serviceLines.err.pick") && (
+          <p
+            data-cy="new-invoice-line-hint"
+            style="margin:0;font-size:13px;color:#8a5a00"
+          >
+            {tFor(lang, "serviceLines.err.pick")}
+          </p>
+        )}
         <div>
           <button
             type="button"
@@ -6202,14 +6258,14 @@ export function NewInvoiceModal(
             inputMode="decimal"
             data-cy="new-invoice-amount"
             placeholder="0.00"
-            value={lines.length > 0
+            value={amountIsLines
               ? centsToDollars(totals.subtotalCents)
               : amount}
-            readOnly={lines.length > 0}
+            readOnly={amountIsLines}
             disabled={busy}
             onInput={(e) => setAmount((e.target as HTMLInputElement).value)}
             style={`${inputStyle}${
-              lines.length > 0 ? ";background:rgba(0,0,0,0.03)" : ""
+              amountIsLines ? ";background:rgba(0,0,0,0.03)" : ""
             }`}
           />
         </label>
