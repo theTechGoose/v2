@@ -164,3 +164,61 @@ Deno.test("REQ-948: what the customer typed is escaped in the email", () => {
   assert(!c.html.includes("<script>"), "note is escaped");
   assert(!c.html.includes("<b>X</b>"), "name is escaped");
 });
+
+// REQ-1055 (LOOP-007 cycle 2, q2-39): /co heads the approved order with the
+// JOB's new total (REQ-398 m25) while the receipt showed only the invoice's,
+// so the customer saw two unlabeled "new totals". The receipt names both:
+// the job total and the linked invoice's total, in the email and the text.
+const q239 = (lang: "en" | "es") =>
+  buildChangeOrderReceipt(
+    {
+      lang,
+      businessName: "Cambio Builders",
+      ref: lang === "es" ? "CO-001 en INV-002" : "CO-001 on INV-002",
+      description: "Add a second bathroom vanity",
+      deltaCents: 280_000,
+      jobTotalCents: 1_120_000,
+      newTotalCents: 868_000,
+      approvedName: "María Nguyen",
+      approvedAt: "2026-11-18T15:00:00Z",
+      url: "http://x/i/i2",
+    } as Parameters<typeof buildChangeOrderReceipt>[0],
+  );
+
+Deno.test("REQ-1055 (q2-39): the receipt names the job total AND the invoice total, each labeled — en", () => {
+  const r = q239("en");
+  const body = plain(r.html);
+  assert(
+    /job total[^$]*\$11,200\.00/i.test(body),
+    `the email has a labeled job total of $11,200.00: ${body}`,
+  );
+  assert(
+    /INV-002[^$]*total[^$]*\$8,680\.00|invoice total[^$]*\$8,680\.00/i.test(
+      body,
+    ),
+    `the email has a labeled invoice total of $8,680.00: ${body}`,
+  );
+  assert(
+    /job total[^$]*\$11,200\.00/i.test(r.sms),
+    `the text has the labeled job total: ${r.sms}`,
+  );
+  assertStringIncludes(r.sms, "$8,680.00");
+});
+
+Deno.test("REQ-1055 (q2-39): the receipt names the job total AND the invoice total, each labeled — es", () => {
+  const r = q239("es");
+  const body = plain(r.html);
+  assert(
+    /total del trabajo[^$]*\$11,200\.00/i.test(body),
+    `el correo tiene el total del trabajo $11,200.00: ${body}`,
+  );
+  assert(
+    /INV-002[^$]*\$8,680\.00|factura[^$]*\$8,680\.00/i.test(body),
+    `el correo tiene el total de la factura $8,680.00: ${body}`,
+  );
+  assert(
+    /total del trabajo[^$]*\$11,200\.00/i.test(r.sms),
+    `el texto tiene el total del trabajo: ${r.sms}`,
+  );
+  assertStringIncludes(r.sms, "$8,680.00");
+});

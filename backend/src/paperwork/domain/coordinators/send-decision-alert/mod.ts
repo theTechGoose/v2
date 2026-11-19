@@ -24,6 +24,7 @@ import {
   customerOnDocument,
   docRef,
   docRefWithVersion,
+  isIssued,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import {
   type AlertCopy,
@@ -35,7 +36,9 @@ import {
 import { type Lang, t } from "@core/i18n/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
+import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
 import type { User } from "@users/dto/user.ts";
+import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
 
 const APP_URL = (() => {
   const explicit = Deno.env.get("APP_URL")?.trim() || undefined;
@@ -135,6 +138,27 @@ export class SendDecisionAlert {
     return result(sent);
   }
 
+  /** REQ-1055 (LOOP-007 q2-39): the job's agreed total after change order
+   *  `co` — the same `changeOrderJobTotals` figure GET
+   *  /change-orders/:id/public returns as `jobNewAmount` and /co heads with.
+   *  Undefined when the order has no linked quote of the same owner. */
+  private async jobTotalAfter(
+    co: ChangeOrder,
+    invoiceQuoteId: string | undefined,
+  ): Promise<number | undefined> {
+    const quoteId = co.quoteId ?? invoiceQuoteId;
+    if (!quoteId) return undefined;
+    const q = await this.quotes.get(quoteId).catch(() => undefined);
+    if (!q || q.userId !== co.userId) return undefined;
+    const cos = await this.changeOrders.listByQuote(co.userId, q.id)
+      .catch(() => [] as ChangeOrder[]);
+    return changeOrderJobTotals(
+      q,
+      cos.some((c) => c.id === co.id) ? cos : [...cos, co],
+      co.id,
+    ).afterCents;
+  }
+
   async changeOrderDecided(coId: string): Promise<DecisionAlertResult> {
     const co = await this.changeOrders.claimDecisionNotice(coId);
     if (!co) return { ok: true, reason: "already_notified", sent: [] };
@@ -187,6 +211,7 @@ export class SendDecisionAlert {
         ident?.legalName?.trim() || contractor.name?.trim() ||
         t(coLang, "changeOrderPublic.contractorFallback");
       const ref = changeOrderRef(co, invoice, coLang);
+      const jobTotalCents = await this.jobTotalAfter(co, invoice?.quoteId);
       const copy = buildChangeOrderReceipt({
         lang: coLang,
         businessName,
@@ -194,6 +219,10 @@ export class SendDecisionAlert {
         description: co.description,
         deltaCents: co.deltaAmountCents,
         newTotalCents: total,
+        ...(typeof jobTotalCents === "number" ? { jobTotalCents } : {}),
+        ...(invoice && isIssued(invoice)
+          ? { invoiceLabel: docRef(invoice) }
+          : {}),
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         ...(co.decidedAt ? { approvedAt: co.decidedAt } : {}),
         url: `${APP_URL}/i/${encodeURIComponent(co.invoiceId)}?lang=${coLang}`,

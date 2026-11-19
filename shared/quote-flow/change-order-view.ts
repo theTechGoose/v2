@@ -148,7 +148,7 @@ export function changeOrderChangeLine(
  *  order asks for review and approval; a decided one says what happened —
  *  never "approve to update your total" under an "Approved" headline. The
  *  total is the job's new total when the page has it (REQ-398 m25), else
- *  the invoice's. */
+ *  the invoice's — and the wording says which (REQ-1055). */
 export function changeOrderIntro(
   co: {
     status?: string;
@@ -164,12 +164,19 @@ export function changeOrderIntro(
   }
   if (co.status !== "approved") return { key: "changeOrderPublic.intro" };
   const date = shortDate(co.decidedAt, lang);
+  // REQ-1055 (LOOP-007 q2-39): the sentence names WHICH total it shows —
+  // the job's when the page has the job totals, the invoice's otherwise —
+  // so it never reads as a second, unexplained "new total" next to the
+  // receipt's invoice total.
+  const isJob = co.jobNewAmount != null;
   const totalCents = co.jobNewAmount ?? co.newAmount;
   if (!date || totalCents == null) {
     return { key: "changeOrderPublic.introApprovedPlain" };
   }
   return {
-    key: "changeOrderPublic.introApproved",
+    key: isJob
+      ? "changeOrderPublic.introApproved"
+      : "changeOrderPublic.introApprovedInvoice",
     vars: { date, total: money(totalCents) },
   };
 }
