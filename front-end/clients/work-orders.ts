@@ -36,6 +36,8 @@ export interface WorkOrder {
   scheduledFor?: string;
   completedOn?: string;
   assignee?: string;
+  /** REQ-1010 — the field worker it is assigned to (it lists on their /worker day) */
+  assigneeWorkerId?: string;
   notes?: string;
   publishedAt?: string;
   publishedBy?: { userId?: string; name?: string; customer?: boolean };
@@ -58,6 +60,8 @@ export interface WorkOrderInput {
   scheduledFor?: string;
   completedOn?: string;
   assignee?: string;
+  /** REQ-1010 — one of the account's workers; "" unassigns */
+  assigneeWorkerId?: string;
   notes?: string;
   status?: WorkOrderStatus;
   /** REQ-200: generated once per form submission, the same on a retry. */

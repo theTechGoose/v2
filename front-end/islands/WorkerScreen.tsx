@@ -617,7 +617,54 @@ export default function WorkerScreen(
     return s.charAt(0).toUpperCase() + s.slice(1);
   };
 
+  /** REQ-1010 — a work order the office assigned to this worker for the day: what, where, its
+   *  number. Read-only here (the office runs the work order), so no check, note or defer. */
+  function renderWorkOrder(v: Visit, wo: WorkerTaskView) {
+    const done = wo.status === "complete";
+    return (
+      <div
+        class={`visit${done ? " visit--done" : ""}`}
+        data-cy="w-visit"
+        data-id={v.id}
+        data-wo={wo.workOrderId}
+        key={v.id}
+      >
+        <div class="visit__head">
+          <div>
+            <div class="visit__client">{v.customerName}</div>
+            {v.address && (
+              <a
+                class="task__addr"
+                href={`https://maps.google.com/?q=${
+                  encodeURIComponent(v.address)
+                }`}
+                target="_blank"
+                rel="noopener"
+                style="display:inline-flex;align-items:center;gap:4px"
+              >
+                <I d={ICN.pin} size={12} />
+                {v.address}
+              </a>
+            )}
+            <div class="hint" data-cy="w-wo-number">
+              {t("worker.workOrder", { number: wo.workOrderNumber ?? "" })}
+            </div>
+          </div>
+          {done && (
+            <span class="visit__state" data-cy="w-visit-state">
+              {t("worker.visitDone")}
+            </span>
+          )}
+        </div>
+        <div class="svc svc--locked" data-id={wo.id}>
+          <div class="svc__name" data-cy="w-wo-job">{wo.taskTypeName}</div>
+        </div>
+      </div>
+    );
+  }
+
   function renderVisit(v: Visit) {
+    if (v.services[0]?.workOrderId) return renderWorkOrder(v, v.services[0]);
     const act_ = live(v);
     const done = act_.filter((s) => s.status === "complete").length;
     const all = act_.length > 0 && done === act_.length;

@@ -12,6 +12,7 @@ import {
   type WorkOrderStatus,
   type WorkOrderVersion,
 } from "../clients/work-orders.ts";
+import { fieldClient, type FieldWorker } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { langSignal, t } from "../lib/i18n.ts";
@@ -51,9 +52,13 @@ interface EditForm {
   serviceAddress: string;
   scheduledFor: string;
   completedOn: string;
-  assignee: string;
+  /** REQ-1010 — the picked worker's id; "" = nobody; LEGACY = the old free-text name, kept as is */
+  assigneeWorkerId: string;
   notes: string;
 }
+
+/** a work order filed before REQ-1010 names its assignee in text only — the picker keeps it untouched */
+const LEGACY = "__legacy";
 
 function formOf(wo: WorkOrder): EditForm {
   return {
@@ -61,7 +66,7 @@ function formOf(wo: WorkOrder): EditForm {
     serviceAddress: wo.serviceAddress ?? "",
     scheduledFor: wo.scheduledFor ?? "",
     completedOn: wo.completedOn ?? "",
-    assignee: wo.assignee ?? "",
+    assigneeWorkerId: wo.assigneeWorkerId ?? (wo.assignee ? LEGACY : ""),
     notes: wo.notes ?? "",
   };
 }
@@ -75,14 +80,18 @@ export default function WorkOrderPage({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditForm | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** REQ-1010 — the account's field workers, for the Assignee picker */
+  const [workers, setWorkers] = useState<FieldWorker[]>([]);
 
   async function load() {
-    const [row, vs] = await Promise.all([
+    const [row, vs, ws] = await Promise.all([
       workOrdersClient.get(id),
       workOrdersClient.versions(id).catch(() => [] as WorkOrderVersion[]),
+      fieldClient.workers().catch(() => [] as FieldWorker[]),
     ]);
     setWo(row);
     setVersions(Array.isArray(vs) ? vs : []);
+    setWorkers(Array.isArray(ws) ? ws : []);
   }
 
   useEffect(() => {
@@ -125,13 +134,19 @@ export default function WorkOrderPage({ id }: { id: string }) {
     }
     setBusy(true);
     setError(null);
+    const worker = workers.find((w) => w.id === form.assigneeWorkerId);
     try {
       const next = await workOrdersClient.update(id, {
         description: form.description.trim(),
         serviceAddress: form.serviceAddress.trim(),
         scheduledFor: form.scheduledFor,
         completedOn: form.completedOn,
-        assignee: form.assignee.trim(),
+        // REQ-1010: a picked worker, nobody (unassigns), or the old text left as it was
+        ...(worker
+          ? { assignee: worker.name, assigneeWorkerId: worker.id }
+          : form.assigneeWorkerId === LEGACY
+          ? {}
+          : { assignee: "", assigneeWorkerId: "" }),
         notes: form.notes.trim(),
       });
       setWo(next);
@@ -435,17 +450,26 @@ export default function WorkOrderPage({ id }: { id: string }) {
                 </label>
                 <label class="field">
                   {t("workOrders.modal.assignee")}
-                  <input
-                    type="text"
+                  <select
                     data-cy="wo-edit-assignee"
-                    value={form.assignee}
+                    value={form.assigneeWorkerId}
                     disabled={busy}
                     onInput={(e) =>
                       setForm({
                         ...form,
-                        assignee: (e.target as HTMLInputElement).value,
+                        assigneeWorkerId: (e.target as HTMLSelectElement).value,
                       })}
-                  />
+                  >
+                    <option value="">
+                      {t("workOrders.modal.assigneeNone")}
+                    </option>
+                    {form.assigneeWorkerId === LEGACY && wo.assignee && (
+                      <option value={LEGACY}>{wo.assignee}</option>
+                    )}
+                    {workers.map((w) => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <label class="field">

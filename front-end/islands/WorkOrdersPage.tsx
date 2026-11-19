@@ -18,6 +18,7 @@ import {
   type Invoice,
 } from "../clients/dashboard.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
+import { fieldClient, type FieldWorker } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { langSignal, t } from "../lib/i18n.ts";
@@ -60,6 +61,8 @@ interface Lists {
   customers: Customer[];
   quotes: QuoteCard[];
   invoices: Invoice[];
+  /** REQ-1010 — the account's field workers, for the Assignee picker */
+  workers: FieldWorker[];
 }
 
 export default function WorkOrdersPage() {
@@ -69,6 +72,7 @@ export default function WorkOrdersPage() {
     customers: [],
     quotes: [],
     invoices: [],
+    workers: [],
   });
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | WorkOrderStatus>("all");
@@ -78,17 +82,19 @@ export default function WorkOrdersPage() {
   });
 
   async function reload() {
-    const [wos, customers, quotes, invoices] = await Promise.all([
+    const [wos, customers, quotes, invoices, workers] = await Promise.all([
       workOrdersClient.list(),
       dashboardClient.customers().catch(() => [] as Customer[]),
       quotesClient.list().catch(() => [] as QuoteCard[]),
       dashboardClient.invoices().catch(() => [] as Invoice[]),
+      fieldClient.workers().catch(() => [] as FieldWorker[]),
     ]);
     setRows(Array.isArray(wos) ? wos : []);
     setLists({
       customers: Array.isArray(customers) ? customers : [],
       quotes: Array.isArray(quotes) ? quotes : [],
       invoices: Array.isArray(invoices) ? invoices : [],
+      workers: Array.isArray(workers) ? workers : [],
     });
     setLoadErr(null);
   }
@@ -311,7 +317,8 @@ function NewWorkOrderModal(
   const [invoiceId, setInvoiceId] = useState("");
   const [serviceAddress, setServiceAddress] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
-  const [assignee, setAssignee] = useState("");
+  /** REQ-1010 — the picked worker's id; the work order lists on their /worker day */
+  const [assigneeWorkerId, setAssigneeWorkerId] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -346,6 +353,7 @@ function NewWorkOrderModal(
     }
     setBusy(true);
     setError(null);
+    const worker = lists.workers.find((w) => w.id === assigneeWorkerId);
     try {
       await workOrdersClient.create({
         description: description.trim(),
@@ -356,7 +364,9 @@ function NewWorkOrderModal(
           ? { serviceAddress: serviceAddress.trim() }
           : {}),
         ...(scheduledFor ? { scheduledFor } : {}),
-        ...(assignee.trim() ? { assignee: assignee.trim() } : {}),
+        ...(worker
+          ? { assignee: worker.name, assigneeWorkerId: worker.id }
+          : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         requestId,
       });
@@ -466,13 +476,18 @@ function NewWorkOrderModal(
           </label>
           <label class="field">
             {t("workOrders.modal.assignee")}
-            <input
-              type="text"
+            <select
               data-cy="wo-new-assignee"
-              value={assignee}
+              value={assigneeWorkerId}
               disabled={busy}
-              onInput={(e) => setAssignee((e.target as HTMLInputElement).value)}
-            />
+              onInput={(e) =>
+                setAssigneeWorkerId((e.target as HTMLSelectElement).value)}
+            >
+              <option value="">{t("workOrders.modal.assigneeNone")}</option>
+              {lists.workers.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
           </label>
         </div>
         <label class="field">

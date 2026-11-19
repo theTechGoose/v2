@@ -348,6 +348,9 @@ export interface WorkerTaskView {
   locked: boolean;
   /** REQ-401: "draft" while that invoice is an unsent draft, "invoiced" once sent */
   lockState?: "draft" | "invoiced" | null;
+  /** REQ-1010: the row is a work order assigned to this worker for the day (read-only here) */
+  workOrderId?: string;
+  workOrderNumber?: string;
 }
 
 export interface GenerateResult {
