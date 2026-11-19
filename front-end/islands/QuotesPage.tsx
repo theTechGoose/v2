@@ -74,7 +74,8 @@ import {
   finishDraftPath,
   panelSendAction,
   type PanelSendResult,
-} from "../lib/quote-panel-send.ts"; // REQ-570 + REQ-686
+  publishLanguage,
+} from "../lib/quote-panel-send.ts"; // REQ-570 + REQ-686 + REQ-937
 import { assistantClient } from "../clients/assistant.ts"; // REQ-686
 import type { SendChannel } from "../lib/send-dialog.ts"; // REQ-570
 import {
@@ -898,9 +899,13 @@ function QuoteLedgerSection(
     setPublishing(true);
     setPublishErr(null);
     try {
+      // REQ-937 (LOOP-007 q1-4): Version N goes out in the language the
+      // quote last went out in — never the owner's UI language, which the
+      // backend would take as a per-send pick over the customer's language.
+      const sendIn = publishLanguage(q);
       const res = await quotesClient.publish(q.id, {
         notify: true,
-        language: lang,
+        ...(sendIn ? { language: sendIn } : {}),
       });
       setPublished({
         version: res?.version ?? ledger.quote.version + 1,

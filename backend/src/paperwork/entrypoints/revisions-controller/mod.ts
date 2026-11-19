@@ -30,7 +30,8 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 /**
  * RevisionsController — REQ-201/202/205: publishing, versions, the ledger.
  *
- *   POST quotes/:id/publish    { notify?: boolean }  → the published quote (version +1)
+ *   POST quotes/:id/publish    { notify?: boolean, language?: "en"|"es" }  → the published quote (version +1);
+ *                              no language → the one it last went out in (REQ-937)
  *   POST quotes/:id/discard-revision                  → the quote, its pending revision dropped (REQ-395)
  *   GET  quotes/:id/versions                          → every filed version + the current one
  *   GET  quotes/:id/ledger                            → invoices / change orders / totals
@@ -82,10 +83,24 @@ export class RevisionsController {
       by,
     );
     await emitRevised(this.bus, this.customers, user.id, "quote", published);
+    // REQ-937 (LOOP-007 q1-4): Version N re-sends in the language the quote
+    // last went out in unless the owner picked one for this send — the
+    // per-send pick beats the customer's language in resolveCommsLanguage,
+    // so an absent pick must not fall through to the account default when
+    // Version 1 went out in Español.
+    const sendIn = publishSendLanguage(opts.language, quote.lastDelivery?.lang);
+    let out = published;
+    if (opts.notify && opts.language && quote.lastDelivery) {
+      // A new pick becomes the language the quote last went out in, so the
+      // in-app customer links (?lang=, REQ-586) follow it.
+      out = await this.quotes.update(id, user.id, {
+        lastDelivery: { ...quote.lastDelivery, lang: opts.language },
+      });
+    }
     const notified = opts.notify
-      ? await notify(this.email, this.sms, user.id, "quote", id, opts.language)
+      ? await notify(this.email, this.sms, user.id, "quote", id, sendIn)
       : undefined;
-    return ctx.json({ ...published, ...(notified ? { notified } : {}) });
+    return ctx.json({ ...out, ...(notified ? { notified } : {}) });
   }
 
   /** REQ-395 (demo M12): throw away an unwanted draft revision; the customer's version is untouched. */
@@ -184,6 +199,18 @@ export class RevisionsController {
 }
 
 // ---- module-level helpers (Danet registers every controller method as a route) ----
+
+/** REQ-937: the language a published revision is re-sent in — the per-send
+ *  pick, else the language the document last went out in, else undefined
+ *  (SendPaperworkEmail/Sms then resolve the customer's language → account
+ *  default, REQ-715). */
+export function publishSendLanguage(
+  pick: "en" | "es" | undefined,
+  lastLang: unknown,
+): "en" | "es" | undefined {
+  if (pick) return pick;
+  return lastLang === "en" || lastLang === "es" ? lastLang : undefined;
+}
 
 function publishOpts(
   body: unknown,
