@@ -179,7 +179,13 @@ export default function FieldWorkersPage(
       fieldClient.taskTypes().catch(() => [] as TaskType[]),
     ]);
 
+  /**
+   * REQ-1062 — every reload follows an action elsewhere on the page (a crew or an absence saved
+   * or removed, a worker added), so the row error from before it — REQ-1015's coversZones
+   * refusal above all — is stale feedback and goes.
+   */
   async function reload() {
+    setRowErr(null);
     const [w, r, c, a, ty] = await readAll();
     setWorkers(w);
     setRegions(r);
@@ -314,6 +320,7 @@ export default function FieldWorkersPage(
   function openCrew(c?: CrewView) {
     setCrewConfirmId(null);
     setCrewErr(null);
+    setRowErr(null); // REQ-1062 — moving on to a crew drops the worker row's error
     setCrewForm({
       editId: c?.id ?? null,
       name: c?.name ?? "",
@@ -377,6 +384,7 @@ export default function FieldWorkersPage(
   /** REQ-842 — mark a worker or a crew out */
   function openAway(who: { workerId?: string; crewId?: string; name: string }) {
     setAwayErr(null);
+    setRowErr(null); // REQ-1062 — moving on to an absence drops the worker row's error
     const day = bizToday ?? todayIso();
     setAway({
       ...who,
