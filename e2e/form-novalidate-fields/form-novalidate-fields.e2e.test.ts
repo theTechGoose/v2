@@ -225,3 +225,67 @@ Deno.test("REQ-708 c1-setup-m15: /field/workers Add on an empty form names the n
       "the name box is flagged",
     );
   }));
+
+Deno.test("REQ-995 (LOOP-007 q1-80): /field/subscriptions?new=1 in Spanish — a picked customer and an empty address, then Agregar, says 'Escribe la dirección de servicio.' under Dirección de servicio (novalidate, no native bubble), and posts nothing", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "es" }),
+    })).body?.cancel();
+    // a customer with no address, so the pick prefills nothing
+    const c = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Ana Torres Novalidate" }),
+    });
+    expect(c.status === 200 || c.status === 201, `customer (${c.status})`);
+    await c.body?.cancel();
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && /subscriptions/.test(r.url())) {
+        posts.push(r.url());
+      }
+    });
+    await page.goto("/field/subscriptions?new=1&lang=es");
+    const form = page.locator("[data-cy='subs-form']");
+    await form.waitFor({ timeout: 20_000 });
+    const box = page.locator(
+      "[data-cy='subs-customer'] [data-cy='search-select-input']",
+    );
+    await until(
+      page,
+      async () => {
+        await box.fill("Ana Torres", { timeout: 2_000 });
+        await page.locator(
+          "[data-cy='subs-customer'] [data-cy='search-select-option']",
+        ).filter({ hasText: "Ana Torres" }).first().click({ timeout: 2_000 });
+      },
+      async () =>
+        (await page.locator("[data-cy='search-select-option']").count()) ===
+          0 && (await box.inputValue()).includes("Ana Torres"),
+    );
+    await page.locator("[data-cy='subs-address']").fill("");
+    expect.eq(
+      await form.evaluate((f: HTMLFormElement) => f.noValidate),
+      true,
+      "the New repeat visit form is novalidate — no native bubble",
+    );
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector("[data-cy='subs-address']")?.getAttribute(
+          "aria-invalid",
+        ) === "true",
+      undefined,
+      { timeout: 5_000 },
+    ).catch(() => {});
+    const ad = await fieldMessage(page, "[data-cy='subs-address']");
+    expect.eq(ad.invalid, "true", "the service address is flagged");
+    expect(
+      ad.text.includes("Escribe la dirección de servicio."),
+      `the message sits under Dirección de servicio (${ad.text})`,
+    );
+    expect.eq(posts.length, 0, "nothing was posted");
+  }));

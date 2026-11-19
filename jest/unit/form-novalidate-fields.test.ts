@@ -123,3 +123,40 @@ describe("REQ-708 c1-setup-m15: the /contact form's per-field rule", () => {
     }
   });
 });
+
+/**
+ * REQ-995 (LOOP-007 cycle 1, q1-80) — AMENDMENT to REQ-708: the New repeat
+ * visit form on /field/subscriptions still left an empty service address to
+ * the browser's own "Please fill out this field." bubble (no noValidate on
+ * the subs-form), and its in-app empty-address branch set the error to the
+ * placeholder example ("Ej: 123 Main St, Springfield") instead of saying the
+ * address is needed.
+ */
+describe("REQ-995 q1-80: the New repeat visit form says an empty address in-app", () => {
+  const src = fs.readFileSync(
+    path.join(ROOT, "front-end/islands/FieldSubscriptionsPage.tsx"),
+    "utf8",
+  );
+  test("REQ-995 the subs-form <form> is noValidate — no browser bubble", () => {
+    const tag = src.match(/<form\b[^>]*data-cy="subs-form"[^>]*>/);
+    expect(tag).not.toBeNull();
+    expect(tag![0]).toMatch(/\bnoValidate\b/);
+  });
+  test("REQ-995 field.subs.addressRequired exists in en and es and is not the placeholder example", () => {
+    for (const lang of ["en", "es"]) {
+      const d = dict(lang);
+      expect(typeof d["field.subs.addressRequired"]).toBe("string");
+      expect(d["field.subs.addressRequired"].length).toBeGreaterThan(0);
+      expect(d["field.subs.addressRequired"]).not.toBe(
+        d["field.subs.addressPh"],
+      );
+    }
+  });
+  test("REQ-995 the empty-address check uses field.subs.addressRequired, never the placeholder as an error", () => {
+    expect(src).toContain('"field.subs.addressRequired"');
+    // the placeholder example is only ever a placeholder, never an error text
+    const uses = [...src.matchAll(/(\w+)\s*[:=]\s*t\("field\.subs\.addressPh"\)/g)]
+      .map((m) => m[1]);
+    expect(uses.filter((k) => k !== "placeholder")).toEqual([]);
+  });
+});
