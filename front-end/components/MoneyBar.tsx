@@ -157,9 +157,25 @@ export function MoneyBar(
       <div class="moneybar__head">
         <div>
           <div class="moneybar__label">{tFor(lang, "outstanding.label")}</div>
-          <div class="moneybar__amt" data-cy="money-owed">
-            $<Ticker value={Math.round(data.owedCents / 100)} />
-          </div>
+          {
+            /* REQ-957: while the lists load, owedCents is built from empty lists — a skeleton
+              stands here, never a $0 beside the real tiles. */
+          }
+          {pending
+            ? (
+              <div
+                class="moneybar__amt"
+                data-cy="money-owed"
+                aria-busy="true"
+              >
+                <SkelBlock h={40} w="160px" mt={4} />
+              </div>
+            )
+            : (
+              <div class="moneybar__amt" data-cy="money-owed">
+                $<Ticker value={Math.round(data.owedCents / 100)} />
+              </div>
+            )}
         </div>
         {overdueCount > 0 && (
           <a
