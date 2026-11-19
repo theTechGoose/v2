@@ -182,3 +182,42 @@ Deno.test("REQ-241: the sample does not count as an issued quote (the starting n
     await resetKv();
   }
 });
+
+// ---------------------------------------------------------------------------
+// REQ-1069 (LOOP-007 cycle 2, q2-58): "Ruiz Lawn & Pool Care" got the
+// landscaping "Paver Patio Installation" sample — lawn-care stems shared the
+// paver-patio trade and no pool trade existed. A lawn & pool business's sample
+// names no paver / patio / adoquín in either language.
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-1069 (q2-58): 'Ruiz Lawn & Pool Care' gets a lawn/pool service sample, not a paver patio — job and line items, EN and ES", async () => {
+  const { quotes, identity, flow } = await fresh();
+  try {
+    await identity.upsert("u-q258", { businessName: "Ruiz Lawn & Pool Care" });
+    const q = await quotes.get(
+      (await flow.run({ userId: "u-q258", language: "en" })).quoteId,
+    );
+    const texts = [
+      q.jobName ?? "",
+      q.jobNameByLang?.en ?? "",
+      q.jobNameByLang?.es ?? "",
+      ...(q.lineItems as Array<
+        { description: string; descriptionByLang?: Record<string, string> }
+      >).flatMap((li) => [
+        li.description,
+        li.descriptionByLang?.en ?? "",
+        li.descriptionByLang?.es ?? "",
+      ]),
+    ];
+    const hardscape = texts.filter((s) => /paver|patio|adoqu/i.test(s));
+    assertEquals(hardscape, [], `hardscape copy on a lawn & pool sample`);
+    assert(
+      /lawn|mow|pool|yard|grass|c[eé]sped|piscina|alberca|jard[ií]n/i.test(
+        q.jobNameByLang?.en ?? "",
+      ),
+      `the job names the lawn/pool work: ${q.jobNameByLang?.en}`,
+    );
+  } finally {
+    await resetKv();
+  }
+});
