@@ -122,6 +122,50 @@ function names(line: Line, alt: TypedAlternative): boolean {
   );
 }
 
+/** Words that say nothing about which option a line is. */
+const FILLER = new Set(
+  ("a an and the of for to in on at by with w or vs versus plus new old " +
+    "option options choice alternative opcion opción alternativa y o u con " +
+    "de del la el los las un una para en por sin").split(" "),
+);
+
+/** The content words of a description or an option's typed words. */
+function words(s: string): Set<string> {
+  return new Set(
+    (s ?? "").toLowerCase().normalize("NFC").replace(/\$?[\d.,]+/g, " ")
+      .split(/[^\p{L}]+/u)
+      .filter((w) => w.length >= 3 && !FILLER.has(w)),
+  );
+}
+
+/**
+ * REQ-1019 (LOOP-007 q2-2): whether a line describes `alt` by its own words
+ * ("Upgrade: tile niche and glass door" for "upgrade with niche + glass
+ * door") — words of that option no other option shares, more of them than
+ * of any other option's.
+ */
+function describes(
+  line: Line,
+  alt: TypedAlternative,
+  alts: readonly TypedAlternative[],
+): boolean {
+  const own = (a: TypedAlternative) => {
+    const mine = words(`${a.label} ${a.text}`);
+    for (const b of alts) {
+      if (b === a) continue;
+      for (const w of words(`${b.label} ${b.text}`)) mine.delete(w);
+    }
+    return mine;
+  };
+  const said = words(line.description);
+  const hits = (a: TypedAlternative) =>
+    [...own(a)].filter((w) => said.has(w)).length;
+  const mine = own(alt);
+  const n = hits(alt);
+  if (n < Math.min(2, mine.size) || n === 0) return false;
+  return alts.every((b) => b === alt || hits(b) < n);
+}
+
 /**
  * A draft's lines narrowed to the FIRST alternative, when they carry more
  * than one of them (a line per option, or a total that adds options up).
@@ -132,18 +176,32 @@ function names(line: Line, alt: TypedAlternative): boolean {
 export function firstAlternativeLines<T extends Line>(
   lines: readonly T[],
   alts: readonly TypedAlternative[],
+  opts: { carried?: boolean } = {},
 ): T[] | undefined {
   const [first, ...others] = alts;
   if (!first || others.length === 0 || lines.length === 0) return undefined;
   const total = sum(lines);
+  // REQ-1019: options typed in an EARLIER message — a draft that already is
+  // one option (either one) is the contractor's pick, not a mix.
+  if (opts.carried && alts.some((a) => a.cents === total)) return undefined;
+  const ofFirst = (l: T) => names(l, first) || describes(l, first, alts);
   const ofOther = (l: T) =>
-    others.some((o) => names(l, o)) ||
-    (!names(l, first) && l.amountCents !== first.cents &&
+    others.some((o) => names(l, o) || describes(l, o, alts)) ||
+    (!ofFirst(l) && l.amountCents !== first.cents &&
       others.some((o) => o.cents === l.amountCents));
-  const carriesOthers = lines.some(ofOther) ||
-    alts.some((a, i) =>
-      alts.slice(i + 1).some((b) => total >= a.cents + b.cents)
-    );
+  // REQ-1019 (LOOP-007 q2-2): one option's price on two lines ($8,400 on the
+  // base work AND on the upgrade) bills it twice — the draft is not one
+  // option when its total is neither option's price.
+  const atOptionPrice = lines.filter((l) =>
+    l.amountCents > 0 && alts.some((a) => a.cents === l.amountCents)
+  );
+  const repeated = atOptionPrice.length > 1 &&
+    !alts.some((a) => a.cents === total);
+  const carriesOthers = lines.some(ofOther) || repeated ||
+    (!opts.carried &&
+      alts.some((a, i) =>
+        alts.slice(i + 1).some((b) => total >= a.cents + b.cents)
+      ));
   if (!carriesOthers) return undefined;
   const kept = lines.filter((l) => !ofOther(l));
   if (kept.length > 0 && sum(kept) === first.cents) {
