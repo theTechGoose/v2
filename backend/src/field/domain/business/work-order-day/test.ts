@@ -180,3 +180,69 @@ Deno.test("REQ-1022 (LOOP-007 q2-12) Jake out with defer or skip: the WO is flag
   assertEquals(skipped?.kind, "skip");
   assertEquals(w.scheduledFor, D, "the WO's date is not moved by the resolver");
 });
+
+// ---------------------------------------------------------------------------------------------
+// REQ-1163 (LOOP-007 cycle 3, q3-96) — AMENDMENT of REQ-1022: "Deferred to the day they are back"
+// moves the work order to that day (at read time; the stored WO is untouched). QA marked Luis out
+// on D with defer; the owner's Away row said "WO-001 … nobody has it" while Luis's /worker day D
+// still listed WO-001 as an ordinary to-do. Expected contract:
+//   woDayPlacement(wo, { absences, workers, crews }) → { date, staff, deferredFrom?, out? }
+//   defer with a day back within MAX_DEFER_DAYS → { date: that day, deferredFrom: scheduledFor }
+//   skip, or defer with no day back → { date: scheduledFor, out: "skip" | "defer" }
+// and onWorkOrderDay(wo, worker, day, people) follows the placement.
+// ---------------------------------------------------------------------------------------------
+
+const luis = fw("luis", "Luis Ortega");
+const D1 = "2026-11-21";
+const luisWo = () =>
+  wo({ number: "WO-001", description: "Replace pool pump seal", assigneeWorkerId: "luis", assignee: "Luis Ortega", scheduledFor: D });
+const luisOut = (o: Partial<Absence>) => out({ workerId: "luis", ...o });
+const luisPeople = (absences: Absence[]) => ({ workers: [luis, jake, miguel, ana, pedro], crews: [mulch], absences });
+
+// deno-lint-ignore no-explicit-any
+type Placer = (wo: WorkOrder, people: Record<string, unknown>) => any;
+function placer(): Placer {
+  const fn = (day as Record<string, unknown>).woDayPlacement;
+  assertEquals(
+    typeof fn,
+    "function",
+    "REQ-1163 (q3-96): work-order-day/mod.ts exports woDayPlacement(wo, { absences, workers, crews }) → { date, staff, deferredFrom?, out? } — today a defer only flags the resolution and both readers drop its `to`",
+  );
+  return fn as Placer;
+}
+
+Deno.test("REQ-1163 (LOOP-007 q3-96) Luis out on D with defer, back on D+1: WO-001 is off his day D and on D+1 (deferred from D)", () => {
+  const w = luisWo();
+  const people = luisPeople([luisOut({ disposition: "defer" })]);
+  assertEquals(
+    onWorkOrderDay(w, "luis", D, people),
+    false,
+    "Luis is off on D and the owner picked 'Deferred to the day they are back': WO-001 is not on his day D (QA saw it listed as '1 por hacer')",
+  );
+  assertEquals(onWorkOrderDay(w, "luis", D1, people), true, "WO-001 is on Luis's first day back, D+1");
+  const p = placer()(w, people);
+  assertEquals(p?.date, D1, "placed on the day Luis is back");
+  assertEquals(p?.deferredFrom, D, "carries the day it was deferred from");
+  assertEquals(p?.staff?.workerId, "luis", "still Luis's");
+  assertEquals(w.scheduledFor, D, "the stored WO is untouched");
+});
+
+Deno.test("REQ-1163 (LOOP-007 q3-96) Luis out on D with skip: WO-001 stays on D flagged out:'skip'", () => {
+  const w = luisWo();
+  const people = luisPeople([luisOut({ disposition: "skip" })]);
+  const p = placer()(w, people);
+  assertEquals(p?.date, D, "a skip does not move it");
+  assertEquals(p?.out, "skip", "flagged: the office reschedules it");
+  assertEquals(p?.deferredFrom, undefined);
+  assertEquals(onWorkOrderDay(w, "luis", D1, people), false, "never on the next day");
+});
+
+Deno.test("REQ-1163 (LOOP-007 q3-96) Luis out with defer and no day back within MAX_DEFER_DAYS: WO-001 stays on D flagged out:'defer'", () => {
+  const w = luisWo();
+  const people = luisPeople([luisOut({ disposition: "defer", to: "2027-03-01" })]);
+  const p = placer()(w, people);
+  assertEquals(p?.date, D, "no day back to move it to");
+  assertEquals(p?.out, "defer", "flagged for the office");
+});
+// the worker's row (deferredFrom / out) is pinned over HTTP in
+// backend/src/paperwork/entrypoints/work-order-controller/worker-view.int.test.ts (REQ-1163).

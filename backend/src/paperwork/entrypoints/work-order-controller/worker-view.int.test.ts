@@ -186,3 +186,72 @@ Deno.test("REQ-1022 (LOOP-007 q2-12) Jake marked out on D covered by Miguel: WO-
     assertEquals((await onDay(call, miguel.cookie, D, wo.id)).length, 0, "absence removed: off Miguel's day");
   });
 });
+
+Deno.test("REQ-1163 (LOOP-007 q3-96) Luis marked out on D with 'Deferred to the day they are back': WO-001 leaves his /worker day D, lands on D+1 'deferred from D', and the Away row says where it moved", async () => {
+  await withServer(async (call) => {
+    const H = await owner(call, "+15125551163");
+    const luis = await worker(call, H, "Luis Ortega", "8435551163");
+    const D = shiftDate(fieldToday(), 3);
+    const D1 = shiftDate(D, 1);
+    const wo = ok(await call("POST", "/work-orders", {
+      description: "Replace pool pump seal",
+      scheduledFor: D,
+      assignee: "Luis Ortega",
+      assigneeWorkerId: luis.id,
+    }, H)).body;
+    assertEquals((await onDay(call, luis.cookie, D, wo.id)).length, 1, "before: WO on Luis's day D");
+
+    // the owner marks Luis out on D only, "Deferred to the day they are back" (the Mark out dialog's POST)
+    const away = await call("POST", "/field/absences", { workerId: luis.id, from: D, to: D, disposition: "defer" }, H);
+    assertEquals(away.status, 201, `mark Luis out: ${JSON.stringify(away.body)}`);
+
+    assertEquals(
+      (await onDay(call, luis.cookie, D, wo.id)).length,
+      0,
+      `Luis is off on ${D} and his work is deferred: ${wo.number} is not on his /worker day D (QA saw it as an ordinary '1 por hacer')`,
+    );
+    const back = await onDay(call, luis.cookie, D1, wo.id);
+    assertEquals(back.length, 1, `${wo.number} is on Luis's first day back, ${D1}`);
+    assertEquals(back[0].deferredFrom, D, "the row says it was deferred from D");
+
+    const list = ok(await call("GET", "/field/absences", undefined, H)).body as Row[];
+    const row = list.find((r) => r.id === away.body.id)!;
+    const wos = row.workOrders as Row[];
+    assertEquals(wos?.length, 1, "the Away row lists WO-001");
+    assertEquals(
+      wos[0].deferredTo,
+      D1,
+      "the Away row says WO-001 moves to D+1 — not 'still needs rescheduling — nobody has it'",
+    );
+    assertEquals(wos[0].coverName, undefined, "nobody covers it; it moved");
+    assertEquals(
+      (ok(await call("GET", `/work-orders/${wo.id}`, undefined, H)).body).scheduledFor,
+      D,
+      "the stored WO date is untouched (read-time resolution)",
+    );
+  });
+});
+
+Deno.test("REQ-1163 (LOOP-007 q3-96) Luis marked out on D with skip: WO-001 stays on D flagged out:'skip' on his row and on the Away row", async () => {
+  await withServer(async (call) => {
+    const H = await owner(call, "+15125551164");
+    const luis = await worker(call, H, "Luis Ortega", "8435551164");
+    const D = shiftDate(fieldToday(), 3);
+    const wo = ok(await call("POST", "/work-orders", {
+      description: "Replace pool pump seal",
+      scheduledFor: D,
+      assignee: "Luis Ortega",
+      assigneeWorkerId: luis.id,
+    }, H)).body;
+    const away = await call("POST", "/field/absences", { workerId: luis.id, from: D, to: D, disposition: "skip" }, H);
+    assertEquals(away.status, 201, `mark Luis out: ${JSON.stringify(away.body)}`);
+
+    const mine = await onDay(call, luis.cookie, D, wo.id);
+    assertEquals(mine.length, 1, "a skip leaves it on D (flagged, never silently moved)");
+    assertEquals(mine[0].out, "skip", "the worker's row is flagged: he is off, the office reschedules");
+
+    const list = ok(await call("GET", "/field/absences", undefined, H)).body as Row[];
+    const wos = list.find((r) => r.id === away.body.id)!.workOrders as Row[];
+    assertEquals(wos?.[0]?.out, "skip", "the Away row carries the skip");
+  });
+});
