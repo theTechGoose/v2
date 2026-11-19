@@ -107,8 +107,8 @@ import {
   type ChangeOrderTarget,
   correctionForChange, // REQ-755
   isNewQuoteRequest,
-  namesLineRemoval, // REQ-1027
   mergeChangeOrderCalls, // REQ-1025
+  namesLineRemoval, // REQ-1027
   parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
   parseNamedQuoteChange,
@@ -191,6 +191,7 @@ import {
   fitJobNameToBudget,
   isValidJobName,
   jobNameCase,
+  jobNameCoveringLines,
 } from "#quote-flow/job-name.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
@@ -3855,8 +3856,19 @@ export class HandleChatMessage {
           const fittedJobName = modelJobName && !isValidJobName(modelJobName)
             ? fitJobNameToBudget(modelJobName)
             : modelJobName;
-          const jobName = isValidJobName(fittedJobName)
-            ? jobNameCase(fittedJobName, replyLang)
+          // REQ-1094 (LOOP-007 q3-3): a name inside the budget that drops an
+          // area the lines cover ("Exterior Painting" over house + fence)
+          // gets the missing area joined on — in the lines' language.
+          const lineLang = messageLang(
+            action.payload.lineItems.map((l) => l.description).join(" "),
+          ) ?? replyLang;
+          const coveringJobName = jobNameCoveringLines(
+            fittedJobName,
+            action.payload.lineItems.map((l) => l.description),
+            lineLang,
+          );
+          const jobName = isValidJobName(coveringJobName)
+            ? jobNameCase(coveringJobName, replyLang)
             : undefined;
           quote = await this.quotes.create(input.userId, {
             summary: action.payload.summary,
