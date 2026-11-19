@@ -1119,6 +1119,8 @@ export class HandleChatMessage {
     lang: "en" | "es",
     dropped: readonly string[],
     prose = "",
+    /** REQ-1056: the screen's language — a quoted button reads as drawn. */
+    screenLang: "en" | "es" = lang,
   ): Promise<HandleChatResult> {
     const userId = input.userId;
     const userText = typeof input.content === "string" ? input.content : "";
@@ -1168,6 +1170,7 @@ export class HandleChatMessage {
       this.reviseQuote.run({
         userId,
         lang,
+        screenLang,
         boundQuoteId: conv.quoteId,
         customerName: p.customerName,
         quoteNumber: p.quoteNumber,
@@ -1294,6 +1297,7 @@ export class HandleChatMessage {
         const result = await this.changeOrder.run({
           userId,
           lang,
+          screenLang,
           boundQuoteId: conv.quoteId,
           customerName: p.customerName,
           quoteNumber: p.quoteNumber,
@@ -1890,6 +1894,12 @@ export class HandleChatMessage {
         // REQ-631: else the signed-in person's own language (an editor's while acting)
         input.uiLang ??
         (contractor?.language === "es" ? "es" : "en");
+    // REQ-1056 (LOOP-007 q2, q2-41): …but the SCREEN stays in the UI
+    // language. A reply that names a button to tap quotes it as the screen
+    // draws it — English app + Spanish message said 'toca "Publicar
+    // revisión"' under an "Open Q-002 → Publish revision" pill.
+    const screenLang: "en" | "es" = input.uiLang ??
+      (contractor?.language === "es" ? "es" : "en");
 
     // ---- REQ-392 (demo-loop cycle 2, M7): typed on Pick a price / Job
     // details. There is no quote yet on those steps (or the picker is about
@@ -1960,6 +1970,7 @@ export class HandleChatMessage {
       const result = await this.changeOrder.run({
         userId: input.userId,
         lang: replyLang,
+        screenLang,
         boundQuoteId: offer.quoteId,
         ...(offer.quoteNumber ? { quoteNumber: offer.quoteNumber } : {}),
         description: offer.description,
@@ -3036,6 +3047,7 @@ export class HandleChatMessage {
         replyLang,
         llmResponse.dropped ?? [],
         llmResponse.text ?? "",
+        screenLang,
       );
     }
     // REQ-585 (M4): the call that runs is the plan's — a create_quote carries
@@ -3319,6 +3331,7 @@ export class HandleChatMessage {
         const revised = await this.reviseQuote.run({
           userId: input.userId,
           lang: replyLang,
+          screenLang,
           boundQuoteId: conv.quoteId,
           customerName: llmResponse.action.payload.customerName,
           quoteNumber: llmResponse.action.payload.quoteNumber,
@@ -3333,6 +3346,7 @@ export class HandleChatMessage {
       const result = await this.changeOrder.run({
         userId: input.userId,
         lang: replyLang,
+        screenLang,
         boundQuoteId: conv.quoteId,
         customerName: llmResponse.action.payload.customerName,
         quoteNumber: llmResponse.action.payload.quoteNumber,
@@ -3388,6 +3402,7 @@ export class HandleChatMessage {
         await this.reviseQuote.run({
           userId: input.userId,
           lang: replyLang,
+          screenLang,
           boundQuoteId: conv.quoteId,
           customerName: p.customerName,
           quoteNumber: p.quoteNumber,

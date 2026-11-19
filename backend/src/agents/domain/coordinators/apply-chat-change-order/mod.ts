@@ -32,6 +32,11 @@ import type { Quote } from "@paperwork/dto/quote.ts";
 export interface ChatChangeOrderInput {
   userId: string;
   lang: Lang;
+  /** REQ-1056 (LOOP-007 q2, q2-41): the language of the owner's SCREEN.
+   *  `lang` is the reply's (REQ-438: the language they typed); a button the
+   *  reply tells them to tap is quoted in this one, as the /quotes page draws
+   *  it. Defaults to `lang`. */
+  screenLang?: Lang;
   /** The conversation's bound quote, if any. */
   boundQuoteId?: string;
   customerName?: string;
@@ -479,6 +484,11 @@ export class ApplyChatChangeOrder {
 
     // 4) Issued, unsigned → the next revision (REQ-201), published by the contractor.
     if (isQuoteIssued(quote)) {
+      // REQ-1056: the /quotes button, as the owner's screen reads it.
+      const publishButton = t(
+        input.screenLang ?? lang,
+        "quotes.ledger.publish",
+      );
       const lineItems = withChange(baseLines);
       await this.quotes.setPending(quote.id, userId, {
         lineItems,
@@ -489,9 +499,12 @@ export class ApplyChatChangeOrder {
           ? t(
             lang,
             "chatCoordinator.changeOrder.pendingRevisionRepriced",
-            repricedVars,
+            { ...repricedVars, button: publishButton },
           )
-          : t(lang, "chatCoordinator.changeOrder.pendingRevision", vars),
+          : t(lang, "chatCoordinator.changeOrder.pendingRevision", {
+            ...vars,
+            button: publishButton,
+          }),
         outcome: {
           kind: "pending_revision",
           quoteId: quote.id,
