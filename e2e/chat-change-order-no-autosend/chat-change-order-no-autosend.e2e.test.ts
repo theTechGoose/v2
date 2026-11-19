@@ -161,3 +161,78 @@ Deno.test("REQ-652 M8 (cycle 5): 'Make a change order' in chat makes it unsent w
       "Send is gone once it is sent",
     );
   }));
+
+// REQ-1025 (LOOP-007 cycle 2, q2-7): QA's own message on a signed, invoiced
+// Q-001. The reply said "CO-001 added … tap Send CO-001" and "I didn't change
+// anything yet" at once, and drew no Send CO-001 button; the follow-up
+// "send CO-001 to maria by email" got "Got it — what would you like me to do
+// with that?".
+Deno.test("REQ-1025 q2-7 (LOOP-007 cycle 2): QA's master bath change order on Q-001 draws one 'Send CO-00N' button with no 'didn't change anything' text, and 'send CO-00N to maria by email' sends it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await answerQuestions(http, auth, {
+      name: "CO No Autosend Story",
+      businessName: "CO No Autosend LLC",
+    });
+    const email = "maria@blackhole.postmarkapp.com";
+    const customer = await call(http, auth, "POST", "/api/customers", {
+      name: "Maria Gonzalez",
+      email,
+    });
+    const quote = await call(http, auth, "POST", "/api/quotes", {
+      customerId: customer.id,
+      summary: "Master bath — Maria Gonzalez",
+      jobName: "Master bath",
+      lineItems: [line("Master bath remodel", 1800000)],
+      estimatedTotal: 1800000,
+      status: "draft",
+    });
+    await call(http, auth, "POST", "/api/invoices", {
+      customerId: customer.id,
+      quoteId: quote.id,
+      jobName: "Master bath",
+      lineItems: [line("Balance", 1800000)],
+      amount: 1800000,
+      dueDate: "2026-12-30",
+    });
+    const { number } = await call(http, auth, "GET", `/api/quotes/${quote.id}`);
+
+    const chat = await call(http, auth, "POST", "/api/agents/chat", {
+      kind: "text",
+      content:
+        `change order for maria gonzalez master bath ${number}: she wants to add a recessed shampoo niche and a frameless glass door, add $2,800`,
+    });
+    const reply = chat.newMessages[chat.newMessages.length - 1];
+    expect(
+      !reply.content.includes("didn't change anything"),
+      `the reply does not contradict itself (${reply.content})`,
+    );
+    const outcome = reply.payload?.changeOrder ?? {};
+    expect.eq(
+      outcome.kind,
+      "change_order",
+      `a change order was made (reply: ${reply.content})`,
+    );
+    expect.eq(outcome.sent, false, "and NOT sent to Maria");
+    const coNumber = (outcome.changeOrderNumber as string) ?? "CO-001";
+
+    await page.goto(`/assistant/${chat.conversation.id}`);
+    const send = page.locator("[data-cy='msg-co-send']");
+    await send.waitFor({ timeout: 20_000 });
+    expect.eq(
+      (await send.innerText()).trim(),
+      `Send ${coNumber}`,
+      "the reply offers the Send button its text promises",
+    );
+
+    const followUp = await call(http, auth, "POST", "/api/agents/chat", {
+      kind: "text",
+      conversationId: chat.conversation.id,
+      content: `send ${coNumber} to maria by email`,
+    });
+    const sent = followUp.newMessages[followUp.newMessages.length - 1];
+    expect(
+      sent.content.includes(`Sent ${coNumber} to Maria Gonzalez by email`),
+      `the lowercase follow-up sends it (got ${sent.content})`,
+    );
+  }));

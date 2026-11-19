@@ -108,6 +108,7 @@ import {
   correctionForChange, // REQ-755
   isNewQuoteRequest,
   namesLineRemoval, // REQ-1027
+  mergeChangeOrderCalls, // REQ-1025
   parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
   parseNamedQuoteChange,
@@ -1185,6 +1186,13 @@ export class HandleChatMessage {
     // REQ-755: lines a revise repriced this turn, so a change order the
     // model sent for the same correction is not applied twice.
     const repricedThisTurn: { match: string; amountCents: number }[] = [];
+    // REQ-1025 (LOOP-007 q2-7): the model's change_order calls for work the
+    // owner priced together are one change order — never CO-001 beside a
+    // "How much should … add? — I didn't change anything yet".
+    edits = mergeChangeOrderCalls(edits, userText);
+    // REQ-1025: the change order this turn made — what the reply's "tap
+    // Send CO-00N" and its Send button (payload.changeOrder) stand on.
+    let madeChangeOrder = false;
     for (const edit of edits) {
       if (edit.type === "update_terms") {
         // REQ-663 (demo-loop cycle 5, m40 + p18-7c): the model re-sends the
@@ -1310,6 +1318,15 @@ export class HandleChatMessage {
           targetTotalCents: p.targetTotalCents, // REQ-377: settled in code
           userText,
         });
+        // REQ-1025: once a change order was made this turn, a later call's
+        // "how much / what for?" ask would contradict it and take its Send
+        // button (the payload) away — it is left out.
+        if (
+          madeChangeOrder &&
+          (result.outcome.kind === "needs_amount" ||
+            result.outcome.kind === "needs_description")
+        ) continue;
+        if (result.outcome.kind === "change_order") madeChangeOrder = true;
         parts.push(result.text);
         payload.changeOrder = result.outcome;
         landed(result.outcome);

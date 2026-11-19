@@ -302,3 +302,27 @@ Deno.test("REQ-681 m12 changeOrderSentLine: nothing delivered and the text skipp
   assertStringIncludes(only, "text: that's a reserved test number");
   assert(!only.includes("no email or phone on file"), only);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-1025 (LOOP-007 cycle 2, q2-7): after a chat change order, QA typed
+// "send CO-001 to maria by email" and got "Got it — what would you like me to
+// do with that?". The send was never recognised because the name pattern
+// borrowed from parseSendInvoiceAsk needs a leading capital letter. A message
+// that names a CO number and says send/email it is a send, whatever the case
+// of the customer's name.
+// ---------------------------------------------------------------------------
+
+for (
+  const text of [
+    "send CO-001 to maria by email",
+    "email CO-001 to maria",
+    "send CO-001 to maria gonzalez",
+    "Send CO-001 to Maria by email", // already works — kept as the control
+  ]
+) {
+  Deno.test(`REQ-1025 q2-7 parseSendChangeOrderAsk: "${text}" is a send of CO-001`, () => {
+    assertEquals(parseSendChangeOrderAsk(text), {
+      changeOrderNumber: "CO-001",
+    });
+  });
+}
