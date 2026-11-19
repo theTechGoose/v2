@@ -323,8 +323,10 @@ export class InvoiceController {
     const draft = await this.store.create(
       user.id,
       parseCreateInvoice(
+        // REQ-964: due date counted from today; chargeback fee lines stay behind
         duplicateDraftOf(
           inv as unknown as Record<string, unknown> & { id: string },
+          new Date().toISOString().slice(0, 10),
         ),
       ),
     );

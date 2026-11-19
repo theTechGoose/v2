@@ -152,7 +152,11 @@ import {
   isInvoiceLocked,
   workingCopy,
 } from "../../shared/documents/versions.ts";
-import { MAX_BULK_IDS, removalFor } from "../../shared/documents/removal.ts"; // REQ-627
+import {
+  hasChargebackFee,
+  MAX_BULK_IDS,
+  removalFor,
+} from "../../shared/documents/removal.ts"; // REQ-627, REQ-964
 import {
   bulkPlan,
   type BulkResult,
@@ -2043,6 +2047,15 @@ function VoidPanel(
           style="margin:0;font-size:12.5px;line-height:1.45;color:#5A3D08;background:#FFF4DB;border-radius:8px;padding:6px 9px"
         >
           {tFor(lang, "invoicesPage.remove.paymentsNote")}
+        </p>
+      )}
+      {/* REQ-964: the duplicate leaves the chargeback fee behind — say so */}
+      {hasChargebackFee(inv) && (
+        <p
+          data-cy="invoice-void-fee-note"
+          style="margin:0;font-size:12.5px;line-height:1.45;color:#5A3D08;background:#FFF4DB;border-radius:8px;padding:6px 9px"
+        >
+          {tFor(lang, "invoicesPage.remove.feeNote")}
         </p>
       )}
       <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--fg-muted,#6b7560)">
