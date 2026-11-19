@@ -1824,6 +1824,7 @@
   "invoicesPage.hero.expectedThisWeek": "expected this week",
   "invoicesPage.hero.onTheWay": "on the way",
   "invoicesPage.hero.quietPre": "Quiet week —",
+  "invoicesPage.hero.stillOwed": "still owed to you",
   "invoicesPage.hero.scheduled": "{amount} scheduled — not sent yet.",
   "invoicesPage.kpi.drafting": "Drafting",
   "invoicesPage.kpi.draftingSub": "finish + send",
