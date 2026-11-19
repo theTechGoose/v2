@@ -51,6 +51,14 @@ export function isValidCustomerEmail(raw: string): boolean {
   return normalizeEmail(raw ?? "") !== null;
 }
 
+/**
+ * REQ-1141 (LOOP-007 cycle 3, q3-73): the longest customer name (and business
+ * name) a customer can carry, counted after trimming — the inquiry store's
+ * MAX_NAME. The API refuses longer with `customer.nameTooLong`; the customer
+ * form's Name and Business inputs carry it as `maxlength`.
+ */
+export const CUSTOMER_NAME_MAX = 120;
+
 export type CustomerContactErrorKey =
   | "customer.invalidPhone"
   | "customer.invalidEmail";

@@ -34,6 +34,7 @@ import {
   formatPhoneLenient,
   validateCustomerForm,
 } from "../../shared/customer-form/mod.ts";
+import { CUSTOMER_NAME_MAX } from "../../shared/quote-flow/customer-contact.ts"; // REQ-1141
 
 export type { CustomerFormValues };
 
@@ -57,7 +58,15 @@ export function errorText(
 ) {
   const e = errors[f];
   if (!e) return null;
-  if (f === "name") return tFor(lang, "customerForm.err.nameRequired");
+  if (f === "name") {
+    // REQ-1141: a name stored before the 120-character cap
+    return tFor(
+      lang,
+      e === "tooLong"
+        ? "customerForm.err.nameTooLong"
+        : "customerForm.err.nameRequired",
+    );
+  }
   if (f === "phone") return tFor(lang, "customerForm.err.phoneInvalid");
   // REQ-992 (LOOP-007 q1-74): a state no one can mail to, a ZIP that isn't one
   if (f === "state") return tFor(lang, "customerForm.err.stateInvalid");
@@ -122,6 +131,7 @@ export function CustomerFields(
       bad?: string | null;
       focus?: boolean;
       required?: boolean;
+      maxLength?: number;
     } = {},
   ) {
     const label = tFor(lang, labelKey);
@@ -148,6 +158,7 @@ export function CustomerFields(
         autoComplete={opts.autoComplete}
         autoFocus={opts.focus}
         required={opts.required}
+        maxLength={opts.maxLength}
         value={value}
         disabled={disabled}
         onInput={(e) =>
@@ -184,10 +195,12 @@ export function CustomerFields(
         bad: errorText(lang, errors, "name"),
         focus: autoFocus,
         required: true,
+        maxLength: CUSTOMER_NAME_MAX, // REQ-1141
       })}
       {shows("businessName") &&
         field("businessName", "cf-business", "customerForm.business", {
           autoComplete: "organization",
+          maxLength: CUSTOMER_NAME_MAX, // REQ-1141
         })}
       {(shows("phone") || shows("email")) && (
         <div style={PAIR}>

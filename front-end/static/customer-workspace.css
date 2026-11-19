@@ -7,7 +7,8 @@
 .cws-hero { display: flex; align-items: center; gap: 16px; padding: 22px 28px 12px; flex-wrap: wrap; }
 .cws-av { width: 56px; height: 56px; flex: none; border-radius: 50%; background: var(--brand-green, #519843); color: #fff; display: grid; place-items: center; font-family: var(--font-heading); font-weight: 800; font-size: 20px; }
 .cws-hero__who { min-width: 0; flex: 1 1 260px; }
-.cws-hero h1 { font-family: var(--font-heading); font-size: 26px; line-height: 1.1; margin: 0; color: var(--fg); overflow-wrap: anywhere; }
+.cws-hero h1 { font-family: var(--font-heading); font-size: 26px; line-height: 1.1; margin: 0; color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+/* REQ-1141 (q3-73): a long name never takes over a phone screen — two lines at most, full name in title */
 .cws-contact { display: flex; gap: 14px; margin-top: 6px; color: var(--cws-coffee); font-size: 13px; flex-wrap: wrap; }
 .cws-contact a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .cws-contact a:hover { text-decoration: underline; }
