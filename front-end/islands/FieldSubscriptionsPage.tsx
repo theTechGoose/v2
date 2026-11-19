@@ -86,6 +86,8 @@ interface Form {
   /** REQ-788: every visit bills the overhead cost set in Settings */
   overhead: boolean;
   err: string | null;
+  /** REQ-1068: "<name> added as a customer", under the customer box after an inline create */
+  customerNote?: string | null;
   /** REQ-995: the empty-address message — it sits under the address input */
   addressErr?: string | null;
   saving: boolean;
@@ -599,6 +601,39 @@ export default function FieldSubscriptionsPage(
     }
   }
 
+  // REQ-1068 (q2-57) — the typed name is not a customer yet: add it through the existing
+  // POST /customers (REQ-137 — the customer store is not changed, only used), pick it, and
+  // keep a typed address (REQ-144), as REQ-283 does on /field/tasks
+  async function createCustomer(name: string) {
+    if (!form || form.editId !== null) return;
+    try {
+      const address = form.address.trim() || undefined;
+      const made = await clientsClient.create({ name, address });
+      const c: Customer = {
+        id: made.id,
+        name: made.name ?? name,
+        address: made.address ?? address,
+      };
+      setCustomers((rows) =>
+        [...rows.filter((x) => x.id !== c.id), c].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+      lastPick.current = c.id;
+      setForm((f) =>
+        f && {
+          ...f,
+          customerId: c.id,
+          address: f.address || c.address || "",
+          err: null,
+          customerNote: t("field.subs.customerAdded", { name: c.name }),
+        }
+      );
+    } catch (err) {
+      setForm((f) => f && { ...f, err: errMsg(err), customerNote: null });
+    }
+  }
+
   const list = subs ?? [];
   const activeCount = list.filter((s) => s.active).length;
   useEffect(() => {
@@ -920,6 +955,8 @@ export default function FieldSubscriptionsPage(
                   placeholder={t("field.subs.pickCustomer")}
                   lang={lang}
                   disabled={form.editId !== null}
+                  onCreate={form.editId === null ? createCustomer : undefined}
+                  createLabel={(n) => t("field.subs.addCustomer", { name: n })}
                   onSelect={(o) => {
                     // REQ-144: the pick fills the service address, never over a typed one —
                     // "over the previous pick's" counts as untouched, even after a retype un-picked it
@@ -948,11 +985,16 @@ export default function FieldSubscriptionsPage(
                       const cur = customers.find((c) => c.id === f.customerId);
                       return cur && q === cur.name
                         ? f
-                        : { ...f, customerId: "" };
+                        : { ...f, customerId: "", customerNote: null };
                     });
                   }}
                 />
               </div>
+              {form.customerNote && (
+                <span class="hint" data-cy="subs-customer-added">
+                  {form.customerNote}
+                </span>
+              )}
               <span class="hint">
                 {t("field.subs.manageCustomers")}{" "}
                 <a class="link" href="/customers">{t("nav.customers")}</a>
