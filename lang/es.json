@@ -4272,7 +4272,7 @@
   "field.wk.docTitle": "Trabajadores · DocuMonster",
   "field.wk.eyebrow": "Trabajadores · {n} con acceso",
   "field.wk.title": "Tu <em>cuadrilla</em>, cada uno con su acceso.",
-  "field.wk.sub": "Cada trabajador entra con su propio PIN desde el celular, ve solo sus tareas del día y nunca ve precios ni facturas.",
+  "field.wk.sub": "Cada trabajador entra con su propio PIN desde el celular, ve sus tareas día por día (ayer, hoy, mañana o cualquier fecha) y nunca ve precios ni facturas.",
   "field.wk.new": "Nuevo trabajador",
   "field.wk.pin": "PIN (4 dígitos)",
   "field.wk.covers": "Cubre",
