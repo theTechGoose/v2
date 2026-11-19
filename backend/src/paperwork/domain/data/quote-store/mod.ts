@@ -21,6 +21,7 @@ import {
   effectivePendingRevision,
   firstIssueStamp,
   isQuoteLocked,
+  reopenDeclined,
 } from "#documents/versions.ts";
 import {
   descriptionTranslationsStale,
@@ -212,6 +213,8 @@ export class QuoteStore {
       patch,
       by,
       read: () => this.getOwned(id, userId),
+      // REQ-1026: revising a declined quote reopens it for signing.
+      finish: (next) => reopenDeclined(next),
     });
   }
 

@@ -247,6 +247,32 @@ export function applyRevision<T extends VersionedDoc & Record<string, unknown>>(
   return { next, filed };
 }
 
+/**
+ * REQ-1026 (LOOP-007 q2-5): a published revision of a DECLINED quote is a new
+ * offer — the REQ-948 alert tells the contractor to "revise the quote and send
+ * it again". Version 1's decline stays in its filed record; the live Version 2
+ * is open ("sent") again, without Version 1's lostAt or decline reason, so /q
+ * offers it for signing and accept no longer answers 409 declined.
+ * declineNotifiedAt is kept: a later decline stamps a later lostAt, so
+ * REQ-948's `declineNotifiedAt >= lostAt` replay guard alerts again.
+ */
+export function reopenDeclined<T extends { status?: string }>(next: T): T {
+  if (next.status !== "lost") return next;
+  const {
+    lostAt: _lostAt,
+    declineReason: _reason,
+    declineNote: _note,
+    declinedName: _name,
+    ...rest
+  } = next as T & {
+    lostAt?: unknown;
+    declineReason?: unknown;
+    declineNote?: unknown;
+    declinedName?: unknown;
+  };
+  return { ...rest, status: "sent" } as unknown as T;
+}
+
 /** REQ-248: the stamped publisher, else the document's owner, else nobody. */
 export function publisherOrOwner(
   doc: { userId?: unknown; publishedBy?: DocVersionRecord["publishedBy"] },
