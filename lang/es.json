@@ -2488,6 +2488,8 @@
   "paymentReminder.tone.day7": "te escribo para dar seguimiento a tu factura de {businessName} — avísame si puedo ayudarte en algo.",
   "paymentReminder.tone.beforeDue": "un recordatorio amistoso — tu factura de {businessName} vence pronto.",
   "paymentReminder.tone.dueToday": "un recordatorio rápido — tu factura de {businessName} vence hoy.",
+  "paymentReminder.subject.upcoming": "Recordatorio: factura de {businessName}",
+  "paymentReminder.tone.upcoming": "un recordatorio amistoso — tu factura de {businessName} vence el {dueDate}.",
   "paymentsPage.card.eta": "~{n}d",
   "paymentsPage.card.expected": "Esperado",
   "paymentsPage.card.matchInvoice": "Ver factura",

@@ -2488,6 +2488,8 @@
   "paymentReminder.tone.day7": "following up on your invoice from {businessName} — let me know if there's anything I can help with.",
   "paymentReminder.tone.beforeDue": "friendly reminder — your invoice from {businessName} is due soon.",
   "paymentReminder.tone.dueToday": "a quick reminder — your invoice from {businessName} is due today.",
+  "paymentReminder.subject.upcoming": "Upcoming invoice from {businessName}",
+  "paymentReminder.tone.upcoming": "friendly reminder — your invoice from {businessName} is due on {dueDate}.",
   "paymentsPage.card.eta": "~{n}d",
   "paymentsPage.card.expected": "Expected",
   "paymentsPage.card.matchInvoice": "View invoice",

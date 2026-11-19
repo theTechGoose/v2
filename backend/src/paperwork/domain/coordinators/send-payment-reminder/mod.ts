@@ -28,6 +28,7 @@ import {
   reminderSettingsOf,
 } from "#quote-flow/reminder-settings.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { formatLongDate } from "#quote-flow/format-helpers.ts"; // REQ-1115
 import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
 import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
@@ -191,7 +192,7 @@ export class SendPaymentReminder {
       businessName,
       lang,
       customerName,
-    } = await this.compose(userId, invoice, day);
+    } = await this.compose(userId, invoice, day, now);
     // REQ-784 (demo-loop dv1, d12): each reminder is a customer message —
     // the outbox lists it, sent or not and why, with what was sent.
     const toOutbox = (
@@ -297,7 +298,7 @@ export class SendPaymentReminder {
     userId: string,
     invoiceId: string,
     day: CadenceDay,
-    _now: Date = new Date(),
+    now: Date = new Date(),
   ): Promise<ReminderPreview> {
     const invoice = await this.invoices.getOwned(invoiceId, userId);
     const reason: ReminderSkipReason | undefined = invoice.remindersMuted
@@ -308,7 +309,7 @@ export class SendPaymentReminder {
     if (day === 30) {
       return { invoiceId, day, escalated: true, ...(reason ? { reason } : {}) };
     }
-    const { copy, toEmail, toPhone, url } = await this.compose(userId, invoice, day);
+    const { copy, toEmail, toPhone, url } = await this.compose(userId, invoice, day, now);
     const noOne = !toEmail && !toPhone;
     const why = reason ?? (noOne ? "no_recipient" : undefined);
     return {
@@ -324,7 +325,7 @@ export class SendPaymentReminder {
   }
 
   /** The customer-facing copy, recipients and invoice link for one step. */
-  private async compose(userId: string, invoice: Invoice, day: CadenceDay) {
+  private async compose(userId: string, invoice: Invoice, day: CadenceDay, now?: Date) {
     const [customer, sender, biz] = await Promise.all([
       invoice.customerId
         ? this.customers.getOwned(invoice.customerId, userId).catch(() => undefined)
@@ -348,7 +349,7 @@ export class SendPaymentReminder {
     const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
     // REQ-628: headed by the business's own logo, or its name as a wordmark
     const logoHtml = emailLogoHtml(emailLogo({ appUrl, kind: "invoice", id: invoice.id, biz, fallbackName: businessName }));
-    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang, logoHtml });
+    const copy = composeReminderCopy({ day, customerFirst, senderFirst, businessName, invoice, lang, logoHtml, now });
 
     // Mint a shortlink to the public invoice page for the SMS + email CTA.
     let url = "";
@@ -457,6 +458,10 @@ export function composeReminderCopy(opts: {
   lang?: "en" | "es";
   /** REQ-628: the business's logo (or wordmark) heading the email */
   logoHtml?: string;
+  /** REQ-1115: when the reminder goes out. The before-due wording follows
+   *  the days actually left, not the step number — a manual nudge before the
+   *  due date is always step -3 (`manualReminderDay`). */
+  now?: Date;
 }): {
   emailSubject: string;
   emailHtml: (url: string) => string;
@@ -472,7 +477,15 @@ export function composeReminderCopy(opts: {
     ? (invoice.amount ?? 0)
     : invoiceBalance(invoice.amount, invoice.paidCents).balanceCents;
   const amount = `$${(open / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-  const tone = day < 0
+  // REQ-1115 (LOOP-007 q3-39): "due soon" is the REQ-704 copy for three
+  // days out. A step -3 reminder sent earlier than that (the Remind button
+  // a month ahead) names the due date instead.
+  const daysLeft = opts.now ? daysFromDue(invoice.dueDate, opts.now.toISOString().slice(0, 10)) : null;
+  const upcoming = day < 0 && daysLeft != null && daysLeft < -3;
+  const dueDateText = formatLongDate(invoice.dueDate, lang);
+  const tone = upcoming
+    ? t(lang, "paymentReminder.tone.upcoming", { businessName, dueDate: dueDateText })
+    : day < 0
     ? t(lang, "paymentReminder.tone.beforeDue", { businessName })
     : day === 0
     ? t(lang, "paymentReminder.tone.dueToday", { businessName })
@@ -485,7 +498,9 @@ export function composeReminderCopy(opts: {
   // REQ-204 / REQ-201: every reminder names the bill — "INV-5000 · Version 2"
   const ref = docRef(invoice);
   const refVersion = docRefWithVersion(invoice, lang);
-  const subjectBase = day < 0
+  const subjectBase = upcoming
+    ? t(lang, "paymentReminder.subject.upcoming", { businessName })
+    : day < 0
     ? t(lang, "paymentReminder.subject.beforeDue", { businessName })
     : day === 0
     ? t(lang, "paymentReminder.subject.dueToday", { businessName })

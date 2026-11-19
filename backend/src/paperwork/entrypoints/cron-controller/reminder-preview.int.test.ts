@@ -67,7 +67,9 @@ Deno.test("REQ-704 m60 e2e: the reminder preview shows what the customer gets, a
         customerId: ana.id,
         lineItems: [{ description: "Gutter repair", quantity: 1, price: 320_00 }],
         amount: 320_00,
-        dueDate: iso(10),
+        // REQ-1115: "is due soon" is the copy for three days out; a step -3
+        // nudge sent earlier names the due date instead.
+        dueDate: iso(3),
       }),
     }).then((r) => r.json());
 
