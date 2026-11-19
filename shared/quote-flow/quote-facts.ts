@@ -20,6 +20,7 @@ import {
   type RecurringCadence,
   recurringTermValue,
 } from "./recurring-billing.ts";
+import { depositTermValue } from "./deposit-term.ts";
 
 /** REQ-387 (demo M25): a schedule the text states that is not a preset —
  *  "30% deposit, 40% at cabinets install, 30% at completion". `milestones`
@@ -42,13 +43,22 @@ export interface RecurringPaymentPrefill {
   amountCents: number;
 }
 
+/** REQ-936 (LOOP-007 q1-3): a deposit the text states with its figure —
+ *  "30% deposit up front" is 30 %, "$2,000 deposit" is 200000 cents. The
+ *  wizard pre-fills "Deposit + balance" with that amount (REQ-678's term
+ *  value), never the plain option that bills the legacy 20 %. */
+export type DepositPaymentPrefill =
+  | { kind: "deposit"; pct: number }
+  | { kind: "deposit"; cents: number };
+
 export type PrefillPaymentTerms =
   | "50_50"
   | "30_30_40"
   | "deposit_bal"
   | "net_15"
   | CustomPaymentSchedule
-  | RecurringPaymentPrefill;
+  | RecurringPaymentPrefill
+  | DepositPaymentPrefill;
 
 /** The typed START date — `iso` YYYY-MM-DD (the value the wizard's date
  *  picker submits and the term stores, REQ-495), `us` MM/DD/YYYY. */
@@ -548,6 +558,12 @@ export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
   ) {
     return "50_50";
   }
+  // REQ-936 (LOOP-007 q1-3): the figure next to the deposit word is the
+  // deposit — "30% deposit up front", "$2,000 deposit", "deposit of 25%",
+  // "depósito del 30%". The gap holds no other figure, so "$23,250, 30%
+  // deposit" reads 30 %, not the job's total.
+  const stated = statedDeposit(s, depositWord);
+  if (stated) return stated;
   if (
     new RegExp(
       `(?:\\d{1,2}\\s*%|\\$\\s*[\\d,]+)[^.;\\n]{0,12}?${depositWord}`,
@@ -566,6 +582,30 @@ export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
   // REQ-699 (demo-loop cycle 5, M20): no one-off schedule stated, but the
   // price is per period — "$180 al mes".
   return extractRecurringPrice(raw);
+}
+
+/** REQ-936: the share or dollars stated next to a deposit word, or null
+ *  when there is none or it is out of range (a share outside (0, 100), $0 —
+ *  parseDepositTerm's own bounds); the caller then keeps the plain option. */
+function statedDeposit(
+  s: string,
+  depositWord: string,
+): DepositPaymentPrefill | null {
+  const figure =
+    "(?:(?<!\\d)(\\d{1,2}(?:\\.\\d+)?)\\s*%|\\$\\s*(\\d[\\d,]*(?:\\.\\d{1,2})?))";
+  const m = new RegExp(
+    `${figure}[^.;\\n\\d%$]{0,12}?${depositWord}`,
+    "u",
+  ).exec(s) ??
+    new RegExp(`${depositWord}\\s+(?:of\\s+|del?\\s+)?${figure}`, "u")
+      .exec(s);
+  if (!m) return null;
+  if (m[1] !== undefined) {
+    const pct = Number(m[1]);
+    return pct > 0 && pct < 100 ? { kind: "deposit", pct } : null;
+  }
+  const cents = Math.round(Number(m[2].replace(/,/g, "")) * 100);
+  return cents > 0 ? { kind: "deposit", cents } : null;
 }
 
 /** REQ-699: how often a per-visit job recurs, from the words of the text —
@@ -745,6 +785,16 @@ export function wizardPrefillFor(
   if (stepId === "payment_terms" && facts.paymentTerms) {
     const pt = facts.paymentTerms;
     if (typeof pt === "string") return { optionId: pt };
+    // REQ-936 (LOOP-007 q1-3): a stated deposit carries its amount as the
+    // REQ-678 term value — termFromPick stores it, computePaymentSplit bills it.
+    if (pt.kind === "deposit") {
+      return {
+        optionId: "deposit_bal",
+        customValue: depositTermValue(
+          "pct" in pt ? { pct: pt.pct } : { cents: pt.cents },
+        ),
+      };
+    }
     // REQ-699 (demo-loop cycle 5, M20): "$180 al mes" is the Recurring
     // option, its value the stored English base whatever the UI language;
     // with no cadence stated there is no value — the form asks for it.
