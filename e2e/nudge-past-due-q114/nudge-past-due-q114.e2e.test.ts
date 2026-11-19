@@ -86,7 +86,9 @@ Deno.test("REQ-938 (LOOP-007 q1-14): Send nudge on an invoice issued 18 days pas
         description: "Fence repair",
         lineItems: [{ description: "Fence repair", quantity: 1, price: 64000 }],
         amount: 64000,
-        issuedDate: iso(0),
+        // REQ-962 (q1-39): a due date before the issue date is refused —
+        // issued 48 days ago on 30-day terms, so 18 days past due
+        issuedDate: iso(-48),
         dueDate: iso(-18),
       }),
     })).json();

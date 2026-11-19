@@ -51,7 +51,11 @@ import {
   installmentSchedule,
 } from "#documents/ledger.ts"; // REQ-679, REQ-950
 import { isInvoiceIssued } from "#documents/versions.ts";
-import { depositDueDateOf, shortDate } from "#documents/linked-view.ts"; // REQ-954
+import {
+  depositDueDateOf,
+  invoiceTitle,
+  shortDate,
+} from "#documents/linked-view.ts"; // REQ-954, REQ-984
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import {
   businessAddressLine,
@@ -265,8 +269,17 @@ export class RenderInvoicePdf {
     const heroTitle = (quote?.summaryByLang?.[lang] ?? quote?.summary ??
       own.jobNameByLang?.[lang] ?? invoice.jobName ??
       // REQ-966 (q1-41): an invoice's own fallback, as /i — never the quote
-      // PDF's "Service Agreement"
-      t(lang, "publicInvoice.jobNameFallback"))
+      // PDF's "Service Agreement"; REQ-984 (q1-60): /i's — the first line,
+      // else "Invoice INV-001", never "Project"
+      invoiceTitle(
+        {
+          lineDescriptions: (invoice.lineItems ?? []).map((li) =>
+            lineItemDescription(li, lang)
+          ),
+          number: docRef(invoice),
+        },
+        lang,
+      ))
       .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });

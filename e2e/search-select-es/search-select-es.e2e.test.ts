@@ -100,12 +100,18 @@ Deno.test("REQ-987 (q1-69): on a Spanish account the New invoice service picker 
 
     await box.click();
     await box.fill("Reparación de goteras");
-    const empty = page.locator(`${svc0} [data-cy='search-select-empty']`);
-    await empty.waitFor({ timeout: 10_000 });
-    expect.eq(
-      (await empty.innerText()).trim(),
-      "Sin coincidencias.",
-      "the empty row is in Spanish",
+    // REQ-979 (q1-59): the New invoice service picker offers to add an
+    // unmatched name, so its row for "no match" is the create row; either
+    // way the row the picker shows is Spanish, never "No matches." / "+ Add".
+    const row = page.locator(
+      `${svc0} [data-cy='search-select-empty'], ${svc0} [data-cy='search-select-create']`,
+    ).first();
+    await row.waitFor({ timeout: 10_000 });
+    const rowText = (await row.innerText()).trim();
+    expect(
+      rowText === "Sin coincidencias." ||
+        rowText.startsWith('+ Agregar "Reparación de goteras"'),
+      `the no-match row is in Spanish (got "${rowText}")`,
     );
 
     const clear = page.locator(`${svc0} [data-cy='search-select-clear']`);

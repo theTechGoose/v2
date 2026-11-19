@@ -175,6 +175,7 @@ Deno.test("REQ-956 (LOOP-007 q1-31): after the customer opens a sent quote, the 
       };
     });
     expect.eq(facts.pending, "1", `QUOTES PENDING (${JSON.stringify(facts)})`);
-    expect.eq(facts.estimates, "$3,800 1 estimate out", "money bar estimates");
+    // REQ-972 (q1-52): the money bar calls a sent quote "quote out"
+    expect.eq(facts.estimates, "$3,800 1 quote out", "money bar estimates");
     expect.eq(facts.rows.join(" | "), "Dana Ruiz", `awaiting-signature rows (empty line: "${facts.empty}")`);
   }));

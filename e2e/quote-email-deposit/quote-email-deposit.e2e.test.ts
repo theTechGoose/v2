@@ -149,7 +149,9 @@ Deno.test("REQ-945 q1-20: a deposit quote's email states the same deposit the /q
       }`,
     );
     expect(
-      emailText.includes("Before work starts"),
-      "the email says the deposit is due before work starts",
+      // REQ-954 (q1-26): before signing the deposit row states the rule
+      // that sets its date, as /q does
+      emailText.includes("Due a week after signing"),
+      "the email says the deposit is due a week after signing",
     );
   }));

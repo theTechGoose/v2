@@ -118,7 +118,9 @@ Deno.test("REQ-966 q1-41: an overdue, partly-paid, amount-only invoice's PDF car
     const heading = (await page.locator("[data-cy='invoice-doc'] h1").first()
       .innerText()).trim();
     expect.eq(pillText.toUpperCase(), "PAST DUE", "setup: /i says Past due");
-    expect.eq(heading, "Project", "setup: /i is headed 'Project'");
+    // REQ-984 (q1-60): an amount-only invoice is headed by its number,
+    // never "Project"
+    expect.eq(heading, "Invoice INV-001", "setup: /i is headed 'Invoice INV-001'");
 
     const r = await http(`/api/invoices/${inv.id}/pdf`, { headers: auth });
     expect.eq(r.status, 200, "the PDF downloads");

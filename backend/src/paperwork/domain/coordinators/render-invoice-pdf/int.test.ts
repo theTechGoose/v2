@@ -509,12 +509,15 @@ for (
   const [lang, identity, want] of [
     ["en", {}, {
       past: ["PAST DUE", "Past due", "OVERDUE", "Overdue"],
-      title: "Project",
+      // REQ-984 (q1-60): /i heads an amount-only invoice "Invoice INV-001"
+      title: "Invoice ",
+      oldTitle: "Project",
       notTitle: "Service Agreement",
     }],
     ["es", { commsLanguage: "es" }, {
       past: ["VENCIDA", "Vencida"],
-      title: "Proyecto",
+      title: "Factura ",
+      oldTitle: "Proyecto",
       notTitle: "Acuerdo De Servicio",
     }],
   ] as const
@@ -538,7 +541,11 @@ for (
     );
     check(
       up.includes(hexOf(want.title)),
-      `${lang}: the hero title falls back to '${want.title}', as /i does`,
+      `${lang}: the hero title falls back to '${want.title}<number>', as /i does (REQ-984)`,
+    );
+    check(
+      !up.includes(hexOf(want.oldTitle)),
+      `${lang}: the hero title is never the placeholder '${want.oldTitle}' (REQ-984)`,
     );
     assertEquals(wrong, [], `${lang}: the PDF disagrees with /i`);
   });
@@ -546,7 +553,7 @@ for (
 
 // REQ-966 (q1-41) — a paid amount-only invoice (INV-001 in the run) is not
 // titled "Service Agreement" either.
-Deno.test("REQ-966 q1-41 render-invoice-pdf: a paid amount-only invoice is titled 'Project', not 'Service Agreement'", async () => {
+Deno.test("REQ-966 q1-41 render-invoice-pdf: a paid amount-only invoice is titled 'Invoice <number>' (REQ-984), not 'Project' or 'Service Agreement'", async () => {
   const up = await renderOne({
     status: "paid",
     amount: 50000,
@@ -556,6 +563,8 @@ Deno.test("REQ-966 q1-41 render-invoice-pdf: a paid amount-only invoice is title
   });
   const wrong: string[] = [];
   if (up.includes(hexOf("Service Agreement"))) wrong.push("titled 'Service Agreement'");
-  if (!up.includes(hexOf("Project"))) wrong.push("no /i fallback title 'Project'");
+  // REQ-984 (q1-60): /i heads it "Invoice INV-001", never "Project"
+  if (!up.includes(hexOf("Invoice "))) wrong.push("no /i fallback title 'Invoice <number>'");
+  if (up.includes(hexOf("Project"))) wrong.push("titled 'Project'");
   assertEquals(wrong, [], "the paid invoice's PDF title matches /i");
 });
