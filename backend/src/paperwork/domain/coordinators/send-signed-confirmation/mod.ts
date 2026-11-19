@@ -23,6 +23,7 @@ import {
   emailLogoHtml,
 } from "@paperwork/domain/business/email-logo/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import { quoteStartWhen } from "@paperwork/domain/coordinators/send-paperwork-email/mod.ts"; // REQ-1101
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import {
@@ -888,7 +889,7 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
       : t(lang, "signedConfirm.email.subheadYou"),
     summary: escapeHtml(summary),
   });
-  const bodyParagraph = t(lang, "signedConfirm.email.bodyBase", {
+  const bodyLead = t(lang, "signedConfirm.email.bodyBase", {
     invoiceClause: invoiceUrl
       ? t(lang, "signedConfirm.email.bodyInvoiceClause", {
         amount: fmtUSD(invoiceAmount),
@@ -898,10 +899,23 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
         billing: escapeHtml(recurringTermText(recurring, lang)),
       })
       : "",
-    who: contractorFirst
-      ? escapeHtml(contractorFirst)
-      : t(lang, "signedConfirm.email.bodyContractorFallback"),
   });
+  // REQ-1101 (q3-28): the closing sentence follows REQ-682's start rule — a
+  // start the agreement already states is stated; only no start / TBD keeps
+  // "{who} will reach out to lock in a start day."
+  const start = quoteStartWhen(quote, lang);
+  const startSentence = start && "date" in start
+    ? t(lang, "signedConfirm.email.bodyStartsOn", { date: start.date })
+    : start
+    ? t(lang, "signedConfirm.email.bodyStarts", {
+      when: escapeHtml(start.when),
+    })
+    : t(lang, "signedConfirm.email.bodyReachOut", {
+      who: contractorFirst
+        ? escapeHtml(contractorFirst)
+        : t(lang, "signedConfirm.email.bodyContractorFallback"),
+    });
+  const bodyParagraph = `${bodyLead} ${startSentence}`;
 
   return `<!doctype html>
 <html lang="${lang}">
