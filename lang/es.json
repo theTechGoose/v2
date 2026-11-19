@@ -3357,6 +3357,7 @@
   "setupChecklist.aria.section": "Termina la configuración",
   "setupChecklist.eyebrow": "Lista de configuración",
   "setupChecklist.heading.one": "Termina la configuración — falta {n} cosa",
+  "setupChecklist.heading.optionalOnly": "Ya estás listo — lo que queda es opcional",
   "setupChecklist.heading.other": "Termina la configuración — faltan {n} cosas",
   "setupChecklist.hide": "Ocultar",
   "setupChecklist.item.address": "Dirección postal",
