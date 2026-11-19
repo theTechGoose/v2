@@ -877,9 +877,14 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     })
     : t(lang, "signedConfirm.email.greetingFallback");
   const preheader = t(lang, "signedConfirm.email.preheader", {
-    state: invoiceUrl
-      ? t(lang, "signedConfirm.email.preheaderReady")
-      : t(lang, "signedConfirm.email.preheaderSoon"),
+    // REQ-1168 (REQ-1054 AMENDMENT): the inbox preview follows the same
+    // payOnline gate as the due line and the CTA — no "ready to pay" when
+    // the business has no online way to take the money.
+    state: !invoiceUrl
+      ? t(lang, "signedConfirm.email.preheaderSoon")
+      : opts.payOnline === false
+      ? t(lang, "signedConfirm.email.preheaderReadyOffline")
+      : t(lang, "signedConfirm.email.preheaderReady"),
   });
   const subhead = t(lang, "signedConfirm.email.subhead", {
     biz: escapeHtml(biz),

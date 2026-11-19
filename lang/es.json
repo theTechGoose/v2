@@ -3449,6 +3449,7 @@
   "signedConfirm.email.pill": "Firmado · {docNumber}",
   "signedConfirm.email.preheader": "PDF refrendado adjunto · primera factura {state}",
   "signedConfirm.email.preheaderReady": "lista para pagar",
+  "signedConfirm.email.preheaderReadyOffline": "lista para ver",
   "signedConfirm.email.preheaderSoon": "muy pronto",
   "signedConfirm.email.subhead": "{biz} y {who} ya tienen cerrado <strong style=\"color:#1c2c30\">{summary}</strong>.",
   "signedConfirm.email.subheadYou": "tú",

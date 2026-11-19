@@ -3450,6 +3450,7 @@
   "signedConfirm.email.pill": "Signed · {docNumber}",
   "signedConfirm.email.preheader": "Countersigned PDF attached · first invoice {state}",
   "signedConfirm.email.preheaderReady": "ready to pay",
+  "signedConfirm.email.preheaderReadyOffline": "ready to view",
   "signedConfirm.email.preheaderSoon": "coming soon",
   "signedConfirm.email.subhead": "{biz} and {who} are locked in on <strong style=\"color:#1c2c30\">{summary}</strong>.",
   "signedConfirm.email.subheadYou": "you",
