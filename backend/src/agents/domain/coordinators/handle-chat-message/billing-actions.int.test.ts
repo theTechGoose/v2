@@ -20,6 +20,7 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import { HandleChatMessage } from "./mod.ts";
+import { t } from "@core/i18n/mod.ts";
 import { ChatBilling } from "@agents/domain/coordinators/chat-billing/mod.ts";
 import { SendInvoice } from "@agents/domain/coordinators/send-invoice/mod.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
@@ -1399,6 +1400,82 @@ for (
         assertEquals(offer?.customerEmail, "ana.diaz@example.com");
         assertEquals(offer?.amountCents, 145_000);
         assertEquals(await fx.invoices.listByUser(U), []);
+      });
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// REQ-939 (LOOP-007 cycle 1, q1-15) — "…plus a $200 deposit she already paid
+// by Zelle. Invoice her the balance" in a new chat answered "INV-001 is
+// already paid, so nothing new is recorded." (Dana's old, paid INV-001) and
+// made no invoice.
+// ---------------------------------------------------------------------------
+
+for (
+  const [lang, said] of [
+    [
+      "en",
+      "Job done for Dana Whitfield: repaired her backyard gate and replaced 2 posts, $850 total, plus a $200 deposit she already paid by Zelle. Invoice her the balance, due in 7 days.",
+    ],
+    [
+      "es",
+      "Trabajo terminado para Dana Whitfield: reparé el portón y cambié 2 postes, $850 en total, y ya pagó un anticipo de $200 por Zelle. Factúrale el resto, a 7 días.",
+    ],
+  ] as const
+) {
+  Deno.test(
+    `REQ-939 q1-15: 'invoice her the balance' after a $200 deposit she already paid, in a new chat, opens the invoice flow for Dana ($850, $200 credited, $650 due) — never '${
+      lang === "en" ? "INV-001 is already paid" : "ya está pagada"
+    }' (${lang})`,
+    async () => {
+      await withKv(async () => {
+        const fx = fresh();
+        await seedOnboarded(lang);
+        // Dana's earlier job: INV-001 $2,489.75, paid in full by Zelle
+        await signedJob(fx, {
+          customer: { name: "Dana Whitfield", email: "dana@example.com" },
+          job: "Fence staining",
+          totalCents: 248_975,
+          invoices: [{
+            amount: 248_975,
+            status: "paid",
+            sentAt: "2026-11-12T15:07:19Z",
+            paidAt: "2026-11-13T10:00:00Z",
+            dueDate: "2026-11-19",
+            installmentIndex: 1,
+            installmentTotal: 1,
+          }],
+        });
+        const paymentsBefore = (await fx.payments.listByUser(U)).length;
+        const conv = await fx.conversations.create({ userId: U });
+        scriptLlm(fx, () => ({ text: "Which invoice is that for?" }));
+
+        const res = await fx.flow.run({
+          userId: U,
+          conversationId: conv.id,
+          content: said,
+        });
+
+        const text = textOf(res.newMessages);
+        const alreadyPaid = t(lang, "chatCoordinator.payment.alreadyPaid", {
+          number: "INV-001",
+        });
+        assert(
+          !text.includes(alreadyPaid),
+          `the reply is the dead end "${alreadyPaid}" (got: ${text})`,
+        );
+        assertEquals(
+          (await fx.payments.listByUser(U)).length,
+          paymentsBefore,
+          "no payment is recorded",
+        );
+        const flow = flowOf(res.newMessages);
+        assert(flow, `no invoice flow was offered (got: ${text})`);
+        assertEquals(flow.customerName, "Dana Whitfield");
+        assertEquals(flow.amountCents, 85_000, "the job's $850 total");
+        assertEquals(flow.depositPaidCents, 20_000, "the $200 already paid");
+        assertStringIncludes(text, "$650");
       });
     },
   );

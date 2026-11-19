@@ -5091,8 +5091,13 @@ export default function AsstChat({
     }).catch(() => {});
     taRef.current?.focus({ preventScroll: true });
     if (prefill) {
+      // REQ-939: "$850 total, plus a $200 deposit she already paid" —
+      // the invoice bills what is left ($650).
+      const dueCents = prefill.amountCents
+        ? prefill.amountCents - (prefill.depositPaidCents ?? 0)
+        : 0;
       submitJobDetails(prefill.details, {
-        ...(prefill.amountCents ? { priceCents: prefill.amountCents } : {}),
+        ...(dueCents > 0 ? { priceCents: dueCents } : {}),
         ...(prefill.customerName
           ? { customerName: prefill.customerName }
           : {}),

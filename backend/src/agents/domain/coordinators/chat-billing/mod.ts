@@ -365,6 +365,11 @@ export class ChatBilling {
       return await this.reply(conv, say("none"));
     }
     if (pick.kind === "already_paid") {
+      // REQ-939 (LOOP-007 q1-15): a report read from free text that lands
+      // on a paid invoice is a guess gone wrong ("…a $200 deposit she
+      // already paid. Invoice her the balance" → Dana's old, paid INV-001)
+      // — the model / the invoice flow reads the message, never a dead end.
+      if (input.fromWords && !report.invoiceNumber) return undefined;
       return await this.reply(
         conv,
         say("alreadyPaid", { number: pick.invoice.number ?? "" }),

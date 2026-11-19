@@ -531,3 +531,41 @@ Deno.test("REQ-752 M9 parseJobDoneInvoiceAsk: with / at / del / possessive name 
     assertEquals(parseJobDoneInvoiceAsk(s)?.customerName, name, s);
   }
 });
+
+// ---------------------------------------------------------------------------
+// REQ-939 (LOOP-007 cycle 1, q1-15) — "invoice her the balance" with a
+// deposit she already paid is a billing ask, never a payment to record.
+// ---------------------------------------------------------------------------
+
+const Q1_15_EN =
+  "Job done for Dana Whitfield: repaired her backyard gate and replaced 2 posts, $850 total, plus a $200 deposit she already paid by Zelle. Invoice her the balance, due in 7 days.";
+const Q1_15_ES =
+  "Trabajo terminado para Dana Whitfield: reparé el portón y cambié 2 postes, $850 en total, y ya pagó un anticipo de $200 por Zelle. Factúrale el resto, a 7 días.";
+
+Deno.test("REQ-939 q1-15 parsePaymentReport: 'a $200 deposit she already paid by Zelle. Invoice her the balance' is not a payment to record (en + es)", () => {
+  assertEquals(parsePaymentReport(Q1_15_EN), undefined);
+  assertEquals(parsePaymentReport(Q1_15_ES), undefined);
+});
+
+Deno.test("REQ-939 q1-15 parsePaymentReport: a real payment report still records (REQ-583 stays green)", () => {
+  assertEquals(
+    parsePaymentReport("Linda paid the deposit $1,425 by Zelle today"),
+    { amountCents: 142_500, method: "zelle", which: "deposit" },
+  );
+});
+
+Deno.test("REQ-939 q1-15 parseJobDoneInvoiceAsk: the tester's message opens the invoice flow — $850 total, $200 deposit already paid, Dana Whitfield", () => {
+  assertEquals(parseJobDoneInvoiceAsk(Q1_15_EN), {
+    amountCents: 85_000,
+    depositPaidCents: 20_000,
+    customerName: "Dana Whitfield",
+  } as ReturnType<typeof parseJobDoneInvoiceAsk>);
+});
+
+Deno.test("REQ-939 q1-15 parseJobDoneInvoiceAsk: the Spanish equivalent ('ya pagó un anticipo de $200 por Zelle. Factúrale el resto')", () => {
+  assertEquals(parseJobDoneInvoiceAsk(Q1_15_ES), {
+    amountCents: 85_000,
+    depositPaidCents: 20_000,
+    customerName: "Dana Whitfield",
+  } as ReturnType<typeof parseJobDoneInvoiceAsk>);
+});

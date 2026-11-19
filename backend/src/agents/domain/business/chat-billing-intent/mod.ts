@@ -205,18 +205,72 @@ function amountIn(s: string): number | undefined {
   return cents > 0 ? cents : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// REQ-939 (LOOP-007 q1-15): "$850 total, plus a $200 deposit she already paid
+// by Zelle. Invoice her the balance" — the paid clause is background (money
+// already taken, to credit), the message is a billing ask.
+// ---------------------------------------------------------------------------
+
+/** "already" / "ya" — said of a payment taken before this message. */
+const ALREADY_RE = new RegExp(String.raw`${L}(?:already|ya)${R}`, "iu");
+/** "$850 total", "total of $850", "$850 en total", "por un total de". */
+const TOTAL_RE = new RegExp(String.raw`${L}(?:total|en\s+total)${R}`, "iu");
+/** The clauses of a sentence: "…, $850 total, plus a $200 deposit she
+ *  already paid by Zelle." → its comma / semicolon / colon parts. */
+function clauses(s: string): string[] {
+  return s.split(/[,;:]\s+|\s+(?:plus|but|y|pero|m[aá]s)\s+(?=[^,;:]*\$)/iu)
+    .map((c) => c.trim()).filter(Boolean);
+}
+function isQuestion(s: string): boolean {
+  return /\?\s*$/.test(s) || s.startsWith("¿") || QUESTION_LEAD_RE.test(s);
+}
+
+/**
+ * The money already taken in a message that asks to bill what is left:
+ * "Invoice her the balance" / "Factúrale el resto" (a bill word and the
+ * balance in one sentence that is not a question and reports no payment),
+ * and a paid clause that is "already" / "ya" paid, or a deposit beside a
+ * "total". Undefined when the message is not that — a plain "Linda paid the
+ * deposit $1,425 by Zelle today" is a payment to record (REQ-583).
+ */
+export function priorPaymentInBillingAsk(
+  text: string,
+): { clause: string; amountCents?: number } | undefined {
+  const all = sentences(text ?? "");
+  const paidIn = (x: string) =>
+    PAID_RES.some((re) => re.test(x)) || PAYMENT_REPORTED_RE.test(x);
+  const billsRest = all.some((x) =>
+    !isQuestion(x) && BILL_RES.some((re) => re.test(x)) &&
+    BALANCE_RE.test(x) && !paidIn(x)
+  );
+  if (!billsRest) return undefined;
+  const hasTotal = TOTAL_RE.test(text ?? "");
+  for (const s of all) {
+    if (isQuestion(s)) continue;
+    for (const c of clauses(s)) {
+      if (!paidIn(c)) continue;
+      if (!ALREADY_RE.test(c) && !(DEPOSIT_RE.test(c) && hasTotal)) continue;
+      const amount = amountIn(c);
+      return amount !== undefined ? { clause: c, amountCents: amount } : {
+        clause: c,
+      };
+    }
+  }
+  return undefined;
+}
+
 /**
  * Read a payment the customer made ("Linda paid the deposit $1,425 by Zelle
  * today", "she paid the deposit by check", "Juan me pagó $450 por Zelle").
  * Undefined unless one sentence says it happened and ties it to money owed
- * (an amount, how, deposit / balance, an invoice).
+ * (an amount, how, deposit / balance, an invoice). A deposit already taken,
+ * told inside an ask to bill the balance, is not one (REQ-939).
  */
 export function parsePaymentReport(text: string): PaymentReport | undefined {
+  if (priorPaymentInBillingAsk(text)) return undefined;
   for (const s of sentences(text ?? "")) {
     if (!PAID_RES.some((re) => re.test(s))) continue;
-    if (/\?\s*$/.test(s) || s.startsWith("¿") || QUESTION_LEAD_RE.test(s)) {
-      continue;
-    }
+    if (isQuestion(s)) continue;
     if (NOT_A_PAYMENT_RES.some((re) => re.test(s))) continue;
     const out: PaymentReport = {};
     const amount = amountIn(s);
@@ -560,6 +614,9 @@ export interface JobDoneInvoiceAsk {
   /** "Jorge Ruiz" — who to bill, as typed. */
   customerName?: string;
   customerEmail?: string;
+  /** REQ-939: "a $200 deposit she already paid" — INTEGER CENTS already
+   *  taken, credited against `amountCents` (the job's total). */
+  depositPaidCents?: number;
 }
 
 /** The work is finished: "job done", "just finished", "the job is complete",
@@ -680,7 +737,13 @@ export function parseJobDoneInvoiceAsk(
   if (!DONE_RES.some((re) => re.test(s))) return undefined;
   if (NOT_DONE_RES.some((re) => re.test(s))) return undefined;
   if (!BILL_RES.some((re) => re.test(s))) return undefined;
-  if (QUOTE_ASK_RE.test(s) || PAYMENT_REPORTED_RE.test(s)) return undefined;
+  if (QUOTE_ASK_RE.test(s)) return undefined;
+  // A payment reported is REQ-583's — unless it is money already taken,
+  // inside an ask to bill the rest (REQ-939).
+  const prior = PAYMENT_REPORTED_RE.test(s)
+    ? priorPaymentInBillingAsk(s)
+    : undefined;
+  if (PAYMENT_REPORTED_RE.test(s) && !prior) return undefined;
   // a question about it ("Is the job done? Did you invoice her?")
   if (sentences(s).every((x) => /\?\s*$/.test(x) || x.startsWith("¿"))) {
     return undefined;
@@ -689,7 +752,19 @@ export function parseJobDoneInvoiceAsk(
 
   const out: JobDoneInvoiceAsk = {};
   const prefill = extractQuickQuotePrefill(s);
-  const amount = prefill.priceCents ?? amountIn(s);
+  let amount = prefill.priceCents ?? amountIn(s);
+  if (prior) {
+    // the job's total — the "total" clause's amount, never the deposit's
+    const deposit = prior.amountCents;
+    const totalClause = sentences(s).flatMap(clauses).find((c) =>
+      TOTAL_RE.test(c) && c !== prior.clause && amountIn(c) !== undefined
+    );
+    if (totalClause) amount = amountIn(totalClause);
+    else if (amount === deposit) {
+      amount = typedAmountsCents(s).find((a) => a > 0 && a !== deposit);
+    }
+    if (deposit && amount && deposit < amount) out.depositPaidCents = deposit;
+  }
   if (amount && amount > 0) out.amountCents = amount;
   let name = prefill.customerName?.trim() || undefined;
   if (!name) {

@@ -741,6 +741,7 @@
   "chatCoordinator.jobDoneInvoice.startName": "Trabajo terminado — vamos a cobrarlo. Empecé la factura para {name}: pon el monto, revisa los detalles y envíala.",
   "chatCoordinator.jobDoneInvoice.startAmount": "Trabajo terminado — vamos a cobrarlo. Empecé la factura por {amount}: elige el cliente, revisa los detalles y envíala.",
   "chatCoordinator.jobDoneInvoice.startPlain": "Trabajo terminado — vamos a cobrarlo. Empecé la factura: pon el monto y el cliente, y envíala.",
+  "chatCoordinator.jobDoneInvoice.startDeposit": "Trabajo terminado — vamos a cobrarlo. Empecé la factura para {name}: {amount} menos los {deposit} que ya pagó, así que se deben {balance}. Revisa los detalles y envíala.",
   "chatCoordinator.billing.jobDoneSendNow": "Trabajo terminado: {number} por {amount} para {name} está lista. Toca Enviar ahora para cobrarla hoy; si no, sale el {date}.",
   "chatCoordinator.billing.jobDoneSendNowNoDate": "Trabajo terminado: {number} por {amount} para {name} está lista. Toca Enviar ahora para cobrarla hoy.",
   "chatCoordinator.payment.recorded": "Registré el pago de {amount} {via} de {name} en {number} — ya está pagada.",
