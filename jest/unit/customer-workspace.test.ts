@@ -287,3 +287,54 @@ describe("REQ-1076 q2-64 the no-phone Messages card is not a dead end", () => {
     expect(gated || /texto/i.test(es["customerWs.act.text"])).toBe(true);
   });
 });
+
+/**
+ * REQ-1108 (LOOP-007 q3, q3-33) — More → "Send a text" with no phone line is a dead end or does nothing
+ * visible. The More item was always "💬 Send a text" with `onClick={() => setTab("messages")}`: it never
+ * asked whether the business has a line (only the Messages child does, after it mounts) nor whether the
+ * customer has a phone, and the click only swapped the tab body, which opens below the KPI grid, out of
+ * view (no scroll, no focus). The item's label/target must follow the line + phone facts, and the
+ * Send-a-text path must scroll the Messages body into view and focus the composer.
+ */
+describe("REQ-1108 q3-33 More → Send a text follows the line and the phone, and lands visibly", () => {
+  const src = read("front-end/islands/CustomerWorkspace.tsx");
+  const ws = src.slice(0, src.indexOf("function Messages("));
+  const menuStart = ws.indexOf('data-cy="cws-menu"');
+  const menu = ws.slice(menuStart, ws.indexOf('data-cy="cws-start-service"', menuStart));
+  const en = dict("lang/en.json");
+  const es = dict("lang/es.json");
+
+  test("REQ-1108: the menu block is found (sanity)", () => {
+    expect(menuStart).toBeGreaterThan(-1);
+    expect(menu).toMatch(/customerWs\.act\.text/);
+  });
+
+  test("REQ-1108: the workspace itself looks up the business's line (commsClient.line), not only the Messages tab", () => {
+    expect(ws).toMatch(/commsClient\.line\(/);
+  });
+
+  test("REQ-1108: with no line the More item reads customerWs.act.getLineToText and links to /communications", () => {
+    expect(menu).toMatch(/customerWs\.act\.getLineToText/);
+    expect(menu).toMatch(/href=\{?["'`]\/communications/);
+  });
+
+  test("REQ-1108: with a line but no customer phone the More item reads customerWs.act.addPhoneToText and opens the edit dialog", () => {
+    expect(menu).toMatch(/phoneNumber/);
+    expect(menu).toMatch(/customerWs\.act\.addPhoneToText/);
+  });
+
+  test("REQ-1108: the Send-a-text path scrolls the tab body into view and focuses the composer", () => {
+    expect(menu).not.toMatch(/onClick=\{\(\)\s*=>\s*setTab\("messages"\)\}/);
+    expect(src).toMatch(/scrollIntoView\(/);
+    expect(src).toMatch(/\.focus\(/);
+  });
+
+  test("REQ-1108: en and es carry customerWs.act.getLineToText and customerWs.act.addPhoneToText", () => {
+    for (const d of [en, es]) {
+      expect(typeof d["customerWs.act.getLineToText"]).toBe("string");
+      expect(typeof d["customerWs.act.addPhoneToText"]).toBe("string");
+    }
+    expect(en["customerWs.act.getLineToText"]).toMatch(/line/i);
+    expect(en["customerWs.act.addPhoneToText"]).toMatch(/phone/i);
+  });
+});
