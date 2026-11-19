@@ -21,6 +21,7 @@ import {
 } from "@paperwork/dto/payment.ts";
 import type { PaymentMethod } from "@paperwork/dto/payment.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
+import { SendPaymentReceipt } from "@paperwork/domain/coordinators/send-payment-receipt/mod.ts"; // REQ-963
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
@@ -137,6 +138,7 @@ export class PaymentController {
     private customers: CustomerStore,
     private bus: EventBus,
     private chargeback: ChargebackPayment, // REQ-926
+    private receipt: SendPaymentReceipt, // REQ-963
   ) {}
 
   @Post()
@@ -154,7 +156,19 @@ export class PaymentController {
     );
     if (refused) return ctx.json(refused.body, refused.status);
     const created = await this.store.create(user.id, dto);
-    await this.balances.run(dto.invoiceId, user.id);
+    const balance = await this.balances.run(dto.invoiceId, user.id);
+    // REQ-963 (LOOP-007 q1-37): a payment that leaves a balance gets the same
+    // receipt as one told to the assistant (PDF, email cc'd to the
+    // contractor, text, outbox). The one that closes the balance already
+    // sent the PAID invoice (REQ-020) — one customer email, never two.
+    if (balance.status !== "paid") {
+      await this.receipt.run(user.id, dto.invoiceId, {
+        amount: created.amount,
+        method: created.method,
+        ...(created.reference ? { reference: created.reference } : {}),
+        receivedAt: created.receivedAt,
+      });
+    }
     // REQ-566 (cycle 4, m11): money the owner recorded is activity — the
     // dashboard's "What we handled today" feed says so.
     const customerName = invoice.customerId

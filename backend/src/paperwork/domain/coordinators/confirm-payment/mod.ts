@@ -7,40 +7,20 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
-import {
-  customerSmsTarget,
-  dispatchCustomerSms,
-} from "@paperwork/domain/business/customer-sms/mod.ts";
-import { businessFrom } from "@communication/domain/business/sender/mod.ts";
-import {
-  emailLogo,
-  emailLogoHtml,
-} from "@paperwork/domain/business/email-logo/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
-import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
-import {
-  inboundDomain,
-  replyAddress,
-} from "@paperwork/domain/business/inbound-reply/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
+import { SendPaymentReceipt } from "@paperwork/domain/coordinators/send-payment-receipt/mod.ts"; // REQ-963
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
-import { type Lang, t } from "@core/i18n/mod.ts";
-import { outboundSenderFirstName } from "#quote-flow/outbound-identity.ts";
-import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
-import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
 import type { PaymentMethod as PaymentStorageMethod } from "@paperwork/dto/payment.ts";
-import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
-import {
-  customerOnDocument,
-  docRef,
-  docTitle,
-  type RenderedCustomer,
-  renderWord,
-} from "@paperwork/domain/business/doc-render/mod.ts";
+// REQ-963: the receipt's words moved beside SendPaymentReceipt; re-exported.
+export {
+  renderReceiptHtml,
+  renderReceiptSubject,
+} from "@paperwork/domain/business/payment-receipt/mod.ts";
 
 /**
  * ConfirmPayment — contractor-side "I got it" coordinator.
@@ -49,9 +29,9 @@ import {
  *   1. Take the customer's existing `paymentIntent` on the invoice.
  *   2. Mint a real `Payment` row (the canonical record-of-funds-received).
  *   3. Flip the invoice to `paid`, stamp `paidAt`, clear the intent.
- *   4. Render a receipt PDF (via RenderReceiptPdf, sibling of the agreement PDF).
- *   5. Fire receipt email (to customer + CC contractor) + SMS receipt
- *      with a short-link to the public invoice page.
+ *   4-5. Send the receipt — SendPaymentReceipt (REQ-963): PDF, email to the
+ *      customer + CC contractor, SMS with a short-link to the public invoice
+ *      page, outbox + comms trail, receiptSentVia.
  *   6. Emit an `invoice:paid` domain event.
  *
  * Idempotent: if the invoice is already `paid`, the coordinator no-ops
@@ -61,10 +41,6 @@ import {
  */
 @Injectable()
 export class ConfirmPayment {
-  // REQ-1017 / REQ-175: the same per-(contractor, customer) reply token the
-  // invoice emails use (send-paperwork-email holds it the same way).
-  private replyTokens = new ReplyTokenStore();
-
   constructor(
     private invoices: InvoiceStore,
     private payments: PaymentStore,
@@ -80,7 +56,24 @@ export class ConfirmPayment {
     private markPaid: MarkInvoicePaid,
     private balance: ComputeInvoiceBalance,
     private logos: LoadBusinessLogo = new LoadBusinessLogo(),
-  ) {}
+  ) {
+    // REQ-963: built from this coordinator's own collaborators, so a test
+    // that swaps the email / SMS / PDF / log on them swaps the receipt's too.
+    this.receipt = new SendPaymentReceipt(
+      invoices,
+      customers,
+      users,
+      identity,
+      email,
+      sms,
+      shortlinks,
+      receiptPdf,
+      commsLog,
+      logos,
+    );
+  }
+
+  private receipt: SendPaymentReceipt;
 
   async run(
     userId: string,
@@ -116,263 +109,17 @@ export class ConfirmPayment {
     // either way.
     await this.balance.run(invoice.id, userId);
     const paidAt = new Date().toISOString();
-    const updated = await this.invoices.update(invoice.id, userId, {
-      paymentIntent: null,
+    await this.invoices.update(invoice.id, userId, { paymentIntent: null });
+
+    // 3. REQ-963: the receipt — PDF, email cc'd to the contractor, text,
+    // outbox + comms trail, receiptSentVia — the same one the Record payment
+    // dialog sends for a part payment (SendPaymentReceipt). Best-effort.
+    const { customerName } = await this.receipt.run(userId, invoice.id, {
+      amount: intent.amount,
+      method: intent.method,
+      ...(intent.reference ? { reference: intent.reference } : {}),
+      receivedAt: paidAt,
     });
-
-    // REQ-224: the feed line names the client as the bill shows them.
-    let customerName: string | undefined;
-    // REQ-556 (demo-loop cycle 4, M7): what this receipt actually reached.
-    let receiptEmailed = false;
-    let receiptTexted = false;
-
-    // 3. Best-effort receipt dispatch.
-    try {
-      const [customer, contractor, biz] = await Promise.all([
-        invoice.customerId
-          ? this.customers.getOwned(invoice.customerId, userId).catch(() =>
-            undefined
-          )
-          : Promise.resolve(undefined),
-        this.users.get(userId).catch(() => undefined),
-        this.identity.get(userId).catch(() => null),
-      ]);
-      const onBill = customerOnDocument(updated, customer);
-      customerName = (onBill?.name ?? onBill?.businessName)?.trim() ||
-        undefined;
-      const businessName = biz?.businessName?.trim() ||
-        biz?.legalName?.trim() || contractor?.name?.trim();
-      // REQ-715 (demo-loop cycle 5, m31): the receipt — email, text and its
-      // PDF — speaks the customer's own language, else the business's send
-      // default, else en.
-      const lang: Lang = resolveCommsLanguage({
-        customerLanguage: customer?.language,
-        identityCommsLanguage: biz?.commsLanguage,
-        sendLanguages: biz?.commsLanguages, // REQ-925
-      });
-      const pdfBytes = await this.receiptPdf.run({
-        invoice: updated,
-        customer,
-        contractor,
-        ...(businessName ? { businessName } : {}),
-        method: intent.method,
-        ...(intent.reference ? { reference: intent.reference } : {}),
-        confirmedAt: paidAt,
-        lang,
-        // REQ-628: the business's logo heads the receipt
-        logo: await this.logos.run(userId),
-      });
-
-      if (customer?.email) {
-        // REQ-204: "Receipt for INV-5000" — the receipt names the bill by number
-        const subject = renderReceiptSubject(updated, lang);
-        const htmlBody = renderReceiptHtml({
-          invoice: updated,
-          customer,
-          contractor,
-          businessName,
-          intent,
-          amount: intent.amount,
-          lang,
-          // REQ-628: headed by the business's own logo, or its name as a wordmark
-          logoHtml: emailLogoHtml(emailLogo({
-            appUrl: Deno.env.get("APP_URL") ?? SITE_ORIGIN,
-            kind: "invoice",
-            id: updated.id,
-            biz,
-            ...(businessName ? { fallbackName: businessName } : {}),
-          })),
-        });
-        const mailed = await this.email.send({
-          to: customer.email,
-          subject,
-          htmlBody,
-          // REQ-628: under the business's name, never DocuMonster
-          from: businessFrom({ alias: biz?.emailAlias, name: businessName }),
-          ...(contractor?.email ? { cc: [contractor.email] } : {}),
-          // REQ-1017 / REQ-175: a reply to the receipt lands in this
-          // customer's Messages thread, like a reply to the invoice email.
-          ...(invoice.customerId
-            ? {
-              replyTo: replyAddress(
-                await this.replyTokens.forCustomer(userId, invoice.customerId),
-                inboundDomain(),
-              ),
-            }
-            : {}),
-          attachments: [{
-            name: t(lang, "confirmPayment.email.attachmentName", {
-              id: docRef(updated).replace(/^#/, ""),
-            }),
-            content: pdfBytes,
-            contentType: "application/pdf",
-          }],
-        });
-        receiptEmailed = mailed.ok;
-        // REQ-784 (demo-loop dv1, d12): the receipt is a customer message —
-        // the outbox lists it, sent or not, with the email as sent.
-        await this.commsLog.outbox({
-          userId,
-          channel: "email",
-          kind: "receipt",
-          language: lang,
-          ok: mailed.ok,
-          ...(mailed.ok ? {} : { reason: mailed.reason }),
-          customerId: invoice.customerId,
-          customerName,
-          to: customer.email,
-          docId: invoice.id,
-          docRef: docRef(updated),
-          subject,
-          body: htmlBody,
-        });
-        // UX-30: the promised receipt must be auditable in the comms trail,
-        // like every other outbound paperwork dispatch.
-        await this.commsLog.run({
-          userId,
-          customerId: invoice.customerId,
-          channel: "email",
-          content: t(lang, "confirmPayment.email.body", {
-            amount: fmtUSD(intent.amount),
-            ref: "",
-          }),
-          subject,
-          htmlBody,
-          toAddress: customer.email,
-          paperworkId: invoice.id,
-          paperworkType: "invoice",
-        });
-      }
-      // REQ-523 (demo m16): only a number that can take a text gets the
-      // receipt text — a missing, invalid or fictional one is skipped.
-      const smsTo = customerSmsTarget(customer?.phoneNumber);
-      if (!smsTo.ok && smsTo.failureCode !== "missing") {
-        // REQ-784: a phone on file that can't take the text — "not texted" and why
-        await this.commsLog.outbox({
-          userId,
-          channel: "text",
-          kind: "receipt",
-          language: lang,
-          ok: false,
-          reasonCode: smsTo.failureCode,
-          customerId: invoice.customerId,
-          customerName,
-          to: "e164" in smsTo ? smsTo.e164 : customer?.phoneNumber ?? "",
-          docId: invoice.id,
-          docRef: docRef(updated),
-        });
-      }
-      if (smsTo.ok) {
-        // Mint a shortlink back to the public invoice page so the SMS
-        // receipt is a single short line.
-        let shortUrl = "";
-        try {
-          const link = await this.shortlinks.findOrCreate(
-            userId,
-            "invoice",
-            invoice.id,
-          );
-          const appUrl = Deno.env.get("APP_URL") ??
-            SITE_ORIGIN;
-          // REQ-715 (REQ-342 parity): opens the invoice in the receipt's language
-          shortUrl = withSendLang(`${appUrl}/s/${link.code}`, lang);
-        } catch { /* fall through to no-url body */ }
-        // REQ-204: greet the customer as snapshotted on the bill
-        const shownCustomer = customerOnDocument(updated, customer);
-        const customerFirst =
-          (shownCustomer?.name ?? shownCustomer?.businessName)?.trim().split(
-            /\s+/,
-          )[0];
-        // UX-26: the receipt sender token goes through the shared identity
-        // helper — the seeded placeholder ("Nuevo"/"New") never leaks out.
-        const senderFirst = outboundSenderFirstName(contractor?.name);
-        const lead = customerFirst
-          ? t(lang, "confirmPayment.sms.lead", { name: customerFirst })
-          : "";
-        const tail = senderFirst
-          ? t(lang, "confirmPayment.sms.tail", { name: senderFirst })
-          : "";
-        // REQ-204: the text names the bill — "… Receipt: <url> (INV-5000)"
-        const body = `${
-          t(lang, "confirmPayment.sms.body", {
-            lead,
-            amount: fmtUSD(intent.amount),
-            url: shortUrl,
-            tail,
-          })
-        } (${docRef(updated)})`;
-        // REQ-523: the same guarded dispatch as every other customer text.
-        const res = await dispatchCustomerSms(this.sms, {
-          to: smsTo.e164,
-          body,
-          uiLang: lang,
-        });
-        // REQ-784: the receipt text, in the outbox, sent or not and why
-        await this.commsLog.outbox({
-          userId,
-          channel: "text",
-          kind: "receipt",
-          language: lang,
-          ok: res.ok,
-          ...(res.ok
-            ? {}
-            : { reasonCode: res.failureCode, reason: res.reason }),
-          customerId: invoice.customerId,
-          customerName,
-          to: res.to,
-          docId: invoice.id,
-          docRef: docRef(updated),
-          body,
-        });
-        // UX-30: log the receipt SMS to the comms trail — REQ-523: only a
-        // text the provider accepted, never a refused or rejected one.
-        if (res.ok) {
-          receiptTexted = true;
-          await this.commsLog.run({
-            userId,
-            customerId: invoice.customerId,
-            channel: "text",
-            content: body,
-            toAddress: res.to,
-            paperworkId: invoice.id,
-            paperworkType: "invoice",
-          });
-        } else {
-          console.warn(
-            `[confirm-payment] receipt text to ${res.to} not sent: ${
-              res.detail ?? res.reason
-            }`,
-          );
-        }
-      }
-    } catch (err) {
-      console.error("[confirm-payment] receipt dispatch failed:", err);
-    }
-
-    // REQ-556 (demo-loop cycle 4, M7): record where the receipt went, so the
-    // paid card and /i never say "sent" / "in your inbox" when it went
-    // nowhere. MarkInvoicePaid recorded its PAID-invoice email; an email
-    // either one delivered wins, then a delivered text, else "none".
-    try {
-      const current = await this.invoices.getOwned(invoice.id, userId);
-      if (current.status === "paid") {
-        const via = receiptEmailed || current.receiptSentVia === "email"
-          ? "email"
-          : receiptTexted
-          ? "text"
-          : "none";
-        if (current.receiptSentVia !== via) {
-          await this.invoices.update(invoice.id, userId, {
-            receiptSentVia: via,
-          });
-        }
-      }
-    } catch (err) {
-      console.error(
-        "[confirm-payment] could not record the receipt delivery:",
-        err,
-      );
-    }
 
     // 4. Emit event for activity feed + dashboard counters.
     try {
@@ -435,98 +182,4 @@ function mapMethod(m: PaymentMethod): PaymentStorageMethod {
     default:
       return "other";
   }
-}
-
-function fmtUSD(cents: number): string {
-  return `$${
-    (cents / 100).toLocaleString("en-US", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    })
-  }`;
-}
-
-/** REQ-204: "Receipt for INV-5000" / "Recibo de INV-5000" — the receipt names the invoice. */
-export function renderReceiptSubject(
-  invoice: { id: string; number?: string },
-  lang: Lang,
-): string {
-  return renderWord(lang, "receiptFor", { number: docRef(invoice) });
-}
-
-export function renderReceiptHtml(opts: {
-  /** REQ-204: the bill the receipt is for — named by number, customer as snapshotted */
-  invoice: {
-    id: string;
-    number?: string;
-    version?: number;
-    status?: string;
-    sentAt?: string;
-    publishedAt?: string;
-    billTo?: RenderedCustomer;
-    customerSnapshot?: RenderedCustomer;
-  };
-  customer?: RenderedCustomer;
-  contractor?: { name?: string };
-  businessName?: string;
-  intent: { method: PaymentMethod; reference?: string };
-  amount: number;
-  lang: Lang;
-  /** REQ-628: the business's logo (or wordmark) heading the receipt */
-  logoHtml?: string;
-}): string {
-  const { lang } = opts;
-  const businessLabel = opts.businessName ?? opts.contractor?.name ??
-    t(lang, "paperworkEmail.senderFallback");
-  const shown = customerOnDocument(opts.invoice, opts.customer);
-  const customerFirst = (shown?.name ?? shown?.businessName)?.trim().split(
-    /\s+/,
-  )[0];
-  const headline = customerFirst
-    ? t(lang, "confirmPayment.email.headline", {
-      name: escapeHtml(customerFirst),
-    })
-    : t(lang, "confirmPayment.email.headlineNoName");
-  const ref = opts.intent.reference
-    ? t(lang, "confirmPayment.email.refSuffix", {
-      reference: escapeHtml(opts.intent.reference),
-    })
-    : "";
-  return `<!doctype html>
-<html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
-    ${
-    opts.logoHtml ??
-      `<div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
-        escapeHtml(businessLabel)
-      }</div>`
-  }
-    <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${
-    escapeHtml(docTitle("invoice", opts.invoice, lang))
-  }</div>
-    <div style="margin-top:18px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-0.02em;color:#144852">${headline}</div>
-    <p style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">
-      ${
-    t(lang, "confirmPayment.email.body", { amount: fmtUSD(opts.amount), ref })
-  }
-    </p>
-  </div>
-</body></html>`;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => {
-    switch (c) {
-      case "&":
-        return "&amp;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case '"':
-        return "&quot;";
-      default:
-        return "&#39;";
-    }
-  });
 }
