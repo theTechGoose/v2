@@ -18,6 +18,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-1050
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
 import {
@@ -588,7 +589,10 @@ export class RenderInvoicePdf {
           y -= 3;
         }
         page.drawText(
-          t(lang, "printPdf.payOnline", { url: `${APP_URL}/i/${invoice.id}` }),
+          // REQ-1050 (REQ-342): the printed link opens in the PDF's language
+          t(lang, "printPdf.payOnline", {
+            url: withSendLang(`${APP_URL}/i/${invoice.id}`, lang),
+          }),
           { x: M, y, size: 9, font: reg, color: MUTED },
         );
         y -= 24;
@@ -1045,9 +1049,10 @@ export class RenderInvoicePdf {
     if (quote && isAccepted(quote)) {
       addPageIfNeeded(40);
       y -= 4;
-      const ref = `${
-        t(lang, "publicInvoice.viewSignedAgreement")
-      }: ${APP_URL}/q/${quote.id}`;
+      // REQ-1050 (REQ-342): the printed link opens in the PDF's language
+      const ref = `${t(lang, "publicInvoice.viewSignedAgreement")}: ${
+        withSendLang(`${APP_URL}/q/${quote.id}`, lang)
+      }`;
       page.drawText(ref, { x: M, y, size: 9, font: reg, color: TEAL });
       y -= 18;
     }

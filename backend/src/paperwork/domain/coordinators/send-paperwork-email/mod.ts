@@ -386,7 +386,7 @@ export class SendPaperworkEmail {
       const payWays = paid ? "" : payWaysEmailHtml(senderBiz?.acceptedPaymentMethods, {
         card: await this.takesCard(userId), // REQ-803: Stripe or Square
         lang,
-        payUrl: `${APP_URL}/i/${invoice.id}`,
+        payUrl: withSendLang(`${APP_URL}/i/${invoice.id}`, lang), // REQ-1050
         amountCents: Math.max(0, (invoice.amount ?? 0) - (invoice.paidCents ?? 0)),
         note: docRef(invoice),
       });
