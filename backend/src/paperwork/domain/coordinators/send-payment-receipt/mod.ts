@@ -135,11 +135,23 @@ export class SendPaymentReceipt {
         identityCommsLanguage: biz?.commsLanguage,
         sendLanguages: biz?.commsLanguages, // REQ-925
       });
+      // REQ-1071 (q2-60): what is still due after this payment. Callers run
+      // ComputeInvoiceBalance first, so the loaded invoice's paidCents
+      // already counts this payment — the same figure /i shows.
+      const totalCents = invoice.amount ?? 0;
+      // REQ-1110 (q3-34): the PDF states the same three figures as the email.
+      const balanceCents = invoice.status === "paid"
+        ? 0
+        : balanceDue(invoice, invoice.paidCents ?? 0);
       const pdfBytes = await this.receiptPdf.run({
         invoice: invoice,
         customer,
         contractor,
         ...(businessName ? { businessName } : {}),
+        // REQ-1110 (q3-34): the payment received, not the invoice total
+        amount: payment.amount,
+        totalCents,
+        balanceCents,
         method: payment.method,
         ...(payment.reference ? { reference: payment.reference } : {}),
         confirmedAt: payment.receivedAt,
@@ -162,13 +174,6 @@ export class SendPaymentReceipt {
         // REQ-715 (REQ-342 parity): opens the invoice in the receipt's language
         invoiceUrl = withSendLang(`${appUrl}/s/${link.code}`, lang);
       } catch { /* fall through to no-url receipt */ }
-      // REQ-1071 (q2-60): what is still due after this payment. Callers run
-      // ComputeInvoiceBalance first, so the loaded invoice's paidCents
-      // already counts this payment — the same figure /i shows.
-      const totalCents = invoice.amount ?? 0;
-      const balanceCents = invoice.status === "paid"
-        ? 0
-        : balanceDue(invoice, invoice.paidCents ?? 0);
 
       if (customer?.email) {
         // REQ-204: "Receipt for INV-5000" — the receipt names the bill by number

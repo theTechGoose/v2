@@ -3118,6 +3118,7 @@
   "quotesTip.default": "Quotes opened 3+ times within 24 hours close 78% of the time when followed up the same day.",
   "quotesTip.title": "Monster tip",
   "receiptPdf.amountReceived": "AMOUNT RECEIVED",
+  "receiptPdf.balanceDue": "Balance still due: {balance} of {total}",
   "receiptPdf.confirmed": "Confirmed {date}",
   "receiptPdf.contractorFallback": "Contractor",
   "receiptPdf.customerHeader": "CUSTOMER",

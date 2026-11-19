@@ -414,6 +414,7 @@ Deno.test("REQ-204 receipt PDF: names the invoice INV-5000 and the snapshotted c
     customer: liveCustomer,
     contractor: sender,
     businessName: BIZ,
+    amount: invoice.amount ?? 0,
     method: "zelle",
     confirmedAt: "2026-10-20T12:00:00Z",
   });
