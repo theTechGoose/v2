@@ -356,3 +356,37 @@ describe("REQ-315 wiring — the islands use the pure rules and the copy exists 
     }
   });
 });
+
+/**
+ * REQ-1056 (LOOP-007 cycle 2, q2-41) — the reply's language follows the
+ * message (REQ-438), the screen follows the UI. A reply that tells the owner
+ * which button to tap must take that button's label as a {button} variable
+ * (filled from the UI-language quotes.ledger.publish), never hard-code its
+ * own language's label: English UI + Spanish message said 'toca "Publicar
+ * revisión"' under a pill reading "Open Q-002 → Publish revision".
+ */
+describe("REQ-1056 q2-41 the 'tap Publish revision' replies quote the on-screen button, not a hard-coded label", () => {
+  const KEYS = [
+    "chatCoordinator.reviseQuote.publishHint",
+    "chatCoordinator.changeOrder.pendingRevision",
+    "chatCoordinator.changeOrder.pendingRevisionRepriced",
+  ];
+  const HARD_CODED: Record<string, string> = {
+    en: "Publish revision",
+    es: "Publicar revisión",
+  };
+  for (const lang of ["en", "es"]) {
+    const dict = JSON.parse(read(`lang/${lang}.json`)) as Record<
+      string,
+      string
+    >;
+    for (const key of KEYS) {
+      it(`REQ-1056 ${lang}.json ${key} takes {button} and does not hard-code "${
+        HARD_CODED[lang]
+      }"`, () => {
+        expect(dict[key]).toContain("{button}");
+        expect(dict[key]).not.toContain(`"${HARD_CODED[lang]}"`);
+      });
+    }
+  }
+});
