@@ -103,7 +103,7 @@ Deno.test("REQ-1083 (LOOP-007 q3-15): /invoices?lang=es — the at-risk line rea
     const customer = await post(http, auth, "/api/customers", {
       name: "Hans Hansen",
       email: "hans.q315@blackhole.postmarkapp.com",
-      preferredLanguage: "es",
+      // (an undeclared preferredLanguage key was silently ignored here; REQ-1119 now refuses it)
     });
 
     await seedOverdue(http, auth, customer.id, "Cerca");

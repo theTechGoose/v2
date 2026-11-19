@@ -79,7 +79,7 @@ Deno.test("REQ-986 (LOOP-007 q1-66): /invoices?lang=es — one overdue reads '1 
     const customer = await post(http, auth, "/api/customers", {
       name: "Hans Hansen",
       email: "hans.q166@blackhole.postmarkapp.com",
-      preferredLanguage: "es",
+      // (an undeclared preferredLanguage key was silently ignored here; REQ-1119 now refuses it)
     });
     const overdueJob = `Cerca ${digits()}`;
     await post(http, auth, "/api/invoices", {

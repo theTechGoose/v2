@@ -300,13 +300,14 @@ Deno.test("REQ-143: worker → subscription on an existing customer → staffed 
       "today is the selected day",
     );
     await page.locator("[data-cy='w-day-next']").click();
-    await expect.see("No tasks this day.", { timeout: 15_000 });
+    // REQ-1005/REQ-1035: an empty non-today day is said once, by the summary ("No tasks this day")
+    await expect.see("No tasks this day", { timeout: 15_000 });
     expect(
       await page.evaluate(() => location.search.includes("date=")),
       "tomorrow is in the URL",
     );
     await page.locator("[data-cy='w-day-prev']").click();
-    await expect.see("No tasks this day.", { timeout: 15_000 });
+    await expect.see("No tasks this day", { timeout: 15_000 });
     await page.locator("[data-cy='w-day-today']").click();
     await expect.see("Ana Torres", { timeout: 15_000 });
     expect(

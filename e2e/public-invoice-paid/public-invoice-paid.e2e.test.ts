@@ -61,7 +61,7 @@ async function paidInvoice(
   const customer = await post(http, auth, "/api/customers", {
     name: "Hans Hansen",
     email: "hans@blackhole.postmarkapp.com",
-    preferredLanguage: language,
+    // (an undeclared preferredLanguage key was silently ignored here; REQ-1119 now refuses it)
   });
   const invoice = await post(http, auth, "/api/invoices", {
     customerId: customer.id,
