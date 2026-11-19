@@ -10,6 +10,7 @@ import { DEFAULT_VERIFY_EDIT_HREF } from "../lib/verify-edit-href.ts";
 import { forgetDemo } from "../lib/demo-mode/pill-carry.ts";
 import { sessionStore } from "../lib/demo-mode/cursor-handoff.ts";
 import { CHECK_SVG_MARKUP } from "../components/ui/Icon.tsx";
+import { afterCodeTarget } from "../lib/login-redirect.ts";
 
 interface Props {
   /** The phone the code was texted to — the /verify flow. */
@@ -24,12 +25,16 @@ interface Props {
   editHref?: string;
   /** The edit link's label; defaults to the phone wording. */
   editLabel?: string;
+  /** REQ-1153: the page asked for before sign-in (/login?next=) — the tab goes there after the
+   *  code instead of the plain dashboard landing; /welcome (REQ-091) still wins. */
+  next?: string;
 }
 
 const SLOT_COUNT = 6;
 
 export default function CodeInput(
-  { phoneNumber, email, initialLang, editHref, editLabel }: Props,
+  { phoneNumber, email, initialLang, editHref, editLabel, next: nextPage }:
+    Props,
 ) {
   const byEmail = typeof email === "string";
   // Single ref holding the slot inputs (a callback ref fills the array) —
@@ -167,7 +172,10 @@ export default function CodeInput(
         }
         forgetDemo(sessionStore());
         setTimeout(() => {
-          globalThis.location.href = result.redirectTo;
+          globalThis.location.href = afterCodeTarget(
+            result.redirectTo,
+            nextPage,
+          );
         }, 400);
         return;
       }
@@ -199,7 +207,7 @@ export default function CodeInput(
         ? await verifyClient.recover(recovery.token)
         : await verifyClient.startFresh(recovery.token);
       forgetDemo(sessionStore());
-      globalThis.location.href = res.redirectTo;
+      globalThis.location.href = afterCodeTarget(res.redirectTo, nextPage);
     } catch {
       setRecovery(null);
       setErrorKey("verify.errExpired");

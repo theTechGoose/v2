@@ -131,7 +131,7 @@ Deno.test("REQ-376 an impersonation with no demo: the interstitial offers Return
   assert(!body.includes('data-cy="admin-gate-back"'));
 });
 
-Deno.test("REQ-376 the staff's own session still reaches the console; a plain customer still goes to /dashboard; no session goes home", async () => {
+Deno.test("REQ-376 the staff's own session still reaches the console; a plain customer still goes to /dashboard; no session goes to /login?next=/admin (REQ-1153)", async () => {
   const own = await hitAdmin(backend("staff", noDemo));
   assertEquals(own.res.status, 200);
   assertEquals(own.body, "ADMIN CONSOLE");
@@ -142,7 +142,7 @@ Deno.test("REQ-376 the staff's own session still reaches the console; a plain cu
 
   const none = await hitAdmin(backend("customer", noDemo), "");
   assertEquals(none.res.status, 302);
-  assertEquals(none.res.headers.get("location"), "/");
+  assertEquals(none.res.headers.get("location"), "/login?next=%2Fadmin"); // REQ-1153: no session → /login?next=<page>
 });
 
 /**

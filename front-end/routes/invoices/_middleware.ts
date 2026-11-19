@@ -1,5 +1,6 @@
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
+import { loginRedirect } from "../../lib/login-redirect.ts";
 
 // Auth gate only — a valid session is required, but onboarding info
 // (name / business name) is NOT. Users reach every surface and finish setup
@@ -11,7 +12,7 @@ import { loadUser } from "../../lib/auth.ts";
 export const handler = define.middleware(async (ctx) => {
   const user = await loadUser(ctx.req);
   if (!user) {
-    return new Response(null, { status: 302, headers: { Location: "/" } });
+    return loginRedirect(new URL(ctx.req.url));
   }
   ctx.state.user = user;
   return await ctx.next();

@@ -4,6 +4,7 @@ import { define } from "../utils.ts";
 import DocTitle from "../components/DocTitle.tsx";
 import SiteFooter from "../components/SiteFooter.tsx";
 import { loadUser } from "../lib/auth.ts";
+import { loginRedirect } from "../lib/login-redirect.ts";
 import {
   type Lang,
   langFromCookie,
@@ -27,7 +28,7 @@ import { registrationForRequest } from "../lib/pixel-registration.ts";
  * Entered by every verified code while a question is open (the backend's
  * redirectTo), by the dashboard's gate (routes/dashboard/_middleware.ts) and
  * by voluntary visits. It redirects in one direction only:
- *   - no session              → 302 /           (sign in first)
+ *   - no session              → 302 /login?next=/welcome (REQ-1153)
  *   - every question answered → 302 /dashboard  (nothing left to ask)
  *   - otherwise               → render the wizard: the open questions alone,
  *                               never one already answered (REQ-121)
@@ -40,7 +41,7 @@ import { registrationForRequest } from "../lib/pixel-registration.ts";
 export default define.page(async function Welcome(ctx) {
   const user = await loadUser(ctx.req);
   if (!user) {
-    return new Response(null, { status: 302, headers: { Location: "/" } });
+    return loginRedirect(new URL(ctx.req.url));
   }
 
   // In-process SSR fetch (lib/onboarding-gate.ts) — the HTTP profile client

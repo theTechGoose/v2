@@ -1,13 +1,14 @@
 import { h } from "preact";
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
+import { loginRedirect } from "../../lib/login-redirect.ts";
 import { adminGateForRequest } from "../../lib/admin-gate.ts";
 import { recordDemoLang } from "../../lib/presenter-lang-rank.ts";
 import AdminGuideGate from "../../components/AdminGuideGate.tsx";
 
 /** Auth + super-admin gate for /admin.
  *
- *  - No session → redirect to "/".
+ *  - No session → /login?next=<the page asked for> (REQ-1153).
  *  - Logged in but NOT a super admin → redirect to "/dashboard" (no admin
  *    surface for them). The super-admin flag is read from the backend-resolved
  *    user (loadUser → GET /me), so the gate can't be spoofed client-side; the
@@ -22,7 +23,7 @@ import AdminGuideGate from "../../components/AdminGuideGate.tsx";
 export const handler = define.middleware(async (ctx) => {
   const user = await loadUser(ctx.req);
   if (!user) {
-    return new Response(null, { status: 302, headers: { Location: "/" } });
+    return loginRedirect(new URL(ctx.req.url));
   }
   if (user.superAdmin !== true) {
     const gate = await adminGateForRequest(ctx.req);
