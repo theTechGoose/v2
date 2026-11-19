@@ -197,6 +197,15 @@ Deno.test("REQ-626: quote card → Open quote opens the quote's panel; Resend an
       `the panel is a link (${page.url()})`,
     );
     await page.locator("[data-cy='quote-panel-close']").click();
+    // REQ-1045: a draft's back has no Resend (it was never sent), so mark
+    // the quote sent ("Mark as sent", REQ-572) before trying it again.
+    await (await http(`/api/quotes/${quote.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ status: "sent" }),
+    })).body?.cancel();
+    await page.goto("/quotes");
+    await card.waitFor({ timeout: 20_000 });
     // the back: Resend says what happened (sent, or why not)
     await clickUntil(
       page,

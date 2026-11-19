@@ -441,9 +441,14 @@ export default function QuoteCard(
             /* REQ-626: Resend is real (both channels, the bodies read).
               REQ-360 (demo-loop cycle 1, m11): never for the never-sent
               sample, which has no customer to share a link with either;
-              "View as customer" stays. */
+              "View as customer" stays.
+              REQ-1045 (LOOP-007 q2-29): never on a draft either — it was
+              never sent, so "Resend" contradicts the card's own "Not sent
+              yet" and would send the unfinished quote past the send
+              preview. The front CTA (quoteCta: finishSend/resume) is the
+              draft's way forward; "undelivered" keeps Resend as a retry. */
           }
-          {!q.isSample && (
+          {!q.isSample && q.stage !== "draft" && (
             <button
               type="button"
               data-cy="qcard-resend"
