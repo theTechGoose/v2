@@ -12,6 +12,8 @@ import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
  *
  *   GET /outbox?limit=   the signed-in account's entries, newest first,
  *                        without bodies (the /messages list)
+ *   GET /outbox?customerId=  …only those sent to that customer (REQ-989:
+ *                        her page's Messages tab)
  *   GET /outbox/:id      one entry with its content exactly as sent
  *
  * Scoped to the account `requireUser` resolves; another account's entry is
@@ -29,13 +31,14 @@ export class OutboxController {
   async list(
     @Context() ctx: ExecutionContext,
     @Query("limit") limit?: string,
+    @Query("customerId") customerId?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const n = Number(limit);
-    return await this.store.listByUser(
-      user.id,
-      Number.isFinite(n) && n > 0 ? { limit: n } : {},
-    );
+    return await this.store.listByUser(user.id, {
+      ...(Number.isFinite(n) && n > 0 ? { limit: n } : {}),
+      ...(customerId?.trim() ? { customerId: customerId.trim() } : {}),
+    });
   }
 
   @Get(":id")

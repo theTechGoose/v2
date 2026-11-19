@@ -3,15 +3,22 @@
  *
  * Backend: communication/entrypoints/outbox-controller/mod.ts
  *   GET /outbox        the account's customer messages, newest first (no bodies)
+ *   GET /outbox?customerId=  only those sent to one customer (REQ-989)
  *   GET /outbox/:id    one message with its content exactly as sent
  */
 import { api, type ApiOptions } from "../lib/api.ts";
-import type { OutboxMessage, OutboxRow } from "../lib/outbox.ts";
+import {
+  customerOutboxPath,
+  type OutboxMessage,
+  type OutboxRow,
+} from "../lib/outbox.ts";
 
 export type { OutboxMessage, OutboxRow };
 
 export const outboxClient = {
   list: (opts: ApiOptions = {}) => api.get<OutboxRow[]>("/outbox", opts),
+  forCustomer: (customerId: string, opts: ApiOptions = {}) =>
+    api.get<OutboxRow[]>(customerOutboxPath(customerId), opts),
   get: (id: string, opts: ApiOptions = {}) =>
     api.get<OutboxMessage>(`/outbox/${encodeURIComponent(id)}`, opts),
 };

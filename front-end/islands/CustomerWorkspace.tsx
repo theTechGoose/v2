@@ -24,6 +24,15 @@ import {
 import { fieldClient } from "../clients/field.ts";
 import { assistantClient } from "../clients/assistant.ts";
 import { commsClient, type ThreadDetail } from "../clients/communications.ts";
+import { outboxClient, type OutboxRow } from "../clients/outbox.ts";
+import {
+  outboxChannelLabel,
+  outboxLanguageLabel,
+  outboxOpenHref,
+  outboxStatusLabel,
+  outboxWhat,
+  outboxWhy,
+} from "../lib/outbox.ts";
 import { toE164 } from "../lib/communications.ts";
 import { assistantThreadPath } from "../lib/quote-panel-send.ts";
 import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
@@ -950,7 +959,9 @@ export default function CustomerWorkspace(
           </div>
         )}
 
-        {tab === "messages" && <Messages phone={c.phoneNumber} lang={lang} />}
+        {tab === "messages" && (
+          <Messages customerId={c.id} phone={c.phoneNumber} lang={lang} />
+        )}
       </div>
 
       {modal?.kind === "invoice" && (
@@ -1463,16 +1474,39 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
   );
 }
 
-/** the phone thread with the customer (REQ-906 Phone page's API); a link to get a line when there is none */
-function Messages({ phone, lang }: { phone?: string; lang: Lang }) {
+/**
+ * REQ-924(c), amended by REQ-989 (q1-72): everything sent to the customer
+ * (her REQ-784 outbox entries — every email and text, GET
+ * /outbox?customerId=), whatever the phone-line state and also with no phone
+ * on file; then the phone thread with her (REQ-906 Phone page's API) when the
+ * business has a line. With no line (or no phone) only the compose box gives
+ * way — to the get-a-line link / the no-phone note — never the history.
+ */
+function Messages(
+  { customerId, phone, lang }: {
+    customerId: string;
+    phone?: string;
+    lang: Lang;
+  },
+) {
   const peer = phone ? toE164(phone) : null;
   const [state, setState] = useState<"loading" | "noLine" | "ready" | "failed">(
     "loading",
   );
   const [detail, setDetail] = useState<ThreadDetail | null>(null);
+  const [sent, setSent] = useState<OutboxRow[] | null>(null);
+  const [sentFailed, setSentFailed] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  async function load() {
+  async function loadSent() {
+    try {
+      setSent(await outboxClient.forCustomer(customerId));
+      setSentFailed(false);
+    } catch {
+      setSentFailed(true);
+    }
+  }
+  async function loadThread() {
     if (!peer) return;
     try {
       const { line } = await commsClient.line();
@@ -1489,23 +1523,91 @@ function Messages({ phone, lang }: { phone?: string; lang: Lang }) {
     }
   }
   useEffect(() => {
-    load();
+    setSent(null);
+    loadSent();
+  }, [customerId]);
+  useEffect(() => {
+    loadThread();
   }, [peer]);
 
+  const history = (
+    <div class="cws-card" data-cy="cws-outbox">
+      <div class="cws-card__hd">
+        <h3>{tFor(lang, "customerWs.msg.sentTitle")}</h3>
+        <a class="cws-btn cws-btn--ghost cws-btn--sm" href="/messages">
+          {tFor(lang, "customerWs.msg.sentAll")}
+        </a>
+      </div>
+      {sentFailed
+        ? (
+          <div class="cws-none" role="alert">
+            {tFor(lang, "customerWs.msg.sentFailed")}
+          </div>
+        )
+        : sent === null
+        ? <div class="cws-none">{tFor(lang, "customerWs.loading")}</div>
+        : sent.length === 0
+        ? (
+          <div class="cws-none" data-cy="cws-outbox-none">
+            {tFor(lang, "customerWs.msg.sentNone")}
+          </div>
+        )
+        : (
+          <ul class="cws-outbox">
+            {sent.map((r) => {
+              const why = outboxWhy(r, lang);
+              return (
+                <li key={r.id}>
+                  <a
+                    class="cws-outbox__row"
+                    data-cy="cws-outbox-row"
+                    data-id={r.id}
+                    href={outboxOpenHref(r.id)}
+                  >
+                    <span class="cws-outbox__icon" aria-hidden="true">
+                      {r.channel === "text" ? "💬" : "✉️"}
+                    </span>
+                    <span class="cws-outbox__main">
+                      <b>{outboxWhat(r, lang)}</b>
+                      <span class="cws-outbox__preview">{r.preview}</span>
+                      <span class="cws-muted">
+                        {[
+                          outboxChannelLabel(r.channel, lang),
+                          outboxLanguageLabel(r.language, lang),
+                          day(r.createdAt, lang),
+                        ].join(" · ")}
+                      </span>
+                    </span>
+                    <span
+                      class={`cws-outbox__status${
+                        r.status === "sent" ? "" : " cws-outbox__status--no"
+                      }`}
+                    >
+                      {outboxStatusLabel(r, lang)}
+                      {why && <small>{why}</small>}
+                    </span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+    </div>
+  );
+
+  let thread;
   if (!peer) {
-    return (
-      <div class="cws-card cws-none">
+    thread = (
+      <div class="cws-card cws-none" data-cy="cws-msg-nophone">
         {tFor(lang, "customerWs.msg.noPhone")}
       </div>
     );
-  }
-  if (state === "loading") {
-    return (
+  } else if (state === "loading") {
+    thread = (
       <div class="cws-card cws-none">{tFor(lang, "customerWs.loading")}</div>
     );
-  }
-  if (state === "noLine") {
-    return (
+  } else if (state === "noLine") {
+    thread = (
       <div class="cws-card cws-none" data-cy="cws-msg-noline">
         {tFor(lang, "customerWs.msg.noLine")}
         <a class="cws-btn cws-btn--outline cws-btn--sm" href="/communications">
@@ -1513,62 +1615,72 @@ function Messages({ phone, lang }: { phone?: string; lang: Lang }) {
         </a>
       </div>
     );
-  }
-  if (state === "failed") {
-    return (
+  } else if (state === "failed") {
+    thread = (
       <div class="cws-card cws-none" role="alert">
         {tFor(lang, "customerWs.loadFailed")}
       </div>
     );
-  }
-  const texts = detail?.texts ?? [];
-  return (
-    <div class="cws-card" data-cy="cws-messages">
-      <ul class="cws-thread">
-        {texts.length === 0 && (
-          <li class="cws-muted">{tFor(lang, "customerWs.msg.none")}</li>
-        )}
-        {texts.map((m) => (
-          <li
-            key={m.id}
-            class={`cws-msg cws-msg--${
-              m.direction === "outbound" ? "out" : "in"
-            }`}
-          >
-            <div>{m.body}</div>
-            <div class="cws-muted">{day(m.createdAt, lang)}</div>
-          </li>
-        ))}
-      </ul>
-      <form
-        class="cws-compose"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const body = draft.trim();
-          if (!body || sending) return;
-          setSending(true);
-          try {
-            await commsClient.sendText(peer, body);
-            setDraft("");
-            await load();
-          } finally {
-            setSending(false);
-          }
-        }}
-      >
-        <input
-          value={draft}
-          placeholder={tFor(lang, "customerWs.msg.placeholder")}
-          onInput={(e) => setDraft((e.currentTarget as HTMLInputElement).value)}
-        />
-        <button
-          type="submit"
-          class="cws-btn cws-btn--primary cws-btn--sm"
-          disabled={sending || !draft.trim()}
+  } else {
+    const texts = detail?.texts ?? [];
+    thread = (
+      <div class="cws-card" data-cy="cws-messages">
+        <div class="cws-card__hd">
+          <h3>{tFor(lang, "customerWs.msg.textsTitle")}</h3>
+        </div>
+        <ul class="cws-thread">
+          {texts.length === 0 && (
+            <li class="cws-muted">{tFor(lang, "customerWs.msg.none")}</li>
+          )}
+          {texts.map((m) => (
+            <li
+              key={m.id}
+              class={`cws-msg cws-msg--${
+                m.direction === "outbound" ? "out" : "in"
+              }`}
+            >
+              <div>{m.body}</div>
+              <div class="cws-muted">{day(m.createdAt, lang)}</div>
+            </li>
+          ))}
+        </ul>
+        <form
+          class="cws-compose"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const body = draft.trim();
+            if (!body || sending) return;
+            setSending(true);
+            try {
+              await commsClient.sendText(peer, body);
+              setDraft("");
+              await Promise.all([loadThread(), loadSent()]);
+            } finally {
+              setSending(false);
+            }
+          }}
         >
-          {tFor(lang, "customerWs.msg.send")}
-        </button>
-      </form>
+          <input
+            value={draft}
+            placeholder={tFor(lang, "customerWs.msg.placeholder")}
+            onInput={(e) =>
+              setDraft((e.currentTarget as HTMLInputElement).value)}
+          />
+          <button
+            type="submit"
+            class="cws-btn cws-btn--primary cws-btn--sm"
+            disabled={sending || !draft.trim()}
+          >
+            {tFor(lang, "customerWs.msg.send")}
+          </button>
+        </form>
+      </div>
+    );
+  }
+  return (
+    <div class="cws-msgs">
+      {history}
+      {thread}
     </div>
   );
 }

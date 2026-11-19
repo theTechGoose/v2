@@ -172,3 +172,37 @@ describe("REQ-924 the page, its client, its strings", () => {
     expect(missing).toEqual([]);
   });
 });
+
+/**
+ * REQ-989 (LOOP-007 q1, q1-72) — "Customer's Mensajes tab shows none of the emails sent to her". The
+ * Messages tab must list her REQ-784 outbox entries (every email and text sent to her) whatever the
+ * phone-line state: with no line, and with no phone on file. The "get a line" pitch only replaces the
+ * compose box, never the history.
+ */
+describe("REQ-989 q1-72 the Messages tab lists what was sent to her", () => {
+  const src = read("front-end/islands/CustomerWorkspace.tsx");
+  const fn = src.slice(src.indexOf("function Messages("));
+  const body = fn.slice(0, fn.indexOf("\nfunction ", 1) > 0 ? fn.indexOf("\nfunction ", 1) : undefined);
+
+  test("REQ-989: the tab hands Messages the customer's id, not only her phone", () => {
+    expect(src).toMatch(/<Messages\b[^>]*\bcustomerId=\{c\.id\}/);
+  });
+
+  test("REQ-989: her outbox entries are read by customer (GET /outbox?customerId=)", () => {
+    const client = read("front-end/lib/outbox.ts") + read("front-end/islands/CustomerWorkspace.tsx");
+    expect(client).toMatch(/outbox\?customerId=|["'`]customerId["'`]/);
+    expect(body).toMatch(/outbox/i);
+  });
+
+  test("REQ-989: each entry renders as a row of the tab (cws-outbox-row)", () => {
+    expect(body).toMatch(/data-cy="cws-outbox-row"/);
+  });
+
+  test("REQ-989: no line is not a dead end — the noLine branch never returns in place of the history", () => {
+    expect(body).not.toMatch(/if \(state === "noLine"\)\s*\{\s*return/);
+  });
+
+  test("REQ-989: no phone on file is not a dead end either — the history still renders", () => {
+    expect(body).not.toMatch(/if \(!peer\)\s*\{\s*return/);
+  });
+});

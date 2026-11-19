@@ -49,6 +49,20 @@ export interface OutboxMessage extends OutboxRow {
   body: string;
 }
 
+/**
+ * REQ-989 (q1-72) — the list of what went to ONE customer, for her page's
+ * Messages tab: `GET /outbox?customerId=<id>` (the account's entries sent
+ * to her, newest first).
+ */
+export function customerOutboxPath(customerId: string): string {
+  return `/outbox?customerId=${encodeURIComponent(customerId)}`;
+}
+
+/** Where a row opens: the Outbox with that message open (`?open=`). */
+export function outboxOpenHref(id: string): string {
+  return `/messages?open=${encodeURIComponent(id)}`;
+}
+
 /** Codes worded as themselves (a text's SmsFailureCode). */
 const WORDED = new Set(["invalid", "fictional", "notMobile", "optedOut"]);
 
