@@ -2867,6 +2867,8 @@
   "quoteCard.back.open": "Abrir cotización",
   "quoteCard.back.opens.one": "apertura",
   "quoteCard.back.opens.other": "aperturas",
+  "quoteCard.back.opensError": "No se pudo cargar cuándo la abrieron.",
+  "quoteCard.back.opensLoading": "Cargando cuándo la abrieron…",
   "quoteCard.back.resend": "Reenviar",
   "quoteCard.back.viewAsClient": "Ver como cliente",
   "quoteCard.cta.finishSend": "Terminar + enviar",

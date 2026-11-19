@@ -8,6 +8,7 @@ import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import type { QuoteOpenEntry, QuoteOpensResponse } from "@paperwork/dto/quote.ts";
 import type { InsightResponse, WinRateResponse } from "@analytics/dto/quotes-stats.ts";
 import { deviceFromUa } from "@paperwork/domain/business/device-from-ua/mod.ts";
+import { mergeOpensByHour } from "@analytics/domain/business/merge-opens/mod.ts";
 import { relativeTime } from "@core/business/relative-time/mod.ts";
 import type { Lang } from "@core/i18n/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -56,7 +57,9 @@ export class QuotesController {
     await this.quotes.getOwned(id, user.id);
     const views = await this.views.listByPaperwork("quote", id);
     const now = new Date();
-    const sorted = [...views].sort((a, b) => a.viewedAt.localeCompare(b.viewedAt));
+    // REQ-955 (LOOP-007 q1-30): one row per OPEN, merged by the same rule
+    // as the card's count (BuildQuoteCards) — never one row per page load.
+    const sorted = mergeOpensByHour(views);
     const opens: QuoteOpenEntry[] = sorted.map((v) => ({
       at:     v.viewedAt,
       atRel:  relativeTime(v.viewedAt, now),

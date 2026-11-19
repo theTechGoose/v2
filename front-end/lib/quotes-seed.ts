@@ -411,9 +411,14 @@ export const buildOpens = (q: Quote): OpenEvent[] => {
 
 export type ReadingChunk = { text: string; em?: string; tail?: string };
 
+/** The card's "reading" of a quote. `opens` is the open HISTORY (the card's
+ *  timeline): `null` while it has not loaded (or could not load). REQ-955
+ *  (LOOP-007 q1-30): the card's own count (`q.opens`, from GET /quotes) is the
+ *  truth about WHETHER it was opened — an unloaded or empty history never
+ *  turns "1 open" into "no opens yet"; it only drops the device detail. */
 export const readingFor = (
   q: Quote,
-  opens: OpenEvent[],
+  opens: OpenEvent[] | null,
   lang: "en" | "es" = "en",
 ): ReadingChunk => {
   if (q.stage === "draft") {
@@ -426,7 +431,7 @@ export const readingFor = (
   if (q.stage === "undelivered") {
     return { text: tFor(lang, "quotesSeed.reading.undelivered.text") };
   }
-  if (opens.length === 0) {
+  if (q.opens === 0 && !opens?.length) {
     return {
       text: tFor(
         lang,
@@ -436,7 +441,7 @@ export const readingFor = (
       ),
     };
   }
-  const devices = new Set(opens.map((o) => o.device));
+  const devices = new Set((opens ?? []).map((o) => o.device));
   if (q.stage === "opened" && q.opens >= 3 && devices.size >= 2) {
     return {
       text: tFor(lang, "quotesSeed.reading.shopping.text"),
