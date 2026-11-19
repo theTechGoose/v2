@@ -98,12 +98,18 @@ export interface Totals {
   totalCents: number;
 }
 
-/** Subtotal − discount, then tax on what is left. Never below zero. */
+/** Subtotal − discount, then tax on what is left. Never below zero.
+ *  REQ-981 (LOOP-007 q1-62): the discount is capped at the subtotal, so the
+ *  shown lines always add up (subtotal − discount + tax = total) and no body
+ *  ever carries more discount than there is bill. */
 export function computeTotals(input: TotalsInput): Totals {
   const subtotalCents = input.lineItems.length > 0
     ? input.lineItems.reduce((sum, l) => sum + lineTotalCents(l), 0)
     : Math.max(0, Math.round(input.amountCents ?? 0));
-  const discountCents = Math.max(0, Math.round(input.discountCents ?? 0));
+  const discountCents = Math.min(
+    Math.max(0, subtotalCents),
+    Math.max(0, Math.round(input.discountCents ?? 0)),
+  );
   const taxableCents = Math.max(0, subtotalCents - discountCents);
   const bp = Math.max(0, Math.round(input.taxRateBp ?? 0));
   const taxCents = Math.round(taxableCents * bp / 10_000);

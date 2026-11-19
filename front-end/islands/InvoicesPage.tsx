@@ -6267,6 +6267,21 @@ export function NewInvoiceModal(
             />
           </label>
         </div>
+        {
+          /* REQ-981 (LOOP-007 q1-62): a typed discount past the subtotal is
+            capped (computeTotals) — say so, instead of a −$100 line on $0. */
+        }
+        {dollarsToCents(discount) > totals.discountCents && (
+          <div
+            data-cy="new-invoice-discount-capped"
+            role="status"
+            style="font-size:12px;color:#b07d2a;margin-top:-4px"
+          >
+            {tFor(lang, "invoicesPage.new.discountCapped", {
+              max: fmtMoneyExact(totals.subtotalCents),
+            })}
+          </div>
+        )}
 
         {/* totals */}
         <div

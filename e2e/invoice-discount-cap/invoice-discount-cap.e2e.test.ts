@@ -140,7 +140,10 @@ Deno.test("REQ-981 q1-62: New invoice with Discount $100 and no amount never sho
       `REQ-981 subtotal − discount + tax = total (${a.text})`,
     );
 
-    // $50 amount, Discount 100, 8.25% tax
+    // $50 amount, Discount 100, 8.25% tax — REQ-921 opens the form with one
+    // service row, and Amount is read-only while a row exists; drop the
+    // empty row so the one-amount bill can be typed.
+    await page.locator("[data-cy='new-invoice-line-remove-0']").click();
     await typeInto(page, "new-invoice-amount", "50");
     await typeInto(page, "new-invoice-tax", "8.25");
     await page.waitForFunction(() =>

@@ -354,12 +354,19 @@ export class InvoiceController {
       acknowledgeClaim?: boolean;
       override?: boolean;
     };
-    const cents = Math.max(0, Math.round(Number(b.discountCents ?? 0)));
-    if (!cents) throw new Error("discountCents must be a positive integer");
+    const asked = Math.max(0, Math.round(Number(b.discountCents ?? 0)));
+    if (!asked) throw new Error("discountCents must be a positive integer");
     const inv = await this.store.getOwned(id, user.id);
     // REQ-202: a paid invoice is locked — more work gets a new invoice.
     if (isInvoiceLocked(inv)) {
       return ctx.json({ ok: false, reason: "locked_paid" }, 409);
+    }
+    // REQ-981 (LOOP-007 q1-62): a discount is capped at what is still
+    // billed — $100 off a $50 invoice takes $50, never stores "−$100.00"
+    // that the email and PDF then print. Nothing left to discount is 422.
+    const cents = Math.min(asked, Math.max(0, Math.round(inv.amount ?? 0)));
+    if (!cents) {
+      return ctx.json({ ok: false, reason: "discount_exceeds_amount" }, 422);
     }
     // P-41 integrity guard: an UNCONFIRMED payment claim means the customer
     // already claimed the OLD total — never silently change it under them.
@@ -575,6 +582,23 @@ export class InvoiceController {
           dto.taxCents ?? 0,
         );
         if (!cap.ok) return ctx.json(cap, 409);
+      }
+    }
+    // REQ-981 (LOOP-007 q1-62): a discount bigger than the bill is the
+    // caller's error — never stored, emailed or printed as "−$100.00" on a
+    // $0 subtotal. The pre-discount base is the sent subtotal, else the
+    // line items' sum (a bare net `amount` says nothing about it).
+    if ((dto.discountCents ?? 0) > 0) {
+      const base = typeof dto.subtotalCents === "number"
+        ? dto.subtotalCents
+        : (dto.lineItems ?? []).length > 0
+        ? (dto.lineItems ?? []).reduce(
+          (s, li) => s + (li.price ?? 0) * (li.quantity ?? 1),
+          0,
+        )
+        : undefined;
+      if (base !== undefined && (dto.discountCents ?? 0) > Math.max(0, base)) {
+        return ctx.json({ error: "discount_exceeds_subtotal" }, 422);
       }
     }
     // Every invoice gets a due date; +30 days is the trade default.
