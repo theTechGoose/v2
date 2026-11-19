@@ -7,7 +7,7 @@
  * bound to her, the Repeat visits form, the customer form. After an action the page re-reads
  * GET /customers/:id/workspace and tells the sidebar (its rows show what she owes).
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -211,6 +211,12 @@ export default function CustomerWorkspace(
   const [askDelete, setAskDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  // REQ-1108: does the business have a phone line? null = still asking. The More menu's text item
+  // follows it (and the customer's phone) instead of always offering "Send a text"; a 409 (no
+  // line) or any failure reads as "no line", quietly.
+  const [hasLine, setHasLine] = useState<boolean | null>(null);
+  // REQ-1108: bumped by More → Send a text; the Messages tab scrolls into view and focuses the composer
+  const [landMessages, setLandMessages] = useState(0);
 
   async function load() {
     try {
@@ -231,6 +237,15 @@ export default function CustomerWorkspace(
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [customerId]);
+  useEffect(() => {
+    let live = true;
+    commsClient.line()
+      .then(({ line }) => live && setHasLine(!!line))
+      .catch(() => live && setHasLine(false));
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 4000);
@@ -267,8 +282,10 @@ export default function CustomerWorkspace(
     if (text) setToast({ text });
   }
 
-  function setTab(t: WsTab) {
+  /** REQ-1108: `land` — after the switch, bring the tab's content into view (Messages: and focus the composer) */
+  function setTab(t: WsTab, opts: { land?: boolean } = {}) {
     setTabState(t);
+    if (opts.land) setLandMessages((n) => n + 1);
     try {
       const url = new URL(globalThis.location.href);
       if (t === "overview") url.searchParams.delete("tab");
@@ -489,13 +506,38 @@ export default function CustomerWorkspace(
             </button>
             {menuOpen && (
               <div class="cws-menu" role="menu" data-cy="cws-menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => setTab("messages")}
-                >
-                  💬 {tFor(lang, "customerWs.act.text")}
-                </button>
+                {/* REQ-1108: the text item says what is true — no line → get one; no phone → add one */}
+                {hasLine === false
+                  ? (
+                    <a
+                      role="menuitem"
+                      href="/communications"
+                      data-cy="cws-text"
+                    >
+                      💬 {tFor(lang, "customerWs.act.getLineToText")}
+                    </a>
+                  )
+                  : !c.phoneNumber
+                  ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-cy="cws-text"
+                      onClick={() => setModal({ kind: "edit" })}
+                    >
+                      💬 {tFor(lang, "customerWs.act.addPhoneToText")}
+                    </button>
+                  )
+                  : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-cy="cws-text"
+                      onClick={() => setTab("messages", { land: true })}
+                    >
+                      💬 {tFor(lang, "customerWs.act.text")}
+                    </button>
+                  )}
                 <a
                   role="menuitem"
                   href={startServiceHref}
@@ -1135,6 +1177,7 @@ export default function CustomerWorkspace(
             lang={lang}
             timeZone={timeZone}
             onAddPhone={() => setModal({ kind: "edit" })}
+            land={landMessages}
           />
         )}
       </div>
@@ -1711,15 +1754,20 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
  * she has an email, an Email action.
  */
 function Messages(
-  { customerId, phone, email, lang, timeZone, onAddPhone }: {
+  { customerId, phone, email, lang, timeZone, onAddPhone, land = 0 }: {
     customerId: string;
     phone?: string;
     email?: string;
     lang: Lang;
     timeZone?: string;
     onAddPhone: () => void;
+    /** REQ-1108: a bump (More → Send a text) scrolls the thread card into view and focuses the composer */
+    land?: number;
   },
 ) {
+  const threadRef = useRef<HTMLDivElement>(null);
+  const composeRef = useRef<HTMLInputElement>(null);
+  const landed = useRef(0);
   const peer = phone ? toE164(phone) : null;
   const [state, setState] = useState<"loading" | "noLine" | "ready" | "failed">(
     "loading",
@@ -1760,6 +1808,13 @@ function Messages(
   useEffect(() => {
     loadThread();
   }, [peer]);
+  // REQ-1108: land once per bump, after the thread settles (the card it shows is the one to see)
+  useEffect(() => {
+    if (!land || landed.current === land || state === "loading") return;
+    landed.current = land;
+    threadRef.current?.scrollIntoView({ block: "start" });
+    composeRef.current?.focus({ preventScroll: true });
+  }, [land, state]);
 
   const history = (
     <div class="cws-card" data-cy="cws-outbox">
@@ -1914,6 +1969,7 @@ function Messages(
           }}
         >
           <input
+            ref={composeRef}
             value={draft}
             placeholder={tFor(lang, "customerWs.msg.placeholder")}
             onInput={(e) =>
@@ -1933,7 +1989,7 @@ function Messages(
   return (
     <div class="cws-msgs">
       {history}
-      {thread}
+      <div class="cws-msgs__thread" ref={threadRef}>{thread}</div>
     </div>
   );
 }
