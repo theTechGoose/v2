@@ -488,11 +488,19 @@ export class SendPaperworkEmail {
     // REQ-945 (LOOP-007 q1-20): the quote email carries the quote PDF, as
     // the signed confirmation carries the agreement's; REQ-941: a caller's
     // own attachments (the paid invoice's PDF receipt) ride along.
+    // REQ-1102 (LOOP-007 q3-26): the PDF is the customer's copy of what this
+    // email delivers, so it is rendered as the quote will stand once
+    // delivered — a first send stamps "sent" (below, only after result.ok,
+    // so a failed send is never marked sent), and the attachment says so
+    // too rather than the pre-send "draft".
+    const sentAtStamp = new Date().toISOString();
     const attachments = [
       ...(quotePdfFrom
         ? await this.quotePdfAttachment(
           userId,
-          quotePdfFrom.quote,
+          quotePdfFrom.quote.sentAt
+            ? quotePdfFrom.quote
+            : { ...quotePdfFrom.quote, status: "sent", sentAt: sentAtStamp },
           quotePdfFrom.customer,
           safeSender,
           quotePdfFrom.biz,
@@ -529,7 +537,7 @@ export class SendPaperworkEmail {
     ) {
       await this.quotes.update(input.resourceId, userId, {
         status: "sent",
-        sentAt: new Date().toISOString(),
+        sentAt: sentAtStamp,
       });
     }
 
