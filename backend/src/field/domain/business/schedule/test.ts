@@ -241,6 +241,22 @@ Deno.test("REQ-787 isDue — annual: once a year on the picked day(s) of the pic
   );
 });
 
+Deno.test("REQ-1013 isDue — annual with two picked days (March 5 and 20) is due twice in a year, not once (q1-100)", () => {
+  const a = sub({
+    cadence: "annual",
+    month: 3,
+    startDate: "2026-01-01",
+    daysOfMonth: [5, 20],
+  });
+  const due: string[] = [];
+  for (let t = Date.UTC(2026, 0, 1); t < Date.UTC(2027, 0, 1); t += 86_400_000) {
+    const d = new Date(t).toISOString().slice(0, 10);
+    if (isDue(a, d)) due.push(d);
+  }
+  assertEquals(due, ["2026-03-05", "2026-03-20"]);
+  assertEquals(due.length, 2, "one visit per picked day, so the copy can't say one visit a year");
+});
+
 Deno.test("REQ-787 scheduleText — annual reads the month and day(s), both languages", () => {
   const a = (daysOfMonth: number[]) =>
     sub({ cadence: "annual", month: 3, startDate: "2026-01-01", daysOfMonth });

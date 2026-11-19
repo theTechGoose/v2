@@ -3961,7 +3961,7 @@
   "field.subs.domHint": "29, 30 and 31 fall on the last day in shorter months.",
   "field.subs.annual": "Annual",
   "field.subs.month": "Month",
-  "field.subs.annualHint": "One visit a year, on the day(s) you pick in this month. 29 in February falls on the 28th in shorter years.",
+  "field.subs.annualHint": "Every year in this month, on each day you pick. 29 in February falls on the 28th in shorter years.",
   "field.subs.taskTypes": "Services",
   "field.subs.taskPh": "Search or type a task type…",
   "field.subs.pricePh": "Price $",
