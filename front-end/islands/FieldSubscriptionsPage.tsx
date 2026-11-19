@@ -1110,7 +1110,11 @@ export default function FieldSubscriptionsPage(
                     );
                   })}
                 </div>
-                <span class="hint">{t("field.subs.daysHint")}</span>
+                {!form.days.length && (
+                  <span class="hint" data-cy="subs-days-hint">
+                    {t("field.subs.daysHint")}
+                  </span>
+                )}
               </div>
             )}
 
@@ -1363,11 +1367,17 @@ export default function FieldSubscriptionsPage(
                   <a href="/field/services">{t("serviceLines.manage")}</a>
                 </span>
               )}
-              <span class="hint" data-cy="subs-items-hint">
-                {form.checklistId
-                  ? t("field.subs.checklistHint")
-                  : t("field.subs.noItems")}
-              </span>
+              {form.checklistId
+                ? (
+                  <span class="hint" data-cy="subs-items-hint">
+                    {t("field.subs.checklistHint")}
+                  </span>
+                )
+                : !form.items.length && (
+                  <span class="hint" data-cy="subs-items-hint">
+                    {t("field.subs.noItems")}
+                  </span>
+                )}
             </div>
 
             {form.err && <p class="alert" data-cy="subs-error">{form.err}</p>}

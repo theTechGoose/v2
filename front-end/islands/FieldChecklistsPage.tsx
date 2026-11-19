@@ -617,7 +617,11 @@ export default function FieldChecklistsPage(
                   <I d={ICN.plus} size={14} sw={2.5} />
                 </button>
               </div>
-              <span class="hint">{t("field.subs.noItems")}</span>
+              {!form.items.length && (
+                <span class="hint" data-cy="ckl-items-hint">
+                  {t("field.subs.noItems")}
+                </span>
+              )}
             </div>
 
             {form.err && <p class="alert" data-cy="ckl-error">{form.err}</p>}
