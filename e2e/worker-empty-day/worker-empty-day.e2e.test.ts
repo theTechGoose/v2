@@ -110,6 +110,9 @@ async function readDay(
       empties: all(".wrap .empty"),
       counts: all(".wrap .crew .count, .wrap .count"),
       visits: document.querySelectorAll("[data-cy='w-visit']").length,
+      // REQ-1164 (q3-101) — the REQ-196 progress ring on this day
+      rings: document.querySelectorAll("[data-cy='w-progress']").length,
+      progressbars: document.querySelectorAll("[role='progressbar']").length,
       // innerText skips the island's <style> block
       text:
         ((document.querySelector(".wrap") as HTMLElement | null)?.innerText ??
@@ -208,6 +211,55 @@ Deno.test("REQ-1035 (LOOP-007 q2-50, q2-17; REQ-1011): an empty /worker day at 3
       `foreman: exactly one empty message (summary "${fm.count}", cards ${
         JSON.stringify(fm.empties)
       })`,
+    );
+
+    expect(faults.length === 0, faults.join(" | "));
+  }));
+
+Deno.test("REQ-1164 (LOOP-007 q3-101): an empty /worker day at 390x844 draws no 0% progress ring — EN, ES and the foreman's day", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const auth = await owner(http);
+    const jake = await addWorker(http, auth, { name: "Jake", language: "en" });
+    const rosa = await addWorker(http, auth, { name: "Rosa", language: "es" });
+    const miguel = await addWorker(http, auth, {
+      name: "Miguel",
+      language: "es",
+      role: "foreman",
+    });
+
+    const faults: string[] = [];
+    const check = (ok: boolean, msg: string) => {
+      if (!ok) faults.push(msg);
+    };
+    const noRing = (who: string, d: Day) => {
+      check(d.visits === 0, `${who}: the day has no visits (got ${d.visits})`);
+      check(
+        d.rings === 0,
+        `${who}: no [data-cy=w-progress] ring on an empty day (got ${d.rings}; summary "${d.summary}")`,
+      );
+      check(
+        d.progressbars === 0,
+        `${who}: no role=progressbar on an empty day (got ${d.progressbars})`,
+      );
+      check(
+        !/\b0\s*%/.test(d.summary) && !/\b0\s*%/.test(d.text),
+        `${who}: no "0%" next to the empty-day line (summary "${d.summary}")`,
+      );
+    };
+
+    const tomorrow = tomorrowIso();
+    noRing(
+      "EN worker, tomorrow",
+      await readDay({ page, baseUrl }, jake, "en", tomorrow),
+    );
+    noRing(
+      "ES worker, tomorrow",
+      await readDay({ page, baseUrl }, rosa, "es", tomorrow),
+    );
+    noRing(
+      "ES foreman, today",
+      await readDay({ page, baseUrl }, miguel, "es", todayIso()),
     );
 
     expect(faults.length === 0, faults.join(" | "));
