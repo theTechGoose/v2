@@ -89,3 +89,34 @@ Deno.test("REQ-285 workerScreenLang — nobody signed in, or no language answere
   assertEquals(workerScreenLang({}, false), null);
   assertEquals(workerScreenLang({ language: "fr" }, false), null);
 });
+
+// REQ-1014 (LOOP-007 q1, q1-99) — the /field/workers Away row's date text. It printed the
+// absence's raw "2026-11-26"; the field screens all read a day as fmtDay's "Thu, Nov 26".
+// fmtDayRange(from, to, lang) is the pure helper the row renders.
+import * as fieldLib from "./field.ts";
+type DayRange = (from: string, to: string, lang: "en" | "es") => string;
+const dayRange = (): DayRange => {
+  const f = (fieldLib as Record<string, unknown>).fmtDayRange;
+  assertEquals(typeof f, "function", "field.ts exports fmtDayRange(from, to, lang)");
+  return f as DayRange;
+};
+
+Deno.test("REQ-1014 fmtDayRange — one day reads 'Thu, Nov 26', not '2026-11-26'", () => {
+  assertEquals(dayRange()("2026-11-26", "2026-11-26", "en"), "Thu, Nov 26");
+});
+
+Deno.test("REQ-1014 fmtDayRange — a two-day range reads 'Thu, Nov 26 → Fri, Nov 27'", () => {
+  assertEquals(
+    dayRange()("2026-11-26", "2026-11-27", "en"),
+    "Thu, Nov 26 → Fri, Nov 27",
+  );
+});
+
+Deno.test("REQ-1014 fmtDayRange — Spanish is localized like fmtDay and never ISO", () => {
+  const es = dayRange()("2026-11-26", "2026-11-27", "es");
+  assertEquals(
+    es,
+    `${fieldLib.fmtDay("2026-11-26", "es")} → ${fieldLib.fmtDay("2026-11-27", "es")}`,
+  );
+  assertEquals(/\d{4}-\d{2}-\d{2}/.test(es), false);
+});

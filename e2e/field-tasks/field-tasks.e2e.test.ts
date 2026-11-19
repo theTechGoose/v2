@@ -2168,6 +2168,68 @@ Deno.test("REQ-842: the grass crew is marked out today on /field/workers, covere
     await expect.notSee("Covering for");
   }));
 
+// REQ-1014 (LOOP-007 q1, q1-99) — Raphael: "test every single aspect of this application …"
+// The Away row on /field/workers printed the absence's raw ISO dates ("2026-11-26"); every
+// other field screen runs the same day through fmtDay ("Thu, Nov 26").
+const fmtDayEn = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+const plusDaysIso = (iso: string, n: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+Deno.test("REQ-1014: a crew marked out on /field/workers — one day, then a two-day range — the Away row reads 'Thu, Nov 26' / 'Thu, Nov 26 → Fri, Nov 27', never a raw YYYY-MM-DD", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const api = apiOf(http, auth);
+    const ana = await api("POST", "/api/field/workers", {
+      name: "Ana Ruiz",
+      phoneNumber: `843${digits()}`,
+      pin: "1234",
+    });
+    await api("POST", "/api/field/crews", {
+      name: "Grass crew",
+      memberIds: [ana.id],
+      foremanId: ana.id,
+    });
+    const today = todayIso();
+    const tomorrow = plusDaysIso(today, 1);
+
+    const markOut = async (to: string) => {
+      await page.locator("[data-cy='crew-card']", { hasText: "Grass crew" })
+        .locator("[data-cy='crew-away']").click();
+      await expect.see("Grass crew is out");
+      await page.locator("[data-cy='away-from']").fill(today);
+      await page.locator("[data-cy='away-to']").fill(to);
+      await page.locator("[data-cy='away-disp-skip']").check();
+      await page.locator("[data-cy='away-submit']").click();
+      const dates = page.locator("[data-cy='away-row-dates']").first();
+      await dates.waitFor({ timeout: 20_000 });
+      return (await dates.textContent() ?? "").trim();
+    };
+
+    await page.goto("/field/workers");
+    await page.locator("[data-cy='away-empty']").waitFor({ timeout: 20_000 });
+    const single = await markOut(today);
+    expect(
+      !/\d{4}-\d{2}-\d{2}/.test(single) && single === fmtDayEn(today),
+      `one-day Away row reads "${fmtDayEn(today)}" (got "${single}")`,
+    );
+
+    await page.locator("[data-cy='away-remove']").first().click();
+    await page.locator("[data-cy='away-empty']").waitFor({ timeout: 20_000 });
+    const range = await markOut(tomorrow);
+    const want = `${fmtDayEn(today)} → ${fmtDayEn(tomorrow)}`;
+    expect(
+      !/\d{4}-\d{2}-\d{2}/.test(range) && range === want,
+      `two-day Away row reads "${want}" (got "${range}")`,
+    );
+  }));
+
 // REQ-927 — Raphael: "in services we need a way to migrate services to another and segment it out so we can undo redo or move that segment to another spot, this way we are able to delete services without fucking up the integrity of the system"
 Deno.test("REQ-927: Move to… moves Mowing's checklist onto Lawn cut and deletes Mowing → the Moves list shows the move → Undo brings Mowing back with its checklist → Redo → Move to… sends the same records on to Edging", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
