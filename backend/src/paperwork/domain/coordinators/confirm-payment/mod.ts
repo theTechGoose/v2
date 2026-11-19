@@ -105,7 +105,9 @@ export class ConfirmPayment {
     // the invoice stamped PAID, REQ-020) or leaves a balance (a partial
     // payment: the invoice reopens for the rest). The claim is consumed
     // either way.
-    await this.balance.run(invoice.id, userId);
+    // REQ-941: the receipt email below carries the PDF, so the paid
+    // invoice email does not attach a second one.
+    await this.balance.run(invoice.id, userId, { receiptPdf: false });
     const paidAt = new Date().toISOString();
     const updated = await this.invoices.update(invoice.id, userId, {
       paymentIntent: null,
@@ -332,8 +334,9 @@ export class ConfirmPayment {
 
     // REQ-556 (demo-loop cycle 4, M7): record where the receipt went, so the
     // paid card and /i never say "sent" / "in your inbox" when it went
-    // nowhere. MarkInvoicePaid recorded its PAID-invoice email; an email
-    // either one delivered wins, then a delivered text, else "none".
+    // nowhere. MarkInvoicePaid recorded its PAID-invoice email; a PDF
+    // receipt either one emailed wins, then a delivered text, then (REQ-941)
+    // the paid email without a PDF, else "none".
     try {
       const current = await this.invoices.getOwned(invoice.id, userId);
       if (current.status === "paid") {
@@ -341,6 +344,8 @@ export class ConfirmPayment {
           ? "email"
           : receiptTexted
           ? "text"
+          : current.receiptSentVia === "paid_email"
+          ? "paid_email"
           : "none";
         if (current.receiptSentVia !== via) {
           await this.invoices.update(invoice.id, userId, {

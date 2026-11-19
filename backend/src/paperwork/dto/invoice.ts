@@ -317,8 +317,10 @@ export class UpdateInvoiceDto {
   claimRejectedAt?: string | null;
   @IsOptional() @IsString()
   claimRejectedMethod?: string | null;
-  /** REQ-556: where the paid receipt reached the customer — "email" | "text"
-   *  | "none". Set by MarkInvoicePaid / ConfirmPayment; never from a request. */
+  /** REQ-556: where the paid receipt reached the customer — "email" (a PDF
+   *  receipt was emailed) | "text" | "paid_email" (REQ-941: the invoice
+   *  stamped paid was emailed, no PDF) | "none". Set by MarkInvoicePaid /
+   *  ConfirmPayment; never from a request. */
   @IsOptional() @IsString()
   receiptSentVia?: string;
   /** REQ-556: how signing's confirmation reached the customer for the

@@ -2,7 +2,10 @@ import { Injectable } from "#danet/core";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { balanceDue } from "@paperwork/domain/business/invoice-balance/mod.ts";
-import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
+import {
+  MarkInvoicePaid,
+  type MarkInvoicePaidOptions,
+} from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { invoiceBalance } from "#documents/versions.ts";
 import { paidMethodsOf } from "#documents/paid-how.ts"; // REQ-928
 
@@ -37,7 +40,12 @@ export class ComputeInvoiceBalance {
     private markPaid: MarkInvoicePaid,
   ) {}
 
-  async run(invoiceId: string, userId: string): Promise<InvoiceBalanceResult> {
+  async run(
+    invoiceId: string,
+    userId: string,
+    /** REQ-941: passed to MarkInvoicePaid when this run closes the bill */
+    paidOpts: MarkInvoicePaidOptions = {},
+  ): Promise<InvoiceBalanceResult> {
     const invoice = await this.invoices.getOwned(invoiceId, userId);
     const payments = await this.payments.listByInvoice(invoiceId, userId);
     const paidTotal = payments.reduce((sum, p) => sum + (p.amount ?? 0), 0);
@@ -70,7 +78,7 @@ export class ComputeInvoiceBalance {
     // invoice stamped PAID — once per flip, never on a re-run of an
     // already-paid invoice.
     if (desiredStatus === "paid" && invoice.status !== "paid") {
-      await this.markPaid.run(userId, invoiceId);
+      await this.markPaid.run(userId, invoiceId, paidOpts);
     }
 
     return {

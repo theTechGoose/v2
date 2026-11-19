@@ -26,7 +26,6 @@ import { localizeLineItems } from "../../../shared/quote-flow/quote-translations
 import { localizePaymentInstructions } from "../../../shared/documents/invoice-form.ts";
 import {
   claimedNoteKey,
-  type ReceiptChannel,
   receiptChannelOf,
 } from "../../../shared/documents/receipt-note.ts";
 import {
@@ -52,7 +51,10 @@ import {
 } from "../../../shared/documents/linked-view.ts";
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
 import { installmentSchedule } from "../../../shared/documents/ledger.ts"; // REQ-679
-import { receiptSentViaOf } from "../../../shared/documents/delivery-truth.ts";
+import {
+  receiptSentViaOf,
+  type ReceiptSentVia,
+} from "../../../shared/documents/delivery-truth.ts";
 import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
 import {
   ownerClaimNote,
@@ -1524,8 +1526,9 @@ function ReceivedNote(
     paidAt?: string;
     contractorFirst?: string;
     es: boolean;
-    /** REQ-556: where the receipt went — the inbox sentence only for email */
-    channel?: ReceiptChannel;
+    /** REQ-556: where the receipt went — the inbox sentence only for email
+     *  (REQ-941: a PDF receipt emailed, not just the paid invoice) */
+    channel?: ReceiptSentVia;
   },
 ) {
   const lang = es ? "es" : "en";

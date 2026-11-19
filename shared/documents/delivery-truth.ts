@@ -3,7 +3,7 @@
  * delivered, read from what the backend recorded — never a fixed "sent".
  *
  *   - `receiptSentVia` (MarkInvoicePaid / ConfirmPayment): where the paid
- *     receipt went — "email" | "text" | "none";
+ *     receipt went — "email" | "text" | "paid_email" | "none";
  *   - `deliveredVia` (SendSignedConfirmation): how the invoice signing billed
  *     reached the customer — [] means nobody;
  *   - the nudge's `reason` (SendPaymentReminder.runForInvoice): why nothing
@@ -13,9 +13,17 @@
  */
 import type { ReceiptChannel } from "./receipt-note.ts";
 
+/** REQ-941 (LOOP-007 q1-7): what was recorded — a receipt channel, or
+ *  "paid_email": the invoice stamped PAID was emailed WITHOUT the PDF
+ *  receipt, so no page may say a PDF is in the inbox. */
+export type ReceiptSentVia = ReceiptChannel | "paid_email";
+
 /** The recorded receipt channel, or undefined for a record without one. */
-export function receiptSentViaOf(raw: unknown): ReceiptChannel | undefined {
-  return raw === "email" || raw === "text" || raw === "none" ? raw : undefined;
+export function receiptSentViaOf(raw: unknown): ReceiptSentVia | undefined {
+  return raw === "email" || raw === "text" || raw === "none" ||
+      raw === "paid_email"
+    ? raw
+    : undefined;
 }
 
 export type PaidReadKey =
@@ -31,6 +39,7 @@ export function paidReadKey(
 ): PaidReadKey {
   switch (receiptSentViaOf(inv.receiptSentVia)) {
     case "email":
+    case "paid_email": // REQ-941: the paid invoice reached them by email
       return "invoicesPage.read.paid";
     case "text":
       return "invoicesPage.read.paidText";

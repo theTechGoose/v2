@@ -22,6 +22,7 @@ import {
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
 import {
+  type EmailAttachment,
   EmailService,
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
@@ -106,6 +107,10 @@ export interface SendPaperworkEmailInput {
    *  a text only when this send also texts ("sms"/"both") a textable
    *  number; unset means email-only. */
   channel?: "email" | "sms" | "both";
+  /** REQ-941 (LOOP-007 q1-7): files that ride with this email — the paid
+   *  invoice carries the customer's PDF receipt (MarkInvoicePaid). A PDF
+   *  among them adds the "A PDF receipt is attached" line to the body. */
+  attachments?: EmailAttachment[];
 }
 
 export interface SendPaperworkEmailResult extends SendEmailResult {
@@ -408,6 +413,10 @@ export class SendPaperworkEmail {
       ? replyAddress(await this.replyTokens.forCustomer(userId, customerIdForLog), inboundDomain())
       : undefined;
 
+    // REQ-941: the body says a PDF receipt is attached only when one is
+    if (hasPdf(input.attachments)) {
+      htmlBody = withReceiptAttachedNote(htmlBody, outboxFacts.language);
+    }
     const result = await this.email.send({
       to: recipient,
       subject,
@@ -415,6 +424,7 @@ export class SendPaperworkEmail {
       from,
       cc,
       replyTo,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     });
     await toOutbox(result.ok, {
       to: recipient,
@@ -1351,6 +1361,24 @@ export function renderInvoiceSubject(
   return `${renderWord(lang, "invoice")} ${docRef(i)} ${renderWord(lang, "from")} ${who}${
     version ? ` — ${version}` : ""
   }${due}`;
+}
+
+/** REQ-941: true when one of the attachments is a PDF. */
+function hasPdf(attachments: readonly EmailAttachment[] | undefined): boolean {
+  return !!attachments?.some((a) => a.contentType === "application/pdf");
+}
+
+/** REQ-941 (LOOP-007 q1-7): "A PDF receipt is attached for your records." —
+ *  a line closing an email that really carries the receipt PDF. */
+export function withReceiptAttachedNote(htmlBody: string, lang: Lang): string {
+  const note =
+    `<p data-receipt-attached style="max-width:560px;margin:16px auto 0;padding:0 16px;text-align:center;font-size:13px;color:${COLOR_INK}">${
+      escapeHtml(t(lang, "paperworkEmail.invoice.receiptAttached"))
+    }</p>`;
+  const at = htmlBody.lastIndexOf("</body>");
+  return at < 0
+    ? `${htmlBody}${note}`
+    : `${htmlBody.slice(0, at)}${note}\n${htmlBody.slice(at)}`;
 }
 
 /** REQ-020 (NW-29): "Paid — Invoice INV-5000 from <business>" — the invoice
