@@ -1660,7 +1660,7 @@ export function renderInvoiceHtml(
     dueLabel: t(lang, "paperworkEmail.invoice.dueLabel"),
     pasteLink: t(lang, "paperworkEmail.pasteLink"),
     // REQ-933 (q1-6): a paid invoice's button views it, never "View & pay"
-    cta: t(lang, paid ? "paperworkEmail.invoicePaid.cta" : "paperworkEmail.invoice.cta"),
+    cta: t(lang, invoiceCtaKey(paid, payWays)),
     viewSigned: t(lang, "publicInvoice.viewSignedAgreement"),
     downloadPdf: t(lang, "publicInvoice.downloadPdf"),
     questions: t(lang, "paperworkEmail.quote.questions"),
@@ -2027,6 +2027,19 @@ export function renderInvoiceHtml(
 </html>`;
 }
 
+/**
+ * The invoice email's button: "View paid invoice" once paid (REQ-933);
+ * "View & pay invoice" only when the customer can pay online; else "View
+ * invoice". REQ-1121 (amends REQ-1054): the "Ways to pay" block
+ * (payWaysEmailHtml) is "" exactly when hasOnlinePayWay is false — the case
+ * where /i says "contact your contractor" — so the button must not promise
+ * payment then.
+ */
+function invoiceCtaKey(paid: boolean, payWays: string): string {
+  if (paid) return "paperworkEmail.invoicePaid.cta";
+  return payWays ? "paperworkEmail.invoice.cta" : "paperworkEmail.invoice.ctaView";
+}
+
 /** Lightweight amount-only invoice email (the original) — used for standalone
  *  invoices with no linked quote to itemize. */
 export function renderInvoiceBasicHtml(
@@ -2158,7 +2171,7 @@ export function renderInvoiceBasicHtml(
     greeting: customerGreeting(customer, lang),
     intro: t(lang, paid ? "paperworkEmail.invoicePaid.intro" : "paperworkEmail.invoice.intro", { business }),
     body,
-    ctaLabel: t(lang, paid ? "paperworkEmail.invoicePaid.cta" : "paperworkEmail.invoice.cta"),
+    ctaLabel: t(lang, invoiceCtaKey(paid, payWays)),
     ctaUrl: withSendLang(`${APP_URL}/i/${i.id}`, lang), // REQ-727
     sender,
     lang,

@@ -121,13 +121,15 @@ Deno.test("REQ-1121 (LOOP-007 q3-44): no online pay way — /i says contact the 
     await page.goto(`/i/${bare.invId}`);
     await page.locator("[data-cy='claim-no-methods']").waitFor({ timeout: 15_000 });
     expect.eq(
-      found(bare.invoice, INVOICE_CTA),
-      [],
+      // shots' expect.eq is strict (!==): compare the joined matches, "" = none
+      found(bare.invoice, INVOICE_CTA).join(" | "),
+      "",
       "/i says contact the contractor, yet the invoice email in the Outbox asks to pay",
     );
     expect.eq(
-      found(bare.receipt, RECEIPT_CTA),
-      [],
+      // shots' expect.eq is strict (!==): compare the joined matches, "" = none
+      found(bare.receipt, RECEIPT_CTA).join(" | "),
+      "",
       "/i says contact the contractor, yet the receipt in the Outbox asks to pay the balance",
     );
 
