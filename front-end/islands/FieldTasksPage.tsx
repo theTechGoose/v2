@@ -59,6 +59,7 @@ import {
 } from "../lib/field.ts";
 import { langSignal, t, tn } from "../lib/i18n.ts";
 import SearchSelect from "./SearchSelect.tsx";
+import ServiceSelect from "../components/ServiceSelect.tsx"; // REQ-1159
 import { Icon } from "../components/ui/Icon.tsx";
 import type { FieldTasksSeed } from "../lib/field-ssr.ts";
 
@@ -123,6 +124,8 @@ type Drafts = Record<string, string>;
 
 interface AddForm {
   customerId: string;
+  /** REQ-1159 — the picked catalogue service ("" = none yet) and its name */
+  typeId: string;
   typeName: string;
   price: string;
   workerId: string;
@@ -226,7 +229,7 @@ export default function FieldTasksPage(
     "customer" | "type" | "price" | "worker" | "end" | null
   >(null);
   const [service, setService] = useState<
-    { taskId: string; typeName: string; price: string } | null
+    { taskId: string; typeId: string; typeName: string; price: string } | null
   >(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   // REQ-785 — the card whose days (and crew) are being edited
@@ -366,6 +369,7 @@ export default function FieldTasksPage(
     lastPick.current = null;
     setAdd({
       customerId: "",
+      typeId: "",
       typeName: "",
       price: "",
       workerId: "",
@@ -652,11 +656,22 @@ export default function FieldTasksPage(
   const typePhHint = serviceHint(types, "ph");
   const typePh = t(typePhHint.key, typePhHint.vars);
 
-  const typeList = (
-    <datalist id="tk-types">
-      {types.map((x) => <option key={x.id} value={x.name} />)}
-    </datalist>
-  );
+  // REQ-1159 (amends REQ-921/979) — both Service boxes on this page are the house picker over
+  // the catalogue; a name that matches no service offers `+ Add "<name>" as a service`, which
+  // creates it in the catalogue and picks it (no more native datalist + silent find-or-create)
+  async function adoptService(
+    made: Promise<TaskType>,
+    pick: (svc: TaskType) => void,
+  ) {
+    try {
+      const svc = await made;
+      setTypes((x) => [...x.filter((y) => y.id !== svc.id), svc]);
+      pick(svc);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }
+  const pickType = (id: string) => types.find((x) => x.id === id);
 
   function card(x: TaskView) {
     const noteKey = `${x.subscriptionId || x.customerId}|${x.date}`;
@@ -892,7 +907,12 @@ export default function FieldTasksPage(
                 onClick={() => {
                   setConfirmDelete(null);
                   setDates(null);
-                  setService({ taskId: x.id, typeName: "", price: "" });
+                  setService({
+                    taskId: x.id,
+                    typeId: "",
+                    typeName: "",
+                    price: "",
+                  });
                 }}
               >
                 <I d={ICN.plus} size={12} /> {t("field.tk.addService")}
@@ -1055,19 +1075,28 @@ export default function FieldTasksPage(
                 submitService(x);
               }}
             >
-              <input
-                type="text"
-                list="tk-types"
-                data-cy="tk-service-type"
+              <ServiceSelect
+                catalog={types}
+                serviceId={service.typeId}
+                name=""
+                lang={lang}
                 placeholder={typePh}
+                data-cy="tk-service-type"
                 aria-label={t("field.tk.type")}
-                value={service.typeName}
-                required
-                style={`flex:1;min-width:160px;${INPUT}`}
-                onInput={(e) => {
-                  const v = (e.currentTarget as HTMLInputElement).value;
-                  setService((s) => s && { ...s, typeName: v });
+                style="flex:1;min-width:160px"
+                onPick={(id) => {
+                  const svc = pickType(id);
+                  if (svc) {
+                    setService((s) =>
+                      s && { ...s, typeId: svc.id, typeName: svc.name }
+                    );
+                  }
                 }}
+                onCreate={(name) =>
+                  adoptService(fieldClient.createTaskType({ name }), (svc) =>
+                    setService((s) =>
+                      s && { ...s, typeId: svc.id, typeName: svc.name }
+                    ))}
               />
               <label style="font-size:12px;color:var(--fg-muted);display:flex;align-items:center;gap:4px">
                 $
@@ -1098,7 +1127,8 @@ export default function FieldTasksPage(
                 type="button"
                 class="btn btn--ghost btn--sm"
                 data-cy="tk-service-cancel"
-                onClick={() => setService(null)}
+                onClick={() =>
+                  setService(null)}
               >
                 {t("field.common.cancel")}
               </button>
@@ -1180,8 +1210,6 @@ export default function FieldTasksPage(
         </button>
       </FieldHead>
 
-      {typeList}
-
       {add && (
         <form
           class="panel"
@@ -1237,22 +1265,34 @@ export default function FieldTasksPage(
                 />
               </div>
             </div>
-            <label class="field">
+            <div class="field">
               <span>{t("field.tk.type")}</span>
-              <input
-                type="text"
-                list="tk-types"
+              <ServiceSelect
                 data-cy="tk-add-type"
+                catalog={types}
+                serviceId={add.typeId}
+                name=""
+                lang={lang}
                 placeholder={typePh}
-                aria-invalid={addBad === "type" || undefined}
-                value={add.typeName}
-                required
-                onInput={(e) => {
-                  const v = (e.currentTarget as HTMLInputElement).value;
-                  setAdd((f) => f && { ...f, typeName: v });
+                aria-label={t("field.tk.type")}
+                invalid={addBad === "type"}
+                onPick={(id) => {
+                  const svc = pickType(id);
+                  if (!svc) return;
+                  setAdd((f) =>
+                    f && { ...f, typeId: svc.id, typeName: svc.name }
+                  );
+                  if (addBad === "type") setAddBad(null);
                 }}
+                onCreate={(name) =>
+                  adoptService(fieldClient.createTaskType({ name }), (svc) => {
+                    setAdd((f) =>
+                      f && { ...f, typeId: svc.id, typeName: svc.name }
+                    );
+                    setAddBad((b) => (b === "type" ? null : b));
+                  })}
               />
-            </label>
+            </div>
             <label class="field">
               <span>{t("field.tk.price")} ($)</span>
               <input

@@ -9,6 +9,7 @@
  * checks it off once, and the owner's card reads Complete on its other days.
  */
 import { story, type StoryTools } from "#shots";
+import { pickOrAddService } from "../_shared/service-lines.ts"; // REQ-1159
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -136,7 +137,11 @@ Deno.test("REQ-785 (demo dv1-d11): a 3-day fence install scheduled as ONE job sh
     await form.locator(
       "[data-cy='tk-customer'] [data-cy='search-select-option']",
     ).filter({ hasText: "Dana Whitfield" }).first().click();
-    await form.locator("[data-cy='tk-add-type']").fill("Fence install");
+    await pickOrAddService(
+      page,
+      "[data-cy='tk-add-form'] [data-cy='tk-add-type']",
+      "Fence install",
+    );
     await form.locator("[data-cy='tk-add-price']").fill("2400");
     await form.locator("[data-cy='tk-add-worker']").selectOption(luis.id);
     expect.eq(

@@ -8,7 +8,11 @@
  * GET /api/invoices with its amount and the line "date — type — address".
  */
 import { story, type StoryTools } from "#shots";
-import { addVisitService, ensureService } from "../_shared/service-lines.ts"; // REQ-921
+import {
+  addVisitService,
+  ensureService,
+  pickOrAddService,
+} from "../_shared/service-lines.ts"; // REQ-921, REQ-1159
 
 /** REQ-152 — the customer field is a search box: type the name, click the match */
 async function pickCustomer(page: StoryTools["page"], name: string) {
@@ -800,7 +804,11 @@ Deno.test("REQ-164: Add task → customer, type, price, worker → the card show
       "4601 Dick Pond Rd, Myrtle Beach, SC",
       "the customer's address is filled in",
     );
-    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await pickOrAddService(
+      page,
+      "[data-cy='tk-add-form'] [data-cy='tk-add-type']",
+      "Mulch",
+    );
     await form.locator("[data-cy='tk-add-price']").fill("120");
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
     await form.locator("[data-cy='tk-add-save']").click();
@@ -835,7 +843,11 @@ Deno.test("REQ-526 (demo m50, cycle 3): Add task for another day → Save moves 
     await form.locator(
       "[data-cy='tk-customer'] [data-cy='search-select-option']",
     ).filter({ hasText: "Ana Torres" }).first().click();
-    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await pickOrAddService(
+      page,
+      "[data-cy='tk-add-form'] [data-cy='tk-add-type']",
+      "Mulch",
+    );
     await form.locator("[data-cy='tk-add-price']").fill("120");
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
     await form.locator("[data-cy='tk-add-date']").fill(day);
@@ -884,7 +896,11 @@ Deno.test("REQ-283 (demo M38): Add task with no customer picked says so and send
       "[data-cy='tk-customer'] [data-cy='search-select-input']",
     );
     await box.fill("Jim Baker");
-    await form.locator("[data-cy='tk-add-type']").fill("Mulch");
+    await pickOrAddService(
+      page,
+      "[data-cy='tk-add-form'] [data-cy='tk-add-type']",
+      "Mulch",
+    );
     await form.locator("[data-cy='tk-add-price']").fill("120");
     // 1. no customer picked — the form says which field, and no task is POSTed
     await form.locator("[data-cy='tk-add-save']").click();
@@ -961,7 +977,11 @@ Deno.test("REQ-340 (demo M37): a new customer added from the form BEFORE the add
       document.querySelector("[data-cy='tk-customer'] input[name='customer']")
         ?.getAttribute("value")
     );
-    await form.locator("[data-cy='tk-add-type']").fill("Gutter clean");
+    await pickOrAddService(
+      page,
+      "[data-cy='tk-add-form'] [data-cy='tk-add-type']",
+      "Gutter clean",
+    );
     await form.locator("[data-cy='tk-add-price']").fill("150");
     await form.locator("[data-cy='tk-add-worker']").selectOption(worker.id);
     await form.locator("[data-cy='tk-add-address']").fill(
@@ -999,10 +1019,15 @@ Deno.test("REQ-415 (demo p11, cycle 2): a fence builder's Add-task Service box s
     await page.locator("[data-cy='tk-add']").click();
     const form = page.locator("[data-cy='tk-add-form']");
     await form.waitFor({ timeout: 15_000 });
-    const type = form.locator("[data-cy='tk-add-type']");
+    // REQ-1159: the Service box is the house picker — the placeholder is on its input
+    const type = form.locator(
+      "[data-cy='tk-add-type'] [data-cy='search-select-input']",
+    );
     await page.waitForFunction(
       () =>
-        (document.querySelector("[data-cy='tk-add-type']")?.getAttribute(
+        (document.querySelector(
+          "[data-cy='tk-add-type'] [data-cy='search-select-input']",
+        )?.getAttribute(
           "placeholder",
         ) ?? "").includes("Fence install"),
       undefined,
@@ -1055,9 +1080,9 @@ Deno.test("REQ-521 (demo m54, cycle 3): an account with no workers opens Add tas
       "the customer box is marked invalid",
     );
     expect.eq(
-      await form.locator("[data-cy='tk-add-type']").getAttribute(
-        "aria-invalid",
-      ),
+      await form.locator(
+        "[data-cy='tk-add-type'] [data-cy='search-select-input']",
+      ).getAttribute("aria-invalid"),
       null,
       "Service is not the field flagged",
     );
@@ -1083,7 +1108,11 @@ Deno.test("REQ-165: Add service on the card → Edging $25 → a second card in 
     const task = page.locator("[data-cy='tk-task']").first();
     await task.waitFor({ timeout: 15_000 });
     await task.locator("[data-cy='tk-add-service']").click();
-    await task.locator("[data-cy='tk-service-type']").fill("Edging");
+    await pickOrAddService(
+      page,
+      "[data-cy='tk-task'] [data-cy='tk-service-type']",
+      "Edging",
+    );
     await task.locator("[data-cy='tk-service-price']").fill("25");
     await task.locator("[data-cy='tk-service-save']").click();
     await page.locator("[data-cy='tk-task']").nth(1).waitFor({
