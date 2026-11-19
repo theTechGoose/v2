@@ -39,7 +39,8 @@ export default define.page(function TimesheetRoute(ctx) {
             greetingName={greetingName}
           />
           <div class="content">
-            <TimesheetPage />
+            {/* REQ-1038 — the business's zone: the week and every punch on its wall clock */}
+            <TimesheetPage timeZone={user?.businessTimezone} />
             <SiteFooter lang={lang} />
           </div>
         </main>

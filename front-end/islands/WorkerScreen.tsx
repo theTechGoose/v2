@@ -1313,7 +1313,11 @@ export default function WorkerScreen(
           </div>
           {/* REQ-192 — the clock: one button, this week's shifts; mounted always, shown on its tab */}
           <div hidden={tab !== "clock"} data-cy="w-pane-clock" data-pane>
-            <WorkerClock hoursOpen onState={setClockState} />
+            <WorkerClock
+              hoursOpen
+              onState={setClockState}
+              timeZone={me?.timeZone}
+            />
           </div>
           <div
             hidden={tab !== "tasks"}

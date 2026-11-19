@@ -86,7 +86,8 @@ describe("REQ-192 the timeclock feature", () => {
       /import TimesheetPage from "\.\.\/\.\.\/islands\/TimesheetPage\.tsx"/,
     );
     expect(route).toMatch(/<DashSidebar active="timesheet" \/>/);
-    expect(route).toMatch(/<TimesheetPage \/>/);
+    // REQ-1038 — it carries the business zone now
+    expect(route).toMatch(/<TimesheetPage(?: timeZone=\{user\?\.businessTimezone\})? \/>/);
     // REQ-192 AMENDMENT (reconciled with demo-fixes' REQ-367): the tab title
     // is a DocTitle carrying both languages, so it follows the EN/ES switch
     expect(route).toMatch(/<DocTitle lang=\{lang\} title=\{\(l\) => tFor\(l, "ts\.docTitle"\)\} \/>/);

@@ -20,7 +20,8 @@ describe("REQ-193 the worker's tabs", () => {
   test("the clock pane keeps the clock mounted (hidden, not unmounted) with the hours open, and dots the tab", () => {
     expect(screen).toMatch(/hidden=\{tab !== "clock"\}/);
     expect(screen).toMatch(
-      /<WorkerClock hoursOpen onState=\{setClockState\} \/>/,
+      // REQ-1038 — plus the business zone
+      /<WorkerClock\s+hoursOpen\s+onState=\{setClockState\}\s+timeZone=\{me\?\.timeZone\}\s+\/>/,
     );
     expect(screen).toMatch(/data-cy="w-tab-clock-dot"/);
     expect(screen).toMatch(/hidden=\{tab !== "tasks"\}/);

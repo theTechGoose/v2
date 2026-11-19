@@ -20,15 +20,18 @@ import { Icon } from "../ui/Icon.tsx"; // REQ-366
 const REFRESH_MS = 30_000;
 
 const locale = (lang: Lang) => lang === "es" ? "es-MX" : "en-US";
-const fmtTime = (iso: string, lang: Lang) =>
+// REQ-1038 (amends REQ-944) — a punch reads on the business's wall clock, not the device's
+const fmtTime = (iso: string, lang: Lang, timeZone?: string) =>
   new Date(iso).toLocaleTimeString(locale(lang), {
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   });
-const fmtDayOf = (iso: string, lang: Lang) =>
+const fmtDayOf = (iso: string, lang: Lang, timeZone?: string) =>
   new Date(iso).toLocaleDateString(locale(lang), {
     weekday: "short",
     day: "numeric",
+    timeZone,
   });
 
 /** the shift's length now: the server's figure for a closed one, the clock for the open one */
@@ -59,9 +62,11 @@ const css = `
 `;
 
 export default function WorkerClock(
-  { hoursOpen = false, onState }: {
+  { hoursOpen = false, onState, timeZone }: {
     hoursOpen?: boolean;
     onState?: (s: "in" | "out") => void;
+    /** REQ-1038 — the business's zone (/field/worker/me): its week and its wall clock */
+    timeZone?: string;
   } = {},
 ) {
   const lang = langSignal.value;
@@ -71,10 +76,15 @@ export default function WorkerClock(
   const [hours, setHours] = useState(hoursOpen);
   const [now, setNow] = useState(() => Date.now());
   const alive = useRef(true);
+  // REQ-1038 — the business's week; with no zone known yet, no bounds: the server's own
+  // business-zone week (REQ-940), never the device's
+  const zone = useRef(timeZone);
+  zone.current = timeZone;
+  const week = () => zone.current ? localWeek(new Date(), 0, zone.current) : {};
 
   async function load() {
     try {
-      const v = await timeclockWorker.status(localWeek());
+      const v = await timeclockWorker.status(week());
       if (alive.current) setView(v);
     } catch { /* the next refresh tries again; the button stays as it was */ }
   }
@@ -103,7 +113,7 @@ export default function WorkerClock(
     setBusy(true);
     setErr("");
     try {
-      const r = await timeclockWorker.punch(localWeek());
+      const r = await timeclockWorker.punch(week());
       setView(r.status);
     } catch (e) {
       const code = e instanceof ApiError && e.body && typeof e.body === "object"
@@ -154,7 +164,7 @@ export default function WorkerClock(
             )}
             {view && (view.since
               ? t(inNow ? "clock.onSince" : "clock.offSince", {
-                time: fmtTime(view.since, lang),
+                time: fmtTime(view.since, lang, timeZone),
               })
               : t("clock.never"))}
           </div>
@@ -214,11 +224,11 @@ export default function WorkerClock(
                     data-cy="clock-shift"
                     data-open={s.open ? "1" : "0"}
                   >
-                    <td>{fmtDayOf(s.start, lang)}</td>
-                    <td>{fmtTime(s.start, lang)}</td>
+                    <td>{fmtDayOf(s.start, lang, timeZone)}</td>
+                    <td>{fmtTime(s.start, lang, timeZone)}</td>
                     <td>
                       {s.end
-                        ? fmtTime(s.end, lang)
+                        ? fmtTime(s.end, lang, timeZone)
                         : s.open
                         ? t("clock.open")
                         : "—"}

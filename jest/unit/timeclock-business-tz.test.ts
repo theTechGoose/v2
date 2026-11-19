@@ -17,6 +17,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import { localWeek } from "../../front-end/clients/timeclock";
+import {
+  fromZonedInput,
+  toZonedInput,
+} from "../../shared/field/zoned-time";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -98,5 +102,16 @@ describe("REQ-1038 q2-22: the timeclock shows punches in the business's time zon
     expect(route).toMatch(/<TimesheetPage[^>]*\btimeZone=/);
     const worker = read("front-end/islands/WorkerScreen.tsx");
     expect(worker).toMatch(/<WorkerClock[^>]*\btimeZone=/);
+  });
+  it("REQ-1038 the timesheet's Add-punch fields read and write the business's wall clock", () => {
+    // 07:56Z is 01:56 AM in Chicago: the field shows that, and that is the instant it posts
+    expect(toZonedInput(new Date("2026-11-19T07:56:00Z"), "America/Chicago"))
+      .toBe("2026-11-19T01:56");
+    expect(fromZonedInput("2026-11-19T01:56", "America/Chicago")?.toISOString())
+      .toBe("2026-11-19T07:56:00.000Z");
+    // summer time: CDT is UTC-5
+    expect(fromZonedInput("2026-07-01T08:00", "America/Chicago")?.toISOString())
+      .toBe("2026-07-01T13:00:00.000Z");
+    expect(fromZonedInput("not a time", "America/Chicago")).toBeNull();
   });
 });
