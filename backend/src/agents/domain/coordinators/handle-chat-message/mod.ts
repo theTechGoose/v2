@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "#danet/core";
-import { t } from "@core/i18n/mod.ts";
+import { type Lang, t } from "@core/i18n/mod.ts";
 import {
   priceProblemItem,
   quotePriceProblem,
@@ -164,6 +164,13 @@ import {
   statedTotalCents,
   statedTotalNote,
 } from "@agents/domain/business/stated-price/mod.ts";
+// REQ-942 (LOOP-007 q1-1): alternatives the contractor typed for the
+// customer to pick from are never added into one quote's total.
+import {
+  firstAlternativeLines,
+  type TypedAlternative,
+  typedAlternatives,
+} from "#quote-flow/alternatives.ts";
 import {
   acceptModelServiceAddress,
   extractServiceAddress,
@@ -258,6 +265,44 @@ const CONFIRM_LOCK_RE =
  *  user clicks "Lock it in", so any preemptive ask in the create_quote
  *  reply is duplicative. We strip surgically rather than re-prompting the
  *  LLM so we don't burn another round-trip. */
+/** "$9,800" / "$249.99" — money in a chat reply. */
+function chatMoney(cents: number): string {
+  const d = cents / 100;
+  return "$" + d.toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(d) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** REQ-942: the model's note — the contractor offered alternatives. */
+function alternativesNote(alts: readonly TypedAlternative[]): string {
+  const list = alts.map((a) => `${a.label}: ${a.text} (${a.cents} cents)`)
+    .join("; ");
+  return `The contractor offered the customer ALTERNATIVES — the customer picks ONE: ${list}. Never add them together. If you call create_quote, draft ${
+    alts[0].label
+  } only: its lines add up to ${
+    alts[0].cents
+  } cents, its materials exactly as typed, and nothing from the other options.`;
+}
+
+const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** REQ-942: the reply line — the first option drafted, the others not. */
+function alternativesLine(
+  lang: Lang,
+  alts: readonly TypedAlternative[],
+): string {
+  const [first, ...others] = alts;
+  return t(lang, "chatCoordinator.alternativesDrafted", {
+    count: alts.length,
+    first: first.label,
+    firstPrice: chatMoney(first.cents),
+    others: upperFirst(
+      others.map((o) => `${o.label} (${chatMoney(o.cents)})`).join(", "),
+    ),
+  });
+}
+
 function stripCustomerAsk(text: string): string {
   return text
     .replace(/\b(?:who'?s|who is)\s+this\s+for\??/gi, "")
@@ -2537,6 +2582,13 @@ export class HandleChatMessage {
     // prices, with no tools.
     let pricingPayload: Record<string, unknown> | undefined;
     const asked = typeof input.content === "string" ? input.content : "";
+    // REQ-942 (LOOP-007 q1-1): "two options: option A … $9,800, option B …
+    // $13,450" — the alternatives the customer picks one of. The draft is the
+    // first option alone; the reply says the other needs its own quote.
+    const alternatives = !changeOrderAsk
+      ? typedAlternatives(dropSelfCorrections(asked) || asked)
+      : undefined;
+    let alternativesSaid: string | undefined;
     const pricingAsk = !llmResponse && !changeOrderAsk && asked
       ? parsePricingQuestion(asked)
       : undefined;
@@ -2726,7 +2778,8 @@ export class HandleChatMessage {
       const draftOnFile = boundQuote?.status === "draft"
         ? boundQuote
         : undefined;
-      const statedCents = tools.includes("create_quote") && !changeOrderAsk
+      const statedCents = tools.includes("create_quote") && !changeOrderAsk &&
+          !alternatives // REQ-942: an option's price is not the job's total
         ? statedTotalCents(dropSelfCorrections(asked) || asked, {
           currentTotalCents: draftOnFile
             ? draftTotalCents(draftOnFile)
@@ -2735,6 +2788,10 @@ export class HandleChatMessage {
         : undefined;
       if (statedCents) {
         businessContext = [businessContext, statedTotalNote(statedCents)]
+          .filter(Boolean).join("\n\n");
+      }
+      if (alternatives && tools.includes("create_quote")) {
+        businessContext = [businessContext, alternativesNote(alternatives)]
           .filter(Boolean).join("\n\n");
       }
       const request = {
@@ -2850,6 +2907,56 @@ export class HandleChatMessage {
           // REQ-666 (m48): the settled lines replace the model's create_quote
           // only — the other calls it made beside it (REQ-585's job details,
           // "Ella habla español") still run with the draft.
+          const first = llmResponse.actions?.findIndex((a) =>
+            a.type === "create_quote"
+          ) ?? -1;
+          const actions = first >= 0
+            ? llmResponse.actions!.map((a, i) => i === first ? action : a)
+            : undefined;
+          llmResponse = { text: "", action, ...(actions ? { actions } : {}) };
+        }
+      }
+
+      // REQ-942 (LOOP-007 q1-1): a draft carrying more than one of the
+      // alternatives the contractor typed (a line per option, a total adding
+      // them) keeps the first option only — never one quote the customer
+      // signs for both. The reply says so, written by the code.
+      const drafted = llmResponse.action;
+      if (alternatives && drafted?.type === "create_quote") {
+        const narrowed = firstAlternativeLines(
+          drafted.payload.lineItems,
+          alternatives,
+        );
+        const lineItems = narrowed ?? drafted.payload.lineItems;
+        if (
+          lineItems.reduce((n, l) => n + l.amountCents, 0) ===
+            alternatives[0].cents
+        ) {
+          alternativesSaid = alternativesLine(replyLang, alternatives);
+        }
+        if (narrowed) {
+          console.warn(
+            "[handle-chat] draft adds typed alternatives together — keeping the first:",
+            JSON.stringify(alternatives.map((a) => [a.label, a.cents])),
+          );
+          const others = alternatives.slice(1);
+          const byLang = drafted.payload.descriptionByLang;
+          const keptByLang = byLang &&
+            Object.fromEntries(
+              Object.entries(byLang).filter(([, v]) =>
+                !others.some((o) =>
+                  (v ?? "").toLowerCase().includes(o.label.toLowerCase())
+                )
+              ),
+            );
+          const action = {
+            type: "create_quote" as const,
+            payload: {
+              ...drafted.payload,
+              lineItems: narrowed,
+              ...(byLang ? { descriptionByLang: keptByLang } : {}),
+            },
+          };
           const first = llmResponse.actions?.findIndex((a) =>
             a.type === "create_quote"
           ) ?? -1;
@@ -3411,6 +3518,17 @@ export class HandleChatMessage {
         replyText.trim(),
         deadlineNotedLine(replyLang, draftDeadline),
       ].filter(Boolean).join(" ");
+      suppressTextBubble = false;
+    }
+
+    // REQ-942 (LOOP-007 q1-1): the alternatives the message offered — the
+    // draft holds the first; the reply says the others need their own quote.
+    if (
+      alternativesSaid && llmResponse.action?.type === "create_quote" &&
+      !priceProblem && !overQuoteLimit
+    ) {
+      replyText = [replyText.trim(), alternativesSaid].filter(Boolean)
+        .join(" ");
       suppressTextBubble = false;
     }
 
