@@ -56,8 +56,8 @@ import {
 import { receivedNoteBody } from "../../../shared/documents/received-note.ts";
 import { installmentSchedule } from "../../../shared/documents/ledger.ts"; // REQ-679
 import {
-  receiptSentViaOf,
   type ReceiptSentVia,
+  receiptSentViaOf,
 } from "../../../shared/documents/delivery-truth.ts";
 import { claimRejectedNote } from "../../../shared/documents/claim-rejected-note.ts";
 import {
@@ -442,6 +442,10 @@ function InvoiceDoc(
     },
     lang,
   );
+  // REQ-1100: a scheduled invoice the customer was never billed is not
+  // payable; the owner's own preview (internal) keeps its controls.
+  const notDueYet = invoice.status === "scheduled" &&
+    invoice.internal !== true && !paid && !claimed;
   const amountCents = invoice.amount ?? 0;
   const paidCents = invoice.paidCents ?? (paid ? amountCents : 0);
   const balanceCents = invoice.balanceCents ??
@@ -588,17 +592,29 @@ function InvoiceDoc(
                 )
                 : null}
             </div>
-            <StatusPill
-              paid={paid}
-              claimed={claimed}
-              pastDue={pastDue}
-              partlyPaid={partlyPaid}
-              status={invoice.status}
-              internal={invoice.internal === true}
-              scheduledFor={invoice.scheduledFor}
-              voided={voided}
-              es={es}
-            />
+            {notDueYet
+              // REQ-1100: an unbilled scheduled invoice is not "Due" — and,
+              // per REQ-558, the outside viewer is not told "Scheduled" either.
+              ? (
+                <Pill
+                  bg={PILL_COLORS.neutral.bg}
+                  color={PILL_COLORS.neutral.color}
+                  label={tFor(lang, "publicInvoice.status.notDueYet")}
+                />
+              )
+              : (
+                <StatusPill
+                  paid={paid}
+                  claimed={claimed}
+                  pastDue={pastDue}
+                  partlyPaid={partlyPaid}
+                  status={invoice.status}
+                  internal={invoice.internal === true}
+                  scheduledFor={invoice.scheduledFor}
+                  voided={voided}
+                  es={es}
+                />
+              )}
           </div>
 
           {/* Hero */}
@@ -678,9 +694,11 @@ function InvoiceDoc(
                   ? tFor(lang, "publicInvoice.cancelled.label")
                   : paid
                   ? tFor(lang, "status.paid")
+                  : notDueYet
+                  ? tFor(lang, "publicInvoice.notBilledYet")
                   : tFor(lang, "public.doc.balanceDue")}
               </div>
-              {(invoice.dueDate || paid) && !voided
+              {(invoice.dueDate || paid) && !voided && !notDueYet
                 ? (
                   <div
                     data-cy={paid ? "public-invoice-paid-how" : undefined}
@@ -915,6 +933,21 @@ function InvoiceDoc(
                   </div>
                 )}
               </div>
+            )
+            : notDueYet
+            ? (
+              // REQ-1100 (LOOP-007 q3-25): a SCHEDULED invoice has not been
+              // billed (REQ-697 — it is the owner's reminder). Anyone holding
+              // its link sees that nothing is due yet, never a way to pay it.
+              <p
+                data-cy="invoice-not-due-yet"
+                role="status"
+                style={`margin:24px 0 0;background:rgba(20,72,82,0.05);border-radius:12px;padding:14px 18px;color:${INK};font-size:14px;line-height:1.5`}
+              >
+                {tFor(lang, "publicInvoice.notDueYet", {
+                  business: businessLabel,
+                })}
+              </p>
             )
             : paid
             ? (

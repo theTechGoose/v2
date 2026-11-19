@@ -234,7 +234,9 @@ export class SendDecisionAlert {
         deltaCents: co.deltaAmountCents,
         newTotalCents: total,
         ...(typeof jobTotalCents === "number" ? { jobTotalCents } : {}),
-        ...(invoice && invoiceIssued ? { invoiceLabel: docRef(invoice) } : {}),
+        ...(invoice && invoiceIssued
+          ? { invoiceLabel: docRef(invoice) }
+          : { invoiceUnsent: true }),
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         ...(co.decidedAt ? { approvedAt: co.decidedAt } : {}),
         url: invoiceIssued

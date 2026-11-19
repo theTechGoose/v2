@@ -45,7 +45,9 @@ export interface CustomerBearingDoc {
  *  change order publishes a REVISION of its invoice (`applyRevision` stamps
  *  `publishedAt`) while a scheduled balance — or a draft, whose status may
  *  be omitted (REQ-550) — stays unsent. On a real send `publishedAt` is
- *  `sentAt`, so nothing issued is lost. */
+ *  `sentAt`, so nothing issued is lost.
+ *  REQ-1100 (q3-25, same bug): a scheduled or draft invoice is never issued
+ *  — the CO-approval revision stamps publishedAt but sends nothing. */
 export function isIssued(doc: CustomerBearingDoc): boolean {
   if (doc.sentAt || doc.acceptedAt) return true;
   return doc.status !== undefined && doc.status !== "draft" &&
