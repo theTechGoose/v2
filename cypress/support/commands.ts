@@ -228,7 +228,8 @@ Cypress.Commands.add("startFreshOnboarding", (phoneNumber: string) => {
 
 Cypress.Commands.add("apiCreateCustomer", (body: Record<string, unknown>) => {
   return cy
-    .request("POST", "/api/customers", body)
+    // REQ-1149: a seed — POST /customers' duplicate 409 is not what these specs test
+    .request("POST", "/api/customers", { allowDuplicate: true, ...body })
     .its("body")
     .then((b: { id: string }) => b.id);
 });

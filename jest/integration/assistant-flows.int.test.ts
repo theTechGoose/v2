@@ -137,6 +137,7 @@ describe("P-26 translate/projection endpoint (backend half)", () => {
       name: "Maria Test",
       email: "maria.jest@blackhole.postmarkapp.com",
       phoneNumber: "+15125553014",
+      allowDuplicate: true, // REQ-1149: a re-run seeds her again on the same account
     });
     const q = await s.post("/quotes", {
       customerId: cust.body.id,

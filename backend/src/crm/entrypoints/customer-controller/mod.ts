@@ -16,7 +16,13 @@ import {
 } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135 — the one set of paging rules
 import type { ExecutionContext } from "#danet/core";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
-import { parseCreateCustomer, parseUpdateCustomer } from "@crm/dto/customer.ts";
+import {
+  CustomerDuplicateError,
+  parseCreateCustomer,
+  parseUpdateCustomer,
+  takeAllowDuplicate,
+} from "@crm/dto/customer.ts";
+import { findExistingCustomer } from "#quote-flow/customer-dedupe.ts"; // REQ-331/1149
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
@@ -41,7 +47,27 @@ export class CustomerController {
   @Post()
   async create(@Context() ctx: ExecutionContext, @Body() body: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.store.create(user.id, parseCreateCustomer(body));
+    // REQ-1149 (extends REQ-331): a customer she already has (phone, email, or the whole name
+    // accent- and case-blind) is refused with 409 customer.possibleDuplicate unless the body says
+    // allowDuplicate ("Create anyway"); the flag itself is never stored.
+    const { allowDuplicate, rest } = takeAllowDuplicate(body);
+    const dto = parseCreateCustomer(rest);
+    if (!allowDuplicate) {
+      const existing = findExistingCustomer(
+        await this.store.listByUser(user.id),
+        dto,
+      );
+      if (existing) {
+        throw new CustomerDuplicateError({
+          id: existing.id,
+          name: existing.name,
+          number: existing.number,
+          phoneNumber: existing.phoneNumber,
+          email: existing.email,
+        });
+      }
+    }
+    return await this.store.create(user.id, dto);
   }
 
   /** the array, as always; REQ-135 — `?page=`, `?pageSize=` or `?q=` asks for one page: `{ items, page, pageSize, total, totalPages }` */

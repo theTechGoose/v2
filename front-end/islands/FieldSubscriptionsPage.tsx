@@ -608,7 +608,12 @@ export default function FieldSubscriptionsPage(
     if (!form || form.editId !== null) return;
     try {
       const address = form.address.trim() || undefined;
-      const made = await clientsClient.create({ name, address });
+      // REQ-1149: she chose to add this typed name — the server's duplicate 409 is not for this path
+      const made = await clientsClient.create({
+        name,
+        address,
+        allowDuplicate: true,
+      });
       const c: Customer = {
         id: made.id,
         name: made.name ?? name,

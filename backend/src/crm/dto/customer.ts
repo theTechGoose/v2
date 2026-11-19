@@ -241,6 +241,42 @@ export class CustomerInputError extends Error {
   }
 }
 
+/**
+ * REQ-1149 (LOOP-007 q3, q3-80; extends REQ-331 to POST /customers): the body names a customer
+ * she already has (same phone, same email, or the whole name accent- and case-blind — the shared
+ * `findExistingCustomer`). A 409 whose message is the dictionary key `customer.possibleDuplicate`,
+ * carrying the existing customer so the form can say who; the same body with
+ * `allowDuplicate: true` ("Create anyway") makes the second one.
+ */
+export class CustomerDuplicateError extends Error {
+  readonly status = 409;
+  readonly code = "customer.possibleDuplicate";
+  constructor(
+    readonly existing: {
+      id: string;
+      name: string;
+      number?: string;
+      phoneNumber?: string;
+      email?: string;
+    },
+  ) {
+    super("customer.possibleDuplicate");
+    this.name = "CustomerDuplicateError";
+  }
+}
+
+/** REQ-1149: POST /customers' "Create anyway" flag — read and dropped, never stored. */
+export function takeAllowDuplicate(body: unknown): {
+  allowDuplicate: boolean;
+  rest: unknown;
+} {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { allowDuplicate: false, rest: body };
+  }
+  const { allowDuplicate, ...rest } = body as Record<string, unknown>;
+  return { allowDuplicate: allowDuplicate === true, rest };
+}
+
 /** REQ-278: a contact is checked when the customer is SAVED, not at send. */
 function assertContact(dto: { email?: string; phoneNumber?: string }): void {
   const key = customerContactError(dto);

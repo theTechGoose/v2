@@ -15,7 +15,16 @@
  * clipping.
  */
 import { useState } from "preact/hooks";
-import { clientsClient, type CustomerCard } from "../clients/clients.ts";
+import {
+  clientsClient,
+  type CustomerCard,
+  type RosterCustomer,
+} from "../clients/clients.ts";
+import { ApiError } from "../lib/api.ts";
+import {
+  duplicateNotice,
+  findExistingCustomer,
+} from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-331/1149
 import AddressAutocomplete from "./AddressAutocomplete.tsx"; // REQ-599
 import Backdrop from "./Backdrop.tsx"; // REQ-354
 import CustomerLanguageSelect, {
@@ -304,6 +313,9 @@ export default function CustomerFormDialog(
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // REQ-1149 (extends REQ-331 to /customers): the customer she already has that this one would
+  // duplicate — shown inline with Open / Create anyway; nothing is saved until she picks
+  const [dupe, setDupe] = useState<RosterCustomer | null>(null);
   const errors = validateCustomerForm(values);
   const invalid = Object.keys(errors).length > 0;
   // REQ-300 (demo cycle 1, M20): a backdrop click never drops typed text —
@@ -311,21 +323,48 @@ export default function CustomerFormDialog(
   const [start] = useState(() => JSON.stringify([values, language]));
   const dirty = JSON.stringify([values, language]) !== start;
 
-  async function submit(e: Event) {
-    e.preventDefault();
+  async function submit(e: Event | null, createAnyway = false) {
+    e?.preventDefault();
     setTried(true);
     if (invalid || busy) return;
     setBusy(true);
     setErr(null);
     try {
-      const saved = mode === "edit" && customer
-        ? await clientsClient.update(customer.id, {
-          ...customerUpdatePayload(values),
-          ...(language ? { language } : {}),
-        })
-        : await clientsClient.create(customerCreatePayload(values, language));
-      await onSaved(saved);
+      if (mode === "edit" && customer) {
+        await onSaved(
+          await clientsClient.update(customer.id, {
+            ...customerUpdatePayload(values),
+            ...(language ? { language } : {}),
+          }),
+        );
+        return;
+      }
+      if (!createAnyway) {
+        // REQ-1149: the same phone / email / accent-folded whole name as REQ-331's chat form
+        const roster = await clientsClient.roster().catch(() => null);
+        const hit = findExistingCustomer(roster, payloadContact(values));
+        if (hit) {
+          setDupe(hit);
+          return;
+        }
+      }
+      setDupe(null);
+      await onSaved(
+        await clientsClient.create(
+          customerCreatePayload(values, language, {
+            allowDuplicate: createAnyway,
+          }),
+        ),
+      );
     } catch (x) {
+      // REQ-1149: the server's own check (the roster read failed, or a customer was made meanwhile)
+      const existing = x instanceof ApiError && x.status === 409
+        ? (x.body as { existing?: RosterCustomer } | null)?.existing
+        : undefined;
+      if (existing?.id) {
+        setDupe(existing);
+        return;
+      }
       // REQ-278/992: the backend's refusal is a dictionary key
       setErr(
         x instanceof Error && x.message
@@ -370,7 +409,11 @@ export default function CustomerFormDialog(
         </h2>
         <CustomerFields
           values={values}
-          onChange={(p) => setValues((v) => ({ ...v, ...p }))}
+          onChange={(p) => {
+            setValues((v) => ({ ...v, ...p }));
+            // REQ-1149: a changed name / phone / email is checked again on Save
+            if ("name" in p || "phone" in p || "email" in p) setDupe(null);
+          }}
           lang={lang}
           disabled={busy}
           errors={tried ? errors : {}}
@@ -388,6 +431,41 @@ export default function CustomerFormDialog(
             style={INPUT}
           />
         </label>
+        {dupe && (() => {
+          // REQ-1149 (REQ-331/390's words): who she already has, with their number
+          const notice = duplicateNotice(dupe, payloadContact(values));
+          const who = dupe.number ? `${dupe.name} · ${dupe.number}` : dupe.name;
+          return (
+            <div
+              role="alert"
+              data-cy="cf-duplicate"
+              data-existing-id={dupe.id}
+              style="margin:0;padding:12px 14px;border-radius:10px;background:#fff7e6;border:1px solid #f0c36d;color:#6b4a00;font-size:13.5px;font-weight:600;display:flex;flex-direction:column;gap:10px"
+            >
+              <span>
+                {tFor(lang, notice.key, { ...notice.params, name: who })}
+              </span>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a
+                  href={`/customers/${encodeURIComponent(dupe.id)}`}
+                  data-cy="cf-open-existing"
+                  style="padding:8px 14px;border:1.5px solid var(--brand-green,#519843);border-radius:10px;color:var(--brand-green,#519843);font-weight:800;text-decoration:none"
+                >
+                  {tFor(lang, "customerForm.dup.open", { name: dupe.name })}
+                </a>
+                <button
+                  type="button"
+                  data-cy="cf-create-anyway"
+                  disabled={busy}
+                  onClick={() => submit(null, true)}
+                  style="padding:8px 14px;border:0;background:transparent;color:#6b4a00;font:inherit;font-weight:700;cursor:pointer;border-radius:10px;text-decoration:underline"
+                >
+                  {tFor(lang, "asstChat.customerStep.createAnyway")}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
         {err && (
           <p
             role="alert"
@@ -426,3 +504,12 @@ export default function CustomerFormDialog(
 }
 
 export { CustomerFormDialog };
+
+/** REQ-1149: what she typed, as the contact `duplicateNotice` compares with the match */
+function payloadContact(v: CustomerFormValues) {
+  return {
+    name: v.name.trim(),
+    phoneNumber: v.phone.trim(),
+    email: v.email.trim(),
+  };
+}

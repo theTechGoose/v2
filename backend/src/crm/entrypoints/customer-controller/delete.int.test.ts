@@ -54,7 +54,12 @@ Deno.test("REQ-802 DELETE /customers/:id — the customer answers 404 and leaves
       (await fetch(`${base}/customers`, {
         method: "POST",
         headers: H,
-        body: JSON.stringify({ name, phoneNumber: "+15125550000" }),
+        // REQ-1149: two customers on one phone — a seed, not the duplicate check
+        body: JSON.stringify({
+          name,
+          phoneNumber: "+15125550000",
+          allowDuplicate: true,
+        }),
       })).json();
     const a = await mk("Ana Delete");
     const b = await mk("Bea Stays");

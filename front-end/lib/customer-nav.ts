@@ -9,6 +9,8 @@
 import type { CustomerCard } from "../clients/clients.ts";
 import { hasBilled } from "./clients-display.ts";
 import { fmtMoneyTotal } from "./format.ts";
+import { foldName } from "../../shared/quote-flow/customer-dedupe.ts";
+import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 
 /** the sidebar path that means "the Customers context" (not a folder of NAV) */
 export const CUSTOMERS_CONTEXT = "@customers";
@@ -39,6 +41,11 @@ export interface CustomerNavRow {
   /** REQ-990: an issued, non-void invoice exists (REQ-323 `hasBilled`) — "paid" words it
    *  "Settled" when true, "Nothing billed yet" when not (`zeroBalanceKey`) */
   billed?: boolean;
+  /** REQ-1149 (amends REQ-924(a)): only when another row has the same name (accent- and case-blind) —
+   *  her customer number ("C-002"), else her phone, else her email — so two "Lupe Garza" rows differ */
+  tag?: string;
+  /** REQ-1149: the customer number, the last sort tiebreak so same-name rows keep a stable order */
+  number?: string;
 }
 
 export interface NavCard {
@@ -48,6 +55,10 @@ export interface NavCard {
   overdueCents?: number;
   /** the card's documents — only `hasBilled` reads them (REQ-990) */
   documents?: CustomerCard["documents"];
+  /** REQ-1149: what tells two same-name customers apart */
+  number?: string;
+  phoneNumber?: string | null;
+  email?: string | null;
 }
 export interface NavSub {
   active: boolean;
@@ -72,6 +83,12 @@ export function customerNavRows(
   cards: readonly NavCard[],
   subsByCustomer: ReadonlyMap<string, readonly NavSub[]> = new Map(),
 ): CustomerNavRow[] {
+  // REQ-1149: names held by more than one customer, folded like REQ-331's duplicate check
+  const seen = new Map<string, number>();
+  for (const c of cards) {
+    const k = foldName(c.name);
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
   return cards
     .map((c): CustomerNavRow => {
       const overdue = Math.max(0, c.overdueCents ?? 0);
@@ -82,6 +99,8 @@ export function customerNavRows(
         name: c.name,
         initials: initialsOf(c.name),
         href: `/customers/${encodeURIComponent(c.id)}`,
+        ...(c.number ? { number: c.number } : {}),
+        ...((seen.get(foldName(c.name)) ?? 0) > 1 ? { tag: navTagOf(c) } : {}),
       };
       if (overdue > 0) return { ...base, tone: "late", amountCents: overdue };
       if (owed > 0) return { ...base, tone: "owes", amountCents: owed };
@@ -98,8 +117,23 @@ export function customerNavRows(
     .sort((a, b) =>
       RANK[a.tone] - RANK[b.tone] ||
       b.amountCents - a.amountCents ||
-      a.name.localeCompare(b.name)
+      a.name.localeCompare(b.name) ||
+      (a.number ?? "").localeCompare(b.number ?? "", undefined, {
+        numeric: true,
+      })
     );
+}
+
+/** REQ-1149: what tells a same-name customer apart — number, else phone, else email */
+function navTagOf(c: NavCard): string | undefined {
+  if (c.number?.trim()) return c.number.trim();
+  const phone = c.phoneNumber?.trim();
+  if (phone) {
+    const d = phone.replace(/\D/g, "");
+    const us = d.length === 10 || (d.length === 11 && d[0] === "1");
+    return us ? formatPhoneInput(phone) : phone;
+  }
+  return c.email?.trim() || undefined;
 }
 
 /**

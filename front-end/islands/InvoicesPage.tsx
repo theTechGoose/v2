@@ -5780,8 +5780,11 @@ export function NewInvoiceModal(
       let customerId: string | undefined;
       let bt = billTo;
       if (clientSel === NEW_SENTINEL) {
+        // REQ-1149: the invoice's "New client" keeps creating as before (no duplicate 409)
         const created = await clientsClient.create(
-          customerCreatePayload(newClient, newLanguage), // REQ-715
+          customerCreatePayload(newClient, newLanguage, {
+            allowDuplicate: true,
+          }), // REQ-715
         );
         customerId = created.id;
         bt = effBillTo;
