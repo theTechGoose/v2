@@ -44,6 +44,7 @@ import { RecordCardPayment } from "@paperwork/domain/coordinators/record-card-pa
 import { SquareCheckoutStore } from "@paperwork/domain/data/square-checkout-store/mod.ts"; // REQ-803
 import { SettleSquareCheckouts } from "@paperwork/domain/coordinators/settle-square-checkouts/mod.ts"; // REQ-803
 import { SendPaymentReminder } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
+import { SendInvoiceCancelled } from "@paperwork/domain/coordinators/send-invoice-cancelled/mod.ts"; // REQ-1135
 import { ScheduleInvoiceNudges } from "@paperwork/domain/coordinators/schedule-invoice-nudges/mod.ts";
 import { ComputeInvoiceForecast } from "@paperwork/domain/coordinators/compute-invoice-forecast/mod.ts";
 import { RecordPaymentFromUtterance } from "@paperwork/domain/coordinators/record-payment-from-utterance/mod.ts";
@@ -110,6 +111,7 @@ import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/m
     SquareCheckoutStore, // REQ-803
     SettleSquareCheckouts, // REQ-803
     SendPaymentReminder,
+    SendInvoiceCancelled, // REQ-1135
     ScheduleInvoiceNudges,
     ComputeInvoiceForecast,
     RecordPaymentFromUtterance,
