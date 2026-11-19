@@ -48,6 +48,7 @@ import {
   addTaskServerProblem,
   centsOf,
   customerOptions,
+  deletedNotice,
   fmtDay,
   fmtMoneyExact,
   serviceHint,
@@ -313,9 +314,16 @@ export default function FieldTasksPage(
     setSaving(task.id);
     setError(null);
     try {
-      await fieldClient.deleteTask(task.id);
+      const res = await fieldClient.deleteTask(task.id);
       setTasks((rows) => rows.filter((x) => x.id !== task.id));
-      setFlash(t("field.tk.deleted"));
+      // REQ-1006 — say whether the customer was texted that the visit is canceled
+      const notice = deletedNotice(
+        res?.texted,
+        task.date,
+        todayIso(),
+        task.customerName,
+      );
+      setFlash(t(notice.key, notice.vars));
     } catch (e) {
       const inv = invoiceIdOf(e);
       if (inv) replace({ ...task, invoiceId: inv });

@@ -4207,6 +4207,8 @@
   "field.tk.deleteAsk": "Delete this task?",
   "field.tk.deleteYes": "Yes, delete",
   "field.tk.deleted": "Task deleted",
+  "field.tk.deletedTexted": "Task deleted. {customer} was texted that it's canceled",
+  "field.tk.deletedNotTexted": "Task deleted. {customer} was not told; let them know",
   "field.tk.moved": "Moved to {name}",
   "field.tk.firstDay": "First day",
   "field.tk.lastDay": "Last day",
