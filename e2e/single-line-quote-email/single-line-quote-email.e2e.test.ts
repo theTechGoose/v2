@@ -163,8 +163,10 @@ Deno.test("REQ-946 (q1-19): a one-line qty-1 quote with no description, emailed 
       inFrame.includes(LINE),
       `the email she got names the work "${LINE}" (it went from the intro straight to the total)`,
     );
+    // the label sits in a text-transform:uppercase div and innerText returns
+    // the rendered "ESTO ES LO QUE HAREMOS", so compare case-insensitively
     expect(
-      inFrame.includes("Esto es lo que haremos"),
+      inFrame.toLowerCase().includes("esto es lo que haremos"),
       "the email has its line-item block",
     );
   }));

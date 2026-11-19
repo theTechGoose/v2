@@ -1074,6 +1074,13 @@ export function renderQuoteHtml(
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
     .filter(Boolean);
+  // REQ-946: the Job details block renders only when there is real scope text.
+  // The line-item block shows for multi-line work or a qty > 1 line (P-51),
+  // and ALWAYS when there is no Job details block — then the lines are the
+  // only place the email names the work.
+  const hasJobDetails = descLines.length > 0;
+  const showLineItems = !hasJobDetails || q.lineItems.length > 1 ||
+    q.lineItems.some((li) => (li.quantity ?? 1) > 1);
   const descBlock = descLines.length > 1
     ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse"><tbody>${
       descLines.map((l) =>
@@ -1190,7 +1197,7 @@ export function renderQuoteHtml(
         <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
         ${
-    q.description
+    hasJobDetails
       ? `
         <!-- job-details: bulleted scope of work (or paragraph if single line) -->
         <tr><td style="padding:18px 36px 0">
@@ -1204,11 +1211,11 @@ export function renderQuoteHtml(
 
         <!-- line-item breakdown: multi-line quotes, or a single line with
              qty > 1 (its "{qty} {unit} · {price} c/u" sub-line carries real
-             information — P-51). A single qty-1 line just repeats the total
-             below, and the Job details block above already covers the scope. -->
+             information — P-51). A single qty-1 line is hidden only when the
+             Job details block above rendered and covers the scope; with no
+             description that line IS the scope, so it always shows (REQ-946). -->
         ${
-    q.lineItems.length > 1 ||
-      q.lineItems.some((li) => (li.quantity ?? 1) > 1)
+    showLineItems
       ? `
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.whatWeHandle}</div>
@@ -1526,6 +1533,13 @@ export function renderInvoiceHtml(
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
     .filter(Boolean);
+  // REQ-946: the Job details block renders only when there is real scope text.
+  // The line-item block shows for multi-line work or a qty > 1 line (P-51),
+  // and ALWAYS when there is no Job details block — then the lines are the
+  // only place the email names the work.
+  const hasJobDetails = descLines.length > 0;
+  const showLineItems = !hasJobDetails || items.length > 1 ||
+    items.some((li) => (li.quantity ?? 1) > 1);
   const descBlock = descLines.length > 1
     ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:8px;border-collapse:collapse"><tbody>${
       descLines.map((l) =>
@@ -1652,7 +1666,7 @@ export function renderInvoiceHtml(
         <tr><td style="padding:24px 36px 0"><div style="height:1px;background:${COLOR_LINE}"></div></td></tr>
 
         ${
-    description
+    hasJobDetails
       ? `
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.jobDetails}</div>
@@ -1664,7 +1678,7 @@ export function renderInvoiceHtml(
   }
 
         ${
-    items.length > 1 || items.some((li) => (li.quantity ?? 1) > 1)
+    showLineItems
       ? `
         <tr><td style="padding:18px 36px 0">
           <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${L.whatWeHandle}</div>
