@@ -14,6 +14,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import {
+  billToPhoneError,
   type CreateInvoiceDto,
   type Invoice,
   parseCreateInvoice,
@@ -547,6 +548,10 @@ export class InvoiceController {
       return ctx.json({ error: "invalid_invoice" }, 422);
     }
     delete dto.replaces; // REQ-627: server-set by void-duplicate only
+    // REQ-1119 (q3-45/q3-46): a bill-to phone the one phone rule refuses is
+    // the caller's error — the same 400 /customers answers, nothing stored.
+    const billPhoneErr = billToPhoneError(dto.billTo);
+    if (billPhoneErr) return ctx.json({ error: billPhoneErr }, 400);
     // REQ-962 (LOOP-007 q1-39): an invoice is never due before it is issued
     // — refused before anything is derived or stored. (The store never
     // stamps an issue date, so a body without one has none to compare.)
@@ -826,6 +831,9 @@ export class InvoiceController {
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const patch = parseUpdateInvoice(body);
+    // REQ-1119 (q3-45): an edited bill-to phone obeys the one phone rule too.
+    const billPhoneErr = billToPhoneError(patch.billTo);
+    if (billPhoneErr) return ctx.json({ error: billPhoneErr }, 400);
     // never from a request: the balance coordinator owns these
     delete patch.paidCents;
     delete patch.overpaidCents;

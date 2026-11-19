@@ -281,9 +281,19 @@ function assertName(
   }
 }
 
+/**
+ * REQ-1119 (LOOP-007 cycle 3, q3-47): a key the DTO does not declare is
+ * refused with a 400, never saved. `{phone: "843-555-0111"}` (not
+ * `phoneNumber`) was stored, returned by GET, and ignored by every screen —
+ * the customer page read "Phone —"; the same spread let a body inject
+ * `deletedAt`. Every declared field carries a decorator, so the whitelist is
+ * exactly the DTO.
+ */
+const STRICT = { whitelist: true, forbidNonWhitelisted: true } as const;
+
 export function parseCreateCustomer(input: unknown): CreateCustomerDto {
   const dto = plainToInstance(CreateCustomerDto, input);
-  const errors = validateSync(dto);
+  const errors = validateSync(dto, STRICT); // REQ-1119
   if (errors.length) {
     throw new CustomerInputError(`invalid customer: ${JSON.stringify(errors)}`);
   }
@@ -297,7 +307,7 @@ export function parseCreateCustomer(input: unknown): CreateCustomerDto {
 
 export function parseUpdateCustomer(input: unknown): UpdateCustomerDto {
   const dto = plainToInstance(UpdateCustomerDto, input);
-  const errors = validateSync(dto);
+  const errors = validateSync(dto, STRICT); // REQ-1119
   if (errors.length) {
     throw new CustomerInputError(
       `invalid customer patch: ${JSON.stringify(errors)}`,

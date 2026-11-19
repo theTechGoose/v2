@@ -42,6 +42,16 @@ const cantText = (customer: ContactOnFile | undefined): boolean =>
   phoneCantReceiveTexts(customer?.phoneNumber);
 
 /**
+ * REQ-1119 (LOOP-007 cycle 3, q3-45): a phone on file the ONE phone rule
+ * (REQ-1080, `customerPhoneE164` — the rule the SMS send path dials with)
+ * cannot parse, e.g. "843-555-0145 x12". The send path is certain to refuse
+ * it, so it never counts as a textable phone here.
+ */
+const badPhone = (customer: ContactOnFile | undefined): boolean =>
+  has(customer?.phoneNumber) &&
+  !isValidCustomerPhone(customer?.phoneNumber ?? "");
+
+/**
  * The channel to tag "Recommended": both only when the customer has an email
  * AND a phone, else the one channel they have, nothing when they have neither.
  * REQ-569 (demo m46): a phone that can't receive texts (the shared fictional
@@ -51,7 +61,8 @@ export function recommendedChannel(
   customer: ContactOnFile | undefined,
 ): SendChannel | undefined {
   const email = has(customer?.email);
-  const phone = has(customer?.phoneNumber) && !cantText(customer);
+  const phone = has(customer?.phoneNumber) && !cantText(customer) &&
+    !badPhone(customer); // REQ-1119
   if (email && phone) return "both";
   if (phone) return "sms";
   if (email) return "email";
@@ -184,7 +195,8 @@ export function defaultSendChannel(
 ): SendChannel {
   // REQ-569 (m46): a phone that can't take texts never starts the send on
   // Text — Email, which asks for an address when none is on file.
-  if (cantText(customer)) return "email";
+  // REQ-1119 (q3-45): nor does a phone the send path cannot parse.
+  if (cantText(customer) || badPhone(customer)) return "email";
   return recommendedChannel(customer) ?? "both";
 }
 
@@ -202,6 +214,11 @@ export function channelNeedsKey(
   // REQ-569 (m46): the phone on file is certain to refuse a text.
   if (channel !== "email" && cantText(customer)) {
     return "asstChat.send.cantText";
+  }
+  // REQ-1119 (q3-45): the phone on file is not a number the send path can
+  // dial ("843-555-0145 x12") — Text says to fix it.
+  if (channel !== "email" && badPhone(customer)) {
+    return "asstChat.send.badPhone";
   }
   const needsEmail = channel !== "sms" && !has(customer?.email);
   const needsPhone = channel !== "email" && !has(customer?.phoneNumber);

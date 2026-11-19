@@ -21,6 +21,7 @@ import {
   paymentInstructionsFromMethods,
 } from "../../shared/documents/invoice-form";
 import { sendPreviewSmsTo } from "../../shared/quote-flow/send-preview";
+import { formatPhoneLenient } from "../../shared/customer-form/mod";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -41,9 +42,13 @@ describe("REQ-593 (demo cycle 4, m12) phone numbers are formatted wherever they 
     const src = read("front-end/islands/InvoicesPage.tsx");
     const at = src.indexOf('data-cy="new-invoice-bill-phone"');
     expect(at).toBeGreaterThan(-1);
-    expect(src.slice(at, at + 200)).toContain(
-      "value={formatPhoneInput(billTo.phoneNumber)}",
+    // REQ-1119 (q3-45): the mask is the lenient one — a ten-digit number is
+    // still masked as typed, but an extension is never hidden behind it
+    expect(src.slice(at, at + 400)).toContain(
+      "value={formatPhoneLenient(billTo.phoneNumber)}",
     );
+    expect(formatPhoneLenient("5125550199")).toBe("(512) 555-0199");
+    expect(formatPhoneLenient("843-555-0145 x12")).toBe("843-555-0145 x12");
   });
 
   test("REQ-593 payment instructions from onboarding: 'Zelle: 5125550109' reads 'Zelle: (512) 555-0109'", () => {

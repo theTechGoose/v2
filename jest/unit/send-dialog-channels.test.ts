@@ -56,7 +56,10 @@ describe("REQ-402 m5 defaultSendChannel is the recommended channel", () => {
     expect(defaultSendChannel(ana)).toBe("email");
     expect(defaultSendChannel(both)).toBe("both");
     expect(defaultSendChannel({})).toBe("both");
-    expect(defaultSendChannel({ email: " ", phoneNumber: "+1" })).toBe("sms");
+    // REQ-1119: the phone must be one the send path can dial ("+1" alone is
+    // not — it would start on Text and fail); a blank email still doesn't count
+    expect(defaultSendChannel({ email: " ", phoneNumber: "+15126550123" }))
+      .toBe("sms");
   });
 });
 

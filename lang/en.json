@@ -492,6 +492,7 @@
   "asstChat.send.addPhone": "Add a phone to also text it",
   "asstChat.send.cancel": "Cancel",
   "asstChat.send.cantText": "This number can't receive texts — it's a reserved test number (555-01XX or area code 555)",
+  "asstChat.send.badPhone": "This phone isn't a full number (no extensions) — fix it to text",
   "asstChat.send.contactSaveFailed": "Couldn't save the contact. Check it and try again.",
   "asstChat.send.howTitle": "How do you want to send this to {name}?",
   "asstChat.send.keep": "Send",
