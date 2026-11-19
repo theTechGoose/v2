@@ -38,3 +38,22 @@ describe("REQ-1068 (q2-57) the New repeat visit customer box can add a customer"
     }
   });
 });
+
+/**
+ * REQ-1152 (LOOP-007 cycle 3, q3-84 / q3-85) — after a repeat visit saves, the island mirrors
+ * the visit's address onto its local customer row when that customer had none (as REQ-340
+ * does on /field/tasks, FieldTasksPage.tsx), so a second New repeat visit for the same customer
+ * prefills the address without a reload. reload() refetches only the subscriptions.
+ */
+describe("REQ-1152 (q3-84) New repeat visit mirrors the saved address onto the local customer row", () => {
+  const page = read("front-end/islands/FieldSubscriptionsPage.tsx");
+  const at = page.indexOf("fieldClient.createSubscription(");
+  // from the create call to the end of submit (its catch)
+  const after = page.slice(at, page.indexOf("} catch (err)", at));
+
+  test("REQ-1152: after createSubscription, setCustomers fills the address of a customer who had none", () => {
+    expect(at).toBeGreaterThan(-1);
+    expect(after).toMatch(/setCustomers\(/);
+    expect(after).toMatch(/!\s*\w+\.address\?\.trim\(\)/);
+  });
+});
