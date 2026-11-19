@@ -177,6 +177,8 @@ export type CustomerDocState =
   | "revised"
   | "claimed"
   | "paid"
+  /** REQ-1139: a headline-only word (DocState "partly"); a card never stores it */
+  | "partly"
   | "void"
   | "approved"
   | "pending";

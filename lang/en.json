@@ -1972,6 +1972,7 @@
   "invoices.state.paid": "Paid",
   "invoices.state.viewed": "Viewed",
   "invoices.state.void": "Void",
+  "invoices.state.partly": "Partly paid",
   "invoices.lockedPaid": "Paid invoices are locked",
   "invoices.paidOf": "Paid {paid} of {total} · Balance {balance}",
   "invoices.overpaidBy": "Overpaid by {amount}",

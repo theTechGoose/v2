@@ -17,6 +17,7 @@
  * draft or scheduled — an outside viewer reads the plain "Due".
  */
 import { type Lang, shortDate } from "./linked-view.ts";
+import type { DocState } from "./versions.ts";
 
 export type InvoicePillKind =
   | "void"
@@ -159,6 +160,24 @@ export function isPartlyPaid(
   const paid = invoice.paidCents ?? 0;
   if (paid <= 0) return false;
   return typeof invoice.amount !== "number" || paid < invoice.amount;
+}
+
+/**
+ * REQ-1139 (LOOP-007 q3-70): the state word the REQ-201 headline
+ * ("INV-001 · Version 1 · <state>") carries, by the same partly-paid rule as
+ * the pill and the /invoices stage chip (REQ-1073 `isPartlyPaid`). A plain
+ * "sent" with money on it reads "partly" ("Partly paid" / "Pago parcial");
+ * every other state — paid, void, claimed, draft, scheduled, and "revised"
+ * (whose line says the bill replaces an earlier version) — is kept.
+ */
+export function invoiceHeadlineState<S extends DocState | string>(
+  state: S,
+  invoice: Pick<
+    InvoiceStatusInput,
+    "status" | "paidAt" | "paidCents" | "amount"
+  >,
+): S | "partly" {
+  return state === "sent" && isPartlyPaid(invoice) ? "partly" : state;
 }
 
 /**

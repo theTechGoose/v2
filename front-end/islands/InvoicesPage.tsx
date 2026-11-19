@@ -225,6 +225,8 @@ function headlineLabels(lang: Lang): Partial<Record<DocState, string>> {
     claimed: tFor(lang, "invoices.state.claimed"),
     paid: tFor(lang, "invoices.state.paid"),
     void: tFor(lang, "invoices.state.void"),
+    // REQ-1139: a part-paid bill's headline agrees with its "Partly paid" chip
+    partly: tFor(lang, "invoices.state.partly"),
   };
 }
 

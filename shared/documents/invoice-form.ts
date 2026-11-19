@@ -29,6 +29,7 @@ import {
   invoiceState,
   versionOf,
 } from "./versions.ts";
+import { invoiceHeadlineState } from "./invoice-status.ts";
 
 /* ---------------- money ---------------- */
 
@@ -838,6 +839,17 @@ export function priorBillingFor(
 
 /* ---------------- headline (REQ-201) ---------------- */
 
+/** The fields the REQ-201 headline reads (REQ-1139: the money, for "Partly paid"). */
+export interface HeadlineInvoice {
+  id: string;
+  number?: string;
+  version?: number;
+  status?: string;
+  amount?: number;
+  paidCents?: number;
+  paidAt?: string | null;
+}
+
 export interface InvoiceHeadline {
   number: string;
   version: number;
@@ -847,9 +859,10 @@ export interface InvoiceHeadline {
 }
 
 export function invoiceHeadline(
-  inv: { id: string; number?: string; version?: number; status?: string },
+  inv: HeadlineInvoice,
 ): InvoiceHeadline {
-  const state = invoiceState(inv);
+  // REQ-1139: a part-paid bill says "Partly paid", as its pill does
+  const state = invoiceHeadlineState(invoiceState(inv), inv);
   const version = versionOf(inv);
   return {
     number: docNumberOf(inv),
@@ -862,7 +875,7 @@ export function invoiceHeadline(
 
 /** "INV-5000 · Version 2 · Revised invoice — replaces previous version" */
 export function formatInvoiceHeadline(
-  inv: { id: string; number?: string; version?: number; status?: string },
+  inv: HeadlineInvoice,
   labels: Partial<Record<DocState, string>>,
   versionWord: string,
 ): string {
