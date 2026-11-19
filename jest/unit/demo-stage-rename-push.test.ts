@@ -71,7 +71,8 @@ describe("REQ-836 (cycle dm2, m1) — a saved name reaches the stage at once, ne
     expect(fmt("+442071234567")).toBe("+442071234567");
     const format = read("front-end/lib/format.ts");
     expect(format).toMatch(
-      /import \{ fmtPhone \} from "\.\.\/\.\.\/shared\/identity\/phone\.ts";/,
+      // REQ-1032 (q2-15): fmtPayHandle shares the import from the same module
+      /import \{ (?:[\w]+, )*fmtPhone(?:, [\w]+)* \} from "\.\.\/\.\.\/shared\/identity\/phone\.ts";/,
     );
     expect(format).toMatch(/export \{ fmtPhone \};/);
     expect(format).not.toMatch(/export function fmtPhone/);

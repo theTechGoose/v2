@@ -1514,7 +1514,7 @@ function ServiceCard(
             {running && sv.endDate && sv.remainingCents != null &&
               " · " + tFor(lang, "customerWs.svc.until", {
                   date: day(sv.endDate, lang),
-                  left: money(sv.remainingCents, lang, true),
+                  left: moneyTotal(sv.remainingCents, lang),
                 })}
           </small>
         </div>
