@@ -295,3 +295,60 @@ Deno.test("REQ-784 d12: every outbox.* key is in both dictionaries, and the Span
     assert(es[k] !== en[k], `${k} is translated`);
   }
 });
+
+/**
+ * REQ-991 (LOOP-007 cycle 1, q1-73): "Outbox table shows only 3 of 8
+ * columns at 390px." On a phone the table must reflow into stacked cards,
+ * each cell labelled with its column, because the thead is hidden there.
+ */
+for (const lang of ["en", "es"] as const) {
+  const d = lang === "en" ? en : es;
+  Deno.test(`REQ-991 q1-73: the outbox table is an outbox-table and every cell carries its column's label for the phone layout (${lang})`, () => {
+    const doc = table(lang);
+    const tableEl = doc.querySelector("[data-cy='outbox-table']")!;
+    assert(
+      (tableEl.getAttribute("class") ?? "").split(/\s+/).includes(
+        "outbox-table",
+      ),
+      `the table has the outbox-table class (class="${
+        tableEl.getAttribute("class")
+      }")`,
+    );
+    const want: Record<string, string> = {
+      "outbox-row-when": d["outbox.col.when"],
+      "outbox-row-customer": d["outbox.col.customer"],
+      "outbox-row-channel": d["outbox.col.channel"],
+      "outbox-row-language": d["outbox.col.language"],
+      "outbox-row-what": d["outbox.col.what"],
+      "outbox-row-message": d["outbox.col.message"],
+      "outbox-row-status": d["outbox.col.status"],
+    };
+    for (const row of [...doc.querySelectorAll("[data-cy='outbox-row']")]) {
+      for (const [cy, label] of Object.entries(want)) {
+        const td = row.querySelector(`[data-cy='${cy}']`)!;
+        assertEquals(
+          td.getAttribute("data-label"),
+          label,
+          `${lang} ${cy} is labelled "${label}"`,
+        );
+      }
+    }
+  });
+}
+
+Deno.test("REQ-991 q1-73: field.css reflows .outbox-table on a phone (a max-width:720px rule for it)", () => {
+  const css = Deno.readTextFileSync(
+    new URL("../static/field.css", import.meta.url),
+  );
+  const phoneBlocks = [
+    ...css.matchAll(/@media\s*\(max-width:\s*720px\)\s*\{([\s\S]*?)\n\}/g),
+  ].map((m) => m[1]);
+  assert(
+    phoneBlocks.some((b) => b.includes(".outbox-table")),
+    "a @media (max-width:720px) block styles .outbox-table",
+  );
+  assert(
+    /\.outbox-table[^{]*td::before\s*\{[^}]*attr\(data-label\)/.test(css),
+    "each phone cell prints its label from data-label",
+  );
+});
