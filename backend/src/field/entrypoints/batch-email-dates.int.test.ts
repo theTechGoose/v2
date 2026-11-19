@@ -145,12 +145,13 @@ Deno.test("REQ-944 q1-13: a batch-sent invoice email shows its issue date, and D
     assertEquals(emails.length, 1);
     const html = emails[0].htmlBody;
     const dates = {
+      // REQ-980 (q1-61): the header date is labelled "Issued", not "Drafted"
       drafted: valueAfter(html, "Drafted"),
       issued: valueAfter(html, "Issued"),
       due: valueAfter(html, "Due"),
     };
     assertEquals(dates, {
-      drafted: fmtPaperworkDate(today, "en"),
+      drafted: undefined,
       issued: fmtPaperworkDate(today, "en"),
       due: fmtPaperworkDate(shiftDate(today, netDays), "en"),
     }, `zone ${zone}, business day ${today}, ${netDays} days to pay`);

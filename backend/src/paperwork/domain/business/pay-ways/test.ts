@@ -146,3 +146,28 @@ Deno.test("REQ-782 a card pay link names card in the text and puts the Pay by ca
     null,
   );
 });
+
+// REQ-980 (LOOP-007 q1, q1-61) — the invoice email's "Payment instructions" read "Check · Zelle",
+// but its "Ways to pay" block listed only Zelle: payButtons() drops check, and nothing else adds
+// it. A block headed "Ways to pay" must not leave out a way the business accepts.
+Deno.test("REQ-980 (q1-61) payWaysEmailHtml: Check + Zelle enabled → the 'Ways to pay' block names Check too, in en and es", () => {
+  const both = {
+    check: { enabled: true, mailTo: "PO Box 1" },
+    zelle: { enabled: true, handle: "5125550109" },
+  };
+  for (
+    const [lang, heading] of [["en", "Ways to pay"], ["es", "Formas de pago"]] as const
+  ) {
+    const html = payWaysEmailHtml(both, {
+      card: false,
+      lang,
+      amountCents: 6500,
+      payUrl: "https://documonster.com/i/inv-1",
+    });
+    assertStringIncludes(html, `data-pay-way="zelle"`);
+    assert(
+      !html.includes(heading) || html.includes(`data-pay-way="check"`),
+      `[${lang}] a block headed "${heading}" omits the accepted Check method: ${html}`,
+    );
+  }
+});

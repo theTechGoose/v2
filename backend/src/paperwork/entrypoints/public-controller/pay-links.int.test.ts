@@ -346,3 +346,51 @@ Deno.test("REQ-630 the invoice email and text name the ways to pay — the amoun
     );
   });
 });
+
+// REQ-980 (LOOP-007 q1, q1-61) — a standalone (amount-only) sent invoice, Check + Zelle on, sent
+// through the real coordinator: the header said "Drafted" over "Issued", and "Ways to pay" listed
+// only Zelle under "Payment instructions: Check · Zelle".
+Deno.test("REQ-980 (q1-61) the amount-only invoice email: header date labelled Issued (not Drafted), and Ways to pay names Check as well as Zelle", async () => {
+  await withServer(async (sid, userId) => {
+    const put = await putIdentity(sid, {
+      businessName: "A2Z Landscape",
+      acceptedPaymentMethods: {
+        check: { enabled: true, mailTo: "PO Box 1" },
+        zelle: { enabled: true, handle: "5125550109" },
+      },
+    });
+    assertEquals(put.status, 200, await put.text());
+    const inv = await seedInvoice(sid);
+
+    const email = new EmailService();
+    const sent: SendEmailInput[] = [];
+    email.send = (input: SendEmailInput) => {
+      sent.push(input);
+      return Promise.resolve({ ok: true, reason: "test_capture" });
+    };
+    const emailer = new SendPaperworkEmail(
+      new QuoteStore(),
+      new InvoiceStore(),
+      new CustomerStore(),
+      new UserStore(),
+      new BusinessIdentityStore(),
+      email,
+      new LogPaperworkMessage(new ConversationStore(), new MessageStore()),
+      undefined,
+      undefined,
+      new StripeSettingsStore(),
+    );
+    const r = await emailer.run(userId, { kind: "invoice", resourceId: inv.id });
+    assertEquals(r.ok, true, JSON.stringify(r));
+    const html = sent[0].htmlBody ?? "";
+    const top = html.slice(0, html.indexOf("height:1px;background"));
+    const wrong: string[] = [];
+    if (top.includes(">Drafted<")) wrong.push(`the header says "Drafted"`);
+    if (!top.includes(">Issued<")) wrong.push(`the header has no "Issued"`);
+    if (!html.includes(`data-pay-way="zelle"`)) wrong.push("no Zelle row");
+    if (html.includes("Ways to pay") && !html.includes(`data-pay-way="check"`)) {
+      wrong.push("the 'Ways to pay' block leaves out Check, which the business accepts");
+    }
+    assertEquals(wrong, [], "the standalone invoice email contradicts itself");
+  });
+});

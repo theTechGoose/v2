@@ -166,7 +166,8 @@ Deno.test("REQ-944 q1-13: /field/batches → Send selected — the invoice email
         due: valueAfter(html, "Due"),
       }),
       JSON.stringify({
-        drafted: longEn(issuedDay),
+        // REQ-980 (q1-61): the header date is labelled "Issued", not "Drafted"
+        drafted: undefined,
         issued: longEn(issuedDay),
         due: longEn(inv.dueDate),
       }),
