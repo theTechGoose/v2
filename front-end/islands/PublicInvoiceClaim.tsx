@@ -180,105 +180,138 @@ export default function PublicInvoiceClaim(
 
   // REQ-805: the pay buttons — the customer's page and the owner's preview
   // ("viewing as the customer") show the same ones
+  // REQ-1118 (LOOP-007 q3-43): "Pay online" heads the link buttons only — a
+  // copy row (Zelle, a PayPal email) is money sent from the customer's own
+  // bank, so those rows get their own neutral heading ("Send payment").
+  const linkButtons = buttons.filter((b) => b.kind === "link");
+  const copyButtons = buttons.filter((b) => b.kind === "copy");
+  const groupHeading = (key: string, cy: string, first: boolean) => (
+    <div
+      data-cy={cy}
+      style={`${
+        first ? "" : "margin-top:18px;"
+      }font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
+    >
+      {tFor(lang, key)}
+    </div>
+  );
   const payButtonsBlock = () => (
     buttons.length > 0
       ? (
         <div data-cy="pay-buttons" style="margin-bottom:22px">
-          <div
-            style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}`}
-          >
-            {tFor(lang, "payLinks.page.heading")}
-          </div>
-          <div style="margin-top:12px;display:grid;gap:10px">
-            {buttons.map((b) => {
-              const color = BRAND_COLOR[b.method] ?? TEAL;
-              const mark = (
-                <span
-                  aria-hidden="true"
-                  style={`flex:none;width:32px;height:32px;border-radius:9px;background:${color};color:#fff;display:grid;place-items:center;font-weight:900;font-size:15px`}
-                >
-                  {b.label.trim().charAt(0).toUpperCase()}
-                </span>
-              );
-              if (b.kind === "link") {
-                const label = b.method === "link" ||
-                    typeof balance !== "number"
-                  ? tFor(lang, "payLinks.page.payWith", { brand: b.label })
-                  : tFor(lang, "payLinks.page.amountWith", {
-                    amount: fmtMoneyExact(balance),
-                    brand: b.label,
-                  });
-                return (
-                  <a
-                    key={b.key}
-                    data-cy={`pay-${b.key}`}
-                    href={b.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK};text-decoration:none`}
-                  >
-                    {mark}
-                    <span style="flex:1;min-width:0;display:grid">
-                      <span style="font-weight:800;font-size:15px;line-height:1.25;overflow-wrap:anywhere">
-                        {label}
-                      </span>
-                      {b.detail
-                        ? (
-                          <span
-                            style={`font-size:12.5px;color:${MUTED};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
-                          >
-                            {b.detail}
-                          </span>
-                        )
-                        : null}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      style={`flex:none;color:${color};font-weight:900;font-size:18px`}
-                    >
-                      ↗
-                    </span>
-                  </a>
-                );
-              }
-              return (
-                <div
-                  key={b.key}
-                  data-cy={`pay-${b.key}`}
-                  style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK}`}
-                >
-                  {mark}
-                  <span style="flex:1;min-width:0;display:grid">
-                    <span style="font-weight:800;font-size:15px;line-height:1.25">
-                      {b.label}
-                    </span>
-                    <span
-                      data-cy={`pay-${b.key}-value`}
-                      style={`font-size:13px;color:${INK};overflow-wrap:anywhere`}
-                    >
-                      {tFor(lang, "payLinks.page.sendTo", {
-                        handle: b.display,
-                      })}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    data-cy={`pay-${b.key}-copy`}
-                    onClick={() => copy(b)}
-                    style={`flex:none;appearance:none;cursor:pointer;background:#fff;color:${color};border:1px solid ${color};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:800`}
-                  >
-                    {copied === b.key
-                      ? tFor(lang, "payLinks.page.copied")
-                      : tFor(lang, "payLinks.page.copy")}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+          {linkButtons.length > 0
+            ? groupHeading("payLinks.page.heading", "online-pay-heading", true)
+            : null}
+          {linkButtons.length > 0
+            ? (
+              <div style="margin-top:12px;display:grid;gap:10px">
+                {linkButtons.map(renderPayButton)}
+              </div>
+            )
+            : null}
+          {copyButtons.length > 0
+            ? groupHeading(
+              "payLinks.page.sendHeading",
+              "send-pay-heading",
+              linkButtons.length === 0,
+            )
+            : null}
+          {copyButtons.length > 0
+            ? (
+              <div style="margin-top:12px;display:grid;gap:10px">
+                {copyButtons.map(renderPayButton)}
+              </div>
+            )
+            : null}
         </div>
       )
       : null
   );
+
+  function renderPayButton(b: PayButton) {
+    const color = BRAND_COLOR[b.method] ?? TEAL;
+    const mark = (
+      <span
+        aria-hidden="true"
+        style={`flex:none;width:32px;height:32px;border-radius:9px;background:${color};color:#fff;display:grid;place-items:center;font-weight:900;font-size:15px`}
+      >
+        {b.label.trim().charAt(0).toUpperCase()}
+      </span>
+    );
+    if (b.kind === "link") {
+      const label = b.method === "link" ||
+          typeof balance !== "number"
+        ? tFor(lang, "payLinks.page.payWith", { brand: b.label })
+        : tFor(lang, "payLinks.page.amountWith", {
+          amount: fmtMoneyExact(balance),
+          brand: b.label,
+        });
+      return (
+        <a
+          key={b.key}
+          data-cy={`pay-${b.key}`}
+          href={b.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK};text-decoration:none`}
+        >
+          {mark}
+          <span style="flex:1;min-width:0;display:grid">
+            <span style="font-weight:800;font-size:15px;line-height:1.25;overflow-wrap:anywhere">
+              {label}
+            </span>
+            {b.detail
+              ? (
+                <span
+                  style={`font-size:12.5px;color:${MUTED};overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}
+                >
+                  {b.detail}
+                </span>
+              )
+              : null}
+          </span>
+          <span
+            aria-hidden="true"
+            style={`flex:none;color:${color};font-weight:900;font-size:18px`}
+          >
+            ↗
+          </span>
+        </a>
+      );
+    }
+    return (
+      <div
+        key={b.key}
+        data-cy={`pay-${b.key}`}
+        style={`display:flex;align-items:center;gap:12px;min-height:52px;box-sizing:border-box;padding:10px 14px;background:#fff;border:1.5px solid ${color};border-radius:12px;color:${INK}`}
+      >
+        {mark}
+        <span style="flex:1;min-width:0;display:grid">
+          <span style="font-weight:800;font-size:15px;line-height:1.25">
+            {b.label}
+          </span>
+          <span
+            data-cy={`pay-${b.key}-value`}
+            style={`font-size:13px;color:${INK};overflow-wrap:anywhere`}
+          >
+            {tFor(lang, "payLinks.page.sendTo", {
+              handle: b.display,
+            })}
+          </span>
+        </span>
+        <button
+          type="button"
+          data-cy={`pay-${b.key}-copy`}
+          onClick={() => copy(b)}
+          style={`flex:none;appearance:none;cursor:pointer;background:#fff;color:${color};border:1px solid ${color};border-radius:999px;padding:7px 14px;font-size:13px;font-weight:800`}
+        >
+          {copied === b.key
+            ? tFor(lang, "payLinks.page.copied")
+            : tFor(lang, "payLinks.page.copy")}
+        </button>
+      </div>
+    );
+  }
 
   // REQ-479 (demo M30): the owner on her own invoice records a payment she
   // received; she never files "the customer paid" — unless the customer is

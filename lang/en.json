@@ -5330,6 +5330,7 @@
   "payLinks.email.ach": "Bank transfer: {handle}",
   "payLinks.email.achPlain": "Bank transfer",
   "payLinks.page.heading": "Pay online",
+  "payLinks.page.sendHeading": "Send payment",
   "payLinks.page.payWith": "Pay with {brand}",
   "payLinks.page.amountWith": "Pay {amount} with {brand}",
   "payLinks.page.sendTo": "Send to {handle}",
