@@ -28,13 +28,17 @@ export function workerTodayKey(n: number, isToday = true): WorkerTodayKey {
  */
 export type WorkerDayCounts = { live: number; deferred: number };
 
+/**
+ * REQ-1163 (LOOP-007 q3-96) — a work order flagged `out` (the worker is off that day and the office
+ * reschedules it) draws its card like a deferred row but is not on the day's to-do count.
+ */
 export function workerDayCounts(
-  rows: ReadonlyArray<{ status: string }>,
+  rows: ReadonlyArray<{ status: string; out?: string }>,
 ): WorkerDayCounts {
   let live = 0;
   let deferred = 0;
   for (const r of rows) {
-    if (r.status === "deferred") deferred++;
+    if (r.status === "deferred" || r.out) deferred++;
     else if (r.status !== "skipped") live++;
   }
   return { live, deferred };

@@ -44,6 +44,10 @@ export interface WorkOrderDayRow {
   crewNames?: string[];
   /** REQ-1022: the absent assignee this worker covers for */
   coverForName?: string;
+  /** REQ-1163: the assignee was out on the scheduled day and the work is deferred to this one — the day it was scheduled */
+  deferredFrom?: string;
+  /** REQ-1163: the assignee is out on this day and nothing moved it (skip, or a defer with no day back) — the office reschedules */
+  out?: "defer" | "skip";
 }
 
 /** the absence that has the WO's assignee out on `date` — their own, else their crew's */
@@ -115,7 +119,11 @@ export function woDayStaff(
   wo: WorkOrder,
   input: DayPeople,
 ): WorkOrderDayStaff | null {
-  const r = woStaffOn(wo, input);
+  return dayStaffOf(woStaffOn(wo, input));
+}
+
+/** a resolution's staff as the worker day keeps it */
+function dayStaffOf(r: Resolution | null): WorkOrderDayStaff | null {
   if (!r) return null;
   const s = r.staff;
   const base: WorkOrderDayStaff = s.kind === "worker"
@@ -124,12 +132,61 @@ export function woDayStaff(
   return r.kind === "cover" ? { ...base, coverFor: r.coverFor } : base;
 }
 
+/**
+ * REQ-1163 (LOOP-007 q3-96, amends REQ-1022) — where a work order sits on the worker days, resolved
+ * at read time (the stored WO is never touched): its scheduled day with its staff (the assignee,
+ * or the cover); the assignee out with **defer** and back within MAX_DEFER_DAYS → the first day
+ * back, with the assignee, `deferredFrom` = the scheduled day (and off the day out); **skip**, or a
+ * defer with no day back → the scheduled day, flagged `out` for the office to reschedule. `staff`
+ * null: nobody has it (an uncovered cover). Null: not on any worker day (no assignee, no date,
+ * cancelled).
+ */
+export interface WorkOrderPlacement {
+  date: string;
+  staff: WorkOrderDayStaff | null;
+  deferredFrom?: string;
+  out?: "defer" | "skip";
+}
+
+export function woDayPlacement(
+  wo: WorkOrder,
+  people: Omit<DayPeople, "date">,
+): WorkOrderPlacement | null {
+  if (!wo.assigneeWorkerId || !wo.scheduledFor || wo.status === "cancelled") {
+    return null;
+  }
+  const date = wo.scheduledFor;
+  const r = woStaffOn(wo, { ...people, date });
+  if (!r) return { date, staff: null };
+  const staff = dayStaffOf(r);
+  if (r.kind === "defer" && r.to) {
+    return { date: r.to, staff, deferredFrom: date };
+  }
+  if (r.kind === "defer" || r.kind === "skip") {
+    return { date, staff, out: r.kind };
+  }
+  return { date, staff };
+}
+
+/** REQ-1163: the work orders placed on `date` (a deferred one on the day its assignee is back), each with its placement */
+export function workOrdersPlacedOn(
+  rows: WorkOrder[],
+  date: string,
+  people: Omit<DayPeople, "date">,
+): { wo: WorkOrder; place: WorkOrderPlacement }[] {
+  return rows.flatMap((wo) => {
+    const place = woDayPlacement(wo, people);
+    return place && place.date === date ? [{ wo, place }] : [];
+  });
+}
+
 /** the workers on a day's staff */
 const staffIds = (s: WorkOrderDayStaff) => [s.workerId, ...(s.crewIds ?? [])];
 
 /**
  * the work order is on `workerId`'s day `date`: assigned to them, scheduled that day, not
- * cancelled. REQ-1022: given the day's people (absences), on the resolved staff's day instead.
+ * cancelled. REQ-1022: given the day's people (absences), on the resolved staff's day instead;
+ * REQ-1163: a deferred one on the day its assignee is back, not the day out.
  */
 export function onWorkOrderDay(
   wo: WorkOrder,
@@ -137,10 +194,13 @@ export function onWorkOrderDay(
   date: string,
   people?: Omit<DayPeople, "date">,
 ): boolean {
-  if (wo.scheduledFor !== date || wo.status === "cancelled") return false;
-  if (!people) return wo.assigneeWorkerId === workerId;
-  const s = woDayStaff(wo, { ...people, date });
-  return !!s && staffIds(s).includes(workerId);
+  if (!people) {
+    return wo.scheduledFor === date && wo.status !== "cancelled" &&
+      wo.assigneeWorkerId === workerId;
+  }
+  const p = woDayPlacement(wo, people);
+  return !!p && p.date === date && !!p.staff &&
+    staffIds(p.staff).includes(workerId);
 }
 
 /** the work orders scheduled on `date` for any worker (a foreman's whole day), not cancelled */
@@ -156,6 +216,7 @@ export function workOrderRow(
   wo: WorkOrder,
   names: { customer: (id: string) => string; worker: (id: string) => string },
   staff: WorkOrderDayStaff = { workerId: wo.assigneeWorkerId! },
+  place?: Pick<WorkOrderPlacement, "date" | "deferredFrom" | "out">,
 ): WorkOrderDayRow {
   // the customer's current name ("—" when unknown), else the name it had when filed, else the WO's number
   const live = wo.customerId ? names.customer(wo.customerId) : "—";
@@ -174,7 +235,7 @@ export function workOrderRow(
     regionId: "",
     workerId: staff.workerId,
     workerName: names.worker(staff.workerId),
-    date: wo.scheduledFor!,
+    date: place?.date ?? wo.scheduledFor!,
     ...(wo.serviceAddress ? { address: wo.serviceAddress } : {}),
     status: wo.status === "done" ? "complete" : "assigned",
     locked: false,
@@ -187,5 +248,7 @@ export function workOrderRow(
       }
       : {}),
     ...(staff.coverFor ? { coverForName: names.worker(staff.coverFor) } : {}),
+    ...(place?.deferredFrom ? { deferredFrom: place.deferredFrom } : {}),
+    ...(place?.out ? { out: place.out } : {}),
   };
 }

@@ -20,7 +20,7 @@ import { businessZoneOf, fieldTodayFor } from "@users/domain/coordinators/busine
 import { workerLang } from "@field/domain/business/worker-welcome/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-1010
-import { woDayStaff, workOrderRow, workOrdersOn } from "@field/domain/business/work-order-day/mod.ts"; // REQ-1010, REQ-1022
+import { workOrderRow, workOrdersPlacedOn } from "@field/domain/business/work-order-day/mod.ts"; // REQ-1010, REQ-1022
 import { CAP, type Crew, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
 
 type Body_ = Record<string, unknown>;
@@ -150,18 +150,17 @@ export class FieldWorkerController {
       .map((t) => this.views.workerTask(t, n));
     // REQ-1010: a work order assigned to a worker for this day is on their day too (read-only, no price).
     // REQ-1022: the assignee out that day → the absence's cover has it instead (covering for them).
+    // REQ-1163: deferred → on the assignee's day back ("deferred from"); skip → kept on the day out, flagged.
     const [wos, absences, workers, crews] = await Promise.all([
       this.workOrders.listByUser(w.userId),
       this.absences.listByUser(w.userId),
       this.workers.listByUser(w.userId),
       this.crews.listByUser(w.userId),
     ]);
-    const people = { absences, workers, crews, date: d };
-    const orders = workOrdersOn(wos, d)
-      .map((wo) => ({ wo, staff: woDayStaff(wo, people) }))
+    const orders = workOrdersPlacedOn(wos, d, { absences, workers, crews })
       // an uncovered absence (the cover is out too) puts it on nobody's own day; the account foreman still sees it
-      .filter(({ staff }) => everyone || (!!staff && mine(staff)))
-      .map(({ wo, staff }) => workOrderRow(wo, n, staff ?? undefined))
+      .filter(({ place }) => everyone || (!!place.staff && mine(place.staff)))
+      .map(({ wo, place }) => workOrderRow(wo, n, place.staff ?? undefined, place))
       .sort((a, b) => (onTask(w.id, a) ? 0 : 1) - (onTask(w.id, b) ? 0 : 1));
     return [...tasks, ...orders];
   }

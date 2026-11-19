@@ -94,4 +94,9 @@ describe("REQ-1011 (LOOP-007 q1-97) the deferred visit: localized date, one stor
       false,
     );
   });
+
+  test("REQ-1163 (q3-96): a work order flagged `out` (the worker is off, the office reschedules) draws its card but is not on the to-do count", () => {
+    const counts = workerToday.workerDayCounts([{ status: "assigned", out: "skip" }, { status: "assigned" }]);
+    expect(counts).toEqual({ live: 1, deferred: 1 });
+  });
 });

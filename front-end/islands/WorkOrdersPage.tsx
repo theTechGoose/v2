@@ -250,11 +250,12 @@ export default function WorkOrdersPage() {
                         </td>
                         <td
                           data-cy="wo-row-assignee"
-                          style={wo.assigneeOut
+                          style={wo.assigneeOut && !wo.assigneeDeferredTo
                             ? "color:var(--danger)"
                             : undefined}
                         >
-                          {assigneeLabel(wo, t) ?? "—"}
+                          {assigneeLabel(wo, t, (d) => shortDate(d, lang)) ??
+                            "—"}
                         </td>
                         <td data-cy="wo-row-scheduled">
                           {wo.scheduledFor

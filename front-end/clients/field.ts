@@ -121,6 +121,10 @@ export interface AbsenceView {
     number: string;
     date: string;
     coverName?: string;
+    /** REQ-1163: deferred — it sits on the worker's day back */
+    deferredTo?: string;
+    /** REQ-1163: skipped, or deferred with no day back — nobody has it */
+    out?: "defer" | "skip";
   }[];
 }
 
@@ -365,6 +369,8 @@ export interface WorkerTaskView {
   /** REQ-1010: the row is a work order assigned to this worker for the day (read-only here) */
   workOrderId?: string;
   workOrderNumber?: string;
+  /** REQ-1163: the worker is off this day and nothing moved the work order — the office reschedules it */
+  out?: "defer" | "skip";
 }
 
 export interface GenerateResult {

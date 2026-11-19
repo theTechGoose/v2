@@ -20,6 +20,8 @@ export type WorkOrderWorkerFn = (
 export interface WorkOrderCover {
   coverAssignee?: string;
   assigneeOut?: "defer" | "skip" | "uncovered";
+  /** REQ-1163: a defer with a day back — the day the WO sits on (the assignee is back) */
+  assigneeDeferredTo?: string;
 }
 
 /** the day's absence resolution of each work order `{ assigneeWorkerId, scheduledFor }`, in order */
