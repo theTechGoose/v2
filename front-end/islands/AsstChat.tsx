@@ -261,6 +261,7 @@ import {
   type QuoteFacts,
   weekdayLabel,
   wizardPrefillFor,
+  wizardSuggestedOption, // REQ-1105
 } from "../../shared/quote-flow/quote-facts.ts";
 import RecurringPaymentForm from "../components/RecurringPaymentForm.tsx"; // REQ-699
 import {
@@ -9950,6 +9951,15 @@ export default function AsstChat({
                               const showPrefill = !!(prefill && prefillOpt) &&
                                 !(rewindAnswer &&
                                   rewindAnswer.stepId === payload.stepId);
+                              // REQ-1105 (LOOP-007 q3, q3-29): one
+                              // suggestion per step — the message's own parse
+                              // wins over the server's (model's) pick, so
+                              // "30% deposit" never tags 30/30/40 as well.
+                              const suggestedId = wizardSuggestedOption(
+                                prefillOpt?.id,
+                                payload.suggestedOptionId,
+                                rewindAnswer?.stepId === payload.stepId,
+                              );
                               // REQ-699 (demo-loop cycle 5, M20): a price the
                               // message stated per period ("$180 al mes") is
                               // asked about — once, or every month? The
@@ -10124,8 +10134,7 @@ export default function AsstChat({
                                             payload.stepId &&
                                           rewindAnswer.optionId === opt.id
                                           ? "wiz-opt--prev"
-                                          : rewindAnswer?.stepId !==
-                                                payload.stepId &&
+                                          : suggestedId === opt.id &&
                                               payload.suggestedOptionId === opt.id
                                           ? "wiz-opt--suggested"
                                           : ""
@@ -10140,9 +10149,7 @@ export default function AsstChat({
                                             payload.stepId &&
                                           rewindAnswer.optionId === opt.id
                                         ? tFor(lang, "asstChat.wiz.prevChoice")
-                                        : rewindAnswer?.stepId !==
-                                              payload.stepId &&
-                                            payload.suggestedOptionId === opt.id
+                                        : suggestedId === opt.id
                                         ? tFor(lang, "asstChat.wiz.fromYourMessage")
                                         : undefined}
                                       onClick={() => {
@@ -10239,12 +10246,7 @@ export default function AsstChat({
                                           suggestion says so in words — it
                                           is not a selection. */
                                       }
-                                      {(showPrefill &&
-                                          prefillOpt?.id === opt.id) ||
-                                          (rewindAnswer?.stepId !==
-                                              payload.stepId &&
-                                            payload.suggestedOptionId ===
-                                              opt.id)
+                                      {suggestedId === opt.id
                                         ? (
                                           <span class="wiz-opt__tag">
                                             {tFor(

@@ -866,6 +866,24 @@ export function wizardPrefillFor(
   return null;
 }
 
+/**
+ * REQ-1105 (LOOP-007 cycle 3, q3-29; cites REQ-258 / REQ-265 / REQ-672) — the
+ * ONE option a wizard step tags "Suggested". Two sources name a suggestion:
+ * the front end's own parse of the typed message (`prefillOptionId`,
+ * REQ-265 — deterministic, and it carries a stated deposit's share) and the
+ * server's `suggestedOptionId` (REQ-258, from the model). The parse wins;
+ * the server's id is the fallback when the words gave none. A rewound step
+ * (its previous answer shown) suggests nothing.
+ */
+export function wizardSuggestedOption(
+  prefillOptionId: string | undefined,
+  suggestedOptionId: string | undefined,
+  rewound = false,
+): string | undefined {
+  if (rewound) return undefined;
+  return prefillOptionId ?? suggestedOptionId;
+}
+
 const fold = (s: string) =>
   s.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
 const last10 = (p: string | undefined | null) => {
