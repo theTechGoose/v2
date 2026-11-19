@@ -353,3 +353,69 @@ Deno.test("REQ-629 + REQ-627: select all in view → one PDF with every invoice 
     const kept = await call(http, auth, "GET", `/api/invoices/${s1.id}`);
     expect.eq(kept.status, "sent", "the sent one was skipped");
   }));
+
+// REQ-1135 (LOOP-007 q3, q3-60) — AMENDMENT of REQ-627: voiding an invoice the
+// customer was already sent offers "Let <customer> know", checked by default,
+// and confirming it puts one cancellation message in the outbox; her /i link
+// still says it's cancelled.
+Deno.test("REQ-1135 (LOOP-007 q3, q3-60): voiding an emailed invoice with 'let the customer know' checked sends her a cancellation, and her link still says cancelled", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await seedBusiness(http, auth);
+    const rosa = await call(http, auth, "POST", "/api/customers", {
+      name: "Rosa Diaz",
+      email: "rosa.diaz@example.com",
+    });
+    const inv = await mkInvoice(http, auth, {
+      status: "draft",
+      customerId: rosa.id,
+      jobName: "Spring cleanup",
+    });
+    await call(http, auth, "POST", `/api/invoices/${inv.id}/email`, {});
+    const sent = await call(http, auth, "GET", `/api/invoices/${inv.id}`);
+    expect.eq(sent.status, "sent", "the invoice went out to Rosa");
+    const before = (await call(http, auth, "GET", "/api/outbox")) as {
+      id: string;
+    }[];
+
+    await page.goto(`/invoices?open=${inv.id}`);
+    await page.locator("[data-cy='invoice-void']").click({ timeout: 15_000 });
+    await page.locator("[data-cy='invoice-void-panel']").waitFor();
+    const notify = page.locator("[data-cy='invoice-void-notify']");
+    expect.eq(
+      await notify.count(),
+      1,
+      "REQ-1135: the void step offers to let Rosa know",
+    );
+    expect(
+      await notify.isChecked(),
+      "REQ-1135: checked by default — the invoice was sent and she has an email",
+    );
+    await page.locator("[data-cy='invoice-void-confirm']").click();
+    await page.locator("[data-cy='invoice-voided-note']").waitFor({
+      timeout: 15_000,
+    });
+
+    const after = (await call(http, auth, "GET", "/api/outbox")) as {
+      id: string;
+      channel: string;
+      docId?: string;
+      preview?: string;
+    }[];
+    const added = after.filter((r) => !before.some((b) => b.id === r.id));
+    expect.eq(
+      added.length,
+      1,
+      `REQ-1135: one cancellation message in the outbox (${
+        JSON.stringify(added)
+      })`,
+    );
+    expect(
+      added[0]?.docId === inv.id && added[0]?.channel === "email",
+      `REQ-1135: an email about ${inv.number}: ${JSON.stringify(added[0])}`,
+    );
+    await page.goto(`/i/${inv.id}`);
+    await page.locator("[data-cy='invoice-cancelled-note']").waitFor({
+      timeout: 15_000,
+    });
+  }));
