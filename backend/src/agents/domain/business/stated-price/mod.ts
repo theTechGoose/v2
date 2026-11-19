@@ -29,7 +29,12 @@ import {
   describeJobSize,
   plausibilityFloorCents,
 } from "@agents/domain/business/price-floor/mod.ts";
-import { type MoneyAmount, moneyAmounts } from "#quote-flow/money-amounts.ts";
+import {
+  type LabelledAmount,
+  labelledAmounts,
+  type MoneyAmount,
+  moneyAmounts,
+} from "#quote-flow/money-amounts.ts";
 
 // ---------------------------------------------------------------------------
 // Money in the text
@@ -344,6 +349,20 @@ export function statedTotalCents(
       onDraft && !WHOLE_JOB.test(`${before} ${after}`) && pointsBack(s, from)
     ) continue;
     stated = a.cents;
+  }
+  // REQ-1023 (LOOP-007 cycle 2, q2-3): a BARE amount typed right after
+  // "total" ("mano de obra 4200 materiales 1350 total 5,550") is the job's
+  // total — `moneyAmounts` reads no amount without a "$" or a currency word.
+  if (stated === undefined) {
+    for (const a of labelledAmounts(s)) {
+      if (a.label !== "total" || a.rate || a.per || a.cents === current) {
+        continue;
+      }
+      if (all.some((m) => m.start === a.start)) continue; // read above
+      const after = norm(s.slice(a.end, sentenceEnd(s, a.end, 160)));
+      if (SHARE_AFTER.test(after) || SCOPED_AFTER.test(after)) continue;
+      stated = a.cents;
+    }
   }
   if (stated === undefined) return undefined;
   if (onDraft && stated < current && ADDS_WORK.test(s)) return undefined;
@@ -854,6 +873,120 @@ export function priceJumpAsk(lang: Lang, jump: RevisionJump): string {
 }
 
 // ---------------------------------------------------------------------------
+// REQ-1023: every priced item the contractor typed is on the first draft
+// ---------------------------------------------------------------------------
+
+/** A cost the contractor pays ("my materials cost me", "me cuesta", "Ray
+ *  charges") — private (REQ-261), never a line the customer is billed. */
+const COST_CUE =
+  /(?<![\p{L}])(?:cost|costs|costing|my cost|me cuesta|me cuestan|cuesta|cuestan|mi costo|i pay|i paid|pago|pagu[eé]|charges?|cobra|cobran)(?![\p{L}])[^.!?;\n]*$/iu;
+/** "materials 1350 or 1500" — an alternative, not one price. */
+const OR_AFTER = /^\s*(?:or|o|u)\s+\$?\s?\d/iu;
+
+/** Can some of `parts` (two or more, or one) add up to exactly `cents`? */
+function subsetSums(parts: readonly number[], cents: number): boolean {
+  if (parts.length > 16) return false;
+  let sums = new Set<number>([0]);
+  for (const p of parts) {
+    const next = new Set(sums);
+    for (const x of sums) if (x + p <= cents) next.add(x + p);
+    sums = next;
+    if (sums.has(cents)) return true;
+  }
+  return false;
+}
+
+/**
+ * REQ-1023 (LOOP-007 cycle 2, q2-3): the priced items the contractor typed
+ * under a label — "mano de obra 4200 materiales 1350", "materials $1,350" —
+ * that no line of the draft carries. An item is carried when one line, or a
+ * few lines together, come to its amount, or when one line folds it into
+ * the sum of several typed items. A total, a deposit, a rate, a recurring
+ * price, an alternative or a cost the contractor pays is never a line.
+ */
+export function missedTypedPrices(
+  lines: readonly PricedLine[],
+  userText: string,
+): LabelledAmount[] {
+  const s = userText ?? "";
+  const items = labelledAmounts(s).filter((a) => {
+    if (!a.label || a.label === "total" || a.rate || a.per || a.negative) {
+      return false;
+    }
+    const after = norm(s.slice(a.end, sentenceEnd(s, a.end, 160)));
+    if (SHARE_AFTER.test(after) || OR_AFTER.test(s.slice(a.end))) return false;
+    const from = sentenceStart(s, a.start, 240);
+    return !COST_CUE.test(s.slice(Math.max(0, from), a.start));
+  });
+  if (items.length === 0) return [];
+  const amounts = lines.map((l) => l.amountCents).filter((c) => c > 0);
+  if (amounts.length === 0) return [];
+  // the lines add up to every typed price: nothing is missing
+  const typed = labelledAmounts(s)
+    .filter((a) => !a.rate && !a.per && a.label !== "total")
+    .map((a) => a.cents);
+  const total = amounts.reduce((a, b) => a + b, 0);
+  if (total === typed.reduce((a, b) => a + b, 0)) return [];
+  const itemCents = items.map((a) => a.cents);
+  return items.filter((a, i) => {
+    if (amounts.includes(a.cents)) return false;
+    if (subsetSums(amounts, a.cents)) return false;
+    // one line carrying this item together with other typed items
+    const others = itemCents.filter((_, j) => j !== i);
+    return !amounts.some((line) =>
+      line > a.cents && subsetSums(others, line - a.cents)
+    );
+  });
+}
+
+/** "Mano de obra" / "Materiales" — the label as a line's description. */
+function labelLine(label: string): string {
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function missedPricesNote(missed: readonly LabelledAmount[]): string {
+  const named = missed.map((a) => `"${a.label} ${dollars(a.cents)}"`)
+    .join(", ");
+  return `The contractor typed ${named} — ${
+    missed.length > 1 ? "each is a billed line" : "it is a billed line"
+  } on this quote, and your line items leave it out. Call create_quote again with the same lines plus ${
+    missed.length > 1 ? "a line for each of these" : "a line for it"
+  }, at exactly the amount typed (${
+    missed.map((a) => `${a.cents} cents`).join(", ")
+  }). Do not change the other lines' prices.`;
+}
+
+/**
+ * REQ-1023: a first draft that leaves out a priced item the contractor typed
+ * is re-asked once, naming it; still missing (or no answer), a line for each
+ * is added in code at the typed amount, under the typed label. Undefined
+ * when nothing is missing.
+ */
+async function coverTypedPrices(
+  lines: readonly PricedLine[],
+  userText: string,
+  reask: (note: string) => Promise<readonly PricedLine[] | undefined>,
+): Promise<PricedLine[] | undefined> {
+  const missed = missedTypedPrices(lines, userText);
+  if (missed.length === 0) return undefined;
+  const re = await reask(missedPricesNote(missed)).catch(() => undefined);
+  const usable = re && re.length > 0 && sumOf(re) > 0
+    ? re.map((l) => ({ ...l }))
+    : undefined;
+  if (usable && missedTypedPrices(usable, userText).length === 0) {
+    return usable;
+  }
+  const base = usable ?? lines.map((l) => ({ ...l }));
+  return [
+    ...base,
+    ...missedTypedPrices(base, userText).map((a) => ({
+      description: labelLine(a.label!),
+      amountCents: a.cents,
+    })),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // The chat model's create_quote
 // ---------------------------------------------------------------------------
 
@@ -944,7 +1077,27 @@ export async function settleCreateQuote<
   if (settled.kind === "ask") {
     return { kind: "ask", text: priceJumpAsk(input.lang, settled.jump) };
   }
-  const lines = settled.kind === "lines" ? settled.lineItems : undefined;
+  let lines = settled.kind === "lines" ? settled.lineItems : undefined;
+  // REQ-1023 (LOOP-007 cycle 2, q2-3): on a first draft with no stated
+  // total, every priced item the contractor typed under a label ("mano de
+  // obra 4200 materiales 1350") is a line — the model dropping one is
+  // re-asked once naming it, then the line is added in code.
+  if (!sameJob && !input.statedCents) {
+    const current = lines ?? payload.lineItems;
+    const covered = await coverTypedPrices(
+      current,
+      input.userText,
+      (note) =>
+        input.reask([
+          {
+            role: "assistant",
+            content: draftTurn({ ...payload, lineItems: [...current] }),
+          },
+          { role: "user", content: note },
+        ]),
+    );
+    if (covered) lines = covered;
+  }
   // REQ-578 (m34): the contractor gave the whole job's price — a stated
   // total, or an amount typed in this message that the lines add up to
   // ("$2,400 — actually make it $2,250") — and the model put all of it on
