@@ -12,6 +12,21 @@ import type {
   PacketDoc,
   ProvisionResult,
 } from "@hr/dto/hr.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
+
+/** REQ-1003 / REQ-1036 — who every email to a new hire is from: the hiring business (its name as
+ *  the display name, its alias as the address, REQ-628), never DocuMonster; a reply reaches the
+ *  account's HR address when one is on file. One sender for the invite, its reminder and the
+ *  provisioner's welcome note. */
+export function newHireSender(input: {
+  alias?: string | null;
+  company?: string | null;
+  hrEmail?: string | null;
+}): { from: string; replyTo?: string } {
+  const from = businessFrom({ alias: input.alias, name: input.company });
+  const replyTo = (input.hrEmail ?? "").trim();
+  return replyTo ? { from, replyTo } : { from };
+}
 
 /** unfinished hires first (REQ-884c) */
 export const STATUS_RANK: Record<HireStatus, number> = {

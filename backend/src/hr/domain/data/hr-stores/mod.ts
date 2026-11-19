@@ -81,6 +81,29 @@ export class HrSystemStore extends OwnedStore<HrSystem> {
   constructor() {
     super("hr_system");
   }
+  override async get(id: string): Promise<HrSystem> {
+    return currentDesc(await super.get(id));
+  }
+  override async find(id: string): Promise<HrSystem | null> {
+    const s = await super.find(id);
+    return s ? currentDesc(s) : null;
+  }
+  override async listByUser(userId: string): Promise<HrSystem[]> {
+    return (await super.listByUser(userId)).map(currentDesc);
+  }
+}
+
+/** REQ-1036 — a built-in system attached before the catalog copy changed still carries the old
+ *  catalog desc in KV (attach copies it); read it as today's catalog desc. A desc the owner wrote
+ *  themselves is left alone. */
+const STALE_DESC: Record<string, string> = {
+  "dm-email": "A welcome note with the handbook portal's login, from DocuMonster",
+};
+function currentDesc(s: HrSystem): HrSystem {
+  const stale = s.key ? STALE_DESC[s.key] : undefined;
+  if (!stale || s.desc !== stale) return s;
+  const now = SYSTEM_CATALOG.find((c) => c.key === s.key)?.desc;
+  return now ? { ...s, desc: now } : s;
 }
 
 @Injectable()
@@ -148,7 +171,8 @@ export const SYSTEM_CATALOG: CatalogEntry[] = [
     key: "dm-email",
     name: "Welcome email (Postmark)",
     kind: "email",
-    desc: "A welcome note with the handbook portal's login, from DocuMonster",
+    // REQ-1036: the note is From the hiring business (REQ-1003), not DocuMonster
+    desc: "A welcome note with the handbook portal's login, from your business",
   },
   {
     key: "dm-text",

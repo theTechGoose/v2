@@ -380,3 +380,19 @@ Deno.test("REQ-913 armMode: a built-in key runs in-process; a webhook is a webho
   assertEquals(isBuiltin("dm-text"), true);
   assertEquals(isBuiltin("custom"), false);
 });
+
+// ── REQ-1036 (LOOP-007 q2, q2-19) — the welcome-email arm's catalog card says it comes from the business ──
+Deno.test("REQ-1036 (q2-19) the dm-email catalog card does not say the welcome note is 'from DocuMonster' — REQ-1003's new-hire emails come from the business", () => {
+  const card = SYSTEM_CATALOG.find((c) => c.key === "dm-email");
+  assert(card, "dm-email is in the catalog");
+  assertEquals(/documonster/i.test(card.desc), false, `desc=${JSON.stringify(card.desc)}`);
+});
+
+Deno.test("REQ-1036 (q2-19) newHireSender: the business's name + alias, reply to HR; no alias → noreply@, never the house From", async () => {
+  const { newHireSender } = await import("./mod.ts");
+  assertEquals(newHireSender({ alias: "reyes-tile", company: "Reyes Tile & Bath", hrEmail: " hr@reyes.com " }), {
+    from: '"Reyes Tile & Bath" <reyes-tile@documonster.com>',
+    replyTo: "hr@reyes.com",
+  });
+  assertEquals(newHireSender({ company: "Reyes Tile & Bath" }), { from: '"Reyes Tile & Bath" <noreply@documonster.com>' });
+});

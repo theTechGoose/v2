@@ -12,13 +12,12 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
-import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import {
   DEFAULT_SETTINGS,
   HireStore,
   HrSettingsStore,
 } from "@hr/domain/data/hr-stores/mod.ts";
-import { fullName, reminderDue } from "@hr/domain/business/onboarding/mod.ts";
+import { fullName, newHireSender, reminderDue } from "@hr/domain/business/onboarding/mod.ts";
 import type { Hire, HrSettings } from "@hr/dto/hr.ts";
 
 const EVERY_MINUTE_MS = 60_000;
@@ -98,7 +97,7 @@ export class HrNotices {
    *  address, so the hire's inbox names who is hiring them, never DocuMonster */
   private async fromFor(userId: string, companyName: string): Promise<string> {
     const identity = await this.identities.get(userId).catch(() => null);
-    return businessFrom({ alias: identity?.emailAlias, name: companyName });
+    return newHireSender({ alias: identity?.emailAlias, company: companyName }).from;
   }
 
   private async mail(
