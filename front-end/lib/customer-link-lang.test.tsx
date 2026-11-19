@@ -137,3 +137,22 @@ Deno.test("REQ-586 a send divider's language reaches the chat's local quote (app
   assertEquals(d?.lang, "es");
   assertEquals(quoteSendLang({ lastDelivery: d }), "es");
 });
+
+Deno.test("REQ-1133 (LOOP-007 q3, q3-65): /i 'Download PDF' carries the language the page paints as ?lang=", async () => {
+  const route = await read("../routes/i/[id].tsx");
+  // The anchor whose label is publicInvoice.downloadPdf.
+  const at = route.indexOf('"publicInvoice.downloadPdf"');
+  assert(at > 0, "the /i route renders a Download PDF link");
+  const anchor = route.slice(route.lastIndexOf("<a", at), at);
+  const href = anchor.match(/href=\{([^}]*\}?[^}]*)\}/)?.[1] ?? "";
+  assert(/\/api\/invoices\/\$\{invoice\.id\}\/pdf/.test(href), `href: ${href}`);
+  assert(
+    !/^`\/api\/invoices\/\$\{invoice\.id\}\/pdf`$/.test(href.trim()),
+    `the Download PDF href is a bare /api/invoices/<id>/pdf with no lang: ${href}`,
+  );
+  assert(
+    /withSendLang\(\s*`\/api\/invoices\/\$\{invoice\.id\}\/pdf`,\s*lang\s*\)/
+      .test(href) || /lang=\$\{lang\}/.test(href),
+    `the Download PDF href passes the page's resolved lang: ${href}`,
+  );
+});
