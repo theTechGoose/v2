@@ -5,6 +5,7 @@
  */
 import { formatPhoneInput } from "../quote-flow/format-helpers.ts";
 import { splitAddress } from "../customer-address/mod.ts";
+import { addressPartErrors } from "../customer-address/rules.ts"; // REQ-992
 
 export interface CustomerFormValues {
   name: string;
@@ -88,7 +89,7 @@ export function customerFormFrom(
 }
 
 export type CustomerFormErrors = Partial<
-  Record<"name" | "phone" | "email", "required" | "invalid">
+  Record<"name" | "phone" | "email" | "state" | "zip", "required" | "invalid">
 >;
 
 /** Lenient: any format (spaces, dots, dashes, parens, +country, ext) with at
@@ -109,7 +110,8 @@ export function validateCustomerForm(
   if (!v.name.trim()) out.name = "required";
   if (v.phone.trim() && !isPhoneLike(v.phone)) out.phone = "invalid";
   if (v.email.trim() && !isEmailLike(v.email)) out.email = "invalid";
-  return out;
+  // REQ-992: a state no one can mail to, a ZIP that is not a ZIP
+  return { ...out, ...addressPartErrors(v) };
 }
 
 /**

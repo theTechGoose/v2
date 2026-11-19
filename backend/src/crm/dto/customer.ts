@@ -9,6 +9,7 @@ import {
 import { plainToInstance } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
 import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
+import { addressPartError, stateCode } from "#customer-address/rules.ts"; // REQ-992
 
 /**
  * REQ-715 (demo-loop cycle 5, m31 + c2-M29 + c3-m43 + c4-M34): the language
@@ -246,6 +247,20 @@ function assertContact(dto: { email?: string; phoneNumber?: string }): void {
   if (key) throw new CustomerInputError(key);
 }
 
+/**
+ * REQ-992 (LOOP-007 q1-74): the address parts are checked before the store
+ * composes `address` — a USPS state (code or full name) and a US ZIP; blank
+ * is fine. A full state name is stored as its code ("Texas" → "TX"), so the
+ * composed line reads "Austin, TX 78704".
+ */
+function assertAddressParts(dto: { state?: string; zip?: string }): void {
+  const key = addressPartError(dto);
+  if (key) throw new CustomerInputError(key);
+  if (typeof dto.state === "string" && dto.state.trim()) {
+    dto.state = stateCode(dto.state) ?? dto.state;
+  }
+}
+
 export function parseCreateCustomer(input: unknown): CreateCustomerDto {
   const dto = plainToInstance(CreateCustomerDto, input);
   const errors = validateSync(dto);
@@ -253,6 +268,7 @@ export function parseCreateCustomer(input: unknown): CreateCustomerDto {
     throw new CustomerInputError(`invalid customer: ${JSON.stringify(errors)}`);
   }
   assertContact(dto);
+  assertAddressParts(dto);
   // REQ-715: "Not set" is no language at all, never a stored ""
   if ((dto.language as string | undefined) === "") delete dto.language;
   return dto;
@@ -267,5 +283,6 @@ export function parseUpdateCustomer(input: unknown): UpdateCustomerDto {
     );
   }
   assertContact(dto);
+  assertAddressParts(dto);
   return dto;
 }

@@ -5597,13 +5597,17 @@ export function NewInvoiceModal(
     }
     if (clientSel === NEW_SENTINEL) {
       const bad = validateCustomerForm(newClient);
-      if (bad.phone || bad.email) {
+      if (bad.phone || bad.email || bad.state || bad.zip) {
         setError(
           tFor(
             lang,
             bad.phone
               ? "customerForm.err.phoneInvalid"
-              : "customerForm.err.emailInvalid",
+              : bad.email
+              ? "customerForm.err.emailInvalid"
+              : bad.state // REQ-992
+              ? "customerForm.err.stateInvalid"
+              : "customerForm.err.zipInvalid",
           ),
         );
         return;
