@@ -257,7 +257,7 @@ export default function PublicInvoiceClaim(
                       style={`font-size:13px;color:${INK};overflow-wrap:anywhere`}
                     >
                       {tFor(lang, "payLinks.page.sendTo", {
-                        handle: b.value,
+                        handle: b.display,
                       })}
                     </span>
                   </span>

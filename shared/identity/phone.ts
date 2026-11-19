@@ -17,3 +17,19 @@ export function fmtPhone(raw: string | null | undefined): string {
   }
   return raw;
 }
+
+/** REQ-326 (demo m39) / REQ-1032: a pay handle (Zelle / Cash App / Venmo / PayPal — the field
+ *  accepts "email or phone") shown to the customer. A phone-shaped handle — 10 digits, or 11
+ *  starting with 1, with optional "+" and the usual punctuation — reads as a phone,
+ *  "(512) 555-0108"; an email, $cashtag or @name comes back exactly as typed. Shared so the
+ *  backend's invoice email and the front end's /i page print one phone one way. */
+export function fmtPayHandle(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const t = raw.trim();
+  if (!/^\+?[\d\s().-]+$/.test(t)) return raw;
+  const digits = t.replace(/\D/g, "");
+  const us = digits.length === 11 && digits.startsWith("1")
+    ? digits.slice(1)
+    : digits;
+  return us.length === 10 ? fmtPhone(us) : raw;
+}

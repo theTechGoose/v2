@@ -200,6 +200,7 @@ describe("REQ-630 the public projection and the buttons", () => {
         method: "zelle",
         label: "Zelle",
         value: "pay@acme.test",
+        display: "pay@acme.test", // REQ-1032: an email handle displays as typed
       },
     ]);
   });

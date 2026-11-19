@@ -1,4 +1,4 @@
-import { fmtPhone } from "../../shared/identity/phone.ts";
+import { fmtPayHandle, fmtPhone } from "../../shared/identity/phone.ts";
 
 /** Money helpers — input is INTEGER CENTS across the board. The unit
  *  convention was unified per audit1 #3:
@@ -61,21 +61,10 @@ export const pluralize = (
  *  (shared/identity/phone.ts). */
 export { fmtPhone };
 
-/** REQ-326 (demo m39): a pay handle (Zelle / Cash App / Venmo / PayPal —
- *  the field accepts "email or phone") shown to the customer. A phone-shaped
- *  handle — 10 digits, or 11 starting with 1, with optional "+" and the usual
- *  punctuation — reads as a phone, "(512) 555-0108"; an email, $cashtag or
- *  @name comes back exactly as typed. */
-export function fmtPayHandle(raw: string | null | undefined): string {
-  if (!raw) return "";
-  const t = raw.trim();
-  if (!/^\+?[\d\s().-]+$/.test(t)) return raw;
-  const digits = t.replace(/\D/g, "");
-  const us = digits.length === 11 && digits.startsWith("1")
-    ? digits.slice(1)
-    : digits;
-  return us.length === 10 ? fmtPhone(us) : raw;
-}
+/** REQ-326 (demo m39): a pay handle shown to the customer — a phone-shaped handle reads
+ *  "(512) 555-0108", anything else as typed. Lives in shared/identity/phone.ts (REQ-1032) so the
+ *  backend's email uses the same formatter. */
+export { fmtPayHandle };
 
 /** E.164 form for tel: hrefs. Adds +1 for 10-digit US input; passes
  *  through anything already starting with +. */
