@@ -283,7 +283,8 @@ export class Provisioner {
 
   // ── the run ────────────────────────────────────────────────────────────────
 
-  private async plan(hire: Hire): Promise<HrSystem[]> {
+  /** REQ-888c / REQ-1156 — the arms this hire's run would build (the sign packet counts them) */
+  async plan(hire: Hire): Promise<HrSystem[]> {
     const [dept, systems] = await Promise.all([this.depts.find(hire.departmentId), this.systems.listByUser(hire.userId)]);
     return provisionPlan(hire, dept && dept.userId === hire.userId ? dept : null, systems);
   }

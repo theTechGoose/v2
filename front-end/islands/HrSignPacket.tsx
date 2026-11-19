@@ -12,7 +12,7 @@ import SignaturePad from "../components/hr/SignaturePad.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
 import { friendlyHr } from "../components/hr/bits.tsx";
 import { ApiError } from "../lib/api.ts";
-import { FIELD_TYPES } from "../lib/hr.ts";
+import { FIELD_TYPES, signDoneKey } from "../lib/hr.ts";
 import { type Lang, langSignal, setLang, t } from "../lib/i18n.ts";
 import { type RenderedPage, renderPdfPages } from "../lib/pdfjs.ts";
 
@@ -294,7 +294,9 @@ export default function HrSignPacket({ token, initialLang }: Props) {
               <div class="hrs__eyebrow">{t("hr.sign.done.eyebrow")}</div>
               <h1 class="hrs__title">{t("hr.sign.done.title")}</h1>
               <p class="hrs__p">
-                {t("hr.sign.done.body", { company: company || "the team" })}
+                {t(signDoneKey(p?.accounts), {
+                  company: company || "the team",
+                })}
               </p>
             </div>
           </div>

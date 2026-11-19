@@ -187,3 +187,23 @@ export function inviteText(
 ): string {
   return `Hey ${first}! 🐋 Welcome to ${company}. Tap to sign your new-hire paperwork before Day 1: ${url}`;
 }
+
+/** REQ-1156 — the done screen's body: promise accounts only when the plan will build some */
+export function signDoneKey(accounts: number | undefined): string {
+  return (accounts ?? 0) > 0
+    ? "hr.sign.done.body"
+    : "hr.sign.done.bodyNoAccounts";
+}
+
+/**
+ * REQ-1156 — the Accounts panel's header action. With systems: "Create accounts" (provision).
+ * With none, there is nothing to create; a signed hire gets "Mark ready" instead, which runs the
+ * same empty plan and so goes straight to active (REQ-888(c)). Otherwise no action.
+ */
+export function accountsAction(
+  h: Pick<Hire, "status" | "systemIds">,
+): "provision" | "finish" | null {
+  if (!["signed", "provisioning", "active"].includes(h.status)) return null;
+  if (h.systemIds.length > 0) return "provision";
+  return h.status === "signed" ? "finish" : null;
+}
