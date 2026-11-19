@@ -70,6 +70,7 @@ import {
   hasNudgeButton,
   hasSecondaryPaymentReceived,
   invoiceWhoLine,
+  overdueReadText,
   partialSendParts,
   paymentReceivedTarget,
   revealPayForm,
@@ -137,7 +138,11 @@ import { paidHow, paidLine } from "../../shared/documents/paid-how.ts"; // REQ-9
 import { isExceedsAgreement } from "../../shared/documents/ledger.ts";
 import { isExtraWorkLink } from "../../shared/documents/change-order-actions.ts"; // REQ-655
 import { invoiceLinkPath } from "../lib/customer-link.ts"; // REQ-586
-import { canTextClient, invoiceTextPhone } from "../lib/invoice-text-client.ts"; // REQ-691
+import {
+  canTextClient,
+  invoiceContactEmail,
+  invoiceTextPhone,
+} from "../lib/invoice-text-client.ts"; // REQ-691, REQ-985
 import { InvoiceStageActions } from "../components/InvoiceStageActions.tsx"; // REQ-702
 import {
   describeReminderCadence,
@@ -362,6 +367,8 @@ interface EnrichedInvoice extends Invoice {
     | "void";
   /** REQ-691: the phone "Text client" would go to, or null */
   textPhone: string | null;
+  /** REQ-985: the email a reminder would go to, or null */
+  contactEmail: string | null;
 }
 
 /** Detect a draft invoice broadly. The backend's status field is an open
@@ -435,6 +442,10 @@ function enrich(
     daysIn,
     stage,
     textPhone: invoiceTextPhone(
+      inv,
+      inv.customerId ? byId?.get(inv.customerId) : undefined,
+    ),
+    contactEmail: invoiceContactEmail(
       inv,
       inv.customerId ? byId?.get(inv.customerId) : undefined,
     ),
@@ -4206,13 +4217,12 @@ function InvoiceCard(
   // say (P-31: never an empty coral bar). The claimed stage gets the claim
   // context so the "confirm or reject" decision is self-explanatory.
   const readText = inv.stage === "overdue"
-    ? tFor(
-      lang,
-      inv.daysOverdue === 1
-        ? "invoicesPage.read.overdue.one"
-        : "invoicesPage.read.overdue.other",
-      { n: inv.daysOverdue },
-    )
+    // REQ-985 (LOOP-007 q1-63): text advice only when a text can go out
+    ? overdueReadText({
+      daysOverdue: inv.daysOverdue,
+      textPhone: inv.textPhone,
+      email: inv.contactEmail,
+    }, lang)
     : inv.stage === "out"
     // REQ-556 (cycle 4, M7): signing billed it but nobody received it
     ? tFor(lang, outReadKey(inv), {
@@ -4872,7 +4882,8 @@ function InvoiceCard(
           </a>
           {
             /* REQ-702 (cycle 5, m21): Copy link — the same component the
-              detail panel uses (REQ-626: View as customer is the link above) */
+              detail panel uses (REQ-626: View as customer is the link above,
+              so REQ-985 turns the component's own one off) */
           }
           <InvoiceStageActions
             stage={inv.stage}
@@ -4882,6 +4893,7 @@ function InvoiceCard(
             busy={busy}
             cyPrefix="invoice-card"
             showStageCta={false}
+            showViewLink={false}
           />
           {hasNudgeButton(inv.stage) && (
             <button
@@ -4938,6 +4950,17 @@ function InvoiceCard(
               {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
             </button>
           )}
+          {inv.stage === "overdue" && !canTextClient(inv.textPhone) &&
+            !inv.contactEmail && (
+              // REQ-985: the overdue line asks for a contact — offer the fix
+              <a
+                href={customerFixHref(inv.customerId)}
+                data-cy="invoice-add-contact"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "invoicesPage.back.addContact")}
+              </a>
+            )}
           {(inv.stage === "overdue" || inv.stage === "out")
             ? (
               <button

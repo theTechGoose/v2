@@ -146,13 +146,13 @@ Deno.test("REQ-985 (LOOP-007 q1-63): an overdue client with a textable phone kee
   assert(typeof overdueReadText === "function", "overdueReadText exported");
   assertEquals(
     overdueReadText!(
-      { daysOverdue: 3, textPhone: "+15125550123", email: null },
+      { daysOverdue: 3, textPhone: "+15127310123", email: null },
       "en",
     ),
     tFor("en", "invoicesPage.read.overdue.other", { n: 3 }),
   );
   assertEquals(
-    overdueReadText!({ daysOverdue: 1, textPhone: "+15125550123" }, "en"),
+    overdueReadText!({ daysOverdue: 1, textPhone: "+15127310123" }, "en"),
     tFor("en", "invoicesPage.read.overdue.one", { n: 1 }),
   );
 });

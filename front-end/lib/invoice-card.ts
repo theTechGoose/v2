@@ -5,6 +5,7 @@
  */
 import { type Lang, tFor } from "./i18n.ts";
 import { cardFieldPatch } from "./customer-card-edit.ts";
+import { canTextClient } from "./invoice-text-client.ts";
 
 export type CardStage =
   | "scheduled"
@@ -281,4 +282,29 @@ export function invoiceWhoLine(
     .map((s) => (s ?? "").trim())
     .filter(Boolean)
     .join(" · ");
+}
+
+/**
+ * REQ-985 (LOOP-007 q1-63): the overdue card's line, worded for how the
+ * reminder can actually reach the client — a text only when there is a phone
+ * that can take one (REQ-691's canTextClient), a reminder when there is only
+ * an email, and "add one" when there is neither.
+ */
+export function overdueReadText(
+  inv: {
+    daysOverdue: number;
+    textPhone?: string | null;
+    email?: string | null;
+  },
+  lang: Lang,
+): string {
+  const variant = canTextClient(inv.textPhone)
+    ? "overdue"
+    : inv.email?.trim()
+    ? "overdueEmail"
+    : "overdueNoContact";
+  const plural = inv.daysOverdue === 1 ? "one" : "other";
+  return tFor(lang, `invoicesPage.read.${variant}.${plural}`, {
+    n: inv.daysOverdue,
+  });
 }

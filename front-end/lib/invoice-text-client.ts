@@ -33,3 +33,20 @@ export function canTextClient(phone: string | null | undefined): boolean {
   if (!customerPhoneE164(phone)) return false;
   return !phoneCantReceiveTexts(phone);
 }
+
+type WithEmail = { email?: unknown } | null | undefined;
+
+function emailOf(x: WithEmail): string | null {
+  const e = x?.email;
+  return typeof e === "string" && e.includes("@") ? e.trim() : null;
+}
+
+/** REQ-985 (LOOP-007 q1-63): the email a reminder on this invoice would go
+ *  to — the linked customer's, else the bill-to / snapshot one — or null. */
+export function invoiceContactEmail(
+  inv: { billTo?: WithEmail; customerSnapshot?: unknown },
+  customer: WithEmail,
+): string | null {
+  return emailOf(customer) ?? emailOf(inv.billTo) ??
+    emailOf(inv.customerSnapshot as WithEmail);
+}
