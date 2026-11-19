@@ -15,6 +15,7 @@ import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
 import { shiftDate } from "@field/domain/business/schedule/mod.ts";
 import { fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import { liveIds } from "@field/domain/business/live-invoices/mod.ts";
+import { isJobComplete, isSignedJob } from "@analytics/domain/business/signed-jobs/mod.ts";
 import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
 import {
   hasEnded,
@@ -32,6 +33,7 @@ import { invoiceState } from "#documents/versions.ts";
 import type {
   CustomerWorkspace,
   WorkspaceInvoice,
+  WorkspaceJob,
   WorkspaceService,
   WorkspaceVisit,
 } from "@analytics/dto/customer-workspace.ts";
@@ -176,11 +178,39 @@ export class BuildCustomerWorkspace {
         number: docNumberOf(w),
         description: w.description,
         status: w.status,
+        ...(w.quoteId ? { quoteId: w.quoteId } : {}),
         ...(w.scheduledFor ? { scheduledFor: w.scheduledFor } : {}),
         url: `/work-orders?open=${w.id}`,
         updatedAt: w.updatedAt,
       }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+    // REQ-1140 (AMENDMENT of REQ-924(c)): the signed jobs — every won quote of hers, by the REQ-562 rule
+    // the card's activeJobs counts with (countJobs), so the Jobs tab and the board can't disagree.
+    const quoteRow = new Map(quotes.map((q) => [q.id, q]));
+    const jobs: WorkspaceJob[] = allQuotes
+      .filter((q) => q.customerId === customerId && isSignedJob(q))
+      .map((q) => {
+        const related = mine.filter((i) => i.quoteId === q.id);
+        const row = quoteRow.get(q.id);
+        const paidCents = related
+          .filter((i) => i.status !== "void")
+          .reduce((sum, i) => sum + (i.status === "paid" ? i.amount ?? 0 : Math.max(0, i.paidCents ?? 0)), 0);
+        return {
+          id: q.id,
+          number: row?.number ?? docNumberOf(q),
+          title: q.jobName?.trim() || firstLine(q.summary),
+          active: !isJobComplete(related),
+          ...(q.acceptedAt ? { signedAt: q.acceptedAt } : {}),
+          agreedCents: row?.amountCents ?? q.estimatedTotal ?? 0,
+          paidCents,
+          url: `/quotes?open=${q.id}`,
+          workOrders: workOrders
+            .filter((w) => w.quoteId === q.id)
+            .map((w) => ({ id: w.id, number: w.number, status: w.status, url: w.url })),
+        };
+      })
+      .sort((a, b) => Number(b.active) - Number(a.active) || (b.signedAt ?? "").localeCompare(a.signedAt ?? ""));
 
     const summary = workspaceSummary({
       today,
@@ -193,6 +223,6 @@ export class BuildCustomerWorkspace {
     // the services' monthly figure is already rounded per service; the summary sums those
     summary.recurringMonthlyCents = services.filter((s) => isRunning(s, today)).reduce((sum, s) => sum + s.monthlyCents, 0);
 
-    return { customer, today, summary, invoices, quotes, payments, services, visits, workOrders };
+    return { customer, today, summary, invoices, quotes, payments, services, visits, workOrders, jobs };
   }
 }

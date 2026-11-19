@@ -84,9 +84,36 @@ export interface WorkspaceWorkOrder {
   number: string;
   description: string;
   status: string;
+  /** REQ-1140: the signed job (quote) it belongs to */
+  quoteId?: string;
   scheduledFor?: string;
   url: string;
   updatedAt: string;
+}
+
+/**
+ * REQ-1140 (AMENDMENT of REQ-924(c)) — one signed job: a won quote of this customer, by the
+ * REQ-562 `isSignedJob` / `isJobComplete` rule (the same one behind the card's activeJobs).
+ */
+export interface WorkspaceJob {
+  /** the signed quote's id */
+  id: string;
+  /** the quote's number (Q-001) */
+  number: string;
+  /** the job name */
+  title: string;
+  /** in flight: not every non-void linked invoice is paid */
+  active: boolean;
+  /** when it was signed */
+  signedAt?: string;
+  /** what was agreed (the quote total), cents */
+  agreedCents: number;
+  /** what its invoices have been paid so far, cents */
+  paidCents: number;
+  /** opens the signed quote */
+  url: string;
+  /** the work orders linked to this job */
+  workOrders: { id: string; number: string; status: string; url: string }[];
 }
 
 export interface CustomerWorkspace {
@@ -100,4 +127,6 @@ export interface CustomerWorkspace {
   services: WorkspaceService[];
   visits: WorkspaceVisit[];
   workOrders: WorkspaceWorkOrder[];
+  /** REQ-1140: the customer's signed jobs, in flight first */
+  jobs: WorkspaceJob[];
 }

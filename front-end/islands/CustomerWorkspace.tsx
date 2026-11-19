@@ -413,13 +413,27 @@ export default function CustomerWorkspace(
     }
   }
 
+  // REQ-1140 (AMENDMENT of REQ-924(c)): a job starts at a signature, as on the board — the badge
+  // counts her signed jobs in flight (the card's activeJobs) plus open work orders of no signed job.
+  const signedJobs = ws.jobs ?? [];
+  const signedJobIds = new Set(signedJobs.map((j) => j.id));
+  const jobsInFlight = signedJobs.filter((j) => j.active).length +
+    ws.workOrders.filter((w) =>
+      (w.status === "open" || w.status === "in_progress") &&
+      !(w.quoteId && signedJobIds.has(w.quoteId))
+    ).length;
+  const newWorkOrderHref = (quoteId?: string) =>
+    `/work-orders?new=1${
+      quoteId ? `&quoteId=${encodeURIComponent(quoteId)}` : ""
+    }&customerId=${encodeURIComponent(c.id)}`;
+
   const counts: Record<WsTab, number | null> = {
     overview: null,
     invoices: ws.invoices.length,
     quotes: ws.quotes.length,
     payments: ws.payments.length,
     recurring: ws.services.length,
-    jobs: ws.workOrders.length,
+    jobs: jobsInFlight,
     messages: null,
   };
 
@@ -1083,13 +1097,96 @@ export default function CustomerWorkspace(
               <h3>{tFor(lang, "customerWs.jobs.title")}</h3>
               <a
                 class="cws-btn cws-btn--outline cws-btn--sm"
-                href="/work-orders?new=1"
+                href={newWorkOrderHref()}
               >
                 + {tFor(lang, "customerWs.jobs.new")}
               </a>
             </div>
-            {ws.workOrders.length
-              ? (
+            {signedJobs.length > 0 && (
+              <>
+                <h4 class="cws-sub">{tFor(lang, "customerWs.jobs.signed")}</h4>
+                <table class="cws-table" data-cy="cws-signed-jobs">
+                  <thead>
+                    <tr>
+                      <th>{tFor(lang, "customerWs.col.job")}</th>
+                      <th>{tFor(lang, "customerWs.col.date")}</th>
+                      <th class="num">{tFor(lang, "customerWs.col.total")}</th>
+                      <th>{tFor(lang, "customerWs.col.status")}</th>
+                      <th>{tFor(lang, "customerWs.col.workOrder")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {signedJobs.map((j) => (
+                      <tr key={j.id} data-cy="cws-signed-job" data-job={j.id}>
+                        <td
+                          class="cws-doc"
+                          data-label={tFor(lang, "customerWs.col.job")}
+                        >
+                          <a href={j.url}>{j.number}</a>
+                          {j.title && <small>{j.title}</small>}
+                        </td>
+                        <td data-label={tFor(lang, "customerWs.col.date")}>
+                          {j.signedAt
+                            ? tFor(lang, "customerWs.jobs.signedOn", {
+                              date: day(j.signedAt.slice(0, 10), lang),
+                            })
+                            : "—"}
+                        </td>
+                        <td
+                          class="num"
+                          data-label={tFor(lang, "customerWs.col.total")}
+                        >
+                          {money(j.agreedCents, lang)}
+                          <small class="cws-paidof">
+                            {tFor(lang, "customerWs.jobs.paidOf", {
+                              paid: money(j.paidCents, lang),
+                              agreed: money(j.agreedCents, lang),
+                            })}
+                          </small>
+                        </td>
+                        <td data-label={tFor(lang, "customerWs.col.status")}>
+                          <span
+                            class={`cws-pill cws-pill--${
+                              j.active ? "sent" : "paid"
+                            }`}
+                          >
+                            {tFor(
+                              lang,
+                              j.active
+                                ? "customerWs.jobs.active"
+                                : "customerWs.jobs.done",
+                            )}
+                          </span>
+                        </td>
+                        <td data-label={tFor(lang, "customerWs.col.workOrder")}>
+                          <div class="cws-jobwo">
+                            {j.workOrders.map((w) => (
+                              <a key={w.id} class="cws-jobwo__n" href={w.url}>
+                                {w.number}
+                              </a>
+                            ))}
+                            <a
+                              class="cws-btn cws-btn--ghost cws-btn--sm"
+                              href={newWorkOrderHref(j.id)}
+                              data-cy="cws-job-new-wo"
+                            >
+                              + {tFor(lang, "customerWs.jobs.createWo")}
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+            {ws.workOrders.length > 0 && (
+              <>
+                {signedJobs.length > 0 && (
+                  <h4 class="cws-sub">
+                    {tFor(lang, "customerWs.jobs.workOrders")}
+                  </h4>
+                )}
                 <table class="cws-table" data-cy="cws-jobs">
                   <thead>
                     <tr>
@@ -1120,10 +1217,11 @@ export default function CustomerWorkspace(
                     ))}
                   </tbody>
                 </table>
-              )
-              : (
-                <div class="cws-none">{tFor(lang, "customerWs.jobs.none")}</div>
-              )}
+              </>
+            )}
+            {signedJobs.length === 0 && ws.workOrders.length === 0 && (
+              <div class="cws-none">{tFor(lang, "customerWs.jobs.none")}</div>
+            )}
           </div>
         )}
 

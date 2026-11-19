@@ -306,6 +306,8 @@ export default function WorkOrdersPage() {
             try {
               const url = new URL(globalThis.location.href);
               url.searchParams.delete("new");
+              url.searchParams.delete("quoteId"); // REQ-1140 prefill
+              url.searchParams.delete("customerId");
               globalThis.history.replaceState(null, "", url.toString());
             } catch { /* history unavailable — the modal still closes */ }
           }}
@@ -317,6 +319,12 @@ export default function WorkOrdersPage() {
       )}
     </>
   );
+}
+
+/** REQ-1140 — a query parameter of the page, "" on the server or when absent */
+function urlParam(name: string): string {
+  if (typeof globalThis.location === "undefined") return "";
+  return new URLSearchParams(globalThis.location.search).get(name) ?? "";
 }
 
 /** The "New work order" modal — description, customer, optional quote /
@@ -332,8 +340,10 @@ function NewWorkOrderModal(
 ) {
   const [requestId] = useState(() => crypto.randomUUID());
   const [description, setDescription] = useState("");
-  const [customerId, setCustomerId] = useState("");
-  const [quoteId, setQuoteId] = useState("");
+  // REQ-1140: the customer page's "Create work order" on a signed job opens this form prefilled
+  // (/work-orders?new=1&quoteId=…&customerId=…)
+  const [customerId, setCustomerId] = useState(() => urlParam("customerId"));
+  const [quoteId, setQuoteId] = useState(() => urlParam("quoteId"));
   const [invoiceId, setInvoiceId] = useState("");
   const [serviceAddress, setServiceAddress] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
