@@ -40,7 +40,8 @@ export default define.page(function HrRoute(ctx) {
         <main class="main">
           <DashTopbar pageTitleKey="nav.hires" greetingName={greetingName} />
           <div class="content">
-            <HrHireDetailPage id={id} />
+            {/* REQ-1154 — the business's zone: every instant on its wall clock */}
+            <HrHireDetailPage id={id} timeZone={user?.businessTimezone} />
             <SiteFooter lang={lang} />
           </div>
         </main>

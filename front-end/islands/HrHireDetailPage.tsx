@@ -24,7 +24,10 @@ import { I, ICN } from "../lib/dash-icons.tsx";
 import { armKey, fmtDate, fmtWhen, initialsOf, inviteText } from "../lib/hr.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 
-export default function HrHireDetailPage({ id }: { id: string }) {
+/** REQ-1154 — `timeZone` is the business's zone (GET /me businessTimezone): every instant prints on its clock */
+export default function HrHireDetailPage(
+  { id, timeZone }: { id: string; timeZone?: string },
+) {
   const lang = langSignal.value;
   const [h, setH] = useState<Hire | null>(null);
   const [settings, setSettings] = useState<HrSettings | null>(null);
@@ -182,30 +185,32 @@ export default function HrHireDetailPage({ id }: { id: string }) {
         <div class="hr-mail" data-cy="hr-mail">
           <span>
             {h.mail.sentAt
-              ? t("hr.detail.mail.sent", { when: fmtWhen(h.mail.sentAt, lang) })
+              ? t("hr.detail.mail.sent", {
+                when: fmtWhen(h.mail.sentAt, lang, timeZone),
+              })
               : t("hr.detail.mail.notSent")}
           </span>
           <span>
             {h.mail.openedAt
               ? t("hr.detail.mail.opened", {
-                when: fmtWhen(h.mail.openedAt, lang),
+                when: fmtWhen(h.mail.openedAt, lang, timeZone),
               })
               : t("hr.detail.mail.notOpened")}
           </span>
           {h.mail.remindedAt && (
             <span>
               {t("hr.detail.mail.reminded", {
-                when: fmtWhen(h.mail.remindedAt, lang),
+                when: fmtWhen(h.mail.remindedAt, lang, timeZone),
               })}
             </span>
           )}
           <span>
             {expired
               ? t("hr.detail.expiredOn", {
-                when: fmtWhen(h.tokenExpiresAt, lang),
+                when: fmtWhen(h.tokenExpiresAt, lang, timeZone),
               })
               : t("hr.detail.expires", {
-                when: fmtWhen(h.tokenExpiresAt, lang),
+                when: fmtWhen(h.tokenExpiresAt, lang, timeZone),
               })}
           </span>
         </div>
@@ -266,7 +271,7 @@ export default function HrHireDetailPage({ id }: { id: string }) {
                     {d.done ? t("hr.detail.done") : t("hr.detail.pending")}
                   </span>
                 </td>
-                <td>{fmtWhen(d.doneAt, lang)}</td>
+                <td>{fmtWhen(d.doneAt, lang, timeZone)}</td>
                 <td>
                   {d.done && (
                     <button
@@ -322,7 +327,7 @@ export default function HrHireDetailPage({ id }: { id: string }) {
                 <span class="chip chip--muted">{t(armKey(a.state))}</span>
               </div>
               {a.detail && <div class="hr-arm__detail">{a.detail}</div>}
-              <div class="hr-arm__detail">{fmtWhen(a.at, lang)}</div>
+              <div class="hr-arm__detail">{fmtWhen(a.at, lang, timeZone)}</div>
               {!closed && a.state === "manual" && (
                 <button
                   type="button"
@@ -458,7 +463,7 @@ export default function HrHireDetailPage({ id }: { id: string }) {
               </div>
               <div>
                 <dt>{t("hr.proof.signedAt")}</dt>
-                <dd>{fmtWhen(proof.proof.at, lang)}</dd>
+                <dd>{fmtWhen(proof.proof.at, lang, timeZone)}</dd>
               </div>
             </dl>
             <p class="hint">{proof.proof.consentText}</p>

@@ -114,14 +114,26 @@ export function fmtDate(iso: string, lang: "en" | "es"): string {
   );
 }
 
-/** "Jun 27 · 9:14 AM" from an instant */
-export function fmtWhen(iso: string | null, lang: "en" | "es"): string {
+/**
+ * "Jun 27 · 9:14 AM" from an instant, on the business's wall clock (REQ-944 / REQ-1154): the
+ * day AND the time use `timeZone` (an IANA zone, e.g. GET /me's businessTimezone), so the
+ * browser's own zone never decides what the HR page prints. Without a zone it falls back to
+ * the runtime's.
+ */
+export function fmtWhen(
+  iso: string | null,
+  lang: "en" | "es",
+  timeZone?: string,
+): string {
   if (!iso) return "—";
   const d = new Date(iso);
   const locale = lang === "es" ? "es-MX" : "en-US";
+  const tz = timeZone ? { timeZone } : {};
   return `${
-    d.toLocaleDateString(locale, { month: "short", day: "numeric" })
-  } · ${d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}`;
+    d.toLocaleDateString(locale, { month: "short", day: "numeric", ...tz })
+  } · ${
+    d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", ...tz })
+  }`;
 }
 
 export const FIELD_TYPES: Record<
