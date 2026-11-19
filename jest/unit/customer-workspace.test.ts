@@ -206,3 +206,52 @@ describe("REQ-989 q1-72 the Messages tab lists what was sent to her", () => {
     expect(body).not.toMatch(/if \(!peer\)\s*\{\s*return/);
   });
 });
+
+/**
+ * REQ-1076 (LOOP-007 q2, q2-64) — "Send a message" on an email-only customer is a dead end. More →
+ * Send a text lands on the Messages tab, whose no-phone card was plain text: no way to add the phone
+ * (the edit dialog is on the same page) and no way to email her. The no-phone card must offer an
+ * add-phone action wired to the edit dialog, and an email action when she has an email; the More item
+ * must not promise a generic "message" in Spanish while it only opens the text thread.
+ */
+describe("REQ-1076 q2-64 the no-phone Messages card is not a dead end", () => {
+  const src = read("front-end/islands/CustomerWorkspace.tsx");
+  const fn = src.slice(src.indexOf("function Messages("));
+  const body = fn.slice(0, fn.indexOf("\nfunction ", 1) > 0 ? fn.indexOf("\nfunction ", 1) : undefined);
+  const noPeerStart = body.indexOf("if (!peer) {");
+  const noPeer = body.slice(noPeerStart, body.indexOf("} else if", noPeerStart));
+  const call = (src.match(/<Messages\b[\s\S]*?\/>/) ?? [""])[0];
+  const en = dict("lang/en.json");
+  const es = dict("lang/es.json");
+
+  test("REQ-1076: the no-phone branch exists (sanity)", () => {
+    expect(noPeerStart).toBeGreaterThan(-1);
+    expect(noPeer).toMatch(/data-cy="cws-msg-nophone"/);
+  });
+
+  test("REQ-1076: the no-phone card renders an add-phone control (data-cy=\"cws-msg-addphone\")", () => {
+    expect(noPeer).toMatch(/data-cy="cws-msg-addphone"/);
+  });
+
+  test("REQ-1076: the add-phone control calls a callback the workspace wires to the edit dialog", () => {
+    expect(noPeer).toMatch(/onClick=\{[^}]*onAddPhone/);
+    expect(call).toMatch(/onAddPhone=\{\s*\(\)\s*=>\s*setModal\(\{\s*kind:\s*"edit"\s*\}\)\s*\}/);
+  });
+
+  test("REQ-1076: the workspace hands Messages the customer's email, and the no-phone card offers to email her", () => {
+    expect(call).toMatch(/\bemail=\{c\.email\}/);
+    expect(noPeer).toMatch(/data-cy="cws-msg-email"/);
+  });
+
+  test("REQ-1076: both dictionaries carry customerWs.msg.addPhone and customerWs.msg.email", () => {
+    for (const d of [en, es]) {
+      expect(typeof d["customerWs.msg.addPhone"]).toBe("string");
+      expect(typeof d["customerWs.msg.email"]).toBe("string");
+    }
+  });
+
+  test("REQ-1076: the Spanish More item says it sends a TEXT (like en \"Send a text\"), or the item is gated on a phone", () => {
+    const gated = /phoneNumber\s*&&[\s\S]{0,200}customerWs\.act\.text/.test(src);
+    expect(gated || /texto/i.test(es["customerWs.act.text"])).toBe(true);
+  });
+});
