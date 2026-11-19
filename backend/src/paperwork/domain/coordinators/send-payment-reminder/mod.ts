@@ -31,6 +31,7 @@ import {
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 import { fmtPaperworkDate } from "#quote-flow/email-format.ts"; // REQ-1111
+import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts"; // REQ-1113
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts"; // REQ-784
 import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts"; // REQ-784
@@ -51,11 +52,24 @@ export interface ReminderPreview {
   escalated: boolean;
   email?: string;
   phone?: string;
+  /** REQ-1113: the channels a send would use, in send order — the email
+   *  when there is an address, the text only when the phone can take one. */
+  channels: ReminderChannel[];
   emailSubject?: string;
+  /** REQ-1113: the email's words as plain text (same copy as its HTML). */
+  emailText?: string;
+  /** Only when a text will go (REQ-1113: never for an untextable phone). */
   smsBody?: string;
+  /** REQ-1113: a phone is on file but no text will go, and why. */
+  textSkip?: TextSkip;
   /** Why a send would reach nobody (same reasons as ReminderResult). */
   reason?: ReminderSkipReason;
 }
+
+export type ReminderChannel = "email" | "sms";
+/** REQ-1113: "fictional" — a reserved 555 number the app knows can't take a
+ *  text, so none is tried; "failed" — the text was tried and refused. */
+export type TextSkip = "fictional" | "failed";
 
 export interface ReminderResult {
   /** Invoice id we acted on. */
@@ -71,6 +85,8 @@ export interface ReminderResult {
    *  nothing did — the reminders are muted, this rung already fired, there is
    *  no email or phone to send to, or every channel tried failed. */
   reason?: ReminderSkipReason;
+  /** REQ-1113: a phone is on file but the text did not go, and why. */
+  textSkip?: TextSkip;
 }
 
 export type ReminderSkipReason =
@@ -187,6 +203,7 @@ export class SendPaymentReminder {
       copy,
       toEmail,
       toPhone,
+      textSkip: skipped,
       senderEmail,
       url,
       fromAlias,
@@ -224,13 +241,17 @@ export class SendPaymentReminder {
     // provider took the message; nothing delivered says why, and does not
     // burn the rung (add a contact and the next nudge goes out).
     const channels: string[] = [];
+    // REQ-1113: a phone that can't take texts is not a recipient — no doomed
+    // text is tried; the reply says so (textSkip) so the toast can too.
+    let textSkip: TextSkip | undefined = skipped;
     if (!toEmail && !toPhone) {
       return {
         invoiceId,
         day,
         channels,
         escalated: false,
-        reason: "no_recipient",
+        reason: skipped ? "not_delivered" : "no_recipient",
+        ...(skipped ? { textSkip: skipped } : {}),
       };
     }
     if (toEmail) {
@@ -264,7 +285,10 @@ export class SendPaymentReminder {
       try {
         const res = await this.sms.send({ to: toPhone, body: copy.smsBody(url) });
         if (res.ok) channels.push("sms");
-        else console.warn(`[send-payment-reminder] sms not sent: ${res.detail ?? res.reason}`);
+        else {
+          textSkip = "failed";
+          console.warn(`[send-payment-reminder] sms not sent: ${res.detail ?? res.reason}`);
+        }
         await toOutbox("text", res.ok, {
           to: toPhone,
           body: copy.smsBody(url),
@@ -272,6 +296,7 @@ export class SendPaymentReminder {
         });
       } catch (err) {
         console.error("[send-payment-reminder] sms failed:", err);
+        textSkip = "failed";
         await toOutbox("text", false, {
           to: toPhone,
           reason: (err as Error)?.message ?? String(err),
@@ -285,11 +310,18 @@ export class SendPaymentReminder {
         channels,
         escalated: false,
         reason: "not_delivered",
+        ...(textSkip ? { textSkip } : {}),
       };
     }
 
     await this.appendHistory(userId, invoice, day, channels);
-    return { invoiceId, day, channels, escalated: false };
+    return {
+      invoiceId,
+      day,
+      channels,
+      escalated: false,
+      ...(textSkip ? { textSkip } : {}),
+    };
   }
 
   /** REQ-704 (demo cycle 5, m60): the reminder `runForInvoice` would send for
@@ -308,19 +340,32 @@ export class SendPaymentReminder {
       ? "already_fired"
       : undefined;
     if (day === 30) {
-      return { invoiceId, day, escalated: true, ...(reason ? { reason } : {}) };
+      return {
+        invoiceId,
+        day,
+        escalated: true,
+        channels: [],
+        ...(reason ? { reason } : {}),
+      };
     }
-    const { copy, toEmail, toPhone, url } = await this.compose(userId, invoice, day);
-    const noOne = !toEmail && !toPhone;
-    const why = reason ?? (noOne ? "no_recipient" : undefined);
+    const { copy, toEmail, toPhone, textSkip, phoneOnFile, url } = await this.compose(userId, invoice, day);
+    // REQ-1113: the same recipients runForInvoice dispatches to, in its order
+    const channels: ReminderChannel[] = [
+      ...(toEmail ? ["email" as const] : []),
+      ...(toPhone ? ["sms" as const] : []),
+    ];
+    const why = reason ??
+      (channels.length > 0 ? undefined : textSkip ? "not_delivered" : "no_recipient");
     return {
       invoiceId,
       day,
       escalated: false,
       ...(toEmail ? { email: toEmail } : {}),
-      ...(toPhone ? { phone: toPhone } : {}),
-      emailSubject: copy.emailSubject,
-      smsBody: copy.smsBody(url),
+      ...(phoneOnFile ? { phone: phoneOnFile } : {}),
+      channels,
+      ...(toEmail ? { emailSubject: copy.emailSubject, emailText: copy.emailText(url) } : {}),
+      ...(toPhone ? { smsBody: copy.smsBody(url) } : {}),
+      ...(textSkip ? { textSkip } : {}),
       ...(why ? { reason: why } : {}),
     };
   }
@@ -362,11 +407,17 @@ export class SendPaymentReminder {
     } catch { /* fall through */ }
 
     const toEmail = customer?.email || shown?.email || undefined;
-    const toPhone = customer?.phoneNumber || shown?.phoneNumber || undefined;
+    const phoneOnFile = customer?.phoneNumber || shown?.phoneNumber || undefined;
+    // REQ-1113 (REQ-569's one rule): a reserved 555 number can't take a text —
+    // it is not a text recipient, in the preview or the send.
+    const textSkip: TextSkip | undefined = phoneCantReceiveTexts(phoneOnFile) ? "fictional" : undefined;
+    const toPhone = textSkip ? undefined : phoneOnFile;
     return {
       copy,
       toEmail,
       toPhone,
+      phoneOnFile,
+      textSkip,
       senderEmail: sender?.email,
       url,
       businessName,
@@ -462,6 +513,9 @@ export function composeReminderCopy(opts: {
 }): {
   emailSubject: string;
   emailHtml: (url: string) => string;
+  /** REQ-1113: the email's words as plain text, for the preview (its
+   *  body; the invoice ref it is headed by is in the subject) */
+  emailText: (url: string) => string;
   smsBody: (url: string) => string;
 } {
   const { day, customerFirst, senderFirst, businessName, invoice } = opts;
@@ -513,6 +567,13 @@ export function composeReminderCopy(opts: {
     <p style="margin:18px 0 0;font-size:13px;color:#6b7a7e">${sender}</p>
   </div>
 </body></html>`,
+    emailText: (url: string) =>
+      [
+        `${hi}${tone}`,
+        `${t(lang, "paymentReminder.amountDueLabel")} ${amount}${dueLine}`,
+        ...(url ? [`${t(lang, "paymentReminder.openInvoiceCta")}: ${url}`] : []),
+        sender,
+      ].join("\n\n"),
     smsBody: (url: string) =>
       `${hi}${tone} ${amount} (${refVersion})${url ? ` — ${url}` : ""}${senderFirst ? ` — ${senderFirst}` : ""}`,
   };

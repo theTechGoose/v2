@@ -71,6 +71,9 @@ export interface NudgeReply {
   reason?: string;
   /** the day-30 step: an owner alert, nothing to the customer */
   escalated?: boolean;
+  /** REQ-1113: a phone is on file but no text went ("fictional" — a
+   *  reserved number, never tried; "failed" — tried and refused) */
+  textSkip?: string;
 }
 
 export interface NudgeNote {
@@ -78,6 +81,7 @@ export interface NudgeNote {
   tone: "note" | "fail";
   key:
     | "invoicesPage.nudge.sent"
+    | "invoicesPage.nudge.sentEmailOnly"
     | "invoicesPage.nudge.alreadySent"
     | "invoicesPage.nudge.ownerAlertOnly"
     | "invoicesPage.nudge.muted"
@@ -91,6 +95,11 @@ export interface NudgeNote {
 export function nudgeNote(body: NudgeReply | null): NudgeNote {
   if (!body) return { tone: "fail", key: "invoicesPage.nudge.failed" };
   if (Array.isArray(body.channels) && body.channels.length > 0) {
+    // REQ-1113 (LOOP-007 q3-38): the email went but the text on file did not
+    // — say "emailed", never a plain "sent" that hides the missing text.
+    if (body.textSkip && !body.channels.includes("sms")) {
+      return { tone: "note", key: "invoicesPage.nudge.sentEmailOnly" };
+    }
     return { tone: "note", key: "invoicesPage.nudge.sent" };
   }
   // REQ-938 (REQ-556): the day-30 owner alert reached nobody — never word it

@@ -84,9 +84,11 @@ import {
 import { isPartlyPaid } from "../../shared/documents/invoice-status.ts"; // REQ-1073
 import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
-import { sendInvoiceNudge } from "../lib/invoice-nudge.ts";
+import { type NudgePreview, sendInvoiceNudge } from "../lib/invoice-nudge.ts";
 // REQ-1112 (LOOP-007 q3-37): every /invoices nudge confirms with the preview
-import InvoiceNudgeDialog from "../components/InvoiceNudgeDialog.tsx";
+import InvoiceNudgeDialog, {
+  NudgePreviewBody, // REQ-1113
+} from "../components/InvoiceNudgeDialog.tsx";
 import {
   outReadKey,
   paidReadKey,
@@ -4000,9 +4002,9 @@ function InvoiceCard(
     inv.dueDate,
     now.toISOString().slice(0, 10),
   );
-  const [nudgePreview, setNudgePreview] = useState<
-    { escalated?: boolean; smsBody?: string; reason?: string } | null
-  >(null);
+  const [nudgePreview, setNudgePreview] = useState<NudgePreview | null>(
+    null,
+  );
   const nudgeable = hasNudgeButton(inv.stage) || inv.stage === "overdue";
   useEffect(() => {
     if (!flipped || !nudgeable || nudgePreview) return;
@@ -4970,24 +4972,15 @@ function InvoiceCard(
               : nudgePreview.reason === "no_recipient"
               ? tFor(lang, "invoicesPage.nudge.noRecipient")
               : (
-                <>
-                  <strong style="display:block;color:var(--fg)">
-                    {tFor(lang, "invoicesPage.nudge.previewTitle", {
-                      name: inv.client && inv.client !== "—"
-                        ? inv.client
-                        : tFor(
-                          lang,
-                          "invoicesPage.detail.reminders.customerFallback",
-                        ),
-                    })}
-                  </strong>
-                  <span
-                    data-cy="invoice-nudge-preview-text"
-                    style="display:block;margin-top:2px;white-space:pre-wrap"
-                  >
-                    {nudgePreview.smsBody}
-                  </span>
-                </>
+                // REQ-1113: by the channels that will really go
+                <NudgePreviewBody
+                  lang={lang}
+                  preview={nudgePreview}
+                  name={inv.client && inv.client !== "—" ? inv.client : tFor(
+                    lang,
+                    "invoicesPage.detail.reminders.customerFallback",
+                  )}
+                />
               )}
           </div>
         )}

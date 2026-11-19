@@ -1275,9 +1275,14 @@ export default function CustomerWorkspace(
               setToast({ text: tFor(lang, note.key), err: true });
             } else {
               // the reminder lands in Activity: re-read the page
+              // REQ-1113: an email-only send says so — the text didn't go
               await changed(
                 note.key === "invoicesPage.nudge.sent"
                   ? tFor(lang, "customerWs.remind.sent", {
+                    number: inv.number,
+                  })
+                  : note.key === "invoicesPage.nudge.sentEmailOnly"
+                  ? tFor(lang, "customerWs.remind.sentEmailOnly", {
                     number: inv.number,
                   })
                   : tFor(lang, note.key),
