@@ -70,6 +70,34 @@ describe("REQ-924 the sidebar's Customers context", () => {
     expect(shortMoney(0)).toBe("$0");
   });
 
+  /** the dollar figure a sidebar amount claims ("$1,750" → 1750, "$1.8k" → 1800) */
+  const claimedDollars = (s: string): number => {
+    const m = s.match(/^\$([\d,]+(?:\.\d+)?)(k?)$/);
+    if (!m) throw new Error(`not a money string: ${s}`);
+    const n = Number(m[1].replace(/,/g, ""));
+    return m[2] === "k" ? n * 1000 : n;
+  };
+
+  test("REQ-1041 (LOOP-007 q2-25): the sidebar's owed amount is the exact amount, as the KPI shows it — $1,750 owed reads \"$1,750\", never \"$1.8k\"", () => {
+    expect(shortMoney(175000)).toBe("$1,750");
+    expect(shortMoney(175000)).not.toBe("$1.8k");
+    expect(shortMoney(99960)).not.toBe("$1k");
+    expect(shortMoney(1550000)).not.toBe("$16k");
+  });
+
+  test("REQ-1041 (LOOP-007 q2-25): the sidebar never shows more than the customer owes, over a sweep of amounts", () => {
+    const over: string[] = [];
+    for (let cents = 0; cents <= 5_000_000; cents += 2_537) {
+      const shown = shortMoney(cents);
+      if (claimedDollars(shown) > cents / 100) over.push(`${cents}¢ → ${shown}`);
+    }
+    for (const cents of [175000, 175099, 99960, 1050000, 1550000]) {
+      const shown = shortMoney(cents);
+      if (claimedDollars(shown) > cents / 100) over.push(`${cents}¢ → ${shown}`);
+    }
+    expect(over.slice(0, 8)).toEqual([]);
+  });
+
   test("the sidebar renders the context: Back to the root, All customers, New customer, one row per customer", () => {
     expect(read("front-end/islands/DashSidebar.tsx")).toMatch(/CUSTOMERS_CONTEXT/);
     const src = read("front-end/components/CustomersNav.tsx");
