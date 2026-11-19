@@ -5,35 +5,12 @@ import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
+import { greetingDate as greetingDateIn } from "../../lib/greeting-date.ts"; // REQ-944
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import SettingsPage from "../../islands/SettingsPage.tsx";
 import { MetaPixelEvent } from "../../components/MetaPixel.tsx";
 import { subscribeEventFrom } from "../../../shared/meta-pixel/pixel.ts";
-
-const WEEKDAY_KEYS = [
-  "date.weekday.sunday",
-  "date.weekday.monday",
-  "date.weekday.tuesday",
-  "date.weekday.wednesday",
-  "date.weekday.thursday",
-  "date.weekday.friday",
-  "date.weekday.saturday",
-];
-const MONTH_KEYS = [
-  "date.month.january",
-  "date.month.february",
-  "date.month.march",
-  "date.month.april",
-  "date.month.may",
-  "date.month.june",
-  "date.month.july",
-  "date.month.august",
-  "date.month.september",
-  "date.month.october",
-  "date.month.november",
-  "date.month.december",
-];
 
 export default define.page(function SettingsRoute(ctx) {
   const user = ctx.state.user;
@@ -41,10 +18,8 @@ export default define.page(function SettingsRoute(ctx) {
   // pm_lang), so the tab title and footer match the page they sit on.
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
   const greetingName = greetingFirstName(user);
-  const now = new Date();
-  const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
-    tFor(lang, MONTH_KEYS[now.getMonth()])
-  } ${now.getDate()}`;
+  // REQ-944: today in the business's zone, not the server's
+  const greetingDate = greetingDateIn(lang, user?.businessTimezone);
   // REQ-080: the receipt of an upgrade comes back here (/plan/return ?px=sub:…) — a Subscribe for the ads
   const subscribed = subscribeEventFrom(ctx.url.searchParams.get("px"));
 

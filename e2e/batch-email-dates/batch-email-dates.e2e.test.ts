@@ -158,17 +158,18 @@ Deno.test("REQ-944 q1-13: /field/batches → Send selected — the invoice email
     };
     const html = opened.body;
     const issuedDay = inv.issuedDate as string;
+    // expect.eq is ===, so the three dates are compared as one JSON string
     expect.eq(
-      {
+      JSON.stringify({
         drafted: valueAfter(html, "Drafted"),
         issued: valueAfter(html, "Issued"),
         due: valueAfter(html, "Due"),
-      },
-      {
+      }),
+      JSON.stringify({
         drafted: longEn(issuedDay),
         issued: longEn(issuedDay),
         due: longEn(inv.dueDate),
-      },
+      }),
       `the email's dates (invoice issued ${issuedDay}, due ${inv.dueDate}, ${inv.netDays} days)`,
     );
     const due = new Date(`${inv.dueDate}T12:00:00Z`).getTime();

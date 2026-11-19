@@ -4167,7 +4167,7 @@
   "field.sms.customerCanceled": "{business}: tu servicio de {service} del {date} fue cancelado. Te contactaremos para reprogramar.",
   "field.sms.customerDeferred": "{business}: tu servicio de {service} pasó del {from} al {to}. Disculpa el cambio.",
   "field.settings.timezone": "Zona horaria",
-  "field.settings.timezoneHint": "Tus clientes reciben el mensaje \"hoy estás en la agenda\" a las 9 am en esta zona.",
+  "field.settings.timezoneHint": "Tus documentos y correos llevan la fecha de esta zona, y tus clientes reciben el mensaje \"hoy estás en la agenda\" a las 9 am en ella.",
   "settings.tz.America/New_York": "Hora del Este (Nueva York)",
   "settings.tz.America/Chicago": "Hora del Centro (Chicago)",
   "settings.tz.America/Denver": "Hora de la Montaña (Denver)",

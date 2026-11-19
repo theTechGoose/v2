@@ -89,7 +89,14 @@ function friendly(e: unknown): string {
   return t("comms.err.generic");
 }
 
-export default function PhonePage() {
+/** REQ-944: the business's zone the list times print in (the route's /me) */
+let listZone: string | undefined;
+const clock = (iso: string) => shortTime(iso, Date.now(), listZone);
+
+export default function PhonePage(
+  { timeZone }: { timeZone?: string } = {},
+) {
+  listZone = timeZone;
   const [mode, setMode] = useState<Mode>("loading");
   const [line, setLine] = useState<PublicLine | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -464,7 +471,7 @@ function Inbox(
                 <span class="comms-thread__top">
                   <span class="comms-thread__peer">{formatPhone(th.peer)}</span>
                   <span class="comms-thread__time">
-                    {shortTime(th.lastMessageAt)}
+                    {clock(th.lastMessageAt)}
                   </span>
                 </span>
                 <span class="comms-thread__bottom">
@@ -570,7 +577,7 @@ function Bubble({ m }: { m: TextMessage }) {
         </a>
       ))}
       <div class="comms-bubble__meta">
-        <span>{shortTime(m.createdAt)}</span>
+        <span>{clock(m.createdAt)}</span>
         {out && (
           <span class={`chip ${chip.cls}`} data-cy="comms-msg-status">
             {t(chip.key)}
@@ -589,7 +596,7 @@ function CallLine({ c }: { c: Call }) {
       <span>{t(`comms.calls.dir.${c.direction}`)}</span>
       <span class={`chip ${chip.cls}`}>{t(chip.key)}</span>
       <span class="hint">{formatDuration(c.durationSec)}</span>
-      <span class="hint">{shortTime(c.startedAt ?? c.createdAt)}</span>
+      <span class="hint">{clock(c.startedAt ?? c.createdAt)}</span>
     </div>
   );
 }
@@ -656,7 +663,7 @@ function CallsTab({ tick }: { tick: number }) {
                     if (e.key === "Enter" || e.key === " ") openCall(c.id);
                   }}
                 >
-                  <td>{shortTime(r.at)}</td>
+                  <td>{clock(r.at)}</td>
                   <td>{t(r.dirKey)}</td>
                   <td>{r.peer}</td>
                   <td>

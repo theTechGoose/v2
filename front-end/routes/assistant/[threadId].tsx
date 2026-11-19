@@ -193,6 +193,8 @@ export default define.page(async function AssistantThread(ctx) {
                       ? [profile.identity.commsLanguage]
                       : ["en"])}
                   invoiceNetDays={profile?.identity?.invoiceNetDays}
+                  // REQ-944: message clocks in the business's zone
+                  timeZone={ctx.state.user?.businessTimezone}
                 />
               </section>
             </div>

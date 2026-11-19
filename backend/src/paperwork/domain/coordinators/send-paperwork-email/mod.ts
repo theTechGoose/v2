@@ -13,6 +13,8 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts"; // REQ-944
+import { businessTimezone, todayInZone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
 import {
   fmtVisitDate,
@@ -143,6 +145,8 @@ export const SENDER_NAME_REQUIRED_REASON =
 export class SendPaperworkEmail {
   /** REQ-175: the Reply-To token per customer (KV-backed, no constructor dependency) */
   private replyTokens = new ReplyTokenStore();
+  /** REQ-944: the business address — its state names the zone when none is picked */
+  private addresses = new BusinessAddressStore();
   constructor(
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
@@ -200,6 +204,13 @@ export class SendPaperworkEmail {
   ): Promise<SendPaperworkEmailResult> {
     const sender = await this.tryGetUser(userId);
     const rawBiz = await this.tryGetBusinessIdentity(userId);
+    // REQ-944: ONE business zone per send — every date the email prints for
+    // an instant is that zone's day (the picked zone → the address's state →
+    // New York), never the server process's (UTC on Deno Deploy).
+    const zone = businessTimezone({
+      timezone: rawBiz?.timezone,
+      state: (await this.addresses.get(userId).catch(() => null))?.state,
+    });
     // UX-28: ONE commsLanguage resolution for every outbound (explicit
     // per-send pick → REQ-715 the customer's own language → stored Settings
     // default → en), made once the document's customer is known. Overriding
@@ -207,6 +218,7 @@ export class SendPaperworkEmail {
     // subject/body helper honor the resolution without new params.
     const bizFor = (customer: Customer | undefined): BusinessIdentity => ({
       ...(rawBiz ?? {}),
+      timezone: zone, // REQ-944: the renderers print dates in it
       commsLanguage: resolveCommsLanguage({
         override: input.language,
         customerLanguage: customer?.language,
@@ -242,6 +254,8 @@ export class SendPaperworkEmail {
 
     let quoteForStamp: Quote | undefined;
     let invoiceToIssue = false;
+    /** REQ-944: the issue date the email shows — stamped with the delivery */
+    let issuedDayForStamp: string | undefined;
     let customerIdForLog: string | undefined;
     let customerNameForEvent: string | undefined;
     /** REQ-715: the document's customer — their language joins the resolution */
@@ -277,7 +291,11 @@ export class SendPaperworkEmail {
       // REQ-480: an unissued invoice is issued by this delivery — the email
       // reads "Sent", and the stamp lands only once it actually went.
       invoiceToIssue = isUnissuedInvoice(stored) && input.variant !== "paid";
-      const invoice = invoiceToIssue ? asDelivered(stored) : stored;
+      // REQ-944: …and dated the business's day, so it never reads "Issued —"
+      const invoice = invoiceToIssue
+        ? asDelivered(stored, todayInZone(zone))
+        : stored;
+      issuedDayForStamp = invoice.issuedDate;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       docCustomer = customer;
       const senderBiz = bizFor(customer);
@@ -437,7 +455,7 @@ export class SendPaperworkEmail {
     // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
     // "sent" only now that the email was delivered.
     if (result.ok && invoiceToIssue) {
-      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId, issuedDayForStamp);
       // REQ-566 (cycle 4, m11): the owner's activity feed says it went out.
       if (issued) await this.bus?.emit(invoiceIssuedEvent(userId, issued, customerNameForEvent));
     }
@@ -581,12 +599,12 @@ function revisedBanner(kind: "invoice" | "quote", doc: { version?: number }, lan
  * when the work was done, the math (subtotal / discount / tax), the quote it
  * bills against, how to pay, and the payment state (partial / overpaid).
  */
-function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang): string {
+function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, tz?: string): string {
   const rows: Array<[string, string]> = [];
   if (i.serviceAddress?.trim()) rows.push([renderWord(lang, "serviceAddress"), i.serviceAddress.trim()]);
   if (i.serviceDateFrom || i.serviceDateTo) {
-    const from = i.serviceDateFrom ? fmtDate(i.serviceDateFrom, lang) : "";
-    const to = i.serviceDateTo ? fmtDate(i.serviceDateTo, lang) : "";
+    const from = i.serviceDateFrom ? fmtDate(i.serviceDateFrom, lang, tz) : "";
+    const to = i.serviceDateTo ? fmtDate(i.serviceDateTo, lang, tz) : "";
     rows.push([renderWord(lang, "serviceDates"), from && to && from !== to ? `${from} – ${to}` : from || to]);
   }
   if (typeof i.subtotalCents === "number") rows.push([renderWord(lang, "subtotal"), fmtUSD(i.subtotalCents)]);
@@ -646,6 +664,12 @@ function fmtUSD(cents: number | undefined): string {
       maximumFractionDigits: 2,
     })
   }`;
+}
+
+/** REQ-944: the zone a document's dates print in — the business's
+ *  (run() resolves it onto the identity), New York when nothing is known. */
+function zoneOf(biz: BusinessIdentity | undefined): string {
+  return businessTimezone({ timezone: biz?.timezone });
 }
 
 function fmtDate(iso: string | undefined, lang: Lang, tz?: string): string {
@@ -967,7 +991,7 @@ export function renderQuoteHtml(
   // quote shows the customer as snapshotted when it was issued.
   const docNumber = docRefWithVersion(q, lang);
   const customer = customerOnDocument(q, liveCustomer);
-  const drafted = fmtDate(q.createdAt, lang);
+  const drafted = fmtDate(q.createdAt, lang, zoneOf(senderBiz)); // REQ-944
   const total = q.estimatedTotal ??
     q.lineItems.reduce((s, li) => s + (li.price ?? 0) * (li.quantity ?? 1), 0);
   const L = {
@@ -1346,7 +1370,7 @@ export function renderInvoiceSubject(
   const who = fromWho(senderBiz, sender, lang);
   const version = versionLabel(i, lang);
   const due = i.dueDate
-    ? ` — ${lang === "es" ? "vence" : "due"} ${fmtDate(i.dueDate, lang)}`
+    ? ` — ${lang === "es" ? "vence" : "due"} ${fmtDate(i.dueDate, lang, zoneOf(senderBiz))}`
     : "";
   return `${renderWord(lang, "invoice")} ${docRef(i)} ${renderWord(lang, "from")} ${who}${
     version ? ` — ${version}` : ""
@@ -1379,10 +1403,10 @@ export function renderInvoicePaidSubject(
  */
 /** REQ-020: the money-card label — "Amount due" on a bill, "PAID <date>"
  *  on the invoice stamped paid. */
-function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean): string {
+function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean, tz?: string): string {
   if (!paid) return t(lang, "paperworkEmail.invoice.amountDueLabel");
   const label = t(lang, "paperworkEmail.invoice.paidLabel", {
-    date: fmtDate(i.paidAt ?? new Date().toISOString(), lang),
+    date: fmtDate(i.paidAt ?? new Date().toISOString(), lang, tz),
   });
   // REQ-928: and how — "PAID Apr 20, 2026 · Electronic (Credit card)"
   const how = paidHow((k, v) => t(lang, k, v), i.paidMethods);
@@ -1418,11 +1442,12 @@ export function renderInvoiceHtml(
   if (items.length === 0 && agreementTotal == null) {
     return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid, payWays);
   }
-  const amountLabel = invoiceAmountLabel(i, lang, paid);
+  const amountLabel = invoiceAmountLabel(i, lang, paid, zoneOf(senderBiz));
 
   // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice
   const docNumber = docRefWithVersion(i, lang);
-  const issued = fmtDate(i.issuedDate ?? i.createdAt, lang);
+  const tz = zoneOf(senderBiz); // REQ-944
+  const issued = fmtDate(i.issuedDate ?? i.createdAt, lang, tz);
   const amount = i.amount;
   const isMilestone = (i.installmentTotal ?? 1) > 1;
   const showAgreementContext = agreementTotal != null &&
@@ -1543,12 +1568,12 @@ export function renderInvoiceHtml(
 
   const greeting = customerGreeting(customer, lang);
   // REQ-206 / REQ-202: the bill's facts and payment state
-  const facts = invoiceFactsHtml(i, quote, lang);
+  const facts = invoiceFactsHtml(i, quote, lang, tz);
   // REQ-020: a paid invoice has no "due on" line under its PAID card.
   const dueSub = i.dueDate && !paid
     ? `<div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
       escapeHtml(
-        t(lang, "publicInvoice.dueOn", { date: fmtDate(i.dueDate, lang) }),
+        t(lang, "publicInvoice.dueOn", { date: fmtDate(i.dueDate, lang, tz) }),
       )
     }</div>`
     : "";
@@ -1802,12 +1827,13 @@ export function renderInvoiceBasicHtml(
   paid = false,
   payWays = "",
 ): string {
-  const amountLabel = invoiceAmountLabel(i, lang, paid);
+  const amountLabel = invoiceAmountLabel(i, lang, paid, zoneOf(senderBiz));
   // REQ-204 / REQ-201: "INV-5000 · Version 2", never an id slice; the
   // customer as snapshotted when the bill was issued.
   const docNumber = docRefWithVersion(i, lang);
   const customer = customerOnDocument(i, liveCustomer);
-  const drafted = fmtDate(i.issuedDate ?? new Date().toISOString(), lang);
+  const tz = zoneOf(senderBiz); // REQ-944
+  const drafted = fmtDate(i.issuedDate ?? new Date().toISOString(), lang, tz);
   const amount = i.amount;
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
@@ -1867,12 +1893,12 @@ export function renderInvoiceBasicHtml(
       <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
     escapeHtml(t(lang, "paperworkEmail.invoice.issuedLabel"))
   }</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
-    escapeHtml(fmtDate(i.issuedDate, lang))
+    escapeHtml(fmtDate(i.issuedDate, lang, tz))
   }</td></tr>
       <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
     escapeHtml(t(lang, "paperworkEmail.invoice.dueLabel"))
   }</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;">${
-    escapeHtml(fmtDate(i.dueDate, lang))
+    escapeHtml(fmtDate(i.dueDate, lang, tz))
   }</td></tr>
       <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
     escapeHtml(t(lang, "paperworkEmail.invoice.statusLabel"))
@@ -1898,13 +1924,13 @@ export function renderInvoiceBasicHtml(
         </td>
       </tr>
     </table>
-    ${invoiceFactsHtml(i, undefined, lang) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang)}</div>` : ""}${payWays}`;
+    ${invoiceFactsHtml(i, undefined, lang, tz) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang, tz)}</div>` : ""}${payWays}`;
 
   return shell({
     preheader: t(lang, "paperworkEmail.invoice.preheader", {
       docNumber,
       amount: fmtUSD(amount),
-      dueDate: fmtDate(i.dueDate, lang),
+      dueDate: fmtDate(i.dueDate, lang, tz),
     }),
     kindLabel: t(lang, "paperworkEmail.invoice.kindLabel"),
     docNumber,

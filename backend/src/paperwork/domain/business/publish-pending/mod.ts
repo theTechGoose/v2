@@ -78,9 +78,19 @@ export function isUnissuedInvoice(invoice: { status?: string }): boolean {
   return invoice.status === "draft" || invoice.status === "scheduled";
 }
 
-/** REQ-480: the invoice as its outgoing message shows it — issued. */
-export function asDelivered<T extends { status?: string }>(invoice: T): T {
-  return isUnissuedInvoice(invoice) ? { ...invoice, status: "sent" } : invoice;
+/** REQ-480: the invoice as its outgoing message shows it — issued. REQ-944:
+ *  dated, too — an invoice without an issue date gets `issuedDate` (the
+ *  business's day), so its message never reads "Issued —". */
+export function asDelivered<T extends { status?: string; issuedDate?: string }>(
+  invoice: T,
+  issuedDate?: string,
+): T {
+  if (!isUnissuedInvoice(invoice)) return invoice;
+  return {
+    ...invoice,
+    status: "sent",
+    ...(!invoice.issuedDate && issuedDate ? { issuedDate } : {}),
+  };
 }
 
 /** REQ-480: stamp an unissued invoice "sent" + sentAt after a delivery
@@ -90,11 +100,14 @@ export async function stampInvoiceDelivered(
   invoices: InvoiceStore,
   id: string,
   userId: string,
+  /** REQ-944: the issue date its message showed (kept when one is stored) */
+  issuedDate?: string,
 ): Promise<Invoice | undefined> {
   const current = await invoices.getOwned(id, userId);
   if (!isUnissuedInvoice(current)) return undefined;
   return await invoices.update(id, userId, {
     status: "sent",
     sentAt: current.sentAt ?? new Date().toISOString(),
+    ...(!current.issuedDate && issuedDate ? { issuedDate } : {}),
   });
 }

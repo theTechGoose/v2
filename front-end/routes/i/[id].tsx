@@ -91,6 +91,8 @@ interface Contractor {
   /** 2-letter state code — expands governing-law / state-notices term values
    *  to customer-readable text in the term grid (matches the agreement page). */
   state?: string;
+  /** REQ-944: the business's IANA zone — instants print as its day */
+  timezone?: string;
   acceptedPaymentMethods?: Record<string, { enabled?: boolean }>;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
@@ -390,6 +392,8 @@ function InvoiceDoc(
     !!invoice.paymentIntent;
   const pastDue = !voided && !paid && !claimed && isPastDue(invoice.dueDate);
   const es = lang === "es";
+  /** REQ-944: the business's zone — dates are its day, not the UTC day */
+  const tz = invoice.contractor?.timezone;
   const contractorFirst = invoice.contractor?.name?.split(/\s+/)[0];
   // REQ-628: the business, else the contractor — never DocuMonster
   const businessLabel = publicBusinessLabel(invoice.contractor) ??
@@ -452,7 +456,7 @@ function InvoiceDoc(
   const serviceDates = invoice.serviceDateFrom || invoice.serviceDateTo
     ? [invoice.serviceDateFrom, invoice.serviceDateTo]
       .filter((d): d is string => !!d)
-      .map((d) => fmtDate(d, lang))
+      .map((d) => fmtDate(d, lang, tz))
       .join(" → ")
     : undefined;
   const hasExtras = !!(invoice.serviceAddress || serviceDates ||
@@ -649,9 +653,10 @@ function InvoiceDoc(
                         (k, v) => tFor(lang, k, v),
                         lang === "es" ? "es" : "en",
                         invoice,
+                        tz,
                       )
                       : tFor(lang, "publicInvoice.dueOn", {
-                        date: fmtDate(invoice.dueDate ?? "", lang),
+                        date: fmtDate(invoice.dueDate ?? "", lang, tz),
                       })}
                   </div>
                 )
@@ -880,6 +885,7 @@ function InvoiceDoc(
                   receiptChannelOf(invoice)}
                 contractorFirst={invoice.contractor?.name?.split(/\s+/)[0]}
                 es={es}
+                tz={tz}
               />
             )
             : claimed
@@ -1358,6 +1364,7 @@ function InvoiceDoc(
                           (invoice.quote?.signedAt ??
                             invoice.signedAgreement?.signedAt)!,
                           lang,
+                          tz,
                         ),
                       })}
                     </span>
@@ -1520,10 +1527,12 @@ function ClaimRejectedNote(
 }
 
 function ReceivedNote(
-  { paidAt, contractorFirst, es, channel }: {
+  { paidAt, contractorFirst, es, channel, tz }: {
     paidAt?: string;
     contractorFirst?: string;
     es: boolean;
+    /** REQ-944: the business's zone */
+    tz?: string;
     /** REQ-556: where the receipt went — the inbox sentence only for email */
     channel?: ReceiptChannel;
   },
@@ -1546,6 +1555,7 @@ function ReceivedNote(
         {receivedNoteBody((k, v) => tFor(lang, k, v), lang, {
           paidAt,
           who,
+          tz,
           channel,
         })}
       </p>

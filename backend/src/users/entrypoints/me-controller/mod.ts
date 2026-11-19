@@ -30,6 +30,9 @@ import { parseChoosePlan } from "@users/dto/plan.ts";
 import { externalRefFor } from "@users/domain/business/plan/mod.ts"; // REQ-106 — the fake's clock is per account
 import { isDeferrable, skipSetupDeferrals } from "#quote-flow/onboarding-questions.ts"; // REQ-227, REQ-504
 import { LoadProfile } from "@profile/domain/coordinators/load-profile/mod.ts"; // REQ-504
+import { BusinessIdentityStore } from "@users/domain/data/business-identity-store/mod.ts"; // REQ-944
+import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts"; // REQ-944
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 
 /** REQ-227 — only a wizard question with a Skip can be deferred: anything else is a 400 */
 class NotDeferrable extends Error {
@@ -47,6 +50,9 @@ class NotDeferrable extends Error {
  */
 @Controller("me")
 export class MeController {
+  /** REQ-944: the account's business zone rides on /me (header date, chat clocks) */
+  private identities = new BusinessIdentityStore();
+  private addresses = new BusinessAddressStore();
   constructor(
     private users: UserStore,
     private sessions: SessionStore,
@@ -207,7 +213,12 @@ export class MeController {
   @Get()
   async me(@Context() ctx: ExecutionContext) {
     const { user, actor } = await requireSession(ctx, this.sessions, this.users);
-    return await withActor(this.accountAdmins, user, actor);
+    const [view, zone] = await Promise.all([
+      withActor(this.accountAdmins, user, actor),
+      businessZoneOf(this.identities, this.addresses, user.id),
+    ]);
+    // REQ-944: the zone the app prints the account's dates and clocks in
+    return { ...view, businessTimezone: zone };
   }
 
   /**
@@ -373,6 +384,20 @@ export class MeController {
 
 /** REQ-624 — the account as /me answers it, with the acting person when there is one (a plain
  *  function: an undecorated method on a Danet controller breaks its router) */
+/** REQ-944 / REQ-255: the picked zone → the address's state → New York.
+ *  Module-level — Danet routes every controller method, so no helper lives on the class. */
+async function businessZoneOf(
+  identities: BusinessIdentityStore,
+  addresses: BusinessAddressStore,
+  userId: string,
+): Promise<string> {
+  const [ident, addr] = await Promise.all([
+    identities.get(userId).catch(() => null),
+    addresses.get(userId).catch(() => null),
+  ]);
+  return businessTimezone({ timezone: ident?.timezone, state: addr?.state });
+}
+
 async function withActor(admins: AccountAdmins, user: User, actor: User | null) {
   if (!actor) return user;
   return { ...user, actor: await admins.actorView(actor, user.id, user) };

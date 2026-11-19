@@ -125,3 +125,13 @@ export const PICKER_TIMEZONES: readonly string[] = [
 export function timezoneLabelKey(id: string): string {
   return `settings.tz.${id}`;
 }
+
+/** REQ-944 — the calendar day (YYYY-MM-DD) an instant falls on in `tz` */
+export function todayInZone(tz: string, now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: validTimezone(tz) ?? DEFAULT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}

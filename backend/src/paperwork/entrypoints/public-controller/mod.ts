@@ -10,6 +10,7 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { BusinessAddressStore } from "@profile/domain/data/business-address-store/mod.ts";
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { EventBus } from "@core/business/events/mod.ts";
 import { endsWithState } from "@core/business/address-parse/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
@@ -365,10 +366,11 @@ export class PaperworkPublicController {
     try {
       const quote = await this.quotes.get(id);
       const userId = quote.userId;
-      const [contractor, ident, logo] = await Promise.all([
+      const [contractor, ident, logo, addr] = await Promise.all([
         this.users.get(userId).catch(() => undefined),
         this.identity.get(userId).catch(() => null),
         this.logos.run(userId), // REQ-628
+        this.addresses.get(userId).catch(() => null), // REQ-944
       ]);
       const customer = quote.customerId
         ? await this.customers.getOwned(quote.customerId, userId)
@@ -388,6 +390,11 @@ export class PaperworkPublicController {
         // REQ-697 (m22): the payment term states the days to pay
         invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
         ...(logo ? { logo } : {}),
+        // REQ-944: its dates are the business's day
+        timezone: businessTimezone({
+          timezone: ident?.timezone,
+          state: addr?.state,
+        }),
       });
       return new Response(bytes as BodyInit, {
         status: 200,
@@ -2011,6 +2018,10 @@ interface PublicContractor {
   /** 2-letter state code (e.g. "CA"). Drives the public agreement's
    *  "Governing law" + "State notices" copy. */
   state?: string;
+  /** REQ-944: the business's IANA time zone (`businessTimezone`) — the
+   *  public pages print every instant (sent, effective, signed) as that
+   *  zone's calendar day, never the UTC day. */
+  timezone?: string;
   /** Per-method payment config from business-identity. Used by the
    *  invoice public page to render the "How would you like to pay?"
    *  buttons. ACH routing/account numbers are stripped here — only the
@@ -2074,6 +2085,11 @@ async function loadContractor(
         : {}),
       addressLine: composeAddressLine(addr),
       state: addr?.state?.trim() || undefined,
+      // REQ-944: the zone the page prints its dates in — the picked one, else the state's, else New York
+      timezone: businessTimezone({
+        timezone: ident?.timezone,
+        state: addr?.state,
+      }),
       acceptedPaymentMethods: redactAcceptedMethods(
         ident?.acceptedPaymentMethods,
       ),

@@ -169,6 +169,30 @@ const MONTHS: Record<Lang, readonly string[]> = {
   ],
 };
 
+function utcParts(d: Date): [number, number, number] {
+  return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
+}
+
+/** [year, month 0-11, day] of an instant in `tz` (UTC when unset/invalid) */
+function zonedParts(d: Date, tz?: string): [number, number, number] {
+  if (!tz) return utcParts(d);
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+    }).formatToParts(d);
+    const get = (t: string) =>
+      Number(parts.find((p) => p.type === t)?.value ?? NaN);
+    const y = get("year"), m = get("month"), day = get("day");
+    if ([y, m, day].some(Number.isNaN)) return utcParts(d);
+    return [y, m - 1, day];
+  } catch {
+    return utcParts(d);
+  }
+}
+
 /**
  * The ONE long-date format for customer-facing documents, in the document's
  * own language: en "August 18, 2026", es "18 de agosto de 2026".
@@ -177,18 +201,24 @@ const MONTHS: Record<Lang, readonly string[]> = {
  * August 18, 2026" — English dates embedded in Spanish legal copy — because
  * every renderer called toLocaleDateString("en-US") unconditionally.
  *
- * Deterministic by construction (no Intl), like everything else in this
- * module: a bare "YYYY-MM-DD" is read as calendar-local noon UTC so it can
- * never slip a day, and an unparseable value passes through untouched.
+ * A bare "YYYY-MM-DD" is read as calendar-local noon UTC so it can never
+ * slip a day; a full timestamp prints its day in the business's zone `tz`
+ * (REQ-944 — UTC only when no zone is given); an unparseable value passes
+ * through untouched.
  */
-export function formatLongDate(iso: string | undefined, lang: Lang): string {
+export function formatLongDate(
+  iso: string | undefined,
+  lang: Lang,
+  tz?: string,
+): string {
   if (!iso) return "";
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
   const d = new Date(dateOnly ? `${iso}T12:00:00Z` : iso);
   if (Number.isNaN(+d)) return iso;
-  const day = d.getUTCDate();
-  const month = MONTHS[lang === "es" ? "es" : "en"][d.getUTCMonth()];
-  const year = d.getUTCFullYear();
+  // REQ-944: a full timestamp is an instant — print the business's calendar
+  // day for it (`tz`), not the UTC day. A bare YYYY-MM-DD is already a day.
+  const [year, monthIdx, day] = dateOnly ? utcParts(d) : zonedParts(d, tz);
+  const month = MONTHS[lang === "es" ? "es" : "en"][monthIdx];
   return lang === "es"
     ? `${day} de ${month} de ${year}`
     : `${month} ${day}, ${year}`;

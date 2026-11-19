@@ -95,7 +95,9 @@ async function texasQuoteSentLate(): Promise<string> {
   assert(userId, `GET /me has an id: ${JSON.stringify(me)}`);
   const made = await new QuoteStore().create(userId, {
     summary: "Roof repair",
-    lineItems: [{ description: "Shingles", quantity: 1, price: 1_200_00 }],
+    lineItems: [
+      { description: "Shingles", quantity: 1, unit: "ea", price: 1_200_00 },
+    ],
     estimatedTotal: 1_200_00,
   });
   // the instants the server stamped at creation and send, pinned to the evening

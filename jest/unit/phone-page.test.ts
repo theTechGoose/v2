@@ -51,7 +51,8 @@ describe("REQ-915 the Phone page", () => {
   test("REQ-915a the route mounts PhonePage in the dashboard shell, behind the session gate, sidebar on phone", () => {
     const src = read("front-end/routes/communications/index.tsx");
     expect(src).toContain('from "../../islands/PhonePage.tsx"');
-    expect(src).toContain("<PhonePage />");
+    // REQ-944: it carries the business's zone for the list clocks
+    expect(src).toMatch(/<PhonePage(?:\s+timeZone=\{[^}]+\})?\s*\/>/);
     expect(src).toContain('<DashSidebar active="phone" />');
     expect(src).toContain('pageTitleKey="nav.phone"');
     expect(src).toContain('asset("/dashboard.css")');

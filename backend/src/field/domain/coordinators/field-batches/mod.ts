@@ -134,6 +134,15 @@ export class FieldBatches {
       const customer = inv.customerId ? await this.customers.get(inv.customerId).catch(() => null) : null;
       const noRecipient = !customer?.email && !customer?.phoneNumber;
       let ok = false, reason = "no recipient: the customer has no email or phone";
+      // REQ-944 (q1-13): the message shows the dates it is issued with — stamp
+      // them on the draft BEFORE it is rendered (REQ-174: due = the day it is
+      // sent + its days to pay); a failed send puts the draft's own back.
+      const dated = {
+        issuedDate: inv.issuedDate ?? today,
+        ...(typeof inv.netDays === "number" ? { dueDate: shiftDate(today, inv.netDays) } : {}),
+      };
+      const reachable = !!(customer?.email || customer?.phoneNumber);
+      if (reachable) await this.invoices.update(inv.id, userId, dated);
       try {
         if (customer?.email) {
           const r = await this.email.run(userId, { kind: "invoice", resourceId: inv.id });
@@ -149,9 +158,13 @@ export class FieldBatches {
       }
       if (ok) {
         // REQ-174: due = the day it is sent + its days to pay
-        await this.invoices.update(inv.id, userId, { status: "sent", issuedDate: inv.issuedDate ?? today, ...(typeof inv.netDays === "number" ? { dueDate: shiftDate(today, inv.netDays) } : {}) });
+        await this.invoices.update(inv.id, userId, { status: "sent", ...dated });
         sent.push(inv.id);
-      } else failed.push({ invoiceId: inv.id, reason, ...(noRecipient ? { code: "noRecipient" as const } : {}), ...(inv.customerId ? { customerId: inv.customerId } : {}) });
+      } else {
+        // null clears a field the draft never had (InvoiceStore.update)
+        if (reachable) await this.invoices.update(inv.id, userId, { issuedDate: inv.issuedDate ?? null, dueDate: inv.dueDate ?? null } as unknown as { issuedDate?: string; dueDate?: string }).catch(() => undefined);
+        failed.push({ invoiceId: inv.id, reason, ...(noRecipient ? { code: "noRecipient" as const } : {}), ...(inv.customerId ? { customerId: inv.customerId } : {}) });
+      }
     }
     return { sent: sent.length, sentIds: sent, failed, batch: await this.get(userId, batchId) };
   }

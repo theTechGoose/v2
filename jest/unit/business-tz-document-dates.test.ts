@@ -13,6 +13,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers";
+import { formatClockTime } from "../../shared/quote-flow/locale-format";
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -67,10 +68,23 @@ describe("REQ-944 q1-10: document dates are the business's day, not the UTC day"
     expect(offenders).toEqual([]);
   });
 
+  it("REQ-944 a chat clock prints the business's wall time (7:32 p. m. Central for 01:32Z)", () => {
+    expect(
+      formatClockTime("2026-11-19T01:32:00Z", "es", {
+        timeZone: "America/Chicago",
+      }),
+    ).toBe("7:32 p. m.");
+    expect(
+      formatClockTime("2026-11-19T01:32:00Z", "en", {
+        timeZone: "America/New_York",
+      }),
+    ).toBe("8:32 PM");
+  });
+
   it("REQ-944 chat and list clocks name a time zone instead of the device's", () => {
-    const chat = read(
-      "front-end/ui-breakdown/pages/assistant/components/asst-chat/js/AsstChat.tsx",
-    );
+    // the LIVE chat island (routes/assistant/*.tsx import islands/AsstChat.tsx);
+    // ui-breakdown/ is the excluded design mock, which no route serves
+    const chat = read("front-end/islands/AsstChat.tsx");
     const fmtTime = chat.match(/function fmtTime\([\s\S]*?\n}/)?.[0] ?? "";
     expect(fmtTime).toMatch(/timeZone/);
     const comms = read("front-end/lib/communications.ts");
