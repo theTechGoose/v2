@@ -5,7 +5,7 @@
  * on "Payment upon completion" terms.
  */
 import { assert, assertEquals } from "@std/assert";
-import { tickerFrame } from "./ticker-frame.ts";
+import { centsText, tickerFrame } from "./ticker-frame.ts";
 import {
   jobPaidLabel,
   nextUpcomingBill,
@@ -151,4 +151,13 @@ Deno.test("REQ-473 en + es carry the new dashboard keys", () => {
     ],
     "Pago al finalizar",
   );
+});
+
+Deno.test("REQ-961 centsText: a cents Ticker settles to the cent, or to whole dollars when the target is whole", () => {
+  assertEquals(
+    centsText(tickerFrame(248_975, 0, 5000, 1400), 248_975),
+    "2,489.75",
+  );
+  assertEquals(centsText(240_000, 240_000), "2,400");
+  assertEquals(centsText(0, 248_975), "0.00");
 });

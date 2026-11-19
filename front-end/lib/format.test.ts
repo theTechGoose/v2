@@ -3,6 +3,7 @@ import {
   fmtMoney,
   fmtMoneyExact,
   fmtMoneyShort,
+  fmtMoneyTotal,
   fmtPhone,
   telHref,
 } from "./format.ts";
@@ -88,4 +89,12 @@ Deno.test("telHref: 10-digit US gets +1 prefix; already-+ pass-through", () => {
   assertEquals(telHref("+15125550000"), "tel:+15125550000");
   assertEquals(telHref("15125550000"), "tel:+15125550000");
   assertEquals(telHref(""), "");
+});
+
+Deno.test("REQ-961 fmtMoneyTotal: whole totals stay compact, any cents are kept", () => {
+  assertEquals(fmtMoneyTotal(248_975), "$2,489.75");
+  assertEquals(fmtMoneyTotal(240_000), "$2,400");
+  assertEquals(fmtMoneyTotal(0), "$0");
+  assertEquals(fmtMoneyTotal(-248_975), "-$2,489.75");
+  assertEquals(fmtMoneyTotal(null), "$0");
 });

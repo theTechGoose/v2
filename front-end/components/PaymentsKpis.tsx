@@ -4,7 +4,7 @@
  * days to land. Rendered by
  * islands/PaymentsPage.tsx; a plain component so it can be rendered on its own.
  */
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 
 /** Plural helper bound to an explicit language. */
@@ -41,7 +41,7 @@ export default function PaymentsKpis(
         <div class="qkpi__lbl">
           {tFor(lang, "paymentsPage.kpi.landedLabel")}
         </div>
-        <div class="qkpi__val">{fmtMoney(monthTotal)}</div>
+        <div class="qkpi__val">{fmtMoneyTotal(monthTotal)}</div>
         <div class="qkpi__sub">
           {tnFor(lang, "paymentsPage.kpi.payments", landedCount)}
         </div>
@@ -52,7 +52,7 @@ export default function PaymentsKpis(
           {tFor(lang, "paymentsPage.kpi.reversedLabel")}
         </div>
         <div class="qkpi__val">
-          {reversedCount > 0 ? fmtMoney(reversedTotal) : "—"}
+          {reversedCount > 0 ? fmtMoneyTotal(reversedTotal) : "—"}
         </div>
         <div class="qkpi__sub">
           {reversedCount > 0
@@ -69,7 +69,7 @@ export default function PaymentsKpis(
         </div>
         <div class="qkpi__sub">
           {tFor(lang, "paymentsPage.kpi.heldUp", {
-            amount: fmtMoney(attentionTotal),
+            amount: fmtMoneyTotal(attentionTotal),
           })}
         </div>
       </div>

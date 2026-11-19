@@ -6,6 +6,12 @@ import { fmtPhone } from "../../shared/identity/phone.ts";
  *  - aggregates / KPIs (no cents):  fmtMoney(1_420_000)      → "$14,200"
  *  - document totals (with cents):  fmtMoneyExact(1_099_000) → "$10,990.00"
  *  - alias for explicit-no-cents:   fmtMoneyShort = fmtMoney
+ *  - totals read against an exact document (REQ-961): fmtMoneyTotal —
+ *    whole dollars when the total is whole ("$2,400"), to the cent when it
+ *    is not ("$2,489.75"), so it always reconciles with the invoice.
+ *
+ *  REQ-961: ONE invoice's or payment's amount is a document total — always
+ *  fmtMoneyExact, never fmtMoney (which would print $2,489.75 as "$2,490").
  *
  *  Anywhere callers used to pass dollars, multiply by 100 once at the
  *  source (DTO field, seed value) — the formatter is intentionally not
@@ -34,6 +40,15 @@ export const fmtMoneyExact = (cents: number | null | undefined): string => {
       maximumFractionDigits: 2,
     })
   }`;
+};
+
+/** REQ-961 (q1-35): a total that reads against exact documents — the money
+ *  bar's buckets, PAID THIS MONTH, the /payments month total. A whole-dollar
+ *  total stays compact ("$2,400", "$0"); anything else keeps its cents
+ *  ("$2,489.75"), so it never disagrees with the invoice it sums. */
+export const fmtMoneyTotal = (cents: number | null | undefined): string => {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "$0";
+  return Math.round(cents) % 100 === 0 ? fmtMoney(cents) : fmtMoneyExact(cents);
 };
 
 export const pluralize = (

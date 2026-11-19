@@ -45,7 +45,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
-import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
+import { fmtMoneyExact, fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import PaymentsKpis from "../components/PaymentsKpis.tsx";
@@ -670,7 +670,7 @@ function PaymentsHero(
               <>
                 <span class="pph__title-amount">
                   <sup>$</sup>
-                  {fmtMoney(monthTotal).replace(/^\$/, "")}
+                  {fmtMoneyTotal(monthTotal).replace(/^\$/, "")}
                 </span>
                 <span class="pph__title-tail">
                   {tFor(lang, "paymentsPage.hero.titleTail")}
@@ -700,7 +700,7 @@ function PaymentsHero(
         {monthOverpaid > 0 && (
           <p class="pph__sub" data-cy="payments-overpaid">
             {tFor(lang, "paymentsPage.hero.overpaid", {
-              amount: fmtMoney(monthOverpaid),
+              amount: fmtMoneyTotal(monthOverpaid),
             })}
           </p>
         )}
@@ -801,7 +801,7 @@ function PaymentsHero(
                 <div class="pph__stub-when">{p.whenLabel} · {p.invoiceRef}</div>
               </div>
             </div>
-            <div class="pph__stub-amount">{fmtMoney(p.amount)}</div>
+            <div class="pph__stub-amount">{fmtMoneyExact(p.amount)}</div>
             <div class="pph__stub-foot">
               <span class="pph__stub-method">
                 <I d={METHOD_ICON[p.method]} size={11} sw={2} />{" "}
@@ -909,7 +909,7 @@ function PaymentCard(
             ? "text-decoration:line-through;opacity:0.6"
             : ""}
         >
-          {fmtMoney(p.amount)}
+          {fmtMoneyExact(p.amount)}
         </div>
         <p class="qcard__story">{p.note}</p>
         {/* REQ-926: Chargeback on a landed payment; Undo on a reversed one */}
@@ -1005,7 +1005,7 @@ function PaymentCard(
             {tFor(lang, "paymentsPage.card.trail")}
           </div>
           <p class="qcard__back-big">
-            {fmtMoney(p.amount)}
+            {fmtMoneyExact(p.amount)}
             <small>· {paidMethodLabel(lang, p.method)}</small>
           </p>
         </div>
@@ -1132,7 +1132,7 @@ function ClaimCard(
       <div class="qcard__av">{c.initials}</div>
       <div class="qcard__body">
         <div class="qcard__client-name">{c.client} · {c.invoiceRef}</div>
-        <div class="pcard__amount">{fmtMoney(c.amount)}</div>
+        <div class="pcard__amount">{fmtMoneyExact(c.amount)}</div>
         <p class="qcard__story">
           {note} · {whenLabel(lang, c.daysAgo)}
         </p>
@@ -1201,7 +1201,7 @@ function LandedRow(
           {paidMethodLabel(lang, p.method)} · {p.whenLabel} · {p.invoiceRef}
         </div>
       </div>
-      <div class="qdone__amt">{fmtMoney(p.amount)}</div>
+      <div class="qdone__amt">{fmtMoneyExact(p.amount)}</div>
       <button
         type="button"
         class="pcard__cb-btn"
@@ -1269,7 +1269,7 @@ function ChargebackModal(
       >
         <h4 id="chargeback-title" class="send-dialog__title">
           {tFor(lang, "paymentsPage.chargeback.title", {
-            amount: fmtMoney(p.amount),
+            amount: fmtMoneyExact(p.amount),
             invoice: p.invoiceRef,
           })}
         </h4>
@@ -1370,7 +1370,7 @@ function PSideFlow(
       <div class="qside__title">{tFor(lang, "paymentsPage.flow.title")}</div>
       <div class="qside__sub" style="margin:2px 0 12px">
         {tFor(lang, "paymentsPage.flow.subThisWeek", {
-          amount: fmtMoney(weeks[weeks.length - 1]),
+          amount: fmtMoneyTotal(weeks[weeks.length - 1]),
         })}
       </div>
       <svg width={w} height={h} style="display:block;width:100%;height:auto">
@@ -1445,7 +1445,7 @@ function PSideTopPayors(
                     />
                   </div>
                 </div>
-                <div class="qside__row-amt">{fmtMoney(amt)}</div>
+                <div class="qside__row-amt">{fmtMoneyTotal(amt)}</div>
               </div>
             ))}
           </div>

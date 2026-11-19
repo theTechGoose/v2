@@ -3,15 +3,20 @@
  * Direct port of the prototype's `useTicker` + `<Ticker/>`.
  */
 import { useEffect, useState } from "preact/hooks";
-import { tickerFrame } from "../lib/ticker-frame.ts";
+import { centsText, tickerFrame } from "../lib/ticker-frame.ts";
 
 interface Props {
   value: number;
   prefix?: string;
   duration?: number;
+  /** REQ-961: `value` is integer CENTS — it settles to the cent ("2,489.75"),
+   *  or to whole dollars ("2,400") when the target has no cents. */
+  cents?: boolean;
 }
 
-export default function Ticker({ value, prefix = "", duration = 1400 }: Props) {
+export default function Ticker(
+  { value, prefix = "", duration = 1400, cents = false }: Props,
+) {
   const [v, setV] = useState(0);
 
   useEffect(() => {
@@ -26,5 +31,5 @@ export default function Ticker({ value, prefix = "", duration = 1400 }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [value, duration]);
 
-  return <>{prefix}{v.toLocaleString("en-US")}</>;
+  return <>{prefix}{cents ? centsText(v, value) : v.toLocaleString("en-US")}</>;
 }
