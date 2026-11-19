@@ -59,7 +59,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
-import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
+import { fmtMoney, fmtMoneyExact, fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import SearchSelect from "./SearchSelect.tsx"; // REQ-801
@@ -1710,7 +1710,7 @@ function InvoicesHero(
                   <span key={e.invoiceId}>
                     {i > 0 ? " · " : ""}
                     {shortDay(e.expectedLandDate, lang)}:{" "}
-                    <strong>{e.label} {fmtMoney(e.amount)}</strong>
+                    <strong>{e.label} {fmtMoneyExact(e.amount)}</strong>
                   </span>
                 ))}
               </span>
@@ -1827,7 +1827,7 @@ function InvoicesKpis(
     <div class="qkpi">
       <div class={`qkpi__cell${overdueCount > 0 ? " qkpi__cell--accent" : ""}`}>
         <div class="qkpi__lbl">{tFor(lang, "status.overdue")}</div>
-        <div class="qkpi__val">{fmtMoney(overdueTotal)}</div>
+        <div class="qkpi__val">{fmtMoneyTotal(overdueTotal)}</div>
         <div class="qkpi__sub">
           {overdueCount} {tFor(
             lang,
@@ -1840,7 +1840,7 @@ function InvoicesKpis(
       </div>
       <div class="qkpi__cell">
         <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.out")}</div>
-        <div class="qkpi__val">{fmtMoney(outTotal)}</div>
+        <div class="qkpi__val">{fmtMoneyTotal(outTotal)}</div>
         <div class="qkpi__sub">
           {claimedCount > 0
             ? tnFor(lang, "invoicesPage.kpi.outSubClaimed", claimedCount, {
@@ -1863,7 +1863,7 @@ function InvoicesKpis(
       </div>
       <div class="qkpi__cell">
         <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.paid")}</div>
-        <div class="qkpi__val">{fmtMoney(paidTotal)}</div>
+        <div class="qkpi__val">{fmtMoneyTotal(paidTotal)}</div>
         <div class="qkpi__sub">
           {tnFor(lang, "invoicesPage.kpi.paidSub", paidCount)}
         </div>
@@ -4298,7 +4298,7 @@ function InvoiceCard(
             </div>
           )
           : null}
-        <h3 class="qcard__title">{fmtMoney(inv.amount)}</h3>
+        <h3 class="qcard__title">{fmtMoneyExact(inv.amount)}</h3>
         <PaymentState inv={inv} lang={lang} />
         <p class="qcard__story">{subline}</p>
         {
@@ -4373,7 +4373,7 @@ function InvoiceCard(
             {tFor(lang, "invoicesPage.back.eyebrow")}
           </div>
           <p class="qcard__back-big">
-            {fmtMoney(inv.amount)}
+            {fmtMoneyExact(inv.amount)}
             <small>· {moodLabel}</small>
           </p>
           {/* REQ-702 (cycle 5, m21): who and which, under the amount */}

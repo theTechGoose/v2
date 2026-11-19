@@ -17,3 +17,15 @@ export function tickerFrame(
   const eased = 1 - Math.pow(1 - t, 3);
   return Math.round(value * eased) || 0;
 }
+
+/** REQ-961: one frame of a cents Ticker — two decimals when the target has
+ *  cents, whole dollars when it does not. */
+export function centsText(frame: number, target: number): string {
+  const whole = Math.round(target) % 100 === 0;
+  return whole
+    ? Math.round(frame / 100).toLocaleString("en-US")
+    : (frame / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+}

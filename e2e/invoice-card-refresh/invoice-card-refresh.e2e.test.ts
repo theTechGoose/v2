@@ -310,7 +310,8 @@ Deno.test("REQ-554 (demo M9, cycle 4; extends REQ-493): a change order approved 
     await page.goto("/invoices");
     const title = card(page, job).locator(".qcard__title");
     await title.waitFor({ timeout: 15_000 });
-    expect.eq((await title.innerText()).trim(), "$400", "before");
+    // REQ-961: the card prints the one invoice to the cent
+    expect.eq((await title.innerText()).trim(), "$400.00", "before");
     await markPage(page);
 
     // the customer, handed the owner's device: "Approve in person"
@@ -336,7 +337,7 @@ Deno.test("REQ-554 (demo M9, cycle 4; extends REQ-493): a change order approved 
       (j) =>
         [...document.querySelectorAll("article.qcard")].some((el) =>
           el.textContent?.includes(j) &&
-          el.querySelector(".qcard__title")?.textContent?.trim() === "$485"
+          el.querySelector(".qcard__title")?.textContent?.trim() === "$485.00"
         ),
       job,
       { timeout: 4_000 },

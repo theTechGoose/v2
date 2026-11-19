@@ -7,12 +7,15 @@
  * not at all under prefers-reduced-motion or in a hidden tab, where rAF is throttled or stopped.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
-import { tickerFrame } from "../lib/ticker-frame.ts";
+import { centsText, tickerFrame } from "../lib/ticker-frame.ts";
 
 interface Props {
   value: number;
   prefix?: string;
   duration?: number;
+  /** REQ-961: `value` is integer CENTS — it settles to the cent ("2,489.75"),
+   *  or to whole dollars ("2,400") when the target has no cents. */
+  cents?: boolean;
 }
 
 function animationAllowed(): boolean {
@@ -25,7 +28,9 @@ function animationAllowed(): boolean {
   }
 }
 
-export default function Ticker({ value, prefix = "", duration = 1400 }: Props) {
+export default function Ticker(
+  { value, prefix = "", duration = 1400, cents = false }: Props,
+) {
   const [v, setV] = useState(value);
   // the number currently on screen — the start of the next ease
   const shown = useRef(value);
@@ -54,5 +59,5 @@ export default function Ticker({ value, prefix = "", duration = 1400 }: Props) {
     };
   }, [value, duration]);
 
-  return <>{prefix}{v.toLocaleString("en-US")}</>;
+  return <>{prefix}{cents ? centsText(v, value) : v.toLocaleString("en-US")}</>;
 }

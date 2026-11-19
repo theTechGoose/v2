@@ -10,7 +10,7 @@ import { useState } from "preact/hooks";
 import Ticker from "../islands/Ticker.tsx";
 import { SkelBlock } from "./Skeletons.tsx";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoneyExact, fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import {
   defaultBucket,
@@ -110,8 +110,8 @@ function itemMeta(
     case "unbilled":
       return {
         text: tFor(lang, "moneyBar.unbilledOf", {
-          billed: fmtMoney(item.billedCents ?? 0),
-          total: fmtMoney(item.agreedCents ?? 0),
+          billed: fmtMoneyTotal(item.billedCents ?? 0),
+          total: fmtMoneyTotal(item.agreedCents ?? 0),
           num,
         }),
         tone: "muted",
@@ -173,7 +173,8 @@ export function MoneyBar(
             )
             : (
               <div class="moneybar__amt" data-cy="money-owed">
-                $<Ticker value={Math.round(data.owedCents / 100)} />
+                {/* REQ-961: the exact cents, so $2,489.75 never reads "$2,490" */}
+                $<Ticker value={data.owedCents} cents />
               </div>
             )}
         </div>
@@ -208,7 +209,7 @@ export function MoneyBar(
             onClick={() => setPicked(b.key)}
             style={`--mb-c:${COLOR[b.key]}`}
           >
-            <span class="moneybar__col-amt">{fmtMoney(b.cents)}</span>
+            <span class="moneybar__col-amt">{fmtMoneyTotal(b.cents)}</span>
             <span class="moneybar__col-cap">
               {plural(lang, `moneyBar.bucket.${b.key}`, b.count)}
             </span>
@@ -227,10 +228,10 @@ export function MoneyBar(
             data-cy="money-seg"
             data-bucket={b.key}
             aria-pressed={b.key === selected}
-            aria-label={`${fmtMoney(b.cents)} · ${
+            aria-label={`${fmtMoneyTotal(b.cents)} · ${
               plural(lang, `moneyBar.bucket.${b.key}`, b.count)
             }`}
-            title={`${fmtMoney(b.cents)} · ${
+            title={`${fmtMoneyTotal(b.cents)} · ${
               plural(lang, `moneyBar.bucket.${b.key}`, b.count)
             }`}
             onClick={() => setPicked(b.key)}
@@ -311,7 +312,7 @@ export function MoneyBar(
                       </span>
                     </span>
                     <span class="moneybar__row-amt">
-                      {fmtMoney(item.cents)}
+                      {fmtMoneyExact(item.cents)}
                     </span>
                     <I d={ICN.arrow} size={14} />
                   </a>
