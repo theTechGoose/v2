@@ -5300,6 +5300,7 @@
   "payLinks.email.ach": "Transferencia bancaria: {handle}",
   "payLinks.email.achPlain": "Transferencia bancaria",
   "payLinks.page.heading": "Paga en línea",
+  "payLinks.page.sendHeading": "Envía tu pago",
   "payLinks.page.payWith": "Pagar con {brand}",
   "payLinks.page.amountWith": "Pagar {amount} con {brand}",
   "payLinks.page.sendTo": "Envía a {handle}",
