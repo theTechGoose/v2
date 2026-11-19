@@ -1584,7 +1584,8 @@ export function renderInvoiceHtml(
     amountDue: amountLabel,
     dueLabel: t(lang, "paperworkEmail.invoice.dueLabel"),
     pasteLink: t(lang, "paperworkEmail.pasteLink"),
-    cta: t(lang, "paperworkEmail.invoice.cta"),
+    // REQ-933 (q1-6): a paid invoice's button views it, never "View & pay"
+    cta: t(lang, paid ? "paperworkEmail.invoicePaid.cta" : "paperworkEmail.invoice.cta"),
     viewSigned: t(lang, "publicInvoice.viewSignedAgreement"),
     downloadPdf: t(lang, "publicInvoice.downloadPdf"),
     questions: t(lang, "paperworkEmail.quote.questions"),
@@ -1795,7 +1796,10 @@ export function renderInvoiceHtml(
         <tr><td style="padding:28px 36px 0;">
           <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">${
-    escapeHtml(t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }))
+    // REQ-933 (q1-6): paid → thanks for the payment, not "pay whenever you're ready"
+    escapeHtml(t(lang, paid ? "paperworkEmail.invoicePaid.intro" : "paperworkEmail.invoice.intro", {
+      business: bizLabel(senderBiz, sender, lang),
+    }))
   }</p>
         </td></tr>
 
@@ -2052,19 +2056,28 @@ export function renderInvoiceBasicHtml(
     </table>
     ${invoiceFactsHtml(i, undefined, lang, tz) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang, tz)}</div>` : ""}${payWays}`;
 
+  // REQ-933 (q1-6): the PAID email (REQ-020) gets the paid preheader, intro
+  // and button — never the invoice-due "due <date>" / "pay whenever" / "View & pay".
+  const business = bizLabel(senderBiz, sender, lang);
   return shell({
-    preheader: t(lang, "paperworkEmail.invoice.preheader", {
-      docNumber,
-      amount: fmtUSD(amount),
-      dueDate: fmtDate(i.dueDate, lang, tz),
-    }),
+    preheader: paid
+      ? t(lang, "paperworkEmail.invoicePaid.preheader", {
+        docNumber,
+        amount: fmtUSD(amount),
+        date: fmtDate(i.paidAt ?? new Date().toISOString(), lang, tz),
+      })
+      : t(lang, "paperworkEmail.invoice.preheader", {
+        docNumber,
+        amount: fmtUSD(amount),
+        dueDate: fmtDate(i.dueDate, lang, tz),
+      }),
     kindLabel: t(lang, "paperworkEmail.invoice.kindLabel"),
     docNumber,
     drafted,
     greeting: customerGreeting(customer, lang),
-    intro: t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }),
+    intro: t(lang, paid ? "paperworkEmail.invoicePaid.intro" : "paperworkEmail.invoice.intro", { business }),
     body,
-    ctaLabel: t(lang, "paperworkEmail.invoice.cta"),
+    ctaLabel: t(lang, paid ? "paperworkEmail.invoicePaid.cta" : "paperworkEmail.invoice.cta"),
     ctaUrl: withSendLang(`${APP_URL}/i/${i.id}`, lang), // REQ-727
     sender,
     lang,
