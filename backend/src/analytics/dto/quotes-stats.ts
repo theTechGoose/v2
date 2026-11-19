@@ -22,6 +22,9 @@ export class WinRateResponseDto {
 export class InsightResponseDto {
   @IsString() text!: string;
   @IsIn(INSIGHT_KINDS) kind!: InsightKind;
+  /** REQ-1107 (LOOP-007 q3-31): the open_count figure ("2.4"), so the page
+   *  can build the sentence in its OWN language from `kind` (+ `avg`). */
+  @IsOptional() @IsString() avg?: string;
 }
 
 export type WinRateResponse = WinRateResponseDto;

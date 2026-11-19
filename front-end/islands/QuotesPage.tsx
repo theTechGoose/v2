@@ -2225,7 +2225,7 @@ export default function QuotesPage(
     Promise.all([
       quotesClient.list().catch(() => [] as BackendQuoteCard[]),
       quotesClient.winRate(90).catch(() => null as WinRate | null),
-      quotesClient.insight().catch(() => null as Insight | null),
+      quotesClient.insight(lang).catch(() => null as Insight | null),
       quotesClient.allowance().catch(() => null), // REQ-778
     ]).then(([cards, winRate, insight, allowance]) => {
       if (!alive) return;
@@ -2514,7 +2514,12 @@ export default function QuotesPage(
             lang={lang}
           />
           <QSideRate won={won} lost={lost} lang={lang} />
-          <QSideTip text={insight?.text} lang={lang} />
+          <QSideTip
+            text={insight?.text}
+            kind={insight?.kind}
+            avg={insight?.avg}
+            lang={lang}
+          />
         </aside>
       </div>
     </>

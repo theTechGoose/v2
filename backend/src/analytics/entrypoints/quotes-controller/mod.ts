@@ -80,8 +80,16 @@ export class QuotesController {
   }
 
   @Get("analytics/quotes/insight")
-  async insightRoute(@Context() ctx: ExecutionContext): Promise<InsightResponse> {
+  async insightRoute(
+    @Context() ctx: ExecutionContext,
+    @Query("lang") lang?: string,
+  ): Promise<InsightResponse> {
     const signedIn = await requireSession(ctx, this.sessions, this.users);
-    return await this.insight.run(signedIn.user.id, uiLangOf(signedIn) as Lang); // REQ-631: the reader's language
+    // REQ-1107 (LOOP-007 q3-31): the PAGE's language (?lang=, which the
+    // front-end resolves as ?lang= > account > pm_lang) wins over the
+    // account's — an EN account on /quotes?lang=es reads a Spanish tip.
+    // No/invalid ?lang= → REQ-631's reader language (the account's).
+    const reqLang: Lang = lang === "es" || lang === "en" ? lang : uiLangOf(signedIn) as Lang;
+    return await this.insight.run(signedIn.user.id, reqLang);
   }
 }
