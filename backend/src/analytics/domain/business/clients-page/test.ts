@@ -59,7 +59,7 @@ Deno.test("REQ-135 clients-page — countByStatus, summarize and loopPicks read 
     card({ status: "cold" }), card({ status: "regular" }),
   ];
   assertEquals(countByStatus(cards), { all: 7, new: 0, active: 1, lead: 2, owes: 2, regular: 1, cold: 1 });
-  assertEquals(summarize(cards), { totalClients: 7, activeJobs: 1, owedCents: 15_000, quietCount: 1 });
+  assertEquals(summarize(cards), { totalClients: 7, activeJobs: 1, owedCents: 15_000, unassignedOwedCents: 0, quietCount: 1 });
   assertEquals(loopPicks(cards).map((c) => c.daysSinceContact), [90, 40, 10], "leads and owes, longest quiet first, three at most");
 });
 
@@ -121,8 +121,11 @@ Deno.test("REQ-320 (demo m15, cycle 1) clients-page — a signed job in flight c
 Deno.test("REQ-696 (cycle 5, M5) clients-page — the owed total counts open receivables no card carries (an invoice billed to a typed name, written before REQ-696)", () => {
   const cards = [card({ balanceCents: 100_00 })];
   assertEquals(summarize(cards).owedCents, 100_00);
-  assertEquals(summarize(cards, 200_00).owedCents, 300_00);
-  assertEquals(clientsPage(cards, {}, 200_00).summary.owedCents, 300_00);
+  // REQ-1138 (LOOP-007 q3, q3-69) amends REQ-696: the unassigned debt is still reported, beside the
+  // headline (summary.unassignedOwedCents), never folded into it — the headline agrees with the chips
+  assertEquals(summarize(cards, 200_00).owedCents, 100_00);
+  assertEquals(summarize(cards, 200_00).unassignedOwedCents, 200_00);
+  assertEquals(clientsPage(cards, {}, 200_00).summary.unassignedOwedCents, 200_00);
 });
 
 // REQ-1138 (LOOP-007 q3, q3-69): after a customer who still owed $820.67 was deleted, the /customers

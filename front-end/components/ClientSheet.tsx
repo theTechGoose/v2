@@ -16,6 +16,11 @@ import {
   telHref,
 } from "../../shared/quote-flow/format-helpers.ts";
 import { initialsOf } from "../lib/clients-display.ts";
+import {
+  type DeleteOwes,
+  owesAskVars,
+  owesFromError,
+} from "../lib/customer-delete-owes.ts"; // REQ-1138
 
 interface Props {
   lang: Lang;
@@ -58,16 +63,21 @@ export default function ClientSheet(
   const [askDelete, setAskDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  // REQ-1138 (q3-69): the 409 customer_owes answer — the question names it, the confirm is "Delete anyway"
+  const [deleteOwes, setDeleteOwes] = useState<DeleteOwes | null>(null);
   async function onDeleteYes() {
     if (!c || deleting) return;
     setDeleting(true);
     setDeleteErr(null);
     try {
-      await clientsClient.delete(c.id);
+      if (deleteOwes) await clientsClient.deleteAnyway(c.id);
+      else await clientsClient.delete(c.id);
       onDeleted?.(c);
     } catch (err) {
       setDeleting(false);
-      setDeleteErr((err as Error).message);
+      const owes = owesFromError(err);
+      if (owes) setDeleteOwes(owes);
+      else setDeleteErr((err as Error).message);
     }
   }
   const address = c?.address?.trim() ?? "";
@@ -210,7 +220,13 @@ export default function ClientSheet(
             style="margin-top:16px;padding:12px 14px;border-radius:12px;background:rgba(192,57,43,0.06);display:grid;gap:10px;font-size:14px;color:var(--fg,#144852)"
           >
             <div>
-              {tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
+              {deleteOwes
+                ? tFor(
+                  lang,
+                  "clientsBoard.panel.deleteAskOwes",
+                  owesAskVars(c.name, deleteOwes),
+                )
+                : tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end">
               <button
@@ -220,6 +236,7 @@ export default function ClientSheet(
                 onClick={() => {
                   setAskDelete(false);
                   setDeleteErr(null);
+                  setDeleteOwes(null);
                 }}
                 style={BTN_OUTLINE}
               >
@@ -233,7 +250,12 @@ export default function ClientSheet(
                 style={`${BTN_DANGER};margin-right:0`}
               >
                 <I d={ICN.trash} size={13} sw={2.4} />
-                {tFor(lang, "clientsBoard.panel.deleteYes")}
+                {tFor(
+                  lang,
+                  deleteOwes
+                    ? "clientsBoard.panel.deleteAnyway"
+                    : "clientsBoard.panel.deleteYes",
+                )}
               </button>
             </div>
             {deleteErr && (

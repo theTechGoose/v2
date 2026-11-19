@@ -43,6 +43,12 @@ import { initialsOf, invoiceFormTarget } from "../lib/customer-nav.ts";
 import { isIssuedState, zeroBalanceKey } from "../lib/clients-display.ts";
 import { isPartlyPaid } from "../lib/invoice-status-pill.ts"; // REQ-1073
 import { CUSTOMERS_CHANGED } from "../components/CustomersNav.tsx";
+import {
+  type DeleteOwes,
+  owesAskVars,
+  owesFromError,
+  owesFromInvoices,
+} from "../lib/customer-delete-owes.ts"; // REQ-1138
 import Backdrop from "../components/Backdrop.tsx";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import InvoiceNudgeDialog from "../components/InvoiceNudgeDialog.tsx";
@@ -211,6 +217,8 @@ export default function CustomerWorkspace(
   const [askDelete, setAskDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  // REQ-1138 (q3-69): what she still owes — the question names it and the confirm is "Delete anyway"
+  const [deleteOwes, setDeleteOwes] = useState<DeleteOwes | null>(null);
 
   async function load() {
     try {
@@ -249,14 +257,18 @@ export default function CustomerWorkspace(
     setDeleting(true);
     setDeleteErr(null);
     try {
-      await clientsClient.delete(id);
+      if (deleteOwes) await clientsClient.deleteAnyway(id);
+      else await clientsClient.delete(id);
       globalThis.dispatchEvent(new Event(CUSTOMERS_CHANGED));
       globalThis.location.assign(
         `/customers?deleted=${encodeURIComponent(name)}`,
       );
     } catch (err) {
       setDeleting(false);
-      setDeleteErr((err as Error).message);
+      // REQ-1138: she owes money we had not seen (another tab billed her) — ask again, naming it
+      const owes = owesFromError(err);
+      if (owes) setDeleteOwes(owes);
+      else setDeleteErr((err as Error).message);
     }
   }
 
@@ -520,6 +532,7 @@ export default function CustomerWorkspace(
                   data-cy="cws-delete"
                   onClick={() => {
                     setDeleteErr(null);
+                    setDeleteOwes(owesFromInvoices(ws.invoices));
                     setAskDelete(true);
                   }}
                 >
@@ -532,7 +545,13 @@ export default function CustomerWorkspace(
         {askDelete && (
           <div class="cws-ask" data-cy="cws-delete-ask" role="group">
             <div>
-              {tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
+              {deleteOwes
+                ? tFor(
+                  lang,
+                  "clientsBoard.panel.deleteAskOwes",
+                  owesAskVars(c.name, deleteOwes),
+                )
+                : tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
             </div>
             <div class="cws-ask__btns">
               <button
@@ -543,8 +562,12 @@ export default function CustomerWorkspace(
                 onClick={() =>
                   onDeleteYes(c.id, c.name)}
               >
-                <I d={ICN.trash} size={13} />{" "}
-                {tFor(lang, "clientsBoard.panel.deleteYes")}
+                <I d={ICN.trash} size={13} /> {tFor(
+                  lang,
+                  deleteOwes
+                    ? "clientsBoard.panel.deleteAnyway"
+                    : "clientsBoard.panel.deleteYes",
+                )}
               </button>
               <button
                 type="button"
@@ -554,6 +577,7 @@ export default function CustomerWorkspace(
                 onClick={() => {
                   setAskDelete(false);
                   setDeleteErr(null);
+                  setDeleteOwes(null);
                 }}
               >
                 {tFor(lang, "clientsBoard.panel.deleteKeep")}

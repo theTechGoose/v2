@@ -96,7 +96,6 @@ Deno.test("REQ-802 DELETE /customers/:id — the customer answers 404 and leaves
 import { PaperworkModule } from "@paperwork/mod-root.ts";
 import { AnalyticsModule } from "@analytics/mod-root.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
-import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
 
 @Module({ imports: [UsersModule, CrmModule, PaperworkModule, AnalyticsModule] })
@@ -116,7 +115,10 @@ Deno.test("REQ-1138 (LOOP-007 q3, q3-69) DELETE /customers/:id — a customer wi
     const uid: string = lucia.userId;
     const today = fieldToday();
     const inv = await new InvoiceStore().create(uid, { customerId: lucia.id, status: "sent", amount: 100000, dueDate: shiftDate(today, 14), issuedDate: today, jobName: "Fence repair" } as never);
-    await new PaymentStore().create(uid, { invoiceId: inv.id, amount: 17933, method: "cash", receivedAt: today });
+    // the part payment goes through POST /payments, as the app records it: ComputeInvoiceBalance
+    // stamps the invoice's paidCents (a bare PaymentStore row leaves the invoice owing $1,000.00)
+    const paid = await fetch(`${base}/payments`, { method: "POST", headers: H, body: JSON.stringify({ invoiceId: inv.id, amount: 17933, method: "cash", receivedAt: today }) });
+    assertEquals(paid.status, 200, `the part payment is recorded (${await paid.text()})`);
 
     // the plain delete is refused: the money must not lose its owner silently
     const refused = await fetch(`${base}/customers/${lucia.id}`, { method: "DELETE", headers: H });

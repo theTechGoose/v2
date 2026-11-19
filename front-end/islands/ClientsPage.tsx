@@ -328,6 +328,7 @@ export default function ClientsPage(
         totalClients={summary.totalClients}
         activeJobs={summary.activeJobs}
         owedTotal={summary.owedCents / 100}
+        unassignedOwedCents={summary.unassignedOwedCents ?? 0}
         quietCount={summary.quietCount}
         lang={lang}
         onAdd={() => setAddOpen(true)}

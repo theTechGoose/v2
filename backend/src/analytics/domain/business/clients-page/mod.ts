@@ -29,7 +29,11 @@ export type ClientsCounts = Record<ClientsFilter, number>;
 export interface ClientsSummary {
   totalClients: number;
   activeJobs: number;
+  /** REQ-1138: what the cards carry — the "Owe you" chip's customers — and nothing else */
   owedCents: number;
+  /** REQ-696 / REQ-1138: open receivables no card carries (no customer on file, or one deleted),
+   *  reported on their own so the headline never disagrees with the chips */
+  unassignedOwedCents: number;
   quietCount: number;
 }
 
@@ -95,13 +99,15 @@ export function countByStatus(cards: readonly CustomerCard[]): ClientsCounts {
   return counts;
 }
 
-/** REQ-696 (cycle 5, M5): `unassignedOwedCents` — open receivables no card carries — is owed too */
+/** REQ-696 (cycle 5, M5): `unassignedOwedCents` — open receivables no card carries — is owed too.
+ *  REQ-1138 (LOOP-007 q3, q3-69): it is reported beside the headline, never folded into it — the
+ *  headline owed is the sum of the card balances, so it always agrees with the "Owe you" chip. */
 export function summarize(cards: readonly CustomerCard[], unassignedOwedCents = 0): ClientsSummary {
   return {
     totalClients: cards.length,
     activeJobs: cards.filter(hasJobInFlight).length,
-    owedCents: cards.reduce((sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0), 0) +
-      Math.max(0, unassignedOwedCents),
+    owedCents: cards.reduce((sum, c) => sum + (c.balanceCents > 0 ? c.balanceCents : 0), 0),
+    unassignedOwedCents: Math.max(0, unassignedOwedCents),
     quietCount: cards.filter((c) => c.status === "cold").length,
   };
 }

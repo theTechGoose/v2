@@ -1,4 +1,5 @@
 import type { Invoice } from "@paperwork/dto/invoice.ts";
+import { docNumberOf } from "#documents/numbering.ts";
 
 /**
  * REQ-397 (demo-loop cycle 2, M14) — the ONE rule for "money a customer owes
@@ -41,4 +42,23 @@ export function isOpenReceivable(inv: ReceivableFields): boolean {
 export function isUpcomingReceivable(inv: ReceivableFields): boolean {
   return inv.status === "scheduled" && !inv.paidAt &&
     receivableBalanceCents(inv) > 0;
+}
+
+/** REQ-1138 (LOOP-007 q3, q3-69): what one customer still owes on the REQ-397 rule — the total and
+ *  the invoice numbers carrying it. DELETE /customers/:id refuses (409 customer_owes) while it is
+ *  non-zero unless the owner says "Delete anyway", so the debt never loses its owner silently. */
+export function customerOpenReceivables(
+  invoices: ReadonlyArray<
+    ReceivableFields & { customerId?: string; number?: string; id: string }
+  >,
+  customerId: string,
+): { owedCents: number; invoices: string[] } {
+  let owedCents = 0;
+  const numbers: string[] = [];
+  for (const i of invoices) {
+    if (i.customerId !== customerId || !isOpenReceivable(i)) continue;
+    owedCents += receivableBalanceCents(i);
+    numbers.push(docNumberOf(i));
+  }
+  return { owedCents, invoices: numbers };
 }

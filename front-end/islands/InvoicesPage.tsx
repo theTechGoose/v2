@@ -110,7 +110,7 @@ import { type Payment, paymentsClient } from "../clients/payments.ts"; // REQ-95
 // re-reads its owed total when an invoice is marked paid or deleted here).
 // Reads pass straight through.
 import { announcingFetch as fetch } from "../lib/owner-writes.ts";
-import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-696
+import { invoiceClientName, liveCustomerId } from "../lib/invoice-client.ts"; // REQ-696, REQ-1138
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
 import {
   formatPhoneInput,
@@ -456,8 +456,12 @@ function enrich(
     : isPartlyPaid(inv)
     ? "partly"
     : "out";
+  // REQ-1138 (q3-69): a deleted customer's open invoice links and saves to its own bill-to, never to
+  // the 404 /customers/<deleted id>
+  const customerId = liveCustomerId(inv, customers) ?? undefined;
   return {
     ...inv,
+    customerId,
     client,
     initials: initialsOf(client),
     // REQ-198: the document number; rows older than numbering keep "#ID"
@@ -467,11 +471,11 @@ function enrich(
     stage,
     textPhone: invoiceTextPhone(
       inv,
-      inv.customerId ? byId?.get(inv.customerId) : undefined,
+      customerId ? byId?.get(customerId) : undefined,
     ),
     contactEmail: invoiceContactEmail(
       inv,
-      inv.customerId ? byId?.get(inv.customerId) : undefined,
+      customerId ? byId?.get(customerId) : undefined,
     ),
   };
 }
