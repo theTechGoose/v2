@@ -95,3 +95,41 @@ Deno.test("REQ-715 m31 a language other than en | es is refused with a 400", () 
     assertEquals(statusOf(() => parseUpdateCustomer({ language })).status, 400);
   }
 });
+
+// REQ-1080 (LOOP-007 cycle 2, q2-69): the DTO gate enforces REQ-352's
+// "a customer name is required" — a direct POST/PUT cannot store a blank
+// name — and refuses a phone carrying an extension ("ext 9"), which the SMS
+// send path cannot dial (REQ-278).
+for (const name of ["", "   ", "\t \n"]) {
+  Deno.test(`REQ-1080 q2-69 parseCreateCustomer refuses name ${JSON.stringify(name)} with 400 customer.nameRequired`, () => {
+    const err = statusOf(() => parseCreateCustomer({ name }));
+    assertEquals(err.status, 400);
+    assertEquals(err.message, "customer.nameRequired");
+  });
+  Deno.test(`REQ-1080 q2-69 parseUpdateCustomer refuses name ${JSON.stringify(name)} with 400 customer.nameRequired`, () => {
+    const err = statusOf(() => parseUpdateCustomer({ name }));
+    assertEquals(err.status, 400);
+    assertEquals(err.message, "customer.nameRequired");
+  });
+}
+
+Deno.test("REQ-1080 q2-69 parseCreateCustomer trims the name it keeps", () => {
+  assertEquals(parseCreateCustomer({ name: "  Ann Lee  " }).name, "Ann Lee");
+});
+
+Deno.test("REQ-1080 q2-69 parseUpdateCustomer without a name still parses (name stays optional on edit)", () => {
+  assertEquals(parseUpdateCustomer({ notes: "x" }).name, undefined);
+});
+
+for (const phoneNumber of ["+1 (843) 555-0124 ext 9", "+1 843 555 0124 x9"]) {
+  Deno.test(`REQ-1080 q2-69 parseCreateCustomer refuses phone ${phoneNumber} with 400 customer.invalidPhone`, () => {
+    const err = statusOf(() => parseCreateCustomer({ name: "Ann", phoneNumber }));
+    assertEquals(err.status, 400);
+    assertEquals(err.message, "customer.invalidPhone");
+  });
+  Deno.test(`REQ-1080 q2-69 parseUpdateCustomer refuses phone ${phoneNumber} with 400 customer.invalidPhone`, () => {
+    const err = statusOf(() => parseUpdateCustomer({ phoneNumber }));
+    assertEquals(err.status, 400);
+    assertEquals(err.message, "customer.invalidPhone");
+  });
+}

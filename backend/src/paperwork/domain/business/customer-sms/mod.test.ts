@@ -7,8 +7,10 @@ import { assertEquals } from "#std/assert";
 import {
   customerSmsTarget,
   dispatchCustomerSms,
+  normalizeE164,
   signedConfirmChannel,
 } from "./mod.ts";
+import { customerPhoneE164 } from "#quote-flow/customer-contact.ts"; // REQ-1080
 import { type SendSmsInput, SmsService } from "@users/domain/data/sms/mod.ts";
 
 function spySms() {
@@ -106,4 +108,38 @@ Deno.test("REQ-403 signedConfirmChannel: email wins; a text is promised only to 
     }),
     "text",
   );
+});
+
+// REQ-1080 (LOOP-007 cycle 2, q2-69): REQ-278 promises "a number that is
+// accepted [when the customer is saved] is a number the send path can text".
+// The save rule (customerPhoneE164) and the send rule (normalizeE164) must
+// agree on every input: same E.164, or both refuse.
+
+const PARITY_INPUTS = [
+  "+1 (843) 555-0124 ext 9",
+  "+1 843 555 0124 x9",
+  "(843) 555-0124 ext 9",
+  "+1 843 555 01249",
+  "(512) 555-1234",
+  "512-555-1234",
+  "5125551234",
+  "1 512 555 1234",
+  "+15125551234",
+  "+525512345678",
+  "+44 20 7946 0958",
+  "123",
+  "555-12",
+  "+12",
+];
+
+for (const raw of PARITY_INPUTS) {
+  Deno.test(`REQ-1080 q2-69 save rule and SMS send rule agree on ${JSON.stringify(raw)}`, () => {
+    // the save rule's answer must equal the send rule's answer
+    assertEquals(customerPhoneE164(raw) ?? undefined, normalizeE164(raw));
+  });
+}
+
+Deno.test("REQ-1080 q2-69 a phone with an extension is not a textable number", () => {
+  assertEquals(customerPhoneE164("+1 (843) 555-0124 ext 9"), null);
+  assertEquals(customerSmsTarget("+1 (843) 555-0124 ext 9").ok, false);
 });
