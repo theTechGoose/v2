@@ -3367,10 +3367,20 @@ export class HandleChatMessage {
       // have changed nothing even when the model wrote prose ("I've added a
       // second option…" over an identical card); its answer, minus the
       // claim, follows.
+      // REQ-931 (LOOP-007 q1-2): "changed" means changed on the card — a
+      // headline that differs only in case/spacing, or job details re-sent
+      // word for word, is no change ("Updated the quote." over an identical
+      // card was the bug).
       const payload = llmResponse.action.payload;
+      const norm = (s: string | undefined) =>
+        (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+      const draftDetails = existingDraft.descriptionByLang ?? {};
       const otherChange =
-        (existingDraft.summary ?? "").trim() !== payload.summary.trim() ||
-        Object.keys(payload.descriptionByLang ?? {}).length > 0;
+        norm(existingDraft.summary) !== norm(payload.summary) ||
+        Object.entries(payload.descriptionByLang ?? {}).some(([l, v]) =>
+          !!v?.trim() &&
+          norm(v) !== norm(draftDetails[l] ?? existingDraft.description)
+        );
       const unchanged = !otherChange && was.length === now.length &&
         was.every((l, i) =>
           l.description.trim() === now[i].description.trim() &&

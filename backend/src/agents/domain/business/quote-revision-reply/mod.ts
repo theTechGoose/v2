@@ -27,15 +27,20 @@ export function asksForDeposit(userText: string): boolean {
 }
 
 /** REQ-585 (demo-loop cycle 4, M4) — "give Derek a second option … so he can
- *  pick one?" / "dale otra opción". A quote has no options: every line on it
+ *  pick one?" / "dale otra opción". REQ-931: also "2 options, she picks one,
+ *  not both". A quote has no options: every line on it
  *  is billed. The model re-sent the same lines and the reply said "Updated
  *  the quote." — so an option ask is answered plainly instead. */
 const OPTION_RE = new RegExp(
   [
     String
-      .raw`(?:second|another|other|2nd|two|three|multiple|different|several)\s+(?:options?|choices?|versions?)`,
+      .raw`(?:second|another|other|2nd|two|three|multiple|different|several|2|3)\s+(?:options?|choices?|versions?)`,
     String.raw`alternatives?`,
-    String.raw`(?:choose|pick|decide)\s+(?:one|between|which)`,
+    // REQ-931 (LOOP-007 q1-2): "she picks one, not both" — any verb form.
+    String
+      .raw`(?:choos(?:e|es|ing)|chose|pick(?:s|ed|ing)?|decid(?:e|es|ing))\s+(?:one|between|which)`,
+    String.raw`not\s+both`,
+    String.raw`one\s+or\s+the\s+other`,
     String.raw`good[\s,/-]+better[\s,/-]+best`,
     String
       .raw`(?:otra|segunda|dos|tres|varias|distintas|2|3)\s+opci(?:[oó]n|ones)`,
