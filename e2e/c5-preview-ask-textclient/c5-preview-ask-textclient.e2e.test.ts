@@ -236,3 +236,112 @@ Deno.test("REQ-982 (LOOP-007 q1-65): a customer whose phone can't receive texts 
       `the card says her number can't receive texts: ${text}`,
     );
   }));
+
+/**
+ * REQ-1123 (LOOP-007 cycle 3, q3-51; AMENDMENT to REQ-982 / REQ-691): Marisol
+ * has (843) 555-0123 on file — the reserved 555-01XX block the send sheet and
+ * the /invoices card already flag. Her payment's /payments card back
+ * ("Payment trail") still offered "Text client". It must not: it shows a
+ * can't-text note (pay-card-cant-text) instead, while a customer with a real
+ * phone keeps Text client.
+ */
+Deno.test("REQ-1123 (LOOP-007 q3, q3-51): the /payments card back offers no Text client for a phone that can't receive texts, and keeps it for a real one", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, "en");
+    const marisol = await post(http, auth, "/api/customers", {
+      name: "Marisol Reserved",
+      phoneNumber: "(843) 555-0123",
+    });
+    expect.eq(
+      typeof marisol.phoneNumber === "string" &&
+        marisol.phoneNumber.replace(/\D/g, "").endsWith("8435550123"),
+      true,
+      `Marisol's phone is on file (${marisol.phoneNumber})`,
+    );
+    const ana = await post(http, auth, "/api/customers", {
+      name: "Ana Textable",
+      phoneNumber: "+15128675309",
+    });
+    const today = iso(0);
+    for (const [c, job] of [[marisol, "Marisol deck"], [ana, "Ana fence"]]) {
+      const inv = await post(http, auth, "/api/invoices", {
+        customerId: c.id,
+        jobName: job,
+        lineItems: [{
+          description: job,
+          quantity: 1,
+          unit: "job",
+          price: 42000,
+        }],
+        amount: 42000,
+        status: "sent",
+        issuedDate: today,
+        dueDate: today,
+      });
+      await post(http, auth, "/api/payments", {
+        invoiceId: inv.id,
+        amount: 42000,
+        method: "check",
+        receivedAt: new Date().toISOString(),
+      });
+    }
+
+    await page.goto("/payments");
+    const card = (name: string) =>
+      page.locator("[data-cy='payment-card']", { hasText: name }).first();
+    await card("Marisol Reserved").waitFor({ timeout: 15_000 });
+    await card("Ana Textable").waitFor({ timeout: 15_000 });
+    // flip both cards to their Payment trail (a click on the front face)
+    // (retry the click until the island has hydrated and the card flips)
+    for (const name of ["Marisol Reserved", "Ana Textable"]) {
+      const c = card(name);
+      const deadline = Date.now() + 15_000;
+      while (!/qcard--flipped/.test(await c.getAttribute("class") ?? "")) {
+        if (Date.now() > deadline) {
+          throw new Error(`${name}'s payment card never flipped`);
+        }
+        await c.locator(".qcard__client-name").click();
+        await page.waitForTimeout(400);
+      }
+    }
+
+    // read both backs in one evaluate (one render, no straddle)
+    const backs = await page.evaluate(() => {
+      const out: Record<string, { text: number; cant: number; foot: string }> =
+        {};
+      for (const c of document.querySelectorAll("[data-cy='payment-card']")) {
+        const name = c.querySelector(".qcard__client-name")?.textContent ?? "";
+        const key = name.includes("Marisol")
+          ? "marisol"
+          : name.includes("Ana")
+          ? "ana"
+          : name;
+        out[key] = {
+          text: c.querySelectorAll("[data-cy='pay-card-text']").length,
+          cant: c.querySelectorAll("[data-cy='pay-card-cant-text']").length,
+          foot: (c.querySelector(".qcard__back")?.textContent ?? "")
+            .replace(/\s+/g, " ").trim(),
+        };
+      }
+      return out;
+    });
+    const m = backs.marisol;
+    const a = backs.ana;
+    expect(!!m && !!a, `both payment cards rendered: ${JSON.stringify(backs)}`);
+    expect.eq(
+      m.text,
+      0,
+      `no "Text client" on Marisol's payment card — (843) 555-0123 can't receive texts: ${m.foot}`,
+    );
+    expect.eq(
+      m.cant,
+      1,
+      `Marisol's payment card says her number can't receive texts (pay-card-cant-text): ${m.foot}`,
+    );
+    expect.eq(
+      a.text,
+      1,
+      `"Text client" stays on Ana's payment card (a real phone): ${a.foot}`,
+    );
+    expect.eq(a.cant, 0, `no can't-text note for Ana: ${a.foot}`);
+  }));
