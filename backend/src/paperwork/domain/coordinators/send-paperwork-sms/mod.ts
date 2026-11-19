@@ -28,6 +28,7 @@ import {
 import { withSendLang } from "#quote-flow/share-link.ts";
 import type { SmsFailureCode } from "#quote-flow/sms-failure.ts";
 import { phoneCantReceiveTexts } from "#quote-flow/sms-number.ts"; // REQ-764
+import { formatUsdCents } from "#quote-flow/money-text.ts"; // REQ-1109
 import {
   customerOnDocument,
   docRef,
@@ -487,12 +488,7 @@ function customerFirst(c: RenderedCustomer | undefined): string | undefined {
 
 function fmtUSD(cents: number | undefined): string {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
-  return `$${
-    (cents / 100).toLocaleString("en-US", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    })
-  }`;
+  return formatUsdCents(cents); // REQ-1109: whole dollars or full cents
 }
 
 /** Roadmap p.8 template:

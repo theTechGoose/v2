@@ -3,6 +3,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
 import type { Invoice, PaymentMethod } from "@paperwork/dto/invoice.ts";
+import { formatUsdCents } from "#quote-flow/money-text.ts"; // REQ-1109
 
 export interface UtteranceInput {
   /** Free-form transcript from a voice memo, e.g. "Got paid $1,200 cash
@@ -165,7 +166,7 @@ export class RecordPaymentFromUtterance {
           customerName = (await this.customers.getOwned(inv.customerId, userId)).name;
         } catch { /* ignore */ }
       }
-      const moneyStr = `$${((inv.amount ?? 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+      const moneyStr = formatUsdCents(inv.amount ?? 0); // REQ-1109
       const installment = inv.installmentIndex && inv.installmentTotal
         ? ` (${inv.installmentIndex}/${inv.installmentTotal})`
         : "";
