@@ -169,6 +169,23 @@ describe("REQ-626 no dead card buttons", () => {
     ) {
       expect(pay).toContain(`data-cy="${cy}"`);
     }
+    // REQ-1123 (LOOP-007 q3, q3-51; AMENDMENT of REQ-626/982): Text client is
+    // offered only for a textable phone; the fallbacks still open the
+    // client's sheet, so every button keeps a real destination.
+    expect(pay).toMatch(
+      /p\.textState === "ok"[\s\S]{0,120}data-cy="pay-card-text"/,
+    );
+    for (
+      const cy of [
+        "pay-card-cant-text",
+        "pay-card-fix-phone",
+        "pay-card-add-phone",
+      ]
+    ) {
+      expect(pay).toMatch(
+        new RegExp(`data-cy="${cy}"\\s+href=\\{clientHref\\}`),
+      );
+    }
   });
 
   test("the field task's Invoiced chip opens that invoice", () => {

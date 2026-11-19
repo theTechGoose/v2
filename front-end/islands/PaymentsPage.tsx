@@ -52,6 +52,11 @@ import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-988
+import {
+  invoiceTextPhone,
+  type TextClientState,
+  textClientState,
+} from "../lib/invoice-text-client.ts"; // REQ-1123
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
 import {
   calendarDaysAgo,
@@ -197,6 +202,10 @@ interface EnrichedPayment extends Payment {
   client: string;
   /** REQ-626: the invoice's customer — "Text client" opens their sheet */
   customerId?: string;
+  /** REQ-1123 (q3-51; AMENDMENT of REQ-982/691): whether the phone a text
+   *  would go to (the shared invoiceTextPhone rule) can take one — "Text
+   *  client" only when "ok", else the same fallback as the /invoices card */
+  textState: TextClientState;
   initials: string;
   invoiceRef: string;
   daysAgo: number;
@@ -277,6 +286,7 @@ function enrich(
   invoices: Map<string, Invoice>,
   customers: Map<string, string>,
   now: Date,
+  customerById: Map<string, Customer>,
 ): EnrichedPayment {
   const inv = invoices.get(p.invoiceId);
   // REQ-988 (q1-71): the payer is the shared "whom does this invoice bill"
@@ -287,6 +297,17 @@ function enrich(
     ? inv.customerId
     : undefined;
   const client = inv ? invoiceClientName(inv, customers) : "—";
+  // REQ-1123 (q3-51): the phone POST /api/invoices/:id/text would dial — the
+  // live customer's, else the invoice's bill-to / snapshot — through the same
+  // REQ-569/982 rule the send sheet and the /invoices card use.
+  const textState = textClientState(
+    inv
+      ? invoiceTextPhone(
+        inv,
+        inv.customerId ? customerById.get(inv.customerId) : undefined,
+      )
+      : null,
+  );
   // REQ-943 (q1-9): local calendar days, NOT clamped — a future-dated
   // payment stays negative so it is never "Today".
   const days = calendarDaysAgo(p.receivedAt, now);
@@ -296,6 +317,7 @@ function enrich(
     ...p,
     client,
     ...(customerId ? { customerId } : {}),
+    textState,
     initials: initialsOf(client),
     // REQ-198: the invoice's own number ("INV-001"); "#ID" when the invoice
     // predates numbering or is no longer on the books.
@@ -377,6 +399,15 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
       ),
     [s.customers],
   );
+  // REQ-1123 (q3-51): the full record, so the card can ask whether the
+  // customer's phone can take a text (names alone lose the phone)
+  const customerById = useMemo(
+    () =>
+      new Map(
+        (Array.isArray(s.customers) ? s.customers : []).map((c) => [c.id, c]),
+      ),
+    [s.customers],
+  );
   const invoiceById = useMemo(
     () =>
       new Map(
@@ -404,7 +435,7 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 
   const now = new Date();
   const enriched = s.payments
-    .map((p) => enrich(lang, p, invoiceById, customerNames, now))
+    .map((p) => enrich(lang, p, invoiceById, customerNames, now, customerById))
     .sort((a, b) => a.daysAgo - b.daysAgo);
 
   // Partition by status. Landed = recorded this month (REQ-926: at once —
@@ -1080,14 +1111,52 @@ function PaymentCard(
           >
             {tFor(lang, "paymentsPage.card.matchInvoice")}
           </a>
-          {/* the client's sheet: Message (a text) and their details */}
-          <a
-            data-cy="pay-card-text"
-            href={clientHref}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {tFor(lang, "paymentsPage.card.textClient")}
-          </a>
+          {
+            /* the client's sheet: Message (a text) and their details.
+            REQ-1123 (q3-51; AMENDMENT of REQ-982/691): only a phone that can
+            take a text gets "Text client"; otherwise the same fallback as the
+            /invoices card, on the customer's sheet. */
+          }
+          {p.textState === "ok"
+            ? (
+              <a
+                data-cy="pay-card-text"
+                href={clientHref}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "paymentsPage.card.textClient")}
+              </a>
+            )
+            : p.textState === "cantText"
+            ? (
+              <a
+                data-cy="pay-card-cant-text"
+                href={clientHref}
+                title={tFor(lang, "asstChat.send.cantText")}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "paymentsPage.card.cantText")}
+              </a>
+            )
+            : p.textState === "invalid"
+            ? (
+              <a
+                data-cy="pay-card-fix-phone"
+                href={clientHref}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "paymentsPage.card.fixPhone")}
+              </a>
+            )
+            : (
+              <a
+                data-cy="pay-card-add-phone"
+                href={clientHref}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {tFor(lang, "paymentsPage.card.addPhone")}
+              </a>
+            )}
         </div>
       </div>
     </article>

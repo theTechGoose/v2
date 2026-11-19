@@ -207,3 +207,74 @@ for (const lang of ["en", "es"] as const) {
     );
   });
 }
+
+/**
+ * REQ-1123 (LOOP-007 cycle 3, q3-51; AMENDMENT to REQ-982 / REQ-691): the
+ * /payments card back ("Payment trail") still offers "Text client" for a
+ * customer whose phone can't take a text — Marisol, (843) 555-0123, the
+ * reserved 555-01XX block that the send sheet and the /invoices card already
+ * flag. PaymentsPage keeps only a customerId → name map, so the phone never
+ * reaches the card and the REQ-691/982 gate (textClientState) is never asked.
+ * The /payments card must ask the same shared rule as the /invoices card.
+ * The browser proof is e2e/c5-preview-ask-textclient (REQ-1123 story).
+ */
+async function paymentsFootSource(): Promise<{ src: string; around: string }> {
+  const src = await Deno.readTextFile(
+    new URL("../islands/PaymentsPage.tsx", import.meta.url),
+  );
+  const at = src.indexOf('"paymentsPage.card.textClient"');
+  assert(at > 0, "the /payments card back still has its Text client link");
+  // the branch that decides Text client on the card back, and its fallbacks
+  return { src, around: src.slice(Math.max(0, at - 900), at + 2000) };
+}
+
+Deno.test("REQ-1123 (LOOP-007 q3, q3-51): the /payments card back gates Text client on the shared text rule (textClientState / canTextClient)", async () => {
+  const { src, around } = await paymentsFootSource();
+  assert(
+    /\b(textClientState|canTextClient)\s*\(|\btextState\b/.test(around),
+    "the /payments card back's Text client is gated on textClientState / canTextClient — today pay-card-text renders unconditionally",
+  );
+  assert(
+    /\binvoiceTextPhone\s*\(/.test(src),
+    "PaymentsPage resolves the phone the backend would text (invoiceTextPhone) — today it keeps only customer names",
+  );
+});
+
+Deno.test("REQ-1123 (LOOP-007 q3, q3-51): a payment whose client can't receive texts shows a can't-text note (pay-card-cant-text) instead of Text client", async () => {
+  const { around } = await paymentsFootSource();
+  assert(
+    around.includes('data-cy="pay-card-cant-text"'),
+    "the /payments card back has a can't-text fallback (data-cy pay-card-cant-text)",
+  );
+});
+
+const PAY_CANT_TEXT_KEYS = [
+  "paymentsPage.card.cantText",
+  "invoicesPage.back.cantText",
+  "asstChat.send.cantText",
+  "sms.fictionalNumber",
+];
+
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-1123 (LOOP-007 q3, q3-51) [${lang}]: the /payments card's can't-text label exists and is not "Text client"`, async () => {
+    const dict = JSON.parse(
+      await Deno.readTextFile(
+        new URL(`../../lang/${lang}.json`, import.meta.url),
+      ),
+    );
+    const { around } = await paymentsFootSource();
+    const key = PAY_CANT_TEXT_KEYS.find((k) => around.includes(`"${k}"`));
+    assert(
+      key,
+      `the /payments card back names a can't-text label key (one of ${
+        PAY_CANT_TEXT_KEYS.join(", ")
+      }) — today its only label is paymentsPage.card.textClient`,
+    );
+    const v = dict[key];
+    assert(typeof v === "string" && v.length > 0, `${lang} ${key}: ${v}`);
+    assert(
+      v !== dict["paymentsPage.card.textClient"],
+      `${lang} ${key} differs from Text client`,
+    );
+  });
+}
