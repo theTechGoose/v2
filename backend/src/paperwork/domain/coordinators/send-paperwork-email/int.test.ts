@@ -466,6 +466,51 @@ Deno.test("REQ-020 NW-29 send-paperwork-email integration: the paid variant of a
   await resetKv();
 });
 
+// REQ-933 — LOOP-007 cycle 1, q1-6: "'Paid' invoice email still asks the customer to pay".
+// The REQ-020 paid email (quote-linked and standalone, EN and ES) must carry no invoice-due
+// copy: no "due <date>" preheader, no "pay whenever" intro, no "View & pay" button.
+for (const lang of ["en", "es"] as const) {
+  for (const linked of [true, false]) {
+    Deno.test(`REQ-933 (q1-6) send-paperwork-email integration: the paid ${linked ? "quote-linked" : "standalone"} invoice email (${lang}) does not ask the customer to pay`, async () => {
+      Deno.env.set("KV_PATH", ":memory:");
+      await resetKv();
+      const { flow, customers, quotes, invoices, identities, sent } = fresh();
+      await seedContractor("u-1");
+      await identities.upsert("u-1", { businessName: "Paid LLC", commsLanguage: lang });
+      const customer = await customers.create("u-1", { name: "Acme", email: "ops@acme.test" });
+      const quote = linked
+        ? await quotes.create("u-1", {
+          summary: "Patio",
+          lineItems: [{ description: "Patio pavers", quantity: 1, unit: "job", price: 2_489_75 }],
+          estimatedTotal: 2_489_75,
+          customerId: customer.id,
+        })
+        : undefined;
+      const invoice = await invoices.create("u-1", {
+        ...(quote ? { quoteId: quote.id } : {}),
+        customerId: customer.id,
+        dueDate: "2026-12-04",
+        amount: 2_489_75,
+        status: "paid",
+        paidAt: "2026-11-18T12:00:00.000Z",
+      });
+      const res = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id, variant: "paid" });
+      assertEquals(res.ok, true);
+      const html = sent[0].htmlBody;
+      const pre = html.match(/<span[^>]*display:\s*none[^>]*>([\s\S]*?)<\/span>/i)?.[1]?.trim() ?? "";
+      const leaks = [
+        ...(lang === "en" ? ["pay whenever", "View &amp; pay"] : ["pagar cuando quieras", "Ver y pagar"])
+          .filter((s) => html.includes(s)).map((s) => `body has "${s}"`),
+        ...((lang === "en" ? /\bdue\b/i : /\bvence\b/i).test(pre) ? [`preheader says due: "${pre}"`] : []),
+      ];
+      assert(leaks.length === 0, `paid ${lang} email still asks to pay: ${leaks.join(" | ")}`);
+      // the button still opens the invoice — just not as a bill to pay
+      assertStringIncludes(html, `/i/${invoice.id}`);
+      await resetKv();
+    });
+  }
+}
+
 // REQ-160 — Raphael, previewing A2Z's October batch in his inbox: "these have the paperwork
 // monster on it not the client logo in this case a2z logo"
 Deno.test("REQ-160 REQ-628 send-paperwork-email: a standalone invoice's email carries the contractor's logo (the public-logo URL) once one is on file, and the business name as a wordmark until then — never the house logo", async () => {
