@@ -57,7 +57,7 @@ import {
   shiftIso,
   todayIso,
 } from "../lib/field.ts";
-import { langSignal, t } from "../lib/i18n.ts";
+import { langSignal, t, tn } from "../lib/i18n.ts";
 import SearchSelect from "./SearchSelect.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
 import type { FieldTasksSeed } from "../lib/field-ssr.ts";
@@ -1414,7 +1414,7 @@ export default function FieldTasksPage(
         <div class="panel" style="margin-bottom:14px">
           <h3 class="panel__title">
             <I d={ICN.hardhat} size={16} />{" "}
-            {t("field.tk.skippedGen", { n: skipped.length })}
+            {tn("field.tk.skippedGen", skipped.length)}
           </h3>
           <div class="alert" style="margin:0 0 10px">
             {t("field.asg.unstaffed")}
