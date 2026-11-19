@@ -2,7 +2,7 @@
  * REQ-630 — the invoice email and text name every online way the business gets paid, the same
  * ways the invoice page offers (shared/payments/pay-links.ts): card first when the business's
  * Stripe is connected, then Venmo / Cash App / PayPal (amount prefilled), Zelle (to copy) and the
- * business's own payment links. Pure: the coordinators pass the identity's methods and whether
+ * business's own payment links; REQ-980 adds the offline ways it accepts after them. Pure: the coordinators pass the identity's methods and whether
  * Stripe is on.
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
@@ -110,6 +110,32 @@ export function payWaysEmailHtml(
     }
   }
   if (!rows.length) return "";
+  // REQ-980 (q1-61): the block is headed "Ways to pay", so the offline ways the business accepts
+  // (check, cash, bank transfer, its own "other" text) follow the online rows — not tappable, but
+  // never missing next to "Payment instructions: Check · Zelle". With nothing online there is no
+  // block at all (REQ-630); the payment instructions alone say how to pay.
+  for (const m of methods) {
+    const handle = m.handle?.trim();
+    const text = m.method === "check"
+      ? handle
+        ? t(lang, "payLinks.email.check", { handle })
+        : t(lang, "payLinks.email.checkPlain")
+      : m.method === "cash"
+      ? t(lang, "payLinks.email.cash")
+      : m.method === "ach"
+      ? handle
+        ? t(lang, "payLinks.email.ach", { handle })
+        : t(lang, "payLinks.email.achPlain")
+      : m.method === "other"
+      ? handle
+      : undefined;
+    if (!text) continue;
+    rows.push(
+      `<div data-pay-way="${m.method}" style="margin-top:8px;padding:12px 16px;border-radius:10px;border:1px dashed ${LINE};color:${INK};font-size:14px;font-weight:700;text-align:center">${
+        esc(text)
+      }</div>`,
+    );
+  }
   return `<div data-pay-ways style="margin-top:20px"><div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${MUTED}">${
     esc(t(lang, "payLinks.email.heading"))
   }</div>${rows.join("")}</div>`;

@@ -675,6 +675,9 @@ function shell(opts: {
   kindLabel: string;
   docNumber: string;
   drafted: string;
+  /** REQ-980: the label over the header date — "Drafted" unless the document says otherwise
+   *  (an invoice's date is the day it was issued, so it reads "Issued"). */
+  dateLabel?: string;
   greeting: string;
   intro: string;
   body: string;
@@ -755,7 +758,7 @@ function shell(opts: {
               </td>
               <td style="vertical-align:top;text-align:right;">
                 <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED};">${
-    escapeHtml(t(lang, "paperworkEmail.shell.draftedLabel"))
+    escapeHtml(opts.dateLabel ?? t(lang, "paperworkEmail.shell.draftedLabel"))
   }</div>
                 <div style="color:${COLOR_INK};font-weight:700;margin-top:4px;">${
     escapeHtml(drafted)
@@ -1807,7 +1810,8 @@ export function renderInvoiceBasicHtml(
   // customer as snapshotted when the bill was issued.
   const docNumber = docRefWithVersion(i, lang);
   const customer = customerOnDocument(i, liveCustomer);
-  const drafted = fmtDate(i.issuedDate ?? new Date().toISOString(), lang);
+  // REQ-980: the header date is the issue date, labelled "Issued" like the itemized invoice email
+  const issued = fmtDate(i.issuedDate ?? i.createdAt, lang);
   const amount = i.amount;
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
@@ -1908,7 +1912,8 @@ export function renderInvoiceBasicHtml(
     }),
     kindLabel: t(lang, "paperworkEmail.invoice.kindLabel"),
     docNumber,
-    drafted,
+    drafted: issued,
+    dateLabel: t(lang, "paperworkEmail.invoice.issuedLabel"),
     greeting: customerGreeting(customer, lang),
     intro: t(lang, "paperworkEmail.invoice.intro", { business: bizLabel(senderBiz, sender, lang) }),
     body,
