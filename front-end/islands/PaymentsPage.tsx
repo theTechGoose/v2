@@ -238,7 +238,23 @@ function noteFor(
   reference?: string,
 ): string {
   const name = client.split(/\s+/)[0];
-  const ref = reference?.trim();
+  // REQ-1122 (q3-50): the line already states the method, so a reference
+  // typed as "Check #1042" (the Mark-paid placeholder's own wording) loses a
+  // leading word naming that method (EN or ES, any case) — never "Check Check
+  // #1042 from Greg.". Methods the line does not name (venmo, zelle, …) keep
+  // the ref as typed; a ref that is only the method word counts as none.
+  // Inlined (not a helper): REQ-960's unit test lifts noteFor on its own.
+  const lead = method === "check"
+    ? /^(?:check|cheque|chq|chk|ck)\b\.?[\s:,-]*/i
+    : method === "cash"
+    ? /^(?:cash|efectivo)\b\.?[\s:,-]*/i
+    : method === "card"
+    ? /^(?:card|tarjeta)\b\.?[\s:,-]*/i
+    : method === "ach"
+    ? /^ach\b\.?[\s:,-]*/i
+    : undefined;
+  const typed = reference?.trim();
+  const ref = (lead ? typed?.replace(lead, "").trim() : typed) || undefined;
   if (method === "check" && ref) {
     return tFor(lang, "paymentsPage.note.checkRef", { name, ref });
   }
