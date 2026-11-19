@@ -13,6 +13,7 @@
  * coordinator SendDecisionAlert picks the recipients and sends.
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { emailRoot } from "@paperwork/domain/business/email-root/mod.ts"; // REQ-1033
 
 export interface AlertCopy {
   subject: string;
@@ -242,8 +243,7 @@ function shell(o: {
       escapeHtml(p)
     }</p>`
   ).join("\n    ");
-  return `<!doctype html>
-<html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
+  return `${emailRoot(o.lang)}<body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     ${top}
     <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${

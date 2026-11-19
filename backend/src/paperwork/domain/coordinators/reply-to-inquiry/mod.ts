@@ -1,6 +1,7 @@
 import { Injectable } from "#danet/core";
 import { clampToSendLanguages } from "#quote-flow/comms-language.ts"; // REQ-925
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { emailRoot } from "@paperwork/domain/business/email-root/mod.ts"; // REQ-1033
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import {
   type QuoteInquiry,
@@ -315,8 +316,7 @@ interface ReplyHtml {
 
 function renderReplyHtml(o: ReplyHtml): string {
   const { lang } = o;
-  return `<!doctype html>
-<html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
+  return `${emailRoot(lang)}<body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
     escapeHtml(o.brand)
