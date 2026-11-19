@@ -577,6 +577,10 @@ Deno.test("REQ-795 Reports: GET /invoices|customers|quotes|payments/export.csv t
       "zelle",
       "100.00",
       "Z-1",
+      // REQ-1129: Status / Charged back / Chargeback fee
+      "received",
+      "",
+      "",
     ]);
     r = await csv(sid, "/payments/export.csv");
     assertEquals(r.lines.length, 3, "no range: both payments");

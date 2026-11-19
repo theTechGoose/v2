@@ -517,6 +517,10 @@ export const PAYMENT_EXPORT_HEADER = [
   "Method",
   "Amount",
   "Reference",
+  // REQ-1129: a charged-back payment stays in the export, marked as such
+  "Status",
+  "Charged back",
+  "Chargeback fee",
 ] as const;
 
 export interface ExportPaymentRow {
@@ -526,6 +530,9 @@ export interface ExportPaymentRow {
   method?: string;
   receivedAt?: string;
   reference?: string;
+  /** REQ-926: stamped when the payment was charged back */
+  reversedAt?: string;
+  reversedFeeCents?: number;
 }
 
 export function paymentExportCsv<P extends ExportPaymentRow>(
@@ -552,6 +559,9 @@ export function paymentExportCsv<P extends ExportPaymentRow>(
         p.method ?? "",
         dollars(p.amount),
         p.reference ?? "",
+        p.reversedAt ? "charged back" : "received",
+        isoDate(p.reversedAt),
+        p.reversedAt ? dollars(p.reversedFeeCents) : "",
       ];
     }),
   ]);

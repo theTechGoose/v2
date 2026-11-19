@@ -28,6 +28,7 @@ import { paidHow } from "../../shared/documents/paid-how.ts"; // REQ-928
 import Backdrop from "../components/Backdrop.tsx";
 import MarkPaidDialog from "../components/MarkPaidDialog.tsx"; // REQ-930
 import { confirmPaymentInit } from "../lib/mark-paid.ts"; // REQ-930
+import { presetRange, reportExportHref } from "../lib/reports-export.ts"; // REQ-1129
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   type Payment,
@@ -642,10 +643,12 @@ function PaymentsHero(
     setRecordOpen(true);
   }, [initialRecordId, recordOptions]);
   const today = new Date();
-  const exportHref =
-    `/api/invoices/export.csv?year=${today.getFullYear()}&month=${
-      today.getMonth() + 1
-    }`;
+  // REQ-1129: this month's PAYMENTS (the Reports page's payments slice), not
+  // the paid-invoices export — part payments and charged-back ones included.
+  const exportHref = reportExportHref(
+    "payments",
+    presetRange("thisMonth", today),
+  );
   // UX-35: the hero chip month renders in the page language ("PAGOS ·
   // AGOSTO"), never the en-US month inside the Spanish UI.
   const MONTH_KEYS = [
