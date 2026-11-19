@@ -12,6 +12,7 @@ import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
+import { invoiceBalance } from "#documents/versions.ts"; // REQ-1028
 import {
   customerOnDocument,
   docRef,
@@ -464,7 +465,12 @@ export function composeReminderCopy(opts: {
   const lang = opts.lang === "es" ? "es" : "en";
   const hi = customerFirst ? t(lang, "paymentReminder.greeting", { name: customerFirst }) : "";
   const sender = senderFirst ?? t(lang, "paymentReminder.senderFallback");
-  const amount = `$${((invoice.amount ?? 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  // REQ-1028 (LOOP-007 q2-9): a reminder asks for what is still owed — the
+  // open balance once part is paid, never the full total again.
+  const open = invoice.status === "paid" || invoice.paidAt
+    ? (invoice.amount ?? 0)
+    : invoiceBalance(invoice.amount, invoice.paidCents).balanceCents;
+  const amount = `$${(open / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
   const tone = day < 0
     ? t(lang, "paymentReminder.tone.beforeDue", { businessName })
     : day === 0

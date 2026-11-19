@@ -213,7 +213,8 @@ Deno.test("REQ-727 (c4-M16) preview-invoice-send: it reads as the send will (iss
     "vence 27 de noviembre de 2026",
     "the subject carries the due date the send will stamp",
   );
-  assertStringIncludes(p.email!.html, ">Enviado<", "the draft reads as issued");
+  // REQ-1028 (q2-20): a factura is "Enviada" (/i's word), not the quote's "Enviado"
+  assertStringIncludes(p.email!.html, ">Enviada<", "the draft reads as issued");
   assert(!p.email!.html.includes(">Borrador<"), "never 'Draft' in the email");
   const after = await ctx.invoices.getOwned(draft.id, "u-1");
   assertEquals(after.status, "draft", "nothing was issued");
