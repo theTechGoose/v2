@@ -13,9 +13,9 @@ import { AgentConversationStore } from "@agents/domain/data/agent-conversation-s
 import { readyToSendQuoteIds } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import type { Quote, QuoteCard, QuoteStage } from "@paperwork/dto/quote.ts";
 import type { View } from "@paperwork/dto/view.ts";
+import { mergeOpensByHour } from "@analytics/domain/business/merge-opens/mod.ts";
 
 const MS_PER_DAY = 86_400_000;
-const HOUR_MS = 3_600_000;
 
 /**
  * BuildQuoteCards — single source of truth for /quotes row enrichment.
@@ -101,13 +101,11 @@ function buildOne(
   const myViews = allViews.filter((v) => v.paperworkId === q.id)
     .sort((a, b) => a.viewedAt.localeCompare(b.viewedAt));
 
-  // Dedupe to ≤1 / 60-minute bucket
-  const opensBuckets: number[] = [];
-  for (const v of myViews) {
-    const t = new Date(v.viewedAt).getTime();
-    const last = opensBuckets[opensBuckets.length - 1];
-    if (last == null || t - last >= HOUR_MS) opensBuckets.push(t);
-  }
+  // Dedupe to ≤1 / 60-minute bucket — REQ-955: the same rule as the card's
+  // timeline (GET /quotes/:id/opens), so the count and the rows agree.
+  const opensBuckets = mergeOpensByHour(myViews).map((v) =>
+    new Date(v.viewedAt).getTime()
+  );
   const opens = opensBuckets.length;
   const lastOpenAt = myViews.at(-1)?.viewedAt ?? null;
 

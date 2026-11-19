@@ -105,10 +105,13 @@ export default function QuoteCard(
 ) {
   const [flipped, setFlipped] = useState(flipOnMount);
   const [copied, setCopied] = useState(false);
-  // REAL opens, fetched lazily on first flip. Until loaded (or when there
-  // are none) the timeline shows the honest "no opens" copy — never a
-  // fabricated seed entry (P-15).
-  const [realOpens, setRealOpens] = useState<OpenEvent[] | null>(null);
+  // REAL opens, fetched lazily on first flip — never a fabricated seed entry
+  // (P-15). REQ-955 (LOOP-007 q1-30): "not loaded yet" (null) and "the load
+  // failed" ("error") are their own states, never read as "no opens": the
+  // "no opens" copy is only for a quote whose count (q.opens) is 0.
+  const [realOpens, setRealOpens] = useState<OpenEvent[] | null | "error">(
+    null,
+  );
 
   useEffect(() => {
     if (!flipped || realOpens !== null || q.opens === 0) return;
@@ -119,7 +122,7 @@ export default function QuoteCard(
         setRealOpens((r?.opens ?? []).map((o) => toOpenEvent(o, lang)));
       })
       .catch(() => {
-        if (alive) setRealOpens([]);
+        if (alive) setRealOpens("error");
       });
     return () => {
       alive = false;
@@ -231,8 +234,16 @@ export default function QuoteCard(
     : tFor(lang, quoteCta(q.stage, q.opens).key);
   const showOpens = q.stage !== "draft" && q.stage !== "undelivered" &&
     q.opens > 0;
-  const opens = realOpens ?? [];
+  const opens = Array.isArray(realOpens) ? realOpens : null;
   const reading = readingFor(q, opens, lang);
+  // REQ-955: what the timeline says when it has no rows to show. Only a quote
+  // with no opens says so; one that was opened says its history is loading,
+  // or that it could not be loaded.
+  const timelineNote = q.opens === 0
+    ? tFor(lang, "quoteCard.back.noOpens")
+    : realOpens === null
+    ? tFor(lang, "quoteCard.back.opensLoading")
+    : tFor(lang, "quoteCard.back.opensError");
 
   function onCardClick(e: MouseEvent) {
     if (flipped) return;
@@ -382,7 +393,7 @@ export default function QuoteCard(
         </div>
         <div class="qcard__back-body">
           {sendNote && flipped && noteEl}
-          {opens.length > 0
+          {opens && opens.length > 0
             ? (
               <div class="qcard__timeline">
                 {opens.map((o, i) => (
@@ -399,8 +410,12 @@ export default function QuoteCard(
               </div>
             )
             : (
-              <div class="qcard__topen-meta" style="padding:8px 0">
-                {tFor(lang, "quoteCard.back.noOpens")}
+              <div
+                class="qcard__topen-meta"
+                style="padding:8px 0"
+                data-cy="qcard-opens-note"
+              >
+                {timelineNote}
               </div>
             )}
           <p class="qcard__read">
