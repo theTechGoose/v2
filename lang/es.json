@@ -3567,7 +3567,7 @@
   "welcome.insurance.provider": "Aseguradora",
   "welcome.insurance.providerInvalid": "Escribe el nombre de la aseguradora — al menos 2 letras, hasta 80 caracteres.",
   "welcome.insurance.question": "¿Tienes seguro?",
-  "welcome.insurance.why": "Te permite adjuntar comprobante de seguro a tus cotizaciones. Si lo saltas ahora, te lo volveremos a pedir la próxima vez — tu panel lo deja en tu lista de configuración.",
+  "welcome.insurance.why": "Los clientes suelen preguntar quién te asegura antes de aceptar tus cotizaciones. Agrega tu aseguradora ahora; puedes subir tu certificado de seguro (COI) cuando quieras en Configuración. Si lo saltas ahora, te lo volveremos a pedir la próxima vez — tu panel lo deja en tu lista de configuración.",
   "welcome.loadError": "No pudimos cargar tu perfil. Actualiza para intentar de nuevo.",
   "welcome.logo.choose": "Elegir una imagen",
   "welcome.logo.error": "Error al subir — prueba con otra imagen.",
