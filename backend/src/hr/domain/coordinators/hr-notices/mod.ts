@@ -12,6 +12,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { appUrl } from "@users/domain/business/app-url/mod.ts";
+import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import {
   DEFAULT_SETTINGS,
   HireStore,
@@ -93,15 +94,29 @@ export class HrNotices {
     }
   }
 
+  /** REQ-1003 — the business's From (REQ-628): its name as the display name, its alias as the
+   *  address, so the hire's inbox names who is hiring them, never DocuMonster */
+  private async fromFor(userId: string, companyName: string): Promise<string> {
+    const identity = await this.identities.get(userId).catch(() => null);
+    return businessFrom({ alias: identity?.emailAlias, name: companyName });
+  }
+
   private async mail(
     to: string,
     subject: string,
     htmlBody: string,
     what: string,
+    sender: { from: string; replyTo?: string },
   ): Promise<boolean> {
     if (!to.trim()) return false;
     try {
-      const r = await this.email.send({ to, subject, htmlBody });
+      const r = await this.email.send({
+        to,
+        subject,
+        htmlBody,
+        from: sender.from,
+        ...(sender.replyTo?.trim() ? { replyTo: sender.replyTo.trim() } : {}),
+      });
       if (!r.ok) log(`${what}: email to ${to} failed: ${r.reason}`);
       return r.ok;
     } catch (e) {
@@ -136,13 +151,15 @@ export class HrNotices {
     const subjectKey = kind === "invite"
       ? "hr.email.inviteSubject"
       : "hr.email.reminderSubject";
+    const headlineKey = kind === "invite"
+      ? "hr.email.inviteHeadline"
+      : "hr.email.reminderHeadline";
+    const from = await this.fromFor(hire.userId, s.companyName);
     const email = await this.mail(
       hire.email,
       t(lang, subjectKey, v),
       `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-<h2 style="margin:0 0 8px">${
-        escapeHtml(t(lang, "hr.email.inviteHeadline"))
-      }</h2>
+<h2 style="margin:0 0 8px">${escapeHtml(t(lang, headlineKey, v))}</h2>
 <p>${escapeHtml(t(lang, bodyKey, v))}</p>
 <p><a href="${
         escapeHtml(v.url)
@@ -159,6 +176,8 @@ ${
       }
 </div>`,
       `${kind} ${hire.id}`,
+      // a reply from the hire reaches HR, not the house inbox
+      { from, replyTo: s.hrEmail },
     );
     return { sms, email };
   }
@@ -188,6 +207,7 @@ ${
       }</a></p>
 </div>`,
       `complete ${hire.id}`,
+      { from: await this.fromFor(hire.userId, s.companyName) },
     );
   }
 

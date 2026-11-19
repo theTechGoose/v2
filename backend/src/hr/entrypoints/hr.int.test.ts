@@ -380,7 +380,9 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
       assertStringIncludes(sms, `/sign/${casey.body.token}`);
       const email = log.lines.find((l) => l.includes("[email:dev-mode]"));
       assert(email, "the email went out");
-      assertStringIncludes(email, "MONSTERIZED");
+      // REQ-1003: From and subject name the business (this pinned the old "MONSTERIZED" subject)
+      assertStringIncludes(email, 'from="Monster Reservations Group"');
+      assertStringIncludes(email, 'Monster Reservations Group: sign your new-hire paperwork');
 
       // the department's docs change AFTER creation: the in-flight packet keeps its three
       await call("PUT", `/hr/departments/${act.body.id}`, {

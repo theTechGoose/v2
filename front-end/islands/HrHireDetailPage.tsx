@@ -221,7 +221,11 @@ export default function HrHireDetailPage({ id }: { id: string }) {
         <section class="panel">
           <h2 class="panel__title">{t("hr.detail.preview.email")}</h2>
           <div class="hr-email-prev">
-            <strong>{t("hr.email.inviteSubject")}</strong>
+            <strong>
+              {t("hr.email.inviteSubject", {
+                company: company || "the team",
+              })}
+            </strong>
             <p style="margin:6px 0 0">
               {t("hr.email.inviteBody", {
                 first: h.firstName,
