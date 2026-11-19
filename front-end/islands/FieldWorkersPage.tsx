@@ -22,8 +22,10 @@ import FieldHead from "../components/FieldHead.tsx";
 import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
+  cellDigits,
   fmtCell,
   fmtDayRange,
+  PHONE_BOX_MAXLEN,
   PHONE_PLACEHOLDER,
   todayIso,
 } from "../lib/field.ts";
@@ -552,8 +554,7 @@ export default function FieldWorkersPage(
               inputMode="numeric"
               autocomplete="off"
               placeholder={PHONE_PLACEHOLDER}
-              maxlength={10}
-              pattern="\d{10}"
+              maxlength={PHONE_BOX_MAXLEN}
               aria-invalid={phoneErr ? "true" : undefined}
               aria-describedby={phoneErr ? "wk-phone-error" : undefined}
               onBlur={() => touch("phone")}
@@ -561,10 +562,9 @@ export default function FieldWorkersPage(
               onInput={(e) => {
                 setForm({
                   ...form,
-                  phone: (e.currentTarget as HTMLInputElement).value.replace(
-                    /\D/g,
-                    "",
-                  ).slice(0, 10),
+                  phone: cellDigits(
+                    (e.currentTarget as HTMLInputElement).value,
+                  ),
                 });
                 // a new number clears the refusal of the old one
                 if (addErr?.field === "phone") setAddErr(null);

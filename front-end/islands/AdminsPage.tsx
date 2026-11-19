@@ -12,7 +12,12 @@ import {
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import {
+  cellDigits,
+  fmtCell,
+  PHONE_BOX_MAXLEN,
+  PHONE_PLACEHOLDER,
+} from "../lib/field.ts";
 import { langSignal, t, tn } from "../lib/i18n.ts";
 import {
   copyShareText,
@@ -68,6 +73,8 @@ export default function AdminsPage() {
   const [inviteErr, setInviteErr] = useState<string | null>(null);
   /** REQ-632: the name field was left (blurred) — from then on an empty one says so */
   const [nameTouched, setNameTouched] = useState(false);
+  /** REQ-1120: the phone box was left (blurred) or Invite pressed — from then on a short number says so */
+  const [phoneTouched, setPhoneTouched] = useState(false);
   // REQ-523 (demo m16): the invited number, and whether the text went out
   // REQ-601 (cycle 4, M12): when it did not, the sign-in link + the invite text to share
   const [sent, setSent] = useState<
@@ -111,10 +118,16 @@ export default function AdminsPage() {
   const nameOk = inviteName(form.name) !== null;
   const canInvite = phoneOk && nameOk && !inviting;
   const showNameErr = nameTouched && !nameOk;
+  const showPhoneErr = phoneTouched && !phoneOk;
 
   async function submit(e: Event) {
     e.preventDefault();
-    if (!canInvite) return;
+    if (!canInvite) {
+      // REQ-1120: never silently inert — say which box is wrong
+      setPhoneTouched(true);
+      setNameTouched(true);
+      return;
+    }
     setInviting(true);
     setInviteErr(null);
     setSent(null);
@@ -128,6 +141,7 @@ export default function AdminsPage() {
           });
       setForm(BLANK);
       setNameTouched(false);
+      setPhoneTouched(false);
       setSent({
         phone: fmtCell(made.phoneNumber),
         texted: texted === true,
@@ -187,17 +201,32 @@ export default function AdminsPage() {
                   inputMode="numeric"
                   autocomplete="off"
                   placeholder={PHONE_PLACEHOLDER}
-                  maxlength={10}
-                  pattern="\d{10}"
+                  maxlength={PHONE_BOX_MAXLEN}
+                  aria-invalid={showPhoneErr ? "true" : undefined}
+                  aria-describedby={showPhoneErr
+                    ? "adm-phone-error"
+                    : undefined}
                   value={form.phone}
                   onInput={(e) =>
                     setForm({
                       ...form,
-                      phone: (e.currentTarget as HTMLInputElement).value
-                        .replace(/\D/g, "")
-                        .slice(0, 10),
+                      phone: cellDigits(
+                        (e.currentTarget as HTMLInputElement).value,
+                      ),
                     })}
+                  onBlur={() => setPhoneTouched(true)}
                 />
+                {showPhoneErr && (
+                  <span
+                    class="alert"
+                    id="adm-phone-error"
+                    data-cy="adm-phone-error"
+                    role="alert"
+                    style="display:block;margin:6px 0 0"
+                  >
+                    {t("admins.err.bad_phone")}
+                  </span>
+                )}
               </label>
               <label class="field">
                 <span>

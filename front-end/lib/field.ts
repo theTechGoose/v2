@@ -232,6 +232,23 @@ export function splitEm(
  */
 export const PHONE_PLACEHOLDER = "(555) 123-4567";
 
+/**
+ * REQ-1120 (LOOP-007 q3-48/q3-49) — the room a phone box gives raw text: enough for its own
+ * placeholder and for "+1 (555) 123-4567", so the browser's maxlength cut never runs before
+ * cellDigits gets to strip the formatting.
+ */
+export const PHONE_BOX_MAXLEN = 20;
+
+/**
+ * REQ-1120 — what a phone box keeps of what was typed or pasted: the digits, a leading US "1"
+ * dropped from an 11-digit number, at most 10. "555-123-4567", "(555) 123-4567" and
+ * "+1 (555) 123-4567" all keep "5551234567".
+ */
+export function cellDigits(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  return (d.length === 11 && d.startsWith("1") ? d.slice(1) : d).slice(0, 10);
+}
+
 /** last 10 digits as (555) 123-4567; anything else as typed */
 export function fmtCell(digits: string): string {
   const d = digits.replace(/\D/g, "").slice(-10);
