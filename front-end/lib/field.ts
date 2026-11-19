@@ -177,6 +177,27 @@ export function addedNotice(
   };
 }
 
+/**
+ * REQ-1006 (LOOP-007 q1-92) — the flash after a task is deleted. DELETE /field/tasks/:id
+ * answers `texted` (REQ-171; false while the account's fieldTexts flag is off, REQ-177): a
+ * texted customer is named as told; an untold customer whose visit is today or later is named
+ * as NOT told, so the owner knows to reach them; a past visit needs no notice.
+ */
+export function deletedNotice(
+  texted: boolean | undefined,
+  taskDate: string,
+  today: string,
+  customer: string,
+): { key: string; vars: Record<string, string> } {
+  if (texted === true) {
+    return { key: "field.tk.deletedTexted", vars: { customer } };
+  }
+  if (taskDate >= today) {
+    return { key: "field.tk.deletedNotTexted", vars: { customer } };
+  }
+  return { key: "field.tk.deleted", vars: {} };
+}
+
 /** Split "Each client's <em>recurring</em> maintenance." into text and the emphasised run. */
 export function splitEm(
   s: string,

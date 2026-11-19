@@ -4251,6 +4251,8 @@
   "field.tk.deleteAsk": "¿Eliminar esta tarea?",
   "field.tk.deleteYes": "Sí, eliminar",
   "field.tk.deleted": "Tarea eliminada",
+  "field.tk.deletedTexted": "Tarea eliminada. Se le envió un mensaje a {customer} avisando que se canceló",
+  "field.tk.deletedNotTexted": "Tarea eliminada. No se le avisó a {customer}; avísele usted",
   "field.tk.moved": "Movida a {name}",
   "field.tk.firstDay": "Primer día",
   "field.tk.lastDay": "Último día",

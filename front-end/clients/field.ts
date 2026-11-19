@@ -604,9 +604,9 @@ export const fieldClient = {
     },
     opts?: ApiOptions,
   ) => api.post<{ moved: number }>("/field/tasks/reassign", b, opts),
-  /** REQ-163 */
+  /** REQ-163; `texted` — REQ-171/177, read by REQ-1006 */
   deleteTask: (id: string, opts?: ApiOptions) =>
-    api.delete<{ ok: true }>(`/field/tasks/${id}`, opts),
+    api.delete<{ ok: true; texted?: boolean }>(`/field/tasks/${id}`, opts),
   /** REQ-164 */
   createTask: (b: OneOffTaskInput, opts?: ApiOptions) =>
     api.post<TaskView>("/field/tasks", b, opts),
