@@ -1848,7 +1848,7 @@ function Messages(
             data-cy="cws-msg-email"
             href={`mailto:${email}`}
           >
-            ✉️ {tFor(lang, "customerWs.msg.email")}
+            <Icon name="mail" size={14} /> {tFor(lang, "customerWs.msg.email")}
           </a>
         )}
       </div>

@@ -262,9 +262,18 @@ Deno.test("REQ-784 d12: the status reads sent / not emailed / not texted, and th
 });
 
 Deno.test("REQ-784 d12 (REQ-176 amendment): the sidebar's root has Outbox → /messages, and /messages renders the outbox instead of redirecting to the assistant", () => {
+  // REQ-914 (amendment): Outbox moved from the root into the root's
+  // Communications folder — still one tap from the root menu, same /messages.
   const root = viewAt(NAV, []).items;
-  const outbox = root.find((n) => n.id === "outbox");
-  assert(outbox && "href" in outbox, "Outbox is a root row");
+  const comms = root.find((n) => n.id === "communications");
+  assert(comms && "items" in comms, "Communications is a root folder");
+  const outbox = (comms as { items: { id: string }[] }).items.find((n) =>
+    n.id === "outbox"
+  );
+  assert(
+    outbox && "href" in outbox,
+    "Outbox is in the root's Communications folder",
+  );
   assertEquals((outbox as { href: string }).href, "/messages");
   const route = Deno.readTextFileSync(
     new URL("../routes/messages/index.tsx", import.meta.url),
@@ -418,5 +427,9 @@ Deno.test("REQ-1037 q2-21: the Outbox table row and the opened message both prin
   const detailHtml = renderToString(
     <Detail message={message} lang="es" timeZone="America/Chicago" />,
   );
-  assertStringIncludes(detailHtml, "2:01 a. m.", "the detail's time is Central");
+  assertStringIncludes(
+    detailHtml,
+    "2:01 a. m.",
+    "the detail's time is Central",
+  );
 });

@@ -20,6 +20,7 @@ type Name =
   | "bell"
   | "search"
   | "send"
+  | "mail"
   | "mic"
   | "image"
   | "check"
@@ -80,6 +81,13 @@ const PATHS: Record<Name, JSX.Element> = {
     </>
   ),
   send: <path d="M22 2L11 13M22 2l-7 20-4-9-9-4z" />,
+  // REQ-1076 (q2-64): the no-phone card's Email action
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
+    </>
+  ),
   mic: (
     <>
       <rect x="9" y="3" width="6" height="12" rx="3" />
