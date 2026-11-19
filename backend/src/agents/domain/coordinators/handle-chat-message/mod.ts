@@ -305,8 +305,15 @@ function alternativesLine(
     count: alts.length,
     first: first.label,
     firstPrice: chatMoney(first.cents),
+    // REQ-1096 (LOOP-007 q3-21): an add-on option ("option 2: also … $325",
+    // "better = deck + gutters") is named by what it adds — "+$325" — never
+    // by a sum the contractor didn't type
     others: upperFirst(
-      others.map((o) => `${o.label} (${chatMoney(o.cents)})`).join(", "),
+      others.map((o) =>
+        `${o.label} (${
+          o.extraCents ? `+${chatMoney(o.extraCents)}` : chatMoney(o.cents)
+        })`
+      ).join(", "),
     ),
   });
 }
