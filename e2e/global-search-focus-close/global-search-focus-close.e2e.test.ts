@@ -141,12 +141,6 @@ Deno.test("REQ-976 q1-57: typing in the header search and clicking the area-code
         await route.continue();
       },
     );
-    const searched = page.waitForResponse(
-      (r) =>
-        new URL(r.url()).pathname.endsWith("/search") &&
-        new URL(r.url()).searchParams.get("q") === "512",
-      { timeout: 15_000 },
-    );
     // type, then click the area-code field while the search is in flight
     await page.locator(INPUT).fill("512");
     await page.locator(AREA_CODE).click();
@@ -160,6 +154,14 @@ Deno.test("REQ-976 q1-57: typing in the header search and clicking the area-code
     expect(
       await panelGoneWithin(page, 2_000),
       "precondition: the click outside closed the search panel",
+    );
+    // armed only now: the held request cannot answer before release(), and a
+    // timer started before fill+click+the 2 s wait expired on a loaded host
+    const searched = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname.endsWith("/search") &&
+        new URL(r.url()).searchParams.get("q") === "512",
+      { timeout: 15_000 },
     );
     release();
     await searched; // the late answer for '512' has landed
