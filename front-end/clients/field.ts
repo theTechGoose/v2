@@ -424,6 +424,8 @@ export interface WorkerMe {
   name: string;
   /** REQ-840 — "foreman" for the account foreman or a worker who leads their crew */
   role: "worker" | "foreman";
+  /** REQ-1008 — true when the foreman power is only their own crew's (a crew lead), not the account-wide role */
+  crewLead?: true;
   /** REQ-285 — the language the worker's screen opens in (theirs, else the owner's) */
   language?: "en" | "es";
   /** REQ-840 — the crew, when in one */

@@ -1196,7 +1196,10 @@ export default function WorkerScreen(
             {me.role === "foreman" && (
               <>
                 {" "}
-                <span class="chip chip--amber">{t("worker.foreman")}</span>
+                {/* REQ-1008 — the account-wide role and a crew lead are different powers */}
+                <span class="chip chip--amber">
+                  {t(me.crewLead ? "worker.crewLead" : "worker.foreman")}
+                </span>
               </>
             )}
             {/* REQ-840 — the crew they go out with */}
