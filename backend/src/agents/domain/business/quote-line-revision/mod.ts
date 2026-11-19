@@ -356,6 +356,163 @@ export function dropRemovedLineBullets(
 }
 
 // ---------------------------------------------------------------------------
+// REQ-1095 (LOOP-007 q3-20): a line taken off takes its name out of the
+// quote's title and summary too. Q-002 "Pintura interior y drywall" lost its
+// drywall line, but Version 2's email and text still read "… Versión 2 —
+// Pintura interior y drywall".
+// ---------------------------------------------------------------------------
+
+export interface HeadingText {
+  jobName?: string;
+  jobNameByLang?: Record<string, string>;
+  summary?: string;
+  summaryByLang?: Record<string, string>;
+}
+
+export interface HeadingDrop extends HeadingText {
+  /** Some heading (or a translation of one) changed. */
+  changed: boolean;
+  /** Names a heading still mentions beside a line that stays — left for the owner. */
+  unsure: string[];
+}
+
+/** What joins a title's parts: "A, B and C", "A y B", "A & B", "A + B". */
+const HEADING_JOIN_RE =
+  /(\s*,\s*(?:(?:and|y|e)\s+)?|\s+(?:and|y|e|plus)\s+|\s*[&+]\s*)/iu;
+/** What sets the customer off a summary: "… — Jose Ramirez". */
+const HEADING_TAIL_RE = /(\s+[—–-]\s+.*)$/u;
+
+function significant(text: string): string[] {
+  return words(lineKey(text)).filter((w) => w.length >= 3);
+}
+
+/**
+ * One heading with every part that names only a removed line dropped:
+ * "Pintura interior y drywall" minus "Reparación de drywall en la cocina" →
+ * "Pintura interior". A part that names a removed line AND a line that stays
+ * is left (its name goes to `unsure`), and so is a heading every part of
+ * which would go — that title is not for code to rewrite.
+ */
+function retitleOne(
+  text: string,
+  removed: readonly { first: string; words: Set<string> }[],
+  keptWords: Set<string>,
+  unsure: string[],
+): string {
+  const tail = text.match(HEADING_TAIL_RE);
+  const head = tail ? text.slice(0, tail.index) : text;
+  const tokens = head.split(HEADING_JOIN_RE);
+  // tokens: part, joiner, part, joiner, part …
+  const parts = tokens.filter((_, i) => i % 2 === 0);
+  const drop = new Set<number>();
+  parts.forEach((part, k) => {
+    const ws = significant(part);
+    const hit = removed.find((r) => ws.some((w) => r.words.has(w)));
+    if (!hit) return;
+    if (ws.some((w) => keptWords.has(w))) {
+      unsure.push(hit.first);
+      return;
+    }
+    drop.add(k);
+  });
+  if (drop.size === 0) return text;
+  if (drop.size === parts.length) {
+    for (const k of drop) {
+      const ws = significant(parts[k]);
+      const hit = removed.find((r) => ws.some((w) => r.words.has(w)));
+      if (hit) unsure.push(hit.first);
+    }
+    return text;
+  }
+  // "A, B and C" keeps its shape: the first joiner between the parts that
+  // stay, the last one ("and") before the final part.
+  const keptParts = parts.filter((_, k) => !drop.has(k));
+  const firstJoin = tokens[1] ?? ", ";
+  const lastJoin = tokens[tokens.length - 2] ?? firstJoin;
+  const joined = keptParts.map((part, k) =>
+    k === 0 ? part : (k === keptParts.length - 1 ? lastJoin : firstJoin) + part
+  ).join("");
+  return joined.trim() + (tail ? tail[1] : "");
+}
+
+/**
+ * The job name and summary, every language, without the parts that name a
+ * removed line. `removed` holds, per removed line, the names it goes by;
+ * `kept` are the lines that stay. A translation the base text changed in but
+ * that names nothing removed by itself is cleared (stale — the next
+ * translate run refills it from the new base text).
+ */
+export function retitleAfterRemoval(
+  heading: HeadingText,
+  removed: readonly { names: readonly string[] }[],
+  kept: readonly RevisableLine[],
+): HeadingDrop {
+  const unsure: string[] = [];
+  const keptWords = new Set(
+    kept.flatMap((l) => [
+      l.description,
+      ...Object.values(l.descriptionByLang ?? {}),
+    ]).flatMap(significant),
+  );
+  const gone = removed.map((r) => ({
+    first: r.names[0] ?? "",
+    words: new Set(
+      r.names.flatMap(significant).filter((w) => !keptWords.has(w)),
+    ),
+  })).filter((r) => r.words.size > 0);
+  const out: HeadingDrop = { changed: false, unsure };
+  if (gone.length === 0) return out;
+
+  const field = (
+    base: string | undefined,
+    byLang: Record<string, string> | undefined,
+    set: (base: string | undefined, byLang: Record<string, string>) => void,
+  ) => {
+    let changed = false;
+    let next = base;
+    if (typeof base === "string") {
+      next = retitleOne(base, gone, keptWords, unsure);
+      changed = next !== base;
+    }
+    const langs: Record<string, string> = {};
+    let langsChanged = false;
+    for (const [lang, text] of Object.entries(byLang ?? {})) {
+      if (typeof text !== "string") continue;
+      if (typeof base === "string" && text.trim() === base.trim()) {
+        langs[lang] = next!;
+        langsChanged ||= next !== base;
+        continue;
+      }
+      const own = retitleOne(text, gone, keptWords, unsure);
+      if (own !== text) {
+        langs[lang] = own;
+        langsChanged = true;
+        continue;
+      }
+      if (changed) {
+        langsChanged = true; // stale: still the old heading's translation
+        continue;
+      }
+      langs[lang] = text;
+    }
+    if (changed || langsChanged) {
+      out.changed = true;
+      set(next, langs);
+    }
+  };
+  field(heading.jobName, heading.jobNameByLang, (b, l) => {
+    if (b !== undefined) out.jobName = b;
+    if (heading.jobNameByLang) out.jobNameByLang = l;
+  });
+  field(heading.summary, heading.summaryByLang, (b, l) => {
+    if (b !== undefined) out.summary = b;
+    if (heading.summaryByLang) out.summaryByLang = l;
+  });
+  out.unsure = [...new Set(unsure)];
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Reading a reprice out of plain words ("change plumbing fixtures to $1,300").
 // The demo's model sent exactly that sentence to change_order as "Adjust
 // plumbing fixtures to $1,300" (+$150), and "change order for Dana on Q-001:

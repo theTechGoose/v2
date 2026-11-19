@@ -58,6 +58,9 @@ export interface ChatChangeOrderInput {
    *  A line by that name already on the job is repriced to it (an invoiced
    *  job's change order carries the difference); with none, it is added. */
   setsLinePrice?: boolean;
+  /** REQ-1095 (LOOP-007 q3-19): the quotes this turn's reply already told
+   *  the owner to publish the next Version of — the tip is not said twice. */
+  publishHintSaidFor?: readonly string[];
 }
 
 /** REQ-315 (m49): outcomes that name a quote carry its number too, so the
@@ -172,8 +175,13 @@ export class ApplyChatChangeOrder {
       const c = customers.find((c) => c.id === q.customerId);
       return c?.name ?? q.customerSnapshot?.name ?? "";
     };
+    // REQ-1095: an unsigned quote's working title is its pending one.
     const labelOf = (q: Quote): string =>
-      [q.number, q.jobName || q.summary].filter(Boolean).join(" ");
+      [
+        q.number,
+        (q.pendingRevision?.jobName as string | undefined) || q.jobName ||
+        q.summary,
+      ].filter(Boolean).join(" ");
 
     const target = pickChangeOrderTarget({
       quotes: quotes.map((q) => ({
@@ -495,16 +503,23 @@ export class ApplyChatChangeOrder {
         estimatedTotal: totalOf(lineItems),
       });
       return {
+        // REQ-1095 (q3-19): one publish tip per turn — a revise this turn
+        // already said it for the same Version.
         text: repricedVars
           ? t(
             lang,
-            "chatCoordinator.changeOrder.pendingRevisionRepriced",
+            input.publishHintSaidFor?.includes(quote.id)
+              ? "chatCoordinator.changeOrder.pendingRevisionRepricedSame"
+              : "chatCoordinator.changeOrder.pendingRevisionRepriced",
             { ...repricedVars, button: publishButton },
           )
-          : t(lang, "chatCoordinator.changeOrder.pendingRevision", {
-            ...vars,
-            button: publishButton,
-          }),
+          : t(
+            lang,
+            input.publishHintSaidFor?.includes(quote.id)
+              ? "chatCoordinator.changeOrder.pendingRevisionSame"
+              : "chatCoordinator.changeOrder.pendingRevision",
+            { ...vars, button: publishButton },
+          ),
         outcome: {
           kind: "pending_revision",
           quoteId: quote.id,

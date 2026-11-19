@@ -12,6 +12,7 @@ import {
   findLine,
   lineKey,
   parseLineReprice,
+  retitleAfterRemoval,
   type RevisableLine,
   reviseLineItems,
 } from "./mod.ts";
@@ -347,4 +348,63 @@ Deno.test("REQ-1024 dropRemovedLineBullets: a translation that does not line up 
   );
   assertEquals(out.description, "- Pintura.");
   assertEquals(out.descriptionByLang, {});
+});
+
+// REQ-1095 (LOOP-007 cycle 3, q3-20): a removed line takes its name out of
+// the title and summary — Version 2 of Q-002 was still "Pintura interior y
+// drywall" after the drywall line was removed.
+Deno.test("REQ-1095 q3-20 retitleAfterRemoval: 'Pintura interior y drywall' minus drywall → 'Pintura interior', every language and the summary", () => {
+  const out = retitleAfterRemoval(
+    {
+      jobName: "Pintura interior y drywall",
+      jobNameByLang: {
+        es: "Pintura interior y drywall",
+        en: "Interior Painting And Drywall",
+      },
+      summary: "Pintura interior y reparación de drywall — Jose Ramirez",
+      summaryByLang: {
+        en: "Interior painting and drywall repair — Jose Ramirez",
+      },
+    },
+    [{ names: ["Reparación de drywall en la cocina"] }],
+    [{ description: "Pintura interior", quantity: 1, price: 230_000 }],
+  );
+  assertEquals(out.changed, true);
+  assertEquals(out.jobName, "Pintura interior");
+  assertEquals(out.jobNameByLang, {
+    es: "Pintura interior",
+    en: "Interior Painting",
+  });
+  assertEquals(out.summary, "Pintura interior — Jose Ramirez");
+  assertEquals(out.summaryByLang, { en: "Interior painting — Jose Ramirez" });
+  assertEquals(out.unsure, []);
+});
+
+Deno.test("REQ-1095 q3-20 retitleAfterRemoval: 'Deck, Fence and Paint' minus Paint → 'Deck and Fence'; a title not naming the line is unchanged", () => {
+  const kept = [{ description: "Deck" }, { description: "Fence" }];
+  assertEquals(
+    retitleAfterRemoval(
+      { jobName: "Deck, Fence and Paint" },
+      [{ names: ["Paint"] }],
+      kept,
+    ).jobName,
+    "Deck and Fence",
+  );
+  const same = retitleAfterRemoval(
+    { jobName: "Kitchen remodel" },
+    [{ names: ["Drywall"] }],
+    [{ description: "Cabinets" }],
+  );
+  assertEquals(same.changed, false);
+  assertEquals(same.jobName, undefined);
+});
+
+Deno.test("REQ-1095 q3-20 retitleAfterRemoval: a title that is only the removed line is left for the owner (unsure)", () => {
+  const out = retitleAfterRemoval(
+    { jobName: "Drywall" },
+    [{ names: ["Drywall"] }],
+    [{ description: "Cabinets" }],
+  );
+  assertEquals(out.changed, false);
+  assertEquals(out.unsure, ["Drywall"]);
 });

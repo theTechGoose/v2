@@ -9,7 +9,7 @@ import {
 } from "#documents/versions.ts";
 import {
   changeOrderAmountsCents,
-  parseTargetTotalChange,
+  ownerStatedTotalCents,
   pickChangeOrderTarget,
   saysTooExpensive,
   typedAmountsCents,
@@ -18,6 +18,7 @@ import {
   dropRemovedLineBullets,
   findLine,
   type LineChange,
+  retitleAfterRemoval,
   reviseLineItems,
   settleToTotal,
   totalOf,
@@ -59,6 +60,9 @@ export interface ReviseQuoteInput {
    *  ("total 5,550"). The revision lands exactly this total or nothing is
    *  written and the contractor is asked. */
   targetTotalCents?: number;
+  /** REQ-1095 (LOOP-007 q3-19): the quotes this turn's reply already told
+   *  the owner to publish the next Version of — the tip is not said twice. */
+  publishHintSaidFor?: readonly string[];
 }
 
 export type ReviseQuoteOutcome =
@@ -229,8 +233,13 @@ export class ReviseQuote {
       const c = customers.find((c) => c.id === q.customerId);
       return c?.name ?? q.customerSnapshot?.name ?? "";
     };
+    // REQ-1095: an unsigned quote's working title is its pending one.
     const labelOf = (q: Quote): string =>
-      [q.number, q.jobName || q.summary].filter(Boolean).join(" ");
+      [
+        q.number,
+        (q.pendingRevision?.jobName as string | undefined) || q.jobName ||
+        q.summary,
+      ].filter(Boolean).join(" ");
 
     const target = pickChangeOrderTarget({
       quotes: quotes.map((q) => ({
@@ -369,8 +378,13 @@ export class ReviseQuote {
     // landed in code (settleToTotal) or nothing is written and he is asked;
     // a "too much / cheaper" ask never raises the price.
     const currentTotal = totalOf(base);
-    const statedTotal = input.targetTotalCents ??
-      parseTargetTotalChange(input.userText)?.targetTotalCents;
+    // REQ-1095 (q3-19): only a total the owner's words carry — the model's
+    // echo of the current total folded a removed line's price into another.
+    const statedTotal = ownerStatedTotalCents({
+      userText: input.userText,
+      modelTotalCents: input.targetTotalCents,
+      currentTotalCents: currentTotal,
+    });
     const askTotal = (key: string, revised: number) => ({
       text: withNote(t(lang, key, {
         ...vars,
@@ -434,20 +448,59 @@ export class ReviseQuote {
     // told the customer "También incluye la reparación de la cerca …". Not
     // when this turn already rewrote the job details itself.
     let checkNote = "";
+    const removedLines = remove
+      .map((r) => ({ r, i: findLine(base, r) }))
+      .filter(({ i }) => i >= 0)
+      .map(({ r, i }) => ({
+        names: [
+          r,
+          base[i].description,
+          ...Object.values(base[i].descriptionByLang ?? {}),
+        ],
+      }));
+    const pending = quote.pendingRevision as
+      | Record<string, unknown>
+      | undefined;
+    /** What the next Version carries: the pending field, else the live one. */
+    const working = <T>(k: keyof Quote & string): T | undefined =>
+      (pending && k in pending
+        ? pending[k]
+        : (quote as unknown as Record<string, unknown>)[k]) as T | undefined;
+    // REQ-1095 (LOOP-007 q3-20): a line taken off takes its name out of the
+    // title and summary — Version 2 of Q-002 dropped the drywall line but
+    // its email and text still read "Pintura interior y drywall".
+    let titleNote = "";
+    if (removedLines.length > 0) {
+      const heading = retitleAfterRemoval(
+        {
+          jobName: working<string>("jobName"),
+          jobNameByLang: working<Record<string, string>>("jobNameByLang"),
+          summary: working<string>("summary"),
+          summaryByLang: working<Record<string, string>>("summaryByLang"),
+        },
+        removedLines,
+        rev.lineItems,
+      );
+      if (heading.changed) {
+        for (
+          const k of [
+            "jobName",
+            "jobNameByLang",
+            "summary",
+            "summaryByLang",
+          ] as const
+        ) {
+          if (heading[k] !== undefined) patch[k] = heading[k];
+        }
+      }
+      if (heading.unsure.length > 0) {
+        titleNote = t(lang, "chatCoordinator.reviseQuote.titleCheck", {
+          ...vars,
+          line: heading.unsure.join('", "'),
+        });
+      }
+    }
     if (remove.length > 0 && !input.jobDetailsUpdated) {
-      const removedLines = remove
-        .map((r) => ({ r, i: findLine(base, r) }))
-        .filter(({ i }) => i >= 0)
-        .map(({ r, i }) => ({
-          names: [
-            r,
-            base[i].description,
-            ...Object.values(base[i].descriptionByLang ?? {}),
-          ],
-        }));
-      const pending = quote.pendingRevision as
-        | Record<string, unknown>
-        | undefined;
       const current = {
         description: (pending && "description" in pending
           ? pending.description
@@ -477,23 +530,34 @@ export class ReviseQuote {
       }
     }
     const withCheck = (text: string) =>
-      checkNote ? `${text} ${checkNote}` : text;
+      [text, checkNote, titleNote].filter(Boolean).join(" ");
 
     // Issued, unsigned → the next version, published by the contractor.
     if (isQuoteIssued(quote)) {
       await this.quotes.setPending(quote.id, userId, patch);
       const nextVersion = versionOf(quote) + 1;
+      // REQ-1095 (q3-19): one publish tip per turn — a change order this
+      // turn already said it for the same Version.
+      // REQ-1095 (q3-20): the Version is named by the title it will carry.
+      const hintVars = typeof patch.jobName === "string" && patch.jobName
+        ? {
+          ...vars,
+          job: [quote.number, patch.jobName].filter(Boolean).join(" "),
+        }
+        : vars;
+      const hint = input.publishHintSaidFor?.includes(quote.id)
+        ? t(lang, "chatCoordinator.reviseQuote.sameVersion", {
+          ...hintVars,
+          version: nextVersion,
+        })
+        : t(lang, "chatCoordinator.reviseQuote.publishHint", {
+          ...hintVars,
+          version: nextVersion,
+          // REQ-1056: the /quotes button, as the owner's screen reads it.
+          button: t(input.screenLang ?? lang, "quotes.ledger.publish"),
+        });
       return {
-        text: withCheck(withNote(
-          `${text} ${
-            t(lang, "chatCoordinator.reviseQuote.publishHint", {
-              ...vars,
-              version: nextVersion,
-              // REQ-1056: the /quotes button, as the owner's screen reads it.
-              button: t(input.screenLang ?? lang, "quotes.ledger.publish"),
-            })
-          }`,
-        )),
+        text: withCheck(withNote(`${text} ${hint}`)),
         outcome: { kind: "pending_revision", ...ref, nextVersion },
       };
     }
