@@ -246,7 +246,12 @@ export default function PhoneChat(props: Props) {
             onClick={showAll}
             style="padding: 8px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.15); background: #fff; color: var(--brand-teal, #1A535C); font-weight: 600; cursor: pointer;"
           >
-            ⏭ {tFor(lang, "phoneChat.controls.endState")}
+            <Icon
+              name="skip-forward"
+              size={14}
+              style="vertical-align:-2px;margin-right:4px"
+            />
+            {tFor(lang, "phoneChat.controls.endState")}
           </button>
         </div>
       )}

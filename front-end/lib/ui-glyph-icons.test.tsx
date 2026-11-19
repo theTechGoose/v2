@@ -99,6 +99,55 @@ Deno.test("REQ-366 setup-m4: no app UI source uses a Dingbat character as an ico
   );
 });
 
+/**
+ * REQ-1070 (LOOP-007 cycle 2, q2-59): U+2300–U+23FF Miscellaneous Technical
+ * (⏭ ⏯ ⏩ ⌘ ⏎ …) is not in the app's web fonts either. WorkerScreen's Defer
+ * buttons and deferred hints drew a literal ⏭ next to SVG siblings, and
+ * PhoneChat's end-state control did the same; DINGBAT above never covered the
+ * block. A keyboard-key label inside `<kbd>…</kbd>` (AsstComposer's ⏎ / ⇧⏎
+ * send hint) is text naming a key, not an icon, so it is stripped first.
+ */
+const MISC_TECHNICAL = /[\u2300-\u23FF]/u;
+const stripKbd = (l: string) => l.replace(/<kbd>[^<]*<\/kbd>/g, "");
+
+Deno.test("REQ-1070 (LOOP-007 q2-59): no app UI source uses a Misc Technical glyph (U+2300–23FF, e.g. ⏭) as an icon", async () => {
+  const hits: string[] = [];
+  for (const dir of ["islands", "components", "routes", "lib"]) {
+    for await (const file of sources(join(FE, dir))) {
+      const rel = relative(FE, file);
+      if (ALLOW_FILES.has(rel)) continue;
+      const lines = codeLines(await Deno.readTextFile(file));
+      lines.forEach((l, i) => {
+        if (MISC_TECHNICAL.test(stripKbd(l))) {
+          hits.push(`front-end/${rel}:${i + 1}: ${l.trim()}`);
+        }
+      });
+    }
+  }
+  assertEquals(
+    hits,
+    [],
+    "literal Misc Technical glyphs fall back per character (no web-font coverage) — use <Icon name=…/>:\n" +
+      hits.join("\n"),
+  );
+});
+
+Deno.test("REQ-1070 (LOOP-007 q2-59): no app lang string carries a Misc Technical glyph", async () => {
+  const hits: string[] = [];
+  for (const lang of ["en", "es"]) {
+    const dict = JSON.parse(
+      await Deno.readTextFile(join(ROOT, "lang", `${lang}.json`)),
+    ) as Record<string, string>;
+    for (const [k, v] of Object.entries(dict)) {
+      if (ALLOW_LANG_KEY.test(k)) continue;
+      if (typeof v === "string" && MISC_TECHNICAL.test(v)) {
+        hits.push(`${lang}:${k}=${v}`);
+      }
+    }
+  }
+  assertEquals(hits, [], hits.join("\n"));
+});
+
 Deno.test("REQ-366 setup-m4: no app lang string carries a Dingbat glyph", async () => {
   const hits: string[] = [];
   for (const lang of ["en", "es"]) {
