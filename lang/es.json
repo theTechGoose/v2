@@ -2943,6 +2943,8 @@
   "quotesHero.clients.other": "{n} clientes",
   "quotesHero.coWaiting.one": "{number} está esperando a {client}.",
   "quotesHero.coWaiting.other": "{n} órdenes de cambio esperan a clientes — {number} a {client}.",
+  "quotesHero.coWaitingSub.one": "Tus cotizaciones ya están decididas. Este cambio solo necesita el visto bueno de {client}.",
+  "quotesHero.coWaitingSub.other": "Tus cotizaciones ya están decididas. Estos cambios solo necesitan el visto bueno de tus clientes.",
   "quotesHero.coUnsent.one": "{number} aún no se ha enviado a {client}.",
   "quotesHero.coUnsent.other": "{n} órdenes de cambio aún no se han enviado — {number} para {client}.",
   "quotesHero.cta": "Nueva cotización",

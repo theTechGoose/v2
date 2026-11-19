@@ -2943,6 +2943,8 @@
   "quotesHero.clients.other": "{n} clients",
   "quotesHero.coWaiting.one": "{number} is waiting on {client}.",
   "quotesHero.coWaiting.other": "{n} change orders are waiting on clients — {number} on {client}.",
+  "quotesHero.coWaitingSub.one": "Your quotes are all decided. This change just needs {client}'s OK.",
+  "quotesHero.coWaitingSub.other": "Your quotes are all decided. These changes just need your clients' OK.",
   "quotesHero.coUnsent.one": "{number} isn't sent to {client} yet.",
   "quotesHero.coUnsent.other": "{n} change orders aren't sent yet — {number} for {client}.",
   "quotesHero.cta": "New quote",
