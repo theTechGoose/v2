@@ -158,3 +158,88 @@ describe("REQ-743 (demo c5 p18-6c, p18-8b) one name for repeat visits: nav, page
     expect(route).toMatch(/<ClientsPage tradeKind=\{tradeKind\}/);
   });
 });
+
+/**
+ * REQ-997 (LOOP-007 cycle 1, q1-84) — /field/assignments read "Assignments · 1 zones",
+ * "1 zones with no worker" and "1 ZONES · 1 SUBSCRIPTIONS". Its count strings were single
+ * strings with the plural noun baked in, rendered with t() instead of the tn() .one/.other
+ * helper; and REQ-743 left the field.asg.* keys saying "subscription(s)" (amended here: they
+ * now say "repeat visit(s)" / "visita(s) repetida(s)" like the rest of the app).
+ */
+const ASG_COUNT_KEYS = [
+  "field.asg.eyebrow",
+  "field.asg.crewLoad",
+  "field.asg.unstaffedCrews",
+  "field.asg.unstaffedCount",
+  "field.asg.regrouped",
+];
+
+describe("REQ-997 (LOOP-007 q1-84) Assignments counts are pluralised and say repeat visits", () => {
+  test("REQ-997: no field.asg.* copy says subscription (en) / suscripción (es)", () => {
+    const hits = [
+      ...Object.entries(en).filter(([k, v]) =>
+        k.startsWith("field.asg.") && /subscri/i.test(v)
+      ),
+      ...Object.entries(es).filter(([k, v]) =>
+        k.startsWith("field.asg.") && /suscrip/i.test(v)
+      ),
+    ].map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+
+  test("REQ-997: every Assignments count key has .one and .other, and no bare plural string stays", () => {
+    for (const dict of [en, es]) {
+      for (const k of ASG_COUNT_KEYS) {
+        expect([k, dict[`${k}.one`]]).toEqual([k, expect.any(String)]);
+        expect([k, dict[`${k}.other`]]).toEqual([k, expect.any(String)]);
+        expect([k, dict[k]]).toEqual([k, undefined]);
+      }
+    }
+  });
+
+  test("REQ-997: the .one form is singular — 1 zone, never 1 zones / 1 zonas", () => {
+    for (const k of ASG_COUNT_KEYS) {
+      const one = en[`${k}.one`] ?? "";
+      const uno = es[`${k}.one`] ?? "";
+      expect([k, one]).toEqual([k, expect.stringMatching(/\bzone\b/)]);
+      expect([k, one]).not.toEqual([k, expect.stringMatching(/\bzones\b/)]);
+      expect([k, uno]).toEqual([k, expect.stringMatching(/\bzona\b/)]);
+      expect([k, uno]).not.toEqual([k, expect.stringMatching(/\bzonas\b/)]);
+    }
+  });
+
+  test("REQ-997: the worker load chip renders '1 zone · 1 repeat visit' / '2 zones · 3 repeat visits'", () => {
+    // whatever key split the fix picks, the page's worker chip text is built from en.json
+    // through tn(); render it the way the island does and read the result
+    const src = read("front-end/islands/FieldAssignmentsPage.tsx");
+    for (const k of ASG_COUNT_KEYS) {
+      expect([k, src]).not.toEqual([
+        k,
+        expect.stringContaining(`t("${k}"`),
+      ]);
+    }
+    expect(src).not.toMatch(/\bt\("field\.asg\.load"/);
+    const fill = (s: string, vars: Record<string, number>) =>
+      s.replace(/\{(\w+)\}/g, (_, v) => String(vars[v]));
+    const pick = (dict: Record<string, string>, key: string, n: number) =>
+      fill(dict[`${key}.${n === 1 ? "one" : "other"}`] ?? `<${key}>`, { n });
+    const loadKeys = Object.keys(en).filter((k) =>
+      /^field\.asg\.load[A-Za-z]*\.(one|other)$/.test(k)
+    );
+    const bases = [...new Set(loadKeys.map((k) => k.replace(/\.(one|other)$/, "")))];
+    expect(bases.length).toBeGreaterThanOrEqual(1);
+    const zonesKey = bases.find((b) => /zone/i.test(en[`${b}.other`] ?? ""));
+    const visitsKey = bases.find((b) => /repeat visit/i.test(en[`${b}.other`] ?? ""));
+    expect([zonesKey, visitsKey]).toEqual([expect.any(String), expect.any(String)]);
+    expect(`${pick(en, zonesKey!, 1)} · ${pick(en, visitsKey!, 1)}`).toBe(
+      "1 zone · 1 repeat visit",
+    );
+    expect(`${pick(en, zonesKey!, 2)} · ${pick(en, visitsKey!, 3)}`).toBe(
+      "2 zones · 3 repeat visits",
+    );
+    expect(`${pick(es, zonesKey!, 1)} · ${pick(es, visitsKey!, 1)}`).toBe(
+      "1 zona · 1 visita repetida",
+    );
+    expect(src).toMatch(/tn\("field\.asg\.load/);
+  });
+});
