@@ -199,8 +199,31 @@ export function revisedNote(
   );
 }
 
-/** "CO-001 on INV-5000" — how a change order names itself and its invoice. */
+/**
+ * "CO-001 on INV-5000" — how a change order names itself and its invoice
+ * to the CUSTOMER. REQ-949: the invoice is named only once it is issued
+ * (`isIssued`); a draft or scheduled balance invoice is one the customer
+ * never received, so the order names its job instead ("CO-001 on Q-001"),
+ * or just itself ("CO-001") when no job is known.
+ */
 export function changeOrderRef(
+  co: { number?: string; id: string },
+  invoice: ({ number?: string; id: string } & CustomerBearingDoc) | undefined,
+  lang: RenderLang,
+  job?: { number?: string; id: string },
+): string {
+  const on = invoice && isIssued(invoice) ? invoice : job;
+  return on
+    ? `${docRef(co)} ${renderWord(lang, "on")} ${docRef(on)}`
+    : docRef(co);
+}
+
+/**
+ * REQ-204 / REQ-949: the OWNER's name for a change order — always "CO-001
+ * on INV-5000" when it hangs on an invoice, sent or not; the owner can see
+ * their own drafts and scheduled invoices.
+ */
+export function changeOrderOwnerRef(
   co: { number?: string; id: string },
   invoice: { number?: string; id: string } | undefined,
   lang: RenderLang,

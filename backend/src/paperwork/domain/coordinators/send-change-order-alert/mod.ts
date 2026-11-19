@@ -2,10 +2,13 @@ import { Injectable } from "#danet/core";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import {
+  changeOrderOwnerRef,
   changeOrderRef,
   customerOnDocument,
   docRef,
+  isIssued,
 } from "@paperwork/domain/business/doc-render/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
@@ -106,6 +109,8 @@ export class SendChangeOrderAlert {
       new ConversationStore(),
       new MessageStore(),
     ),
+    /** REQ-949 — names the job when the invoice hasn't reached the customer */
+    private quotes: QuoteStore = new QuoteStore(),
   ) {}
 
   async run(changeOrderId: string): Promise<ChangeOrderAlertResult> {
@@ -149,8 +154,18 @@ export class SendChangeOrderAlert {
     // flips it from there.
     const approvalPath = `/co/${co.id}?lang=${coLang}`;
     const url = `${APP_URL}${approvalPath}`;
-    const refCo = changeOrderRef(co, invoice, coLang);
-    const refCx = changeOrderRef(co, invoice, cxLang);
+    // REQ-949 (LOOP-007 q1-25): the customer hears about an invoice only
+    // once it has reached them. A change order on the scheduled balance
+    // invoice (deposit + balance signing) names the job — "CO-001 on Q-001",
+    // "a change to your job" — never an INV-002 they have not seen. The
+    // owner's copy keeps "CO-001 on INV-002"; they can open that draft.
+    const invoiceIssued = !!invoice && isIssued(invoice);
+    const quoteId = co.quoteId ?? invoice?.quoteId;
+    const job = !invoiceIssued && quoteId
+      ? await this.quotes.getOwned(quoteId, co.userId).catch(() => undefined)
+      : undefined;
+    const refCo = changeOrderRef(co, invoice, coLang, job);
+    const refCx = changeOrderOwnerRef(co, invoice, cxLang);
 
     let sentAny = false;
     const delivered: ChangeOrderCustomerDelivery = {
@@ -211,6 +226,7 @@ export class SendChangeOrderAlert {
             url,
             lang: coLang,
             ref: refCo,
+            onJob: !invoiceIssued,
           }),
         };
         const res = await this.email.send(mail);
@@ -256,11 +272,13 @@ export class SendChangeOrderAlert {
         // provider, and the failure reason comes back worded in the
         // contractor's UI language instead of a raw "sms.fictionalNumber" key.
         const smsBody = `${refCo}: ${
-          t(coLang, "changeOrderRequest.sms.body", {
-            business: businessName,
-            delta,
-            url,
-          })
+          t(
+            coLang,
+            invoiceIssued
+              ? "changeOrderRequest.sms.body"
+              : "changeOrderRequest.sms.bodyJob",
+            { business: businessName, delta, url },
+          )
         }`;
         const res = await dispatchCustomerSms(this.sms, {
           to: contact.phoneNumber,
@@ -392,11 +410,17 @@ function renderCustomerHtml(opts: {
   lang: Lang;
   /** REQ-204: "CO-001 on INV-5000" */
   ref: string;
+  /** REQ-949: the invoice hasn't reached the customer — word it as their job */
+  onJob?: boolean;
 }): string {
   const { lang } = opts;
-  const headline = t(lang, "changeOrderRequest.email.headline", {
-    business: escapeHtml(opts.businessName),
-  });
+  const headline = t(
+    lang,
+    opts.onJob
+      ? "changeOrderRequest.email.headlineJob"
+      : "changeOrderRequest.email.headline",
+    { business: escapeHtml(opts.businessName) },
+  );
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
