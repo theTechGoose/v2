@@ -180,6 +180,7 @@ import {
 } from "#quote-flow/quick-quote-prefill.ts";
 import { tidyServiceAddress } from "#customer-address/mod.ts"; // REQ-1047
 import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
+import { reconcilePaymentTerms } from "@agents/domain/business/terms-prefill/mod.ts"; // REQ-1105
 import {
   findCustomerNamedInSummary, // REQ-576
   findCustomerNamedInText, // REQ-386
@@ -4001,10 +4002,16 @@ export class HandleChatMessage {
         // REQ-258 (demo M22): a payment split the contractor stated ("half
         // deposit") pre-selects the terms wizard's payment step. A later
         // correction that doesn't restate it keeps the earlier one.
+        // REQ-1105 (LOOP-007 q3, q3-29): the model's preset is checked
+        // against the parse of the typed words — "30% deposit" is
+        // 'deposit_bal', never the '30_30_40' the model guessed.
         if (action.payload.paymentTerms) {
           convPatch.termsPrefill = {
             ...(conv.termsPrefill ?? {}),
-            payment_terms: action.payload.paymentTerms,
+            payment_terms: reconcilePaymentTerms(
+              action.payload.paymentTerms,
+              userText,
+            ),
           };
         }
 
