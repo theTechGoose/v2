@@ -44,6 +44,17 @@ function wizardBillingHowToday(): string {
   return `Example with Monster ($99/month), picked today: $99 today covers ${md(now)}–${md(through.getTime() - 86_400_000)}. To line your bill up with the 1st, on ${md(s.firstBillAt)} we bill ${amount} for ${md(s.paidThrough)}–${md(endOfMonth)}. After that, $99 on the 1st of each month. Other plans work the same way at their price.`;
 }
 
+/** REQ-970 (LOOP-007 c1, q1-51) — the Monster card's one line for a pick today: when the next 1st
+ *  is the prorated catch-up it says so and names the 1st the full $99 starts; picked on a 1st (the
+ *  next 1st IS $99) it is REQ-725's plain line */
+function wizardCardNoteToday(): string {
+  const s = anchoredSchedule(new Date().toISOString(), 9900);
+  if (s.firstAmountCents === 9900) return "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next";
+  const fb = new Date(s.firstBillAt);
+  const steady = new Date(Date.UTC(fb.getUTCFullYear(), fb.getUTCMonth() + 1, 1)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return `$99 today, a smaller catch-up bill on the next 1st, then $99 on the 1st of each month from ${steady} — you'll pay on a secure payment page next`;
+}
+
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 
@@ -171,7 +182,7 @@ Deno.test("REQ-058: a sign-up is a CRM customer at once — the phone and this a
     expect(customer.customerPhone === phone && customer.customerId === customerId, "phone kept, same record");
   }));
 
-Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link builder's page, and comes back with the plan active", (t) =>
+Deno.test("REQ-054 + REQ-970: in onboarding the person picks a paid plan, pays on the link builder's page, and comes back with the plan active", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     // the person starts on the site's front page, where the same plans are priced
     await page.goto("/");
@@ -192,11 +203,26 @@ Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link
     // REQ-615 (demo-loop c4 m4) — and each charge with its date: today's, the 1st's prorated one, then monthly
     // REQ-725 (demo-loop c5 m3) — the card says one plain line; the dated schedule is behind
     // "How billing works"; a card IS the pick, so no Continue sits under the cards
-    expect.eq((await page.locator("[data-cy='plan-note-monster']").innerText()).trim(), "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next", "the Monster card's one plain line");
+    expect.eq((await page.locator("[data-cy='plan-note-monster']").innerText()).trim(), wizardCardNoteToday(), "the Monster card's one plain line (REQ-970: the catch-up named when the next 1st is prorated)");
     await expect.see("Free · nothing to pay, no card needed");
     expect.eq(await page.locator("[data-cy='welcome-continue']").count(), 0, "no dead Continue under the cards");
     await page.locator("[data-cy='plan-billing-how'] summary").click();
     await expect.see(wizardBillingHowToday());
+    // REQ-970 (LOOP-007 c1, q1-51) — the card and the disclosure agree on the next 1st: when that
+    // bill is the prorated catch-up, the card never promises the full $99 for it — it names the
+    // catch-up amount or the date the full price starts
+    {
+      const s = anchoredSchedule(new Date().toISOString(), 9900);
+      if (s.firstAmountCents !== 9900) {
+        const card = (await page.locator("[data-cy='plan-note-monster']").innerText()).trim();
+        const how = (await page.locator("[data-cy='plan-billing-how']").innerText()).trim();
+        const prorated = `$${(s.firstAmountCents / 100).toFixed(2)}`;
+        const fb = new Date(s.firstBillAt);
+        const steady = new Date(Date.UTC(fb.getUTCFullYear(), fb.getUTCMonth() + 1, 1)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+        expect(how.includes(`we bill ${prorated}`), `REQ-970: the disclosure bills ${prorated} on the next 1st ("${how}")`);
+        expect(card.includes(prorated) || card.includes(steady), `REQ-970: the Monster card must not promise $99 on the 1st the disclosure bills ${prorated} for — name ${prorated} or that $99 starts ${steady}; it says "${card}"`);
+      }
+    }
     // the paid pick GOES to the pay page — the link builder's link — in this tab (REQ-055/059)
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
     expect(payPage.searchParams.get("return")?.includes("/plan/return?due="), `the link carries the way back (${payPage.searchParams.get("return")})`);

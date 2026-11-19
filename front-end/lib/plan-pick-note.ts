@@ -16,6 +16,13 @@
  * double charge. A wizard card now says one plain line ("$99 today, then $99 on the 1st of each
  * month"); the dated schedule moves under the cards into a "How billing works" disclosure
  * (`wizardBillingHow`), worked for one plan from the same `anchoredSchedule`.
+ *
+ * REQ-970 (LOOP-007 c1, q1-51) — that one line promised {monthly} on the NEXT 1st, but a first
+ * pick's next 1st is the prorated catch-up (`anchoredSchedule.firstAmountCents`), which the
+ * disclosure under the cards names. A first pick's line now says a smaller catch-up bill comes on
+ * the next 1st and the full price starts the 1st after it (`steadyFrom`); only when the next 1st
+ * IS the full price (picked on a 1st), or on a switch, does the card keep "then {monthly} on the
+ * 1st of each month" plain.
  */
 import {
   anchoredSchedule,
@@ -36,15 +43,29 @@ export function wizardPlanNote(
   current: SwitchCurrent | null | undefined,
   targetId: string,
   now: string,
-  _lang: Lang = "en", // REQ-725: the one-line note carries no dates
+  lang: Lang = "en",
 ): string | null {
   const q = switchQuote(current, targetId, now);
   if (q.kind === "free") return t("welcome.plan.note.free");
   if (q.kind === "same") return null;
-  return t("welcome.plan.note.paid", {
-    due: dollars(q.dueCents),
-    monthly: dollars(q.monthlyCents),
-  });
+  const vars = { due: dollars(q.dueCents), monthly: dollars(q.monthlyCents) };
+  if (q.kind === "first") {
+    // REQ-970 — the next 1st bills the catch-up, not {monthly}: say so, and when {monthly} starts
+    const s = anchoredSchedule(now, q.monthlyCents);
+    if (s.firstAmountCents !== q.monthlyCents) {
+      const first = new Date(s.firstBillAt);
+      const steady = Date.UTC(
+        first.getUTCFullYear(),
+        first.getUTCMonth() + 1,
+        1,
+      );
+      return t("welcome.plan.note.paid", {
+        ...vars,
+        steadyFrom: day(steady, lang),
+      });
+    }
+  }
+  return t("welcome.plan.note.paidSteady", vars);
 }
 
 /** REQ-725 — the body of the wizard's "How billing works": a first pick of `planId` at `now`,

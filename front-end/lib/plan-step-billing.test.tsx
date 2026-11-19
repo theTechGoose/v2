@@ -17,19 +17,26 @@ import { ONBOARDING_PLANS } from "../../shared/quote-flow/pricing-plans.ts";
 import { tFor } from "./i18n.ts";
 import { langSignal } from "./lang.ts";
 import { wizardBillingHow, wizardPlanNote } from "./plan-pick-note.ts";
+import { anchoredSchedule } from "../../shared/quote-flow/plan-switch.ts";
 
 const NOW = "2026-11-12T12:00:00.000Z";
 const en = (k: string, v?: Record<string, string | number>) => tFor("en", k, v);
 const es = (k: string, v?: Record<string, string | number>) => tFor("es", k, v);
 
 Deno.test("REQ-725: a paid card's note is one plain line — today, then the monthly price on the 1st (demo-loop c5 m3)", () => {
+  // REQ-970 (q1-51) amends the line: picked Nov 12, Dec 1 is the prorated catch-up, so the full
+  // price is named from Jan 1; picked ON a 1st, the next 1st IS the full price and the line stays plain
   assertEquals(
     wizardPlanNote(en, null, "monster", NOW, "en"),
-    "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next",
+    "$99 today, a smaller catch-up bill on the next 1st, then $99 on the 1st of each month from Jan 1 — you'll pay on a secure payment page next",
   );
   assertEquals(
     wizardPlanNote(es, null, "monster", NOW, "es"),
-    "$99 hoy, luego $99 el día 1 de cada mes — pagarás en una página de pago segura a continuación",
+    "$99 hoy, un cobro de ajuste menor el próximo día 1, luego $99 el día 1 de cada mes desde el 1 ene — pagarás en una página de pago segura a continuación",
+  );
+  assertEquals(
+    wizardPlanNote(en, null, "monster", "2026-11-01T12:00:00.000Z", "en"),
+    "$99 today, then $99 on the 1st of each month — you'll pay on a secure payment page next",
   );
 });
 
@@ -115,4 +122,107 @@ Deno.test("REQ-725 rendered: the disclosure speaks Spanish on a Spanish wizard (
     how?.querySelector("summary")?.textContent.trim(),
     "Cómo funciona el cobro",
   );
+});
+
+/* REQ-970 (LOOP-007 cycle 1, q1-51) — the card line "$99 today, then $99 on the 1st of each
+ * month" names the full price for the NEXT 1st, while the real first-pick schedule (REQ-129,
+ * `anchoredSchedule`) bills a prorated catch-up there ($44.71 for a Nov 18 Monster pick), and the
+ * "How billing works" body under the same cards says so. The rule: a paid card's note never
+ * promises {monthly} on the next 1st unless that bill IS {monthly} — it names the catch-up amount,
+ * or the date the full monthly price starts. */
+
+const Q151_NOW = "2026-11-18T15:00:00.000Z";
+
+function cash(cents: number): string {
+  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
+}
+
+/** the 1st after the schedule's first bill — when the full monthly price starts ("Jan 1") */
+function steadyFrom(firstBillAt: string, lang: "en" | "es"): string {
+  const d = new Date(firstBillAt);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1))
+    .toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+}
+
+/** what a paid card's note must do when the next 1st's bill is not the full price: name that
+ *  bill's amount or the date the full price begins */
+function assertNoteTellsTheNextFirst(
+  note: string,
+  monthlyCents: number,
+  now: string,
+  lang: "en" | "es",
+  label: string,
+) {
+  const s = anchoredSchedule(now, monthlyCents);
+  if (s.firstAmountCents === monthlyCents) return; // the next 1st IS the full price
+  const prorated = cash(s.firstAmountCents);
+  const from = steadyFrom(s.firstBillAt, lang);
+  assert(
+    note.includes(prorated) || note.includes(from),
+    `${label}: the next 1st bills ${prorated}, not ${
+      cash(monthlyCents)
+    } — the card must name ${prorated} or that ${
+      cash(monthlyCents)
+    } starts ${from}; it says "${note}"`,
+  );
+}
+
+Deno.test("REQ-970 (q1-51): a Nov 18 Monster pick's card note does not promise $99 on Dec 1 — anchoredSchedule bills $44.71 there", () => {
+  const s = anchoredSchedule(Q151_NOW, 9900);
+  assertEquals(s.firstBillAt.slice(0, 10), "2026-12-01", "the next 1st");
+  assertEquals(
+    s.firstAmountCents,
+    4471,
+    "the next 1st is the prorated catch-up",
+  );
+  assertNoteTellsTheNextFirst(
+    wizardPlanNote(en, null, "monster", Q151_NOW, "en") ?? "",
+    9900,
+    Q151_NOW,
+    "en",
+    "Monster (en)",
+  );
+  assertNoteTellsTheNextFirst(
+    wizardPlanNote(es, null, "monster", Q151_NOW, "es") ?? "",
+    9900,
+    Q151_NOW,
+    "es",
+    "Monster (es)",
+  );
+});
+
+Deno.test("REQ-970 (q1-51): every paid onboarding card's note agrees with anchoredSchedule on the next 1st", () => {
+  for (const p of paid) {
+    assertNoteTellsTheNextFirst(
+      wizardPlanNote(en, null, p.id, Q151_NOW, "en") ?? "",
+      p.priceCents,
+      Q151_NOW,
+      "en",
+      p.name,
+    );
+  }
+});
+
+Deno.test("REQ-970 (q1-51) rendered: on the wizard's plan step each paid card's note agrees with the 'How billing works' body on what the next 1st costs", () => {
+  const now = new Date().toISOString(); // the wizard renders at the real clock
+  const doc = render("en");
+  const how =
+    doc.querySelector("details[data-cy='plan-billing-how']")?.textContent ?? "";
+  const monster = anchoredSchedule(now, 9900);
+  if (monster.firstAmountCents !== 9900) {
+    assertStringIncludes(
+      how,
+      `we bill ${cash(monster.firstAmountCents)}`,
+      "the disclosure names the prorated next 1st",
+    );
+  }
+  for (const p of paid) {
+    const note =
+      doc.querySelector(`[data-cy='plan-note-${p.id}']`)?.textContent ?? "";
+    assertNoteTellsTheNextFirst(note, p.priceCents, now, "en", p.name);
+  }
 });
