@@ -100,7 +100,9 @@ Deno.test("REQ-710 (cycle 5, M4) the English PDF of a standalone invoice typed i
       },
     });
 
-    const drawn = await drawnText(await render.run(inv.id));
+    // REQ-1133: a Spanish-typed invoice now opens (and downloads) in Spanish;
+    // its English PDF is the visitor's EN pick on /i (?lang=en).
+    const drawn = await drawnText(await render.run(inv.id, { lang: "en" }));
 
     assert(draws(drawn, "Appliance Removal"), "the English title");
     assert(
@@ -157,7 +159,9 @@ Deno.test("REQ-710 (cycle 5, M4) the English PDF of a quote-linked invoice draws
       amount: 35_000,
     });
 
-    const drawn = await drawnText(await render.run(inv.id));
+    // REQ-1133: a Spanish-typed invoice now opens (and downloads) in Spanish;
+    // its English PDF is the visitor's EN pick on /i (?lang=en).
+    const drawn = await drawnText(await render.run(inv.id, { lang: "en" }));
 
     for (const line of english) {
       assert(draws(drawn, line), `the English line "${line}"`);

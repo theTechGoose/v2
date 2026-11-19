@@ -18,7 +18,11 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
-import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-1050
+import { invoiceDocLang, withSendLang } from "#quote-flow/share-link.ts"; // REQ-1050, REQ-1133
+import {
+  asCommsLang,
+  resolveCommsLanguage,
+} from "#quote-flow/comms-language.ts"; // REQ-1133
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
 import { fmtServiceDates } from "#documents/service-dates.ts"; // REQ-1064
@@ -117,7 +121,16 @@ export class RenderInvoicePdf {
     private payments: PaymentStore = new PaymentStore(),
   ) {}
 
-  async run(invoiceId: string): Promise<Uint8Array> {
+  /**
+   * REQ-1133: `opts.lang` is the visitor's pick on /i (?lang). The PDF renders
+   * in it, else the invoice's own document language (invoiceDocLang — the
+   * order /i opens in, REQ-586/715), else the contractor's comms language,
+   * else en — always clamped to the contractor's send languages (REQ-925).
+   */
+  async run(
+    invoiceId: string,
+    opts: { lang?: string | null } = {},
+  ): Promise<Uint8Array> {
     // REQ-161: the standard fonts encode WinAnsi only — every string drawn comes from here
     const invoice = winAnsiSafeDeep(
       (await fillPaidMethods(this.payments, [
@@ -154,8 +167,20 @@ export class RenderInvoicePdf {
       timezone: ident?.timezone,
       state: addr?.state,
     });
-    const es = ident?.commsLanguage === "es";
-    const lang: "en" | "es" = es ? "es" : "en";
+    // REQ-1133: the language /i paints — ?lang, else the document's own
+    // language, else the contractor's default, clamped to the send-in set.
+    const lang: "en" | "es" = resolveCommsLanguage({
+      override: asCommsLang(opts.lang) ??
+        invoiceDocLang(
+          invoice,
+          quote && quote.userId === invoice.userId ? quote : undefined,
+          customer,
+        ),
+      customerLanguage: customer?.language,
+      identityCommsLanguage: ident?.commsLanguage,
+      sendLanguages: ident?.commsLanguages,
+    });
+    const es = lang === "es";
 
     const pdf = await PDFDocument.create();
     // REQ-204: the document is named by its number, never an id slice

@@ -9,6 +9,7 @@ import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { ssrBackendGet, ssrBackendGetAuthed } from "../../lib/backend-fetch.ts";
 import { getSessionId } from "../../lib/auth.ts";
+import { withSendLang } from "../../../shared/quote-flow/share-link.ts"; // REQ-1133
 import BizBrand from "../../components/BizBrand.tsx";
 import {
   publicBusinessLabel,
@@ -1268,7 +1269,7 @@ function InvoiceDoc(
           }
           <div style="margin-top:24px;text-align:center">
             <a
-              href={`/api/invoices/${invoice.id}/pdf`}
+              href={withSendLang(`/api/invoices/${invoice.id}/pdf`, lang)}
               target="_blank"
               rel="noopener"
               style={`display:inline-flex;align-items:center;gap:8px;color:${MUTED};text-decoration:none;font-weight:700;font-size:13px`}

@@ -338,7 +338,11 @@ export class PaperworkPublicController {
     @Param("id") id: string,
   ) {
     try {
-      const bytes = await this.invoicePdf.run(id);
+      // REQ-1133: the visitor's /i language (?lang, the EN | ES toggle) —
+      // the renderer clamps it to the contractor's send languages (REQ-925)
+      // and falls back to the invoice's own document language.
+      const lang = new URL(ctx.req.url).searchParams.get("lang");
+      const bytes = await this.invoicePdf.run(id, { lang });
       // REQ-198: the file is named by the document number ("invoice-INV-5000.pdf")
       const named = await this.invoices.get(id).catch(() => ({ id }));
       return new Response(bytes as BodyInit, {
