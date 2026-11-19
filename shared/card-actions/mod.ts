@@ -26,12 +26,36 @@ export function messageHref(
   return null;
 }
 
+/** The slice of a customer card the CTA reads. `balanceSubParts` is the
+ *  card's balance sub-line as data (REQ-367): how due the open money is. */
+export interface ClientCtaInput {
+  balanceCents: number;
+  status: string;
+  balanceSubParts?: { kind: string; days?: number } | null;
+}
+
+/** REQ-1066 (LOOP-007 q2-56): an invoice due within this many days is close
+ *  enough to headline "Send a kind reminder". */
+export const REMINDER_DUE_WITHIN_DAYS = 3;
+
+/** REQ-1066 — the card headlines a reminder only for money that is due: an
+ *  open balance whose next invoice is overdue, due today, due within
+ *  REMINDER_DUE_WITHIN_DAYS, or owed with no due date ("owes", or a card
+ *  without parts). An invoice sent minutes ago and due in 30 days is not
+ *  chased — the explicit Remind stays on the customer page and invoices. */
+export function balanceWantsReminder(c: ClientCtaInput): boolean {
+  if (c.balanceCents <= 0) return false;
+  const parts = c.balanceSubParts;
+  if (parts?.kind === "dueIn") {
+    return (parts.days ?? 0) <= REMINDER_DUE_WITHIN_DAYS;
+  }
+  return true;
+}
+
 /** The client card's CTA (clientsDisplay.cta.*): every label but "Open card"
  *  is a message to the client. */
-export function clientCtaAction(
-  c: { balanceCents: number; status: string },
-): "message" | "open" {
-  if (c.balanceCents > 0) return "message"; // "Send a kind reminder"
+export function clientCtaAction(c: ClientCtaInput): "message" | "open" {
+  if (balanceWantsReminder(c)) return "message"; // "Send a kind reminder"
   if (c.status === "active") return "message"; // "Send progress update"
   if (c.status === "lead") return "message"; // "Follow up"
   if (c.status === "cold") return "message"; // "Send a hello"
@@ -40,9 +64,9 @@ export function clientCtaAction(
 
 /** Which message a client CTA pre-fills (clientsBoard.msg.<kind>). */
 export function clientCtaMessageKind(
-  c: { balanceCents: number; status: string },
+  c: ClientCtaInput,
 ): "reminder" | "progress" | "followUp" | "hello" | null {
-  if (c.balanceCents > 0) return "reminder";
+  if (balanceWantsReminder(c)) return "reminder";
   if (c.status === "active") return "progress";
   if (c.status === "lead") return "followUp";
   if (c.status === "cold") return "hello";

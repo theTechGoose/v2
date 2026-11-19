@@ -12,6 +12,7 @@
  *    message verb with nowhere to send it, opens the card's panel.
  */
 import { telHref } from "../../shared/quote-flow/format-helpers.ts";
+import { balanceWantsReminder } from "../../shared/card-actions/mod.ts";
 
 /** the slice of a CustomerCard the actions read */
 export interface ClientActionInput {
@@ -19,6 +20,8 @@ export interface ClientActionInput {
   status: string;
   phoneNumber?: string | null;
   email?: string | null;
+  /** REQ-1066: how due the open balance is (the card's balanceSubParts) */
+  balanceSubParts?: { kind: string; days?: number } | null;
 }
 
 export type CtaKind =
@@ -41,7 +44,9 @@ export function messageHrefFor(c: ClientActionInput): string | null {
 }
 
 export function ctaKindFor(c: ClientActionInput): CtaKind {
-  if (c.balanceCents > 0) return "reminder";
+  // REQ-1066: a reminder only for money that is due (shared with the action);
+  // a balance not yet due falls through to the status verb ("owes" → Open card)
+  if (balanceWantsReminder(c)) return "reminder";
   if (c.status === "active") return "progress";
   if (c.status === "lead") return "followUp";
   if (c.status === "cold") return "hello";
