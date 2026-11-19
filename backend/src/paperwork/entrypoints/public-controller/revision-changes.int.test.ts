@@ -116,3 +116,89 @@ Deno.test("REQ-304 M28: GET /quotes/:id/public carries changesFromPrevious once 
     await resetKv();
   }
 });
+
+/**
+ * REQ-1024 (LOOP-007 cycle 2, q2-6) — Version 2 dropped the MIDDLE line
+ * (the fence) and repriced the first. The customer's /q banner read
+ * "Eliminado: Materiales para pintura · Cambiado: … Reparación de cerca →
+ * Materiales" while Materiales was still listed under it: changesFromPrevious
+ * paired lines by position.
+ */
+Deno.test("REQ-1024 q2-6: GET /quotes/:id/public changesFromPrevious names the removed MIDDLE line — not the last one", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const sid = await login("+15125553042");
+    const auth = { ...json, "x-session-id": sid };
+    const customer = await fetch(`${BASE}/customers`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Marta Ruiz", email: "marta@example.com" }),
+    }).then((r) => r.json());
+    const ln = (description: string, price: number) => ({
+      description,
+      quantity: 1,
+      unit: "trabajo",
+      price,
+    });
+    const FENCE = "Reparación de cerca de madera (18 pies lineales)";
+    const quote = await fetch(`${BASE}/quotes`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        summary: "Pintura exterior",
+        customerId: customer.id,
+        lineItems: [
+          ln("Pintura exterior", 420000),
+          ln(FENCE, 90000),
+          ln("Materiales para pintura", 135000),
+        ],
+        estimatedTotal: 645000,
+      }),
+    }).then((r) => r.json());
+    await (await fetch(`${BASE}/quotes/${quote.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ status: "sent" }),
+    })).body?.cancel();
+    await (await fetch(`${BASE}/quotes/${quote.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        lineItems: [
+          ln("Pintura exterior", 555000),
+          ln("Materiales para pintura", 135000),
+        ],
+        estimatedTotal: 690000,
+      }),
+    })).body?.cancel();
+    const published = await fetch(`${BASE}/quotes/${quote.id}/publish`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ notify: false }),
+    }).then((r) => r.json());
+    assertEquals(published.version, 2);
+
+    const v2 = await fetch(`${BASE}/quotes/${quote.id}/public`).then((r) =>
+      r.json()
+    );
+    assertEquals(v2.version, 2);
+    assertEquals(v2.changesFromPrevious, {
+      totalFromCents: 645000,
+      totalToCents: 690000,
+      linesAdded: 0,
+      linesRemoved: 1,
+      linesChanged: 1,
+      removed: [{ description: FENCE, totalCents: 90000 }],
+      changed: [{
+        from: { description: "Pintura exterior", totalCents: 420000 },
+        to: { description: "Pintura exterior", totalCents: 555000 },
+      }],
+    });
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
