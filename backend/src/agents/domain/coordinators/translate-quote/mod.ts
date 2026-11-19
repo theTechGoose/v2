@@ -14,6 +14,10 @@ import {
   quoteTextLang,
 } from "#quote-flow/quote-translations.ts";
 import { jobNameCase, translatedJobNameCase } from "#quote-flow/job-name.ts";
+import {
+  messageLang,
+  withoutNameParticles,
+} from "#quote-flow/message-language.ts";
 
 export interface TranslateQuoteInput {
   userId: string;
@@ -142,6 +146,20 @@ export class TranslateQuote {
       results.push({ m, res: { texts, translated: true }, texts });
     }
 
+    // REQ-973 (LOOP-007 q1-47): a line added since the last run carries no
+    // copies, and its language is not the quote's by default — an English
+    // chat edit put "Baseboards" on a Spanish quote, and the base rule made
+    // the English text the Spanish copy. A model that hands the line back
+    // unchanged when asked for the OTHER language is saying it is already in
+    // that language: it is re-based into the quote's language (`rebased`).
+    const rebased = await this.rebaseForeignLines(
+      input.userId,
+      view,
+      base,
+      rebase,
+      results,
+    );
+
     // Re-read so a concurrent edit (another field) isn't clobbered; merge
     // only into the slots this run translated, and only if their base text
     // is unchanged.
@@ -202,6 +220,16 @@ export class TranslateQuote {
       }
     }
 
+    // REQ-973: the foreign lines found above take the quote's language as
+    // their text and keep what was typed as the other copy.
+    for (const [idx, r] of rebased) {
+      const li = lineItems[idx];
+      if (!li || li.description !== quote.lineItems[idx].description) continue;
+      li.description = r.text;
+      li.descriptionByLang = { [base]: r.text, [r.from]: r.typed };
+      changed = true;
+    }
+
     const stampLang = fresh.lang !== base;
     if (!changed && !stampLang) return fresh;
     return await this.quotes.update(fresh.id, input.userId, {
@@ -211,6 +239,57 @@ export class TranslateQuote {
       ...(summaryByLang ? { summaryByLang } : {}),
       lineItems,
     });
+  }
+
+  /** REQ-973 (LOOP-007 q1-47): the new lines (no copies yet, on a quote an
+   *  earlier run already based) that the other language's translation gave
+   *  back unchanged and whose own words do not read as the base — they were
+   *  typed in that other language. Each is translated into the base; a
+   *  failed call re-bases nothing (the base rule stands, the next run asks
+   *  again only for still-missing copies). Index → the base text, the typed
+   *  text and the language it was typed in. */
+  private async rebaseForeignLines(
+    userId: string,
+    view: Quote,
+    base: QuoteLang,
+    rebase: boolean,
+    results: { m: Batch; res: { texts: string[]; translated?: boolean } }[],
+  ): Promise<Map<number, { text: string; typed: string; from: QuoteLang }>> {
+    const out = new Map<
+      number,
+      { text: string; typed: string; from: QuoteLang }
+    >();
+    if (rebase || (view.lang !== "en" && view.lang !== "es")) return out;
+    for (const { m, res } of results) {
+      if (m.lang === base || !res.translated) continue;
+      const from = m.lang as QuoteLang;
+      const nDesc = m.descriptionLines.length;
+      const foreign: { idx: number; typed: string }[] = [];
+      m.lineIndexes.forEach((idx, k) => {
+        const li = view.lineItems[idx];
+        const typed = li?.description?.trim() ?? "";
+        const copies = Object.values(li?.descriptionByLang ?? {}).some((t) =>
+          t?.trim()
+        );
+        if (!typed || copies) return;
+        if (res.texts[nDesc + k]?.trim() !== typed) return;
+        if (messageLang(withoutNameParticles(typed)) === base) return;
+        foreign.push({ idx, typed });
+      });
+      if (foreign.length === 0) continue;
+      const back = await this.translator.run({
+        userId,
+        texts: foreign.map((f) => f.typed),
+        from,
+        to: base,
+      });
+      if (!back.translated || back.texts.length !== foreign.length) continue;
+      foreign.forEach((f, i) => {
+        const text = back.texts[i]?.trim();
+        if (text) out.set(f.idx, { text, typed: f.typed, from });
+      });
+    }
+    return out;
   }
 
   /** REQ-333: the language the quote's text was written in. REQ-710

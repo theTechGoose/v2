@@ -547,7 +547,10 @@ Deno.test("REQ-447 (m14) a Spanish job name is translated as a short title ('Fau
   await resetKv();
   const quotes = new QuoteStore();
   const users = new UserStore();
-  const me = await users.create({ phoneNumber: "+15550000447", language: "es" });
+  const me = await users.create({
+    phoneNumber: "+15550000447",
+    language: "es",
+  });
   const { llm, calls } = titleAwareLlm();
   const flow = new TranslateQuote(quotes, new TranslateBullets(llm), users);
   const q = await quotes.create(me.id, {
@@ -581,7 +584,10 @@ Deno.test("REQ-447 (m14) a batch with no job name marks no title line", async ()
   await resetKv();
   const quotes = new QuoteStore();
   const users = new UserStore();
-  const me = await users.create({ phoneNumber: "+15550000448", language: "es" });
+  const me = await users.create({
+    phoneNumber: "+15550000448",
+    language: "es",
+  });
   const { llm, calls } = titleAwareLlm();
   const flow = new TranslateQuote(quotes, new TranslateBullets(llm), users);
   const q = await quotes.create(me.id, {
@@ -659,5 +665,66 @@ Deno.test("REQ-591 (cycle 4, M32) TranslateQuote registers on paperwork's QuoteT
   const after = await quotes.getOwned(q.id, "u-1");
   assertEquals(after.summaryByLang?.en, "Paint the bathroom");
   assertEquals(after.lineItems[0].descriptionByLang?.en, "Paint the bathroom");
+  await resetKv();
+});
+
+Deno.test("REQ-973 (LOOP-007 q1-47) a line typed in English on an already-translated Spanish quote is re-based into Spanish; a new Spanish line stays verbatim", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const quotes = new QuoteStore();
+  const ES: Record<string, string> = { Baseboards: "Zócalos" };
+  const EN2: Record<string, string> = { "Pintar puertas": "Paint doors" };
+  const llm = new StubLLMClient();
+  const calls: { to: string; texts: string[] }[] = [];
+  llm.setHandler((req) => {
+    const { texts } = JSON.parse(req.messages[0].content as string) as {
+      texts: string[];
+    };
+    const toEn = /English/.test(req.systemPrompt ?? "");
+    calls.push({ to: toEn ? "en" : "es", texts });
+    return {
+      text: JSON.stringify({
+        texts: texts.map((t) => (toEn ? EN2[t] : ES[t]) ?? t),
+      }),
+    };
+  });
+  const flow = new TranslateQuote(quotes, new TranslateBullets(llm));
+  const q = await quotes.create("u-1", {
+    summary: "Pintura",
+    summaryByLang: { es: "Pintura", en: "Painting" },
+    lang: "es",
+    lineItems: [
+      {
+        description: "Pintura de paredes",
+        descriptionByLang: { es: "Pintura de paredes", en: "Wall painting" },
+        quantity: 1,
+        unit: "job",
+        price: 100000,
+      },
+      { description: "Baseboards", quantity: 1, unit: "ea", price: 35000 },
+      { description: "Pintar puertas", quantity: 1, unit: "ea", price: 20000 },
+    ],
+    status: "sent",
+  });
+
+  await flow.run({ userId: "u-1", quoteId: q.id });
+
+  const after = await quotes.getOwned(q.id, "u-1");
+  assertEquals(after.lineItems[1].description, "Zócalos");
+  assertEquals(after.lineItems[1].descriptionByLang, {
+    es: "Zócalos",
+    en: "Baseboards",
+  });
+  assertEquals(after.lineItems[2].description, "Pintar puertas");
+  assertEquals(after.lineItems[2].descriptionByLang, {
+    es: "Pintar puertas",
+    en: "Paint doors",
+  });
+  assertEquals(
+    calls.map((c) => c.to),
+    ["en", "es"],
+    "one call for English, one to bring the English line into Spanish",
+  );
+  assertEquals(calls[1].texts, ["Baseboards"]);
   await resetKv();
 });
