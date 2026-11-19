@@ -75,3 +75,29 @@ describe("REQ-1035 (LOOP-007 q2-17, q2-50) an empty /worker day states it once",
     expect(bodyRendersNone && summaryAlways).toBe(false);
   });
 });
+
+describe("REQ-1164 (LOOP-007 q3-101) an empty /worker day draws no 0% progress ring", () => {
+  test("REQ-1164 (q3-101): the REQ-196 data-cy=\"w-progress\" ring is gated on the day having live tasks", () => {
+    const at = SRC.indexOf('data-cy="w-progress"');
+    expect(at).toBeGreaterThan(-1);
+    // the element that carries data-cy="w-progress" opens at the last "<div" before it
+    const open = SRC.lastIndexOf("<div", at);
+    expect(open).toBeGreaterThan(-1);
+    // the JSX right before that <div must gate it on there being live tasks, e.g.
+    // `{liveTasks.length > 0 && (` or `{liveTasks.length ? (` — today it sits bare
+    // inside the summary, so an empty day draws an empty track with "0%"
+    const before = SRC.slice(Math.max(0, open - 160), open);
+    expect(before).toMatch(/(liveTasks\.length|dayCounts\.live)\s*(>\s*0\s*)?(&&|\?)\s*\(?\s*$/);
+  });
+
+  test("REQ-1164 (q3-101): no progressbar is ever drawn with aria-valuemax 0", () => {
+    // a progressbar whose max is liveTasks.length must sit behind a liveTasks.length guard
+    const at = SRC.indexOf('role="progressbar"');
+    expect(at).toBeGreaterThan(-1);
+    const open = SRC.lastIndexOf("<div", at);
+    const before = SRC.slice(Math.max(0, open - 160), open);
+    const max = SRC.slice(at, at + 200).match(/aria-valuemax=\{([^}]*)\}/)?.[1] ?? "";
+    const guarded = /(liveTasks\.length|dayCounts\.live)\s*(>\s*0\s*)?(&&|\?)\s*\(?\s*$/.test(before);
+    expect(max === "liveTasks.length" && !guarded).toBe(false);
+  });
+});
