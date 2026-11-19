@@ -310,7 +310,14 @@ export default define.page(async function PublicChangeOrder(ctx) {
                               >
                                 {tFor(
                                   lang,
-                                  co.deltaAmountCents >= 0
+                                  // REQ-949: a draft/scheduled balance invoice never reached
+                                  // the customer — don't name it, say "remaining balance"
+                                  co.invoice.status === "draft" ||
+                                    co.invoice.status === "scheduled"
+                                    ? (co.deltaAmountCents >= 0
+                                      ? "changeOrderPublic.addedToBalance"
+                                      : "changeOrderPublic.creditedOnBalance")
+                                    : co.deltaAmountCents >= 0
                                     ? "changeOrderPublic.addedToInvoice"
                                     : "changeOrderPublic.creditedOnInvoice",
                                   {
