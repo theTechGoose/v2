@@ -35,6 +35,7 @@ import {
   outboxWhy,
 } from "../lib/outbox.ts";
 import { toE164 } from "../lib/communications.ts";
+import { fmtDayYear } from "../lib/format.ts";
 import { assistantThreadPath } from "../lib/quote-panel-send.ts";
 import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
 import { initialsOf, invoiceFormTarget } from "../lib/customer-nav.ts";
@@ -728,7 +729,7 @@ export default function CustomerWorkspace(
                     </>
                   )}
                   <dt>{tFor(lang, "customerWs.ov.since")}</dt>
-                  <dd>{day(c.createdAt, lang)} {c.createdAt.slice(0, 4)}</dd>
+                  <dd>{fmtDayYear(c.createdAt, lang)}</dd>
                 </dl>
                 {c.notes && (
                   <p class="cws-notes" data-cy="cws-notes">{c.notes}</p>

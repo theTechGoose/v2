@@ -99,3 +99,18 @@ export function detailLines(description: string | null | undefined): string[] {
     .map((l) => l.replace(/^\s*[••\-*]\s*/, "").trim())
     .filter((l) => l.length > 0);
 }
+
+/** REQ-1042 (q2-26): a calendar date with its year — "Nov 19, 2026" (en), "19 nov 2026" (es).
+ *  The whole date goes through Intl with `year: "numeric"`, so en-US puts its comma in; never glue
+ *  the ISO year onto a month-day string by hand. Reads the ISO calendar day (UTC), so a late-UTC
+ *  timestamp stays on its own day. No date → "—". */
+export function fmtDayYear(
+  iso: string | null | undefined,
+  lang: "en" | "es",
+): string {
+  if (!iso) return "—";
+  return new Date(iso.slice(0, 10) + "T12:00:00Z").toLocaleDateString(
+    lang === "es" ? "es-US" : "en-US",
+    { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" },
+  );
+}
