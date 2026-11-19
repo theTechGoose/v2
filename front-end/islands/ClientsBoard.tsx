@@ -52,6 +52,11 @@ import {
   openIdFromSearch,
 } from "../lib/customer-card-edit.ts";
 import { ApiError } from "../lib/api.ts";
+import {
+  type DeleteOwes,
+  owesAskVars,
+  owesFromError,
+} from "../lib/customer-delete-owes.ts"; // REQ-1138
 import CustomerLanguageSelect, {
   type CustomerLanguageValue,
   customerLanguageValue,
@@ -431,11 +436,14 @@ function ClientCard(
   const [askDelete, setAskDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  // REQ-1138 (q3-69): the 409 customer_owes answer — the question names it, the confirm is "Delete anyway"
+  const [deleteOwes, setDeleteOwes] = useState<DeleteOwes | null>(null);
   const askRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isOpen) {
       setAskDelete(false);
       setDeleteErr(null);
+      setDeleteOwes(null);
     }
   }, [isOpen]);
   // the panel scrolls as a whole (REQ-419): the question comes into view
@@ -449,11 +457,15 @@ function ClientCard(
     setDeleting(true);
     setDeleteErr(null);
     try {
-      await clientsClient.delete(c.id);
+      if (deleteOwes) await clientsClient.deleteAnyway(c.id);
+      else await clientsClient.delete(c.id);
       onDeleted(c);
     } catch (err) {
       setDeleting(false);
-      setDeleteErr((err as Error).message);
+      // REQ-1138: she still owes money — ask again, naming it, with "Delete anyway"
+      const owes = owesFromError(err);
+      if (owes) setDeleteOwes(owes);
+      else setDeleteErr((err as Error).message);
     }
   }
   const initials = initialsOf(c.name);
@@ -868,7 +880,15 @@ function ClientCard(
                 ref={askRef}
               >
                 <div>
-                  {tFor(lang, "clientsBoard.panel.deleteAsk", { name: c.name })}
+                  {deleteOwes
+                    ? tFor(
+                      lang,
+                      "clientsBoard.panel.deleteAskOwes",
+                      owesAskVars(c.name, deleteOwes),
+                    )
+                    : tFor(lang, "clientsBoard.panel.deleteAsk", {
+                      name: c.name,
+                    })}
                 </div>
                 <div class="ccard2__panel-ask-btns">
                   <button
@@ -878,8 +898,12 @@ function ClientCard(
                     disabled={deleting}
                     onClick={onDeleteYes}
                   >
-                    <I d={ICN.trash} size={12} sw={2.4} />{" "}
-                    {tFor(lang, "clientsBoard.panel.deleteYes")}
+                    <I d={ICN.trash} size={12} sw={2.4} /> {tFor(
+                      lang,
+                      deleteOwes
+                        ? "clientsBoard.panel.deleteAnyway"
+                        : "clientsBoard.panel.deleteYes",
+                    )}
                   </button>
                   <button
                     class="ccard2__panel-act ccard2__panel-act--ghost"
@@ -889,6 +913,7 @@ function ClientCard(
                     onClick={() => {
                       setAskDelete(false);
                       setDeleteErr(null);
+                      setDeleteOwes(null);
                     }}
                   >
                     {tFor(lang, "clientsBoard.panel.deleteKeep")}

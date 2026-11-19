@@ -30,3 +30,16 @@ export function invoiceClientName(
     .map((s) => s?.trim())
     .find((s) => !!s) ?? "—";
 }
+
+/** REQ-1138 (LOOP-007 q3, q3-69): the invoice's customer id only while that customer is on file.
+ *  A deleted customer (REQ-802 soft delete) leaves the live list; her open invoice keeps the id, and
+ *  a card that linked or PUT to /customers/<that id> led to "Customer not found". Gone → null, so
+ *  the card falls back to the invoice's own bill-to (name from customerSnapshot, REQ-988). */
+export function liveCustomerId(
+  inv: { customerId?: string | null },
+  customers: { has(id: string): boolean },
+): string | null {
+  return inv.customerId && customers.has(inv.customerId)
+    ? inv.customerId
+    : null;
+}

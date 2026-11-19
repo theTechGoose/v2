@@ -117,6 +117,8 @@ export interface ClientsPageResponse {
     totalClients: number;
     activeJobs: number;
     owedCents: number;
+    /** REQ-1138: open receivables no card carries — beside the headline, never in it */
+    unassignedOwedCents?: number;
     quietCount: number;
   };
   /** the three to call next: leads and owes, longest quiet first */
@@ -178,6 +180,10 @@ export const clientsClient = {
   /** REQ-802 — the card's Delete customer: REQ-039's soft delete (`deletedAt`), the row is kept */
   delete: (id: string, opts: ApiOptions = {}) =>
     api.delete<{ ok: true }>(`/customers/${id}`, opts),
+  /** REQ-1138 — the owner's explicit "Delete anyway" for a customer who still owes money (a plain
+   *  delete answers 409 `customer_owes` with what she owes and on which invoices) */
+  deleteAnyway: (id: string, opts: ApiOptions = {}) =>
+    api.delete<{ ok: true }>(`/customers/${id}?force=1`, opts),
   /** REQ-625 — the full customer form; REQ-283 the one-off task form's typed
    *  address; REQ-715 the customer's language (left out when not set) */
   create: (

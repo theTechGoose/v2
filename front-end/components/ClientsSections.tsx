@@ -18,6 +18,9 @@ interface ClientsHeroProps {
   activeJobs: number;
   /** Money owed across every customer, in exact cents (REQ-1086). */
   owedCents: number;
+  /** REQ-1138 (q3-69): cents owed on open invoices no card carries (no customer on file, or a
+   *  deleted one) — a separate clause linking to /invoices, never part of the headline owed */
+  unassignedOwedCents?: number;
   quietCount: number;
   lang?: Lang;
   /** Open the add-client modal. Rendered inside the ClientsPage island, so
@@ -26,8 +29,15 @@ interface ClientsHeroProps {
 }
 
 export function ClientsHero(
-  { totalClients, activeJobs, owedCents, quietCount, lang = "en", onAdd }:
-    ClientsHeroProps,
+  {
+    totalClients,
+    activeJobs,
+    owedCents,
+    unassignedOwedCents = 0,
+    quietCount,
+    lang = "en",
+    onAdd,
+  }: ClientsHeroProps,
 ) {
   // REQ-961 / REQ-1086: to the cent unless the total is whole, like the
   // board card and the sidebar on the same screen (never rounded to dollars).
@@ -95,9 +105,21 @@ export function ClientsHero(
                     { n: activeJobs },
                   )}
                 </strong>{" "}
-                · <strong>{owedFmt}</strong> {tFor(lang, "clientsHero.owed")} ·
-                {" "}
-                {
+                · <strong>{owedFmt}</strong> {tFor(lang, "clientsHero.owed")}
+                {unassignedOwedCents > 0 && (
+                  <>
+                    {" "}
+                    <a
+                      href="/invoices"
+                      class="ph2__unassigned"
+                      data-cy="clients-hero-unassigned"
+                    >
+                      {tFor(lang, "clientsHero.unassigned", {
+                        amount: fmtMoneyTotal(unassignedOwedCents),
+                      })}
+                    </a>
+                  </>
+                )} · {
                   /* count + noun in ONE key so ES keeps noun-then-adjective
                     order ("2 clientes sin contacto"), never the EN calque
                     "sin contacto clientes" (P-34). */

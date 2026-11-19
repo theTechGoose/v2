@@ -22,6 +22,7 @@ import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts"; // REQ-208
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts"; // REQ-208
+import { customerOpenReceivables } from "@paperwork/domain/business/open-receivable/mod.ts"; // REQ-1138
 import {
   customerExportCsv,
   exportDateOf,
@@ -127,9 +128,28 @@ export class CustomerController {
     return await this.store.update(id, user.id, parseUpdateCustomer(body));
   }
 
+  /**
+   * REQ-802 soft delete. REQ-1138 (LOOP-007 q3, q3-69): a customer who still owes money (an open
+   * receivable on the REQ-397 rule) is refused 409 `{code:"customer_owes", owedCents, invoices}` so
+   * the debt never loses its owner silently; `?force=1` is the owner's explicit "Delete anyway".
+   */
   @Delete(":id")
-  async delete(@Context() ctx: ExecutionContext, @Param("id") id: string) {
+  async delete(
+    @Context() ctx: ExecutionContext,
+    @Param("id") id: string,
+    @Query("force") force?: string,
+  ) {
     const user = await requireUser(ctx, this.sessions, this.users);
+    await this.store.getOwned(id, user.id); // 404 before anything is said about her balance
+    if (force !== "1" && force !== "true") {
+      const owes = customerOpenReceivables(
+        await new InvoiceStore().listByUser(user.id),
+        id,
+      );
+      if (owes.owedCents > 0) {
+        return ctx.json({ ok: false, code: "customer_owes", ...owes }, 409);
+      }
+    }
     await this.store.delete(id, user.id);
     return { ok: true };
   }
