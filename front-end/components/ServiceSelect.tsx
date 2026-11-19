@@ -55,6 +55,8 @@ export default function ServiceSelect(
     disabled,
     onPick,
     onCreate,
+    placeholder,
+    invalid,
     style,
     ...rest
   }: {
@@ -68,6 +70,10 @@ export default function ServiceSelect(
     /** REQ-979 — offer to add a typed name that is no service; the owner
      *  creates it in the catalogue and picks it */
     onCreate?: (name: string) => void;
+    /** REQ-1159 — the box's hint (default `serviceLines.pick`) */
+    placeholder?: string;
+    /** REQ-1159 — the owner's check failed on this field: the box is aria-invalid */
+    invalid?: boolean;
     /** the wrapper's style (the picker fills it) */
     style?: string;
     "data-cy"?: string;
@@ -91,7 +97,8 @@ export default function ServiceSelect(
         key={value || "none"}
         options={options}
         value={value || undefined}
-        placeholder={tFor(lang, "serviceLines.pick")}
+        placeholder={placeholder ?? tFor(lang, "serviceLines.pick")}
+        invalid={invalid}
         lang={lang}
         disabled={disabled}
         onSelect={(o) => {

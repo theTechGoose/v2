@@ -29,7 +29,11 @@ describe("REQ-283 Add task names what is missing and can add a customer", () => 
   });
 
   test("the failing field is marked aria-invalid", () => {
-    expect(page).toMatch(/aria-invalid=\{addBad === "type"/);
+    // REQ-1159: Service is the ServiceSelect picker — `invalid` reaches SearchSelect's aria-invalid
+    expect(page).toMatch(/invalid=\{addBad === "type"/);
+    expect(read("front-end/components/ServiceSelect.tsx")).toMatch(
+      /invalid=\{invalid\}/,
+    );
     expect(page).toMatch(/aria-invalid=\{addBad === "price"/);
     expect(page).toMatch(/aria-invalid=\{addBad === "worker"/);
     expect(page).toMatch(/addTaskServerProblem\(/);

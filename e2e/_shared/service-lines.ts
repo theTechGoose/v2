@@ -96,3 +96,38 @@ export async function pickerShows(page: Page, root: string): Promise<string> {
   return await page.locator(`${root} [data-cy='search-select-input']`)
     .inputValue();
 }
+
+/**
+ * REQ-1159: the /field/tasks Service boxes (Add task, the card's Add service) are the house
+ * picker — type `name`, pick its row, or `+ Add "<name>" as a service` when the catalogue has
+ * none; resolves once the box carries a pick
+ */
+export async function pickOrAddService(
+  page: Page,
+  root: string,
+  name: string,
+): Promise<void> {
+  const box = page.locator(`${root} [data-cy='search-select-input']`);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (await page.locator(root).getAttribute("data-value")) {
+      if ((await box.inputValue()) === name) return;
+    }
+    try {
+      await box.click({ timeout: 2_000 });
+      await box.fill(name);
+      const row = page.locator(
+        `${root} [data-cy='search-select-option'], ${root} [data-cy='search-select-create']`,
+      ).filter({ hasText: name }).first();
+      await row.click({ timeout: 3_000 });
+    } catch {
+      // still hydrating / the catalogue still loading: try again
+    }
+    for (let i = 0; i < 10; i++) {
+      if (await page.locator(root).getAttribute("data-value")) break;
+      await page.waitForTimeout(200);
+    }
+  }
+  if (!(await page.locator(root).getAttribute("data-value"))) {
+    throw new Error(`${root}: ${name} never picked`);
+  }
+}
