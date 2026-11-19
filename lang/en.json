@@ -6233,6 +6233,7 @@
   "searchSelect.add": "+ Add \"{name}\"",
   "paperworkEmail.invoice.receiptAttached": "A PDF receipt is attached for your records.",
   "publicInvoice.received.bodyPaidEmail": "Thanks! {who} confirmed your payment{when}. We emailed you the invoice marked paid.",
+  "invoicesPage.pay.errFutureDate": "A payment can't be received in the future. Pick today or an earlier day.",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",

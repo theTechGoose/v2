@@ -16,6 +16,7 @@ import {
   OVERPAYMENT_HARD_MULTIPLE,
   overpaymentCheck,
 } from "../../shared/documents/overpayment.ts";
+import { isAfterLocalToday } from "../../shared/documents/received-day.ts"; // REQ-943
 
 export type PaymentReceivedInput = {
   method: PaymentMethod | null;
@@ -30,6 +31,8 @@ export type PaymentReceivedInput = {
   paidCents?: number;
   /** REQ-551: the contractor said "record anyway" to the overpayment. */
   confirmedOver?: boolean;
+  /** REQ-943: the clock "today" is read from (tests pin it). */
+  now?: Date;
 };
 
 export type PaymentReceivedResult =
@@ -82,7 +85,7 @@ function tooMuchResult(amountCents: number): PaymentReceivedResult {
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function validatePaymentReceived(
-  { method, dollars, date, amountCents, paidCents, confirmedOver }:
+  { method, dollars, date, amountCents, paidCents, confirmedOver, now }:
     PaymentReceivedInput,
 ): PaymentReceivedResult {
   if (!method) return { ok: false, errKey: "invoicesPage.pay.errMethod" };
@@ -96,6 +99,11 @@ export function validatePaymentReceived(
   const at = new Date(`${date}T12:00:00`);
   if (Number.isNaN(at.getTime())) {
     return { ok: false, errKey: "invoicesPage.pay.errDate" };
+  }
+  // REQ-943 (LOOP-007 q1-8): a payment can't be received after today — the
+  // contractor's local day; POST /payments refuses it too (future_date).
+  if (isAfterLocalToday(date, now)) {
+    return { ok: false, errKey: "invoicesPage.pay.errFutureDate" };
   }
   // REQ-551 (demo-loop cycle 4, B2): the same rule POST /payments applies —
   // above the balance asks first, above 10x the invoice is refused.
@@ -141,6 +149,12 @@ export function overpaymentFromError(
   return null;
 }
 
+/** REQ-943: the server's date refusals, as the form's own reasons. */
+const DATE_ERROR_KEYS: Record<string, string> = {
+  future_date: "invoicesPage.pay.errFutureDate",
+  invalid_date: "invoicesPage.pay.errDate",
+};
+
 /** The server's reason when it gave one ({ error } or { message }), else the
  *  generic line. */
 export function paymentErrorText(lang: Lang, e: unknown): string {
@@ -148,6 +162,8 @@ export function paymentErrorText(lang: Lang, e: unknown): string {
   if (over && !over.ok) return tFor(lang, over.errKey, over.vars);
   if (e instanceof ApiError && e.body && typeof e.body === "object") {
     const b = e.body as { error?: unknown; message?: unknown };
+    const dateKey = typeof b.error === "string" && DATE_ERROR_KEYS[b.error];
+    if (dateKey) return tFor(lang, dateKey); // REQ-943
     if (typeof b.error === "string" && b.error.trim()) return b.error;
     if (typeof b.message === "string" && b.message.trim()) return b.message;
   }

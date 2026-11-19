@@ -6233,6 +6233,7 @@
   "searchSelect.add": "+ Agregar \"{name}\"",
   "paperworkEmail.invoice.receiptAttached": "Adjuntamos un recibo en PDF para tus registros.",
   "publicInvoice.received.bodyPaidEmail": "¡Gracias! {who} confirmó tu pago{when}. Te enviamos por correo la factura marcada como pagada.",
+  "invoicesPage.pay.errFutureDate": "Un pago no puede recibirse en el futuro. Elige hoy o un día anterior.",
   "comms.a2p.title": "Registro para mensajes de texto",
   "comms.a2p.sub": "Las operadoras solo entregan mensajes de empresas desde un número registrado (A2P 10DLC). Complétalo una vez y lo presentamos a Twilio para este número.",
   "comms.a2p.state.none": "Sin registrar",

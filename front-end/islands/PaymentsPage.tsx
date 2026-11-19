@@ -53,6 +53,11 @@ import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-988
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
+import {
+  calendarDaysAgo,
+  daysToPayOf,
+  isThisMonthSoFar,
+} from "../lib/payments-partition.ts"; // REQ-943
 import { paidThisMonthCents } from "../lib/headline-counts.ts"; // REQ-959
 import { refreshDash } from "../lib/dash-cache.ts";
 import {
@@ -207,7 +212,15 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function whenLabel(lang: Lang, daysAgo: number): string {
+function whenLabel(lang: Lang, daysAgo: number, at?: string): string {
+  // REQ-943 (q1-9): a day after today is its own date, never "Today"
+  if (daysAgo < 0 && at) {
+    return new Date(at).toLocaleDateString(lang === "es" ? "es-US" : "en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
   if (daysAgo <= 0) return tFor(lang, "paymentsPage.when.today");
   if (daysAgo === 1) return tFor(lang, "paymentsPage.when.yesterday");
   return tFor(lang, "paymentsPage.when.daysAgo", { n: daysAgo });
@@ -258,12 +271,10 @@ function enrich(
     ? inv.customerId
     : undefined;
   const client = inv ? invoiceClientName(inv, customers) : "—";
-  const daysAgo = Math.max(
-    0,
-    Math.floor(
-      (now.getTime() - new Date(p.receivedAt).getTime()) / (24 * 3600 * 1000),
-    ),
-  );
+  // REQ-943 (q1-9): local calendar days, NOT clamped — a future-dated
+  // payment stays negative so it is never "Today".
+  const days = calendarDaysAgo(p.receivedAt, now);
+  const daysAgo = Number.isFinite(days) ? days : 0;
   const status = paymentStatus(p); // REQ-926
   return {
     ...p,
@@ -274,7 +285,7 @@ function enrich(
     // predates numbering or is no longer on the books.
     invoiceRef: docNumberOf(inv ?? { id: p.invoiceId }),
     daysAgo,
-    whenLabel: whenLabel(lang, daysAgo),
+    whenLabel: whenLabel(lang, daysAgo, p.receivedAt),
     note: status === "reversed"
       ? tFor(lang, "paymentsPage.chargeback.note", {
         name: client.split(/\s+/)[0],
@@ -380,18 +391,19 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
     .map((p) => enrich(lang, p, invoiceById, customerNames, now))
     .sort((a, b) => a.daysAgo - b.daysAgo);
 
-  const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
   // Partition by status. Landed = recorded this month (REQ-926: at once —
   // no In transit). Reversed = charged back (kept, outside every total).
   // Attention = customer claims awaiting confirm/reject (REQ-281): they are
   // on the invoices, not the payments, until the contractor confirms.
+  // REQ-943 (q1-9): "this month" ends today — a payment dated after today
+  // is outside the hero, the rows and the average, as in the cash-flow card.
   const landed = enriched.filter((p) =>
-    p.status === "landed" && new Date(p.receivedAt) >= monthCutoff
+    p.status === "landed" && isThisMonthSoFar(p.receivedAt, now)
   );
   const reversed = enriched.filter((p) => p.status === "reversed");
   const reversedTotal = reversed.reduce((sum, p) => sum + p.amount, 0);
   const attention = pendingClaims(s.invoices, customerNames, now);
-  const recentLanded = landed.filter((p) => p.daysAgo <= 1);
+  const recentLanded = landed.filter((p) => p.daysAgo >= 0 && p.daysAgo <= 1);
   const olderLanded = landed.filter((p) => p.daysAgo > 1);
 
   // REQ-551 (demo B2): one "paid" definition with /invoices — a payment
@@ -399,23 +411,26 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
   // its own line under the hero, never part of the total. REQ-959: the
   // month's sum is the SAME helper the /invoices "Paid this month" tile
   // calls, so a part payment counts on both screens.
+  // REQ-943 (q1-9): a payment dated after today is not "this month" yet.
   const month = paidThisMonthCents(
-    s.payments, // reversed ones (REQ-926) are skipped inside
+    // reversed ones (REQ-926) are skipped inside
+    s.payments.filter((p) => isThisMonthSoFar(p.receivedAt, now)),
     Array.isArray(s.invoices) ? s.invoices : [],
-    monthCutoff,
+    new Date(now.getFullYear(), now.getMonth(), 1),
   );
   const monthTotal = month.cents;
   const monthOverpaid = month.overCents;
   const attentionTotal = attention.reduce((sum, p) => sum + p.amount, 0);
 
   // Avg days to pay — over landed payments, average of receivedAt minus invoice issuedDate.
+  // REQ-943 (q1-9): never a payment dated after today.
   const daysToPay = landed.flatMap((p) => {
-    const inv = invoiceById.get(p.invoiceId);
-    if (!inv?.issuedDate) return [];
-    const issued = new Date(inv.issuedDate).getTime();
-    const received = new Date(p.receivedAt).getTime();
-    if (!Number.isFinite(issued) || !Number.isFinite(received)) return [];
-    return [Math.max(0, Math.floor((received - issued) / (24 * 3600 * 1000)))];
+    const d = daysToPayOf(
+      p.receivedAt,
+      invoiceById.get(p.invoiceId)?.issuedDate,
+      now,
+    );
+    return d === null ? [] : [d];
   });
   // REQ-562 (demo-loop cycle 4, m21): null = no landed payment yet; a
   // same-day payment averages 0 days, which is history, not "no history".

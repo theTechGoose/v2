@@ -10,6 +10,7 @@ import { DOMParser, type Element } from "@b-fuze/deno-dom";
 import { renderToString } from "preact-render-to-string";
 import { recordOptionLabel } from "./payment-record-option.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
+import { localIsoDay } from "../../shared/documents/received-day.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 
 const base = { id: "abcdef1234567890", amount: 45000 };
@@ -75,7 +76,9 @@ function rendered(lang: "en" | "es") {
 }
 
 Deno.test("REQ-587 M27: 'Recibido el' shows the picked date in Spanish words next to the native picker", () => {
-  const today = new Date().toISOString().slice(0, 10);
+  // REQ-943: the default is the LOCAL day (the UTC day is tomorrow every
+  // evening in the Americas, and a day after today is now refused)
+  const today = localIsoDay();
   const es = rendered("es").querySelector(
     "[data-cy=pay-received-date-text]",
   ) as Element | null;
