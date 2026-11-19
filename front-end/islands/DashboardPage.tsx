@@ -26,7 +26,8 @@ import {
 import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import { MoneyBar } from "../components/MoneyBar.tsx"; // REQ-798
 import { buildMoneyBar } from "../../shared/receivables/money-bar.ts";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoney, fmtMoneyTotal } from "../lib/format.ts";
+import { shortDate } from "../../shared/documents/linked-view.ts";
 import {
   dueDateLine,
   isQuoteOut,
@@ -59,9 +60,6 @@ import {
   SUPPORT_PHONE_HREF,
 } from "../../shared/legal/contact.ts";
 
-function shortMonth(lang: Lang, monthIdx: number): string {
-  return tFor(lang, `common.monthShort.${monthIdx}`);
-}
 function shortDay(lang: Lang, dayIdx: number): string {
   return tFor(lang, `common.dayShort.${dayIdx}`);
 }
@@ -87,14 +85,26 @@ function fmtDueRel(iso: string, now: Date, lang: Lang): string {
   if (diffDays === 1) return tFor(lang, "dashboardPage.due.tomorrow");
   if (diffDays === -1) return tFor(lang, "dashboardPage.due.yesterday");
   if (diffDays > 1 && diffDays < 7) return shortDay(lang, due.getDay());
-  return `${shortMonth(lang, due.getMonth())} ${due.getDate()}`;
+  return dayOf(due, lang);
 }
 
-/** "Nov 26" for an ISO yyyy-mm-dd (local calendar day, no TZ drift). */
+/** REQ-1093 (q3-11/q3-12): a local calendar day in the house short form —
+ *  "Nov 26" (en) / "26 nov" (es) — via the shared shortDate, never a
+ *  hand-glued month-first string. */
+function dayOf(d: Date, lang: Lang): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return shortDate(
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+    lang,
+    false,
+  );
+}
+
+/** "Nov 26" / "26 nov" for an ISO yyyy-mm-dd (local calendar day, no TZ drift). */
 function fmtDay(iso: string, lang: Lang): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
   if (!Number.isFinite(d.getTime())) return iso;
-  return `${shortMonth(lang, d.getMonth())} ${d.getDate()}`;
+  return dayOf(d, lang);
 }
 
 function fmtRel(iso: string, now: Date, lang: Lang): string {
@@ -107,9 +117,7 @@ function fmtRel(iso: string, now: Date, lang: Lang): string {
   const d = Math.floor(h / 24);
   if (d === 1) return tFor(lang, "dashboardPage.rel.yesterday");
   if (d < 7) return tFor(lang, "dashboardPage.rel.daysAgo", { n: d });
-  return `${shortMonth(lang, new Date(iso).getMonth())} ${
-    new Date(iso).getDate()
-  }`;
+  return dayOf(new Date(iso), lang);
 }
 
 const JOB_ROTATION: { icon: IconName; color: string }[] = [
@@ -122,7 +130,6 @@ const JOB_ROTATION: { icon: IconName; color: string }[] = [
 
 function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
   const rot = JOB_ROTATION[idx % JOB_ROTATION.length];
-  const total = j.totalCents / 100;
   // REQ-473 (demo-loop cycle 3, M8): "Deposit" only when the agreed terms
   // open with a deposit — "Payment upon completion" reads "Due on completion".
   const paidKey = jobPaidLabel(j.paidCents, j.paymentTerms);
@@ -137,7 +144,8 @@ function jobToRow(j: Job, idx: number, now: Date, lang: Lang): JobRow {
   return {
     client: j.customer.name,
     task: jobRowTitle(j, lang),
-    amount: `$${Math.round(total).toLocaleString()}`,
+    // REQ-1093 (q3-12): to the cent unless whole (REQ-961's fmtMoneyTotal).
+    amount: fmtMoneyTotal(j.totalCents),
     paid: paidLabel,
     pct: j.pctPaid,
     due: fmtDue(j.nextDueDate, now, lang),
@@ -553,7 +561,8 @@ export default function DashboardPage(
   const upcomingBill = nextUpcomingBill(safeInvoices);
   const upcomingLine = upcomingBill
     ? tFor(lang, "outstanding.upcoming", {
-      amt: Math.round(upcomingBill.amountCents / 100).toLocaleString("en-US"),
+      // REQ-1093 (q3-11): to the cent unless whole; the copy adds no "$".
+      amt: fmtMoneyTotal(upcomingBill.amountCents),
       date: fmtDay(upcomingBill.date, lang),
     })
     : null;

@@ -2386,7 +2386,7 @@
   "outstanding.empty.noInvoices": "Aún no hay facturas — en cuanto cobres un trabajo, aparecerá aquí.",
   "outstanding.label": "Dinero que te deben",
   "outstanding.nudgeAll": "Recordar a todos",
-  "outstanding.upcoming": "Próximo: ${amt} se cobra el {date}",
+  "outstanding.upcoming": "Próximo: {amt}, te recordamos enviarla el {date}",
   "paperworkEmail.invoice.amountDueLabel": "Monto a pagar",
   "paperworkEmail.invoice.cta": "Ver y pagar factura",
   "paperworkEmail.invoice.detailsLabel": "Detalles de la factura",

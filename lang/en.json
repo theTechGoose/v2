@@ -2386,7 +2386,7 @@
   "outstanding.empty.noInvoices": "No invoices yet — once you bill a job, it'll show up here.",
   "outstanding.label": "Money owed to you",
   "outstanding.nudgeAll": "Nudge all",
-  "outstanding.upcoming": "Upcoming: ${amt} bills {date}",
+  "outstanding.upcoming": "Upcoming: {amt} bills {date}",
   "paperworkEmail.invoice.amountDueLabel": "Amount due",
   "paperworkEmail.invoice.cta": "View & pay invoice",
   "paperworkEmail.invoice.detailsLabel": "Invoice details",
