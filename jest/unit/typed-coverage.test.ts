@@ -17,6 +17,7 @@ import {
   typedWorkItems,
   withQuantity,
 } from "../../shared/quote-flow/typed-coverage";
+import { customerFactsFrom } from "../../shared/quote-flow/option-bullets";
 
 const KITCHEN =
   "Kitchen remodel for the Hendersons on Barton Hills Dr. Demo the old cabinets and haul away. " +
@@ -138,5 +139,45 @@ describe("REQ-439 (cycle 3, M9) typed work items", () => {
       ], typedWorkItems(BATH, "es")),
     )
       .toEqual([]);
+  });
+});
+
+/**
+ * REQ-951 (LOOP-007 cycle 1, q1-27) — REQ-439/REQ-266: the first draft of
+ * Q-002 folded "quitar el piso viejo" into "Cambio de piso de cocina (180
+ * pies cuadrados, cerámica)" and the REQ-439 check never noticed. Its only
+ * key term after the filler list is "piso", which the earlier "cambiar piso
+ * de cocina" part already had, so typedScopeItems dropped the removal as a
+ * reworded repeat — and the street address was kept as a "work item" instead.
+ */
+const Q127 =
+  "cotizacion para Jose Martinez, jose.m@example.com, 1820 Elm St Austin TX 78702. " +
+  "cambiar piso de cocina, 180 pies cuadrados de ceramica, quitar el piso viejo, $3,200 con materiales. " +
+  "mitad al empezar y mitad al terminar";
+const Q127_DRAFT = ["Cambio de piso de cocina (180 pies cuadrados, cerámica)"];
+
+describe("REQ-951 (LOOP-007 q1-27) REQ-439 a removal is its own typed item", () => {
+  const work = () => typedWorkItems(Q127, "es", customerFactsFrom(Q127));
+
+  it("REQ-951 REQ-439 typedWorkItems keeps 'quitar el piso viejo' beside 'cambiar piso de cocina'", () => {
+    expect(work().some((i) => /quitar el piso viejo/i.test(i))).toBe(true);
+  });
+
+  it("REQ-951 REQ-439 the typed street address is not a work item", () => {
+    expect(work().some((i) => /1820 Elm St/i.test(i))).toBe(false);
+  });
+
+  it("REQ-951 REQ-439 a replacement-only draft misses the removal", () => {
+    const missed = missedTypedItems(Q127_DRAFT, work());
+    expect(missed.some((i) => /quitar el piso viejo/i.test(i))).toBe(true);
+    expect(missed.some((i) => /1820 Elm/i.test(i))).toBe(false);
+  });
+
+  it("REQ-951 REQ-439 a line that also removes the old floor covers it", () => {
+    expect(
+      missedTypedItems([
+        "Cambio de piso de cocina (180 pies cuadrados, cerámica) y retiro del piso viejo",
+      ], work()),
+    ).toEqual([]);
   });
 });

@@ -3157,6 +3157,48 @@ Deno.test("REQ-439 (M9) a first draft with a line for every typed item is not as
   await resetKv();
 });
 
+// ── REQ-951 (LOOP-007 cycle 1, q1-27) — REQ-439/REQ-266: Q-002's first draft
+// folded "quitar el piso viejo" into one "Cambio de piso de cocina" line and
+// the first-draft check never asked again (it dropped the removal as a repeat
+// of "cambiar piso" and named the street address instead).
+const Q127_MSG =
+  "cotizacion para Jose Martinez, jose.m@example.com, 1820 Elm St Austin TX 78702. " +
+  "cambiar piso de cocina, 180 pies cuadrados de ceramica, quitar el piso viejo, $3,200 con materiales. " +
+  "mitad al empezar y mitad al terminar";
+const Q127_DRAFT = [
+  { description: "Cambio de piso de cocina (180 pies cuadrados, cerámica)", amountCents: 320_000 },
+];
+const Q127_FULL = [
+  { description: "Retiro del piso viejo de la cocina", amountCents: 60_000 },
+  { description: "Cambio de piso de cocina (180 pies cuadrados, cerámica)", amountCents: 260_000 },
+];
+const q127Quote = (lineItems: typeof Q127_DRAFT) => ({
+  text: "",
+  action: { type: "create_quote" as const, payload: { summary: "Cambio de piso de cocina", lineItems } },
+});
+
+Deno.test("REQ-951 REQ-439 (LOOP-007 q1-27) a first draft that folds 'quitar el piso viejo' into the floor line is asked again once naming the removal; the full answer is stored", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const calls: string[][] = [];
+  llm.setHandler((req) => {
+    calls.push(req.messages.map((m) => String(m.content)));
+    return calls.length === 1 ? q127Quote(Q127_DRAFT) : q127Quote(Q127_FULL);
+  });
+  const conv = await conversations.create({ userId: "u-1" });
+  const result = await flow.run({ userId: "u-1", conversationId: conv.id, content: Q127_MSG });
+  assertEquals(calls.length, 2, "re-asked exactly once");
+  const reask = calls[1].at(-1) ?? "";
+  assert(/quitar el piso viejo/i.test(reask), `the re-ask names the removal: ${reask}`);
+  assert(!/1820 Elm/i.test(reask), `the re-ask names the street address as a work item: ${reask}`);
+  const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
+  const lines = stored.lineItems.map((l) => l.description);
+  assert(lines.some((d) => /retiro del piso viejo/i.test(d)), `stored draft lacks the removal: ${JSON.stringify(lines)}`);
+  await resetKv();
+});
+
 // REQ-447 (demo-loop cycle 3, m14): the job has ONE name. The first message
 // used to title the thread ("Repaint 3 bedrooms and the hallway for John
 // Miller, $2,400") while the quote it drafted was "Bedroom & Hallway Repaint".
