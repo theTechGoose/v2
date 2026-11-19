@@ -25,6 +25,7 @@ import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
 import { overpaymentCheck } from "#documents/overpayment.ts"; // REQ-551
+import { receivedAtProblem } from "#documents/received-day.ts"; // REQ-943
 import {
   exportDateOf,
   exportRangeSuffix,
@@ -99,6 +100,29 @@ async function refuseOverpayment(
   return null;
 }
 
+/** REQ-943 (LOOP-007 q1-8): a received date after today (a day of slack for
+ *  time zones) is a 422 `future_date`, one that does not parse a 422
+ *  `invalid_date` — before anything is stored, so the invoice never closes
+ *  on a future day and the customer is never emailed "PAID" for it. Null
+ *  when the date may be recorded. A free function (Danet routes methods). */
+function refuseReceivedAt(
+  receivedAt: unknown,
+): { status: 422; body: Record<string, unknown> } | null {
+  const problem = receivedAtProblem(receivedAt);
+  if (!problem) return null;
+  return {
+    status: 422,
+    body: {
+      ok: false,
+      error: problem,
+      reason: problem,
+      message: problem === "future_date"
+        ? "A payment can't be received after today."
+        : "receivedAt is not a date.",
+    },
+  };
+}
+
 /** REQ-926: the JSON body when one was sent, {} when none. */
 async function optionalJsonBody(ctx: ExecutionContext): Promise<unknown> {
   const raw = await ctx.req.text().catch(() => "");
@@ -144,6 +168,8 @@ export class PaymentController {
     const user = await requireUser(ctx, this.sessions, this.users);
     const override = takeOverride(body); // REQ-551
     const dto = parseCreatePayment(body);
+    const badDate = refuseReceivedAt(dto.receivedAt); // REQ-943
+    if (badDate) return ctx.json(badDate.body, badDate.status);
     const invoice = await this.invoices.getOwned(dto.invoiceId, user.id);
     const refused = await refuseOverpayment(
       this.store,
@@ -295,6 +321,10 @@ export class PaymentController {
     // REQ-926: the chargeback stamp has its own route; never from a PUT
     for (const k of ["reversedAt", "reversedReason", "reversedFeeCents"]) {
       delete (patch as Record<string, unknown>)[k];
+    }
+    if (patch.receivedAt !== undefined) {
+      const badDate = refuseReceivedAt(patch.receivedAt); // REQ-943
+      if (badDate) return ctx.json(badDate.body, badDate.status);
     }
     if (typeof patch.amount === "number") {
       const existing = await this.store.getOwned(id, user.id);

@@ -20,6 +20,7 @@ import { useState } from "preact/hooks";
 import { type PaymentMethod, paymentsClient } from "../clients/payments.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
+import { localIsoDay } from "../../shared/documents/received-day.ts"; // REQ-943
 import {
   overpaymentFromError,
   paymentErrorText,
@@ -76,7 +77,10 @@ export default function PaymentReceivedForm(
     const balance = Math.max(0, amountCents - (paidCents ?? 0));
     return String((balance > 0 ? balance : amountCents) / 100);
   });
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // REQ-943: today is the browser's LOCAL day — the UTC day is tomorrow every
+  // evening in the Americas, which the future-date rule would then refuse.
+  const today = localIsoDay();
+  const [date, setDate] = useState(today);
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -200,6 +204,7 @@ export default function PaymentReceivedForm(
             type="date"
             required
             data-cy="pay-received-date"
+            max={today}
             value={date}
             onInput={(e) => setDate((e.target as HTMLInputElement).value)}
             style={fieldStyle}

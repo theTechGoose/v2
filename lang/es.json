@@ -6149,6 +6149,7 @@
   "customerWs.visit.unbilled": "Hecha · sin facturar",
   "customerWs.visits.none": "Todavía no hay visitas.",
   "customerWs.visits.title": "Historial de visitas",
+  "invoicesPage.pay.errFutureDate": "Un pago no puede recibirse en el futuro. Elige hoy o un día anterior.",
   "comms.a2p.title": "Registro para mensajes de texto",
   "comms.a2p.sub": "Las operadoras solo entregan mensajes de empresas desde un número registrado (A2P 10DLC). Complétalo una vez y lo presentamos a Twilio para este número.",
   "comms.a2p.state.none": "Sin registrar",
