@@ -684,16 +684,20 @@ export default function FieldTasksPage(
         data-end={x.endDate}
         style={isOpen(x) ? undefined : "opacity:.55"}
       >
-        {/* REQ-159 — the office marks the task done, or re-opens it; inert once invoiced */}
+        {/* REQ-159 — the office marks the task done, or re-opens it; inert once invoiced (REQ-1009: dimmed, named "Invoiced") */}
         <button
           type="button"
           class="task__check"
           data-cy="tk-done"
           aria-pressed={x.status === "complete"}
-          aria-label={x.status === "complete"
+          aria-label={locked
+            ? t("field.tk.invoiced")
+            : x.status === "complete"
             ? t("field.tk.markOpen")
             : t("field.tk.markDone")}
-          title={x.status === "complete"
+          title={locked
+            ? t("field.tk.invoiced")
+            : x.status === "complete"
             ? t("field.tk.markOpen")
             : t("field.tk.markDone")}
           disabled={locked || saving === x.id}
@@ -796,26 +800,37 @@ export default function FieldTasksPage(
             />
             <label style="font-size:12px;color:var(--fg-muted);display:flex;align-items:center;gap:4px">
               {t("field.tk.price")} $
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                class={`num${zero ? " num--zero" : ""}`}
-                data-cy="tk-price"
-                aria-label={t("field.tk.price")}
-                value={priceVal}
-                readOnly={locked}
-                disabled={saving === x.id}
-                title={locked ? t("field.tk.invoiced") : undefined}
-                style={`width:96px;text-align:right;${INPUT}`}
-                onInput={(e) => {
-                  const v = (e.currentTarget as HTMLInputElement).value;
-                  setPriceDraft((d) => ({ ...d, [x.id]: v }));
-                }}
-                onBlur={() => commitPrice(x)}
-                onKeyDown={onEnter(() => commitPrice(x))}
-              />
+              {/* REQ-1009 — an invoiced task's price is plain text, not a dead input */}
+              {!locked
+                ? (
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    class={`num${zero ? " num--zero" : ""}`}
+                    data-cy="tk-price"
+                    aria-label={t("field.tk.price")}
+                    value={priceVal}
+                    disabled={saving === x.id}
+                    style={`width:96px;text-align:right;${INPUT}`}
+                    onInput={(e) => {
+                      const v = (e.currentTarget as HTMLInputElement).value;
+                      setPriceDraft((d) => ({ ...d, [x.id]: v }));
+                    }}
+                    onBlur={() => commitPrice(x)}
+                    onKeyDown={onEnter(() => commitPrice(x))}
+                  />
+                )
+                : (
+                  <span
+                    data-cy="tk-price-locked"
+                    title={t("field.tk.invoiced")}
+                    style="font-weight:700;color:var(--fg)"
+                  >
+                    {(x.priceCents / 100).toFixed(2)}
+                  </span>
+                )}
             </label>
             {locked && (
               <a
@@ -856,12 +871,13 @@ export default function FieldTasksPage(
                 ))}
               </select>
             </label>
-            {!adding && !asking && !editing && (
+            {/* REQ-1009 — an invoiced task has nothing to add, re-date or delete */}
+            {!locked && !adding && !asking && !editing && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
                 data-cy="tk-add-service"
-                disabled={locked || saving === x.id}
+                disabled={saving === x.id}
                 onClick={() => {
                   setConfirmDelete(null);
                   setDates(null);
@@ -872,23 +888,23 @@ export default function FieldTasksPage(
               </button>
             )}
             {/* REQ-785 — a one-off's days (one, or a job of several) and its other workers */}
-            {!adding && !asking && !editing && x.oneOff && (
+            {!locked && !adding && !asking && !editing && x.oneOff && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
                 data-cy="tk-edit-dates"
-                disabled={locked || saving === x.id}
+                disabled={saving === x.id}
                 onClick={() => openDates(x)}
               >
                 <I d={ICN.cal} size={12} /> {t("field.tk.editDates")}
               </button>
             )}
-            {!adding && !asking && !editing && (
+            {!locked && !adding && !asking && !editing && (
               <button
                 type="button"
                 class="btn btn--ghost btn--sm"
                 data-cy="tk-delete"
-                disabled={locked || saving === x.id}
+                disabled={saving === x.id}
                 style="color:#a83b3b"
                 onClick={() => {
                   setService(null);

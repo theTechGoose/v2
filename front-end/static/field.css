@@ -674,8 +674,10 @@
 .task--done .task__check svg {
   opacity: 1;
 }
+/* REQ-1009 — a locked (invoiced) check looks inert, not like the live toggle */
 .task__check:disabled {
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .task__type {
   font-family: var(--font-heading);
