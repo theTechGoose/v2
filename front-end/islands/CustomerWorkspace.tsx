@@ -607,9 +607,19 @@ export default function CustomerWorkspace(
                 ? tFor(lang, "customerWs.kpi.nextVisit", {
                   count: s.activeServices,
                   date: day(s.nextVisit, lang),
-                })
+                }) +
+                  (s.recurringEndsOn
+                    ? " · " + tFor(lang, "customerWs.kpi.until", {
+                      date: day(s.recurringEndsOn, lang),
+                    })
+                    : "")
                 : ws.services.length
-                ? tFor(lang, "customerWs.kpi.paused")
+                ? tFor(
+                  lang,
+                  ws.services.every((sv) => sv.ended)
+                    ? "customerWs.kpi.ended"
+                    : "customerWs.kpi.paused",
+                )
                 : tFor(lang, "customerWs.kpi.noService")}
               {s.unbilledCents > 0 && (
                 <b class="cws-amber">
@@ -1358,6 +1368,8 @@ function ServiceCard(
 ) {
   const name = sv.items.map((i) => i.taskTypeName).join(" + ") ||
     tFor(lang, "customerWs.svc.untitled");
+  // REQ-1063 — past its end date it runs no more visits, though nobody paused it
+  const running = sv.active && !sv.ended;
   const past = ws.visits.filter((v) =>
     v.subscriptionId === sv.id && v.date < ws.today
   ).slice(0, 3).reverse();
@@ -1370,7 +1382,7 @@ function ServiceCard(
   }`;
   return (
     <div
-      class={`cws-svc ${sv.active ? "" : "cws-svc--paused"}`}
+      class={`cws-svc ${running ? "" : "cws-svc--paused"}`}
       data-cy="cws-service"
       data-id={sv.id}
     >
@@ -1382,11 +1394,22 @@ function ServiceCard(
           <div class="cws-svc__name">{name}</div>
           <div class="cws-svc__sub">
             {sv.schedule[lang]} · 📍 {sv.address}
-            {!sv.active && (
-              <span class="cws-pill cws-pill--draft">
-                {tFor(lang, "customerWs.svc.pausedPill")}
-              </span>
-            )}
+            {!sv.active
+              ? (
+                <span class="cws-pill cws-pill--draft">
+                  {tFor(lang, "customerWs.svc.pausedPill")}
+                </span>
+              )
+              : sv.ended && (
+                <span
+                  class="cws-pill cws-pill--draft"
+                  data-cy="cws-service-ended"
+                >
+                  {tFor(lang, "customerWs.svc.endedPill", {
+                    date: day(sv.endDate, lang),
+                  })}
+                </span>
+              )}
           </div>
         </div>
         <div class="cws-svc__price">
@@ -1395,6 +1418,11 @@ function ServiceCard(
             {tFor(lang, "customerWs.svc.perVisit", {
               month: money(sv.monthlyCents, lang, true),
             })}
+            {running && sv.endDate && sv.remainingCents != null &&
+              " · " + tFor(lang, "customerWs.svc.until", {
+                  date: day(sv.endDate, lang),
+                  left: money(sv.remainingCents, lang, true),
+                })}
           </small>
         </div>
       </div>
@@ -1466,7 +1494,7 @@ function ServiceCard(
               {weekday(d, lang)}
             </span>
           ))}
-          {sv.active && !sv.nextVisits.length && (
+          {running && !sv.nextVisits.length && (
             <span class="cws-muted">
               {tFor(lang, "customerWs.visit.noneAhead")}
             </span>

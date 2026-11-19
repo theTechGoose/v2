@@ -123,3 +123,33 @@ Deno.test("REQ-924 workspaceSummary — a new customer: everything zero, no last
     unbilledCents: 0,
   });
 });
+
+// REQ-1063 (LOOP-007 q2, q2-52) — the RECURRING figure honours a repeat visit's end date (REQ-1004).
+// A weekly $85 Thursday visit from Nov 26 that ends Dec 31: 6 visits ($510) left on Nov 19; once Dec 31
+// is past it is ended — no longer counted as active nor in the monthly figure, even though active=true.
+const ending = sub({ items: [{ taskTypeId: "t1", priceCents: 8500 }], cadence: "weekly", days: [4], startDate: "2026-11-26", endDate: "2026-12-31" });
+
+Deno.test("REQ-1063 (LOOP-007 q2, q2-52) nextVisits — a weekly $85 visit ending Dec 31 has 6 visits ($510) left on Nov 19", () => {
+  const left = nextVisits(ending, "2026-11-19", 1000);
+  assertEquals(left, ["2026-11-26", "2026-12-03", "2026-12-10", "2026-12-17", "2026-12-24", "2026-12-31"]);
+  assertEquals(left.length * perVisitCents(ending), 51000);
+});
+
+Deno.test("REQ-1063 (LOOP-007 q2, q2-52) workspaceSummary — a service whose end date has passed is neither active nor recurring", () => {
+  // still active=true in the store: nobody paused it, it simply ran out on Dec 31
+  const ended = { active: true, perVisitCents: 8500, monthlyVisits: 52 / 12, endDate: "2026-12-31", nextVisit: undefined };
+  const s = workspaceSummary({ today: "2027-01-05", invoices: [], payments: [], quotes: [], services: [ended], unbilledVisitCents: [] });
+  assertEquals(s.activeServices, 0, "an ended service is not an active one");
+  assertEquals(s.recurringMonthlyCents, 0, "an ended service adds nothing per month");
+});
+
+Deno.test("REQ-1063 (LOOP-007 q2, q2-52) workspaceSummary — a running service with an end date says when the recurring income ends", () => {
+  const running = { active: true, perVisitCents: 8500, monthlyVisits: 52 / 12, endDate: "2026-12-31", nextVisit: "2026-11-26" };
+  const open = { active: true, perVisitCents: 14000, monthlyVisits: 52 / 12, nextVisit: "2026-11-24" };
+  const s = workspaceSummary({ today: "2026-11-19", invoices: [], payments: [], quotes: [], services: [running, open], unbilledVisitCents: [] });
+  assertEquals(s.activeServices, 2);
+  assertEquals(s.recurringMonthlyCents, Math.round(8500 * 52 / 12 + 14000 * 52 / 12), "the /mo rate stays (REQ-924)");
+  assertEquals((s as unknown as Record<string, unknown>).recurringEndsOn, "2026-12-31", "the earliest end date among the running services");
+  const none = workspaceSummary({ today: "2026-11-19", invoices: [], payments: [], quotes: [], services: [open], unbilledVisitCents: [] });
+  assertEquals((none as unknown as Record<string, unknown>).recurringEndsOn, undefined, "no end date, no 'until'");
+});

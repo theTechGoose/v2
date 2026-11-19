@@ -19,6 +19,8 @@ export interface WorkspaceSummary {
   openQuotesCents: number;
   activeServices: number;
   recurringMonthlyCents: number;
+  /** REQ-1063 — the earliest end date among the running services */
+  recurringEndsOn?: string;
   nextVisit?: string;
   unbilledVisits: number;
   unbilledCents: number;
@@ -73,6 +75,10 @@ export interface WorkspaceService {
   endDate?: string;
   perVisitCents: number;
   monthlyCents: number;
+  /** REQ-1063 — past its end date: not active, adds nothing per month */
+  ended?: boolean;
+  /** REQ-1063 — with an end date: per-visit × the visits left until it */
+  remainingCents?: number;
   nextVisits: string[];
   unbilledVisits: number;
   unbilledCents: number;

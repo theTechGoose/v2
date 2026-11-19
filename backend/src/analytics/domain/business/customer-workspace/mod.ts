@@ -26,6 +26,21 @@ export function monthlyVisits(s: Subscription): number {
   return (daysOf(s).length * WEEKS_PER_MONTH) / intervalOf(s);
 }
 
+/** REQ-1063 — its end date is past: it runs no more visits, though nobody paused it (still active) */
+export const hasEnded = (s: { endDate?: string }, today: string): boolean => !!s.endDate && s.endDate < today;
+
+/** REQ-1063 — still running: active and not past its end date */
+export const isRunning = (s: { active: boolean; endDate?: string }, today: string): boolean =>
+  s.active && !hasEnded(s, today);
+
+/** REQ-1063 — every visit left from `today` up to the end date (counted as `nextVisits` counts them,
+ *  without its cap); undefined when the service has no end date — it runs on, nothing is "left" */
+export function remainingVisits(s: Subscription, today: string, taken: ReadonlySet<string> = new Set()): number | undefined {
+  if (!s.endDate) return undefined;
+  if (!isRunning(s, today)) return 0;
+  return nextVisits(s, today, Number.MAX_SAFE_INTEGER, taken).length;
+}
+
 /** the next `count` visit dates on or after `today` — none for a paused service; `taken`: days whose
  *  visit is already done or skipped (not "next"); looks ahead at most two years */
 export function nextVisits(s: Subscription, today: string, count: number, taken: ReadonlySet<string> = new Set()): string[] {
@@ -70,6 +85,8 @@ export interface SummaryService {
   active: boolean;
   perVisitCents: number;
   monthlyVisits: number;
+  /** REQ-1063 — past it the service is ended: neither active nor recurring */
+  endDate?: string;
   nextVisit?: string;
 }
 
@@ -86,8 +103,10 @@ export interface WorkspaceSummary {
   openQuotes: number;
   openQuotesCents: number;
   activeServices: number;
-  /** ≈ per month, active services only */
+  /** ≈ per month, active services only (an ended one — past its end date — is not active, REQ-1063) */
   recurringMonthlyCents: number;
+  /** REQ-1063 — the earliest end date among the running services; absent when none has one */
+  recurringEndsOn?: string;
   nextVisit?: string;
   unbilledVisits: number;
   unbilledCents: number;
@@ -118,8 +137,9 @@ export function workspaceSummary(input: {
   }
   const last = [...input.payments].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))[0];
   const open = input.quotes.filter((q) => OPEN_QUOTE.has(quoteState(q)));
-  const active = input.services.filter((s) => s.active);
+  const active = input.services.filter((s) => isRunning(s, input.today));
   const next = active.map((s) => s.nextVisit).filter((d): d is string => !!d).sort()[0];
+  const endsOn = active.map((s) => s.endDate).filter((d): d is string => !!d).sort()[0];
   return {
     owedCents,
     overdueCents,
@@ -130,6 +150,7 @@ export function workspaceSummary(input: {
     openQuotesCents: open.reduce((sum, q) => sum + (q.estimatedTotal ?? 0), 0),
     activeServices: active.length,
     recurringMonthlyCents: Math.round(active.reduce((sum, s) => sum + s.perVisitCents * s.monthlyVisits, 0)),
+    ...(endsOn ? { recurringEndsOn: endsOn } : {}),
     ...(next ? { nextVisit: next } : {}),
     unbilledVisits: input.unbilledVisitCents.length,
     unbilledCents: input.unbilledVisitCents.reduce((a, b) => a + b, 0),

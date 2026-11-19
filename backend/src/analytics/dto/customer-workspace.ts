@@ -55,6 +55,10 @@ export interface WorkspaceService {
   perVisitCents: number;
   /** ≈ per month at the schedule */
   monthlyCents: number;
+  /** REQ-1063 — past its end date: no visits left, counted neither active nor recurring */
+  ended?: boolean;
+  /** REQ-1063 — with an end date only: per-visit × the visits left until it */
+  remainingCents?: number;
   /** the next five visits by the schedule (none when paused) */
   nextVisits: string[];
   unbilledVisits: number;
