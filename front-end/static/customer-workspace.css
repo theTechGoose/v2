@@ -28,6 +28,14 @@
 .cws-menu { position: absolute; right: 0; top: calc(100% + 6px); background: #fff; border: 1px solid var(--cws-line); border-radius: 12px; box-shadow: 0 12px 30px rgba(26, 83, 92, 0.14); padding: 6px; min-width: 220px; z-index: 30; display: flex; flex-direction: column; }
 .cws-menu button, .cws-menu a { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
 .cws-menu button:hover, .cws-menu a:hover { background: var(--mint-200, #ecf6ec); }
+/* REQ-1075: Delete customer — a quiet danger item and REQ-802's inline question; never a filled primary */
+.cws-menu .cws-menu__danger { color: var(--danger, #c0392b); border-top: 1px solid var(--cws-line); border-radius: 0 0 8px 8px; margin-top: 4px; }
+.cws-menu .cws-menu__danger:hover { background: #fdecea; }
+.cws-btn--danger { background: #fff; color: var(--danger, #c0392b); border-color: var(--danger, #c0392b); }
+.cws-btn--danger:hover:not(:disabled) { background: #fdecea; }
+.cws-ask { flex: 1 1 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--danger, #c0392b); border-radius: 12px; background: #fff8f7; color: var(--fg); font-size: 14px; }
+.cws-ask__btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.cws-ask__err { color: var(--danger, #c0392b); font-size: 13px; font-weight: 600; }
 
 /* tabs */
 .cws-tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 2px; padding: 0 24px; background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(10px); border-bottom: 1px solid var(--cws-line); overflow-x: auto; }

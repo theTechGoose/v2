@@ -25,6 +25,9 @@ export default define.page(async function ClientsRoute(ctx) {
   // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
   // pm_lang), so the tab title and footer match the page they sit on.
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  // REQ-1075: the customer page's Delete customer lands on ?deleted=<name> — "<name> deleted"
+  // is in the first paint
+  const deletedName = ctx.url.searchParams.get("deleted") ?? undefined;
   const greetingName = greetingFirstName(user);
   // REQ-944: today in the business's zone, not the server's
   const greetingDate = greetingDateIn(lang, user?.businessTimezone);
@@ -52,7 +55,7 @@ export default define.page(async function ClientsRoute(ctx) {
             greetingName={greetingName}
           />
           <div class="content">
-            <ClientsPage tradeKind={tradeKind} />
+            <ClientsPage tradeKind={tradeKind} deletedName={deletedName} />
             <SiteFooter lang={lang} compact />
           </div>
         </main>

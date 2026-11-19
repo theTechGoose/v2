@@ -54,8 +54,11 @@ const SEARCH_DEBOUNCE_MS = 250;
 const FLASH_MS = 4000;
 
 export default function ClientsPage(
-  { lang: _lang, tradeKind = "project" }: {
+  { lang: _lang, tradeKind = "project", deletedName }: {
     lang?: "en" | "es";
+    /** REQ-1075 — the route's ?deleted=<name> (the customer page's Delete customer), so the
+     *  "<name> deleted" flash is in the server's HTML, not only after hydration */
+    deletedName?: string;
     /** REQ-743 — the business's trade kind, read off its name by the route */
     tradeKind?: TradeKind;
   },
@@ -85,12 +88,34 @@ export default function ClientsPage(
   );
   const [addOpen, setAddOpen] = useState(fromNav);
   // REQ-352 (demo p15-5): "<name> added" after a successful Add
-  const [flash, setFlash] = useState("");
+  // REQ-1075: the customer page's Delete customer lands here with ?deleted=<name> — the same
+  // "<name> deleted" flash as the card's delete (REQ-802). The route hands the name over so the
+  // flash is server-rendered (and shown over the loading skeleton); the param is then dropped so
+  // a reload is quiet.
+  const [flash, setFlash] = useState(() =>
+    deletedName ? tFor(lang, "clientsPage.deleted", { name: deletedName }) : ""
+  );
   useEffect(() => {
-    if (!flash) return;
+    if (typeof globalThis.location === "undefined") return;
+    const url = new URL(globalThis.location.href);
+    if (!url.searchParams.has("deleted")) return;
+    url.searchParams.delete("deleted");
+    try {
+      globalThis.history.replaceState(
+        globalThis.history.state,
+        "",
+        url.toString(),
+      );
+    } catch { /* history unavailable — the flash still shows */ }
+  }, []);
+  // REQ-1075: the countdown starts once the board is on screen — a flash that arrives with the
+  // page (?deleted=) is not spent behind the loading skeleton
+  const boardShown = !s.loading && !!s.data;
+  useEffect(() => {
+    if (!flash || !boardShown) return;
     const t = setTimeout(() => setFlash(""), FLASH_MS);
     return () => clearTimeout(t);
-  }, [flash]);
+  }, [flash, boardShown]);
   // REQ-625: the customer being edited (the shared form, prefilled)
   const [editing, setEditing] = useState<CustomerCard | null>(null);
   // REQ-626: the client sheet — "Open card", or /clients?open=<customerId>
@@ -261,12 +286,28 @@ export default function ClientsPage(
     });
   }, [s.data, linkChecked]);
 
+  // REQ-352/802/1075: "<name> added / deleted" — shown over the skeleton too, so a flash that
+  // arrives with the page (?deleted=) is not hidden until the roster loads
+  const flashEl = flash
+    ? (
+      <div
+        role="status"
+        aria-live="polite"
+        class="clients-flash"
+        // REQ-379 — above the demo pill's band (--demo-pill-h, 0 when no demo)
+        style="position:fixed;left:50%;bottom:calc(28px + var(--demo-pill-h, 0px));transform:translateX(-50%);z-index:1001;background:var(--brand-green,#519843);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14.5px;box-shadow:0 12px 32px rgba(20,72,82,0.22)"
+      >
+        {flash}
+      </div>
+    )
+    : null;
   if (s.loading || !s.data) {
     return (
       <>
         <ShimmerStyle />
         <PageHeaderSkeleton />
         <CardGridSkeleton rows={3} />
+        {flashEl}
       </>
     );
   }
@@ -348,17 +389,7 @@ export default function ClientsPage(
           onClose={() => setEditing(null)}
         />
       )}
-      {flash && (
-        <div
-          role="status"
-          aria-live="polite"
-          class="clients-flash"
-          // REQ-379 — above the demo pill's band (--demo-pill-h, 0 when no demo)
-          style="position:fixed;left:50%;bottom:calc(28px + var(--demo-pill-h, 0px));transform:translateX(-50%);z-index:1001;background:var(--brand-green,#519843);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14.5px;box-shadow:0 12px 32px rgba(20,72,82,0.22)"
-        >
-          {flash}
-        </div>
-      )}
+      {flashEl}
     </>
   );
 }
