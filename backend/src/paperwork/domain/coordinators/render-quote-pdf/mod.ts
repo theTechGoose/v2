@@ -298,12 +298,19 @@ export class RenderQuotePdf {
       y -= 14;
     }
 
+    // REQ-968 — number sections with a running counter, like the web page
+    // (quote-doc.tsx) and the invoice PDF: Payment schedule, Schedule and
+    // Terms only draw when they have data, so hardcoded "01".."06" literals
+    // left a gap (01, 02, 04, …) when one was skipped.
+    let sec = 0;
+    const sn = () => String(++sec).padStart(2, "0");
+
     // Section: Job details
     y = drawSectionHeader(
       page,
       y,
       M,
-      "01",
+      sn(),
       t(lang, "renderQuotePdf.section.jobDetails"),
       bold,
       PINK,
@@ -412,7 +419,7 @@ export class RenderQuotePdf {
         page,
         y,
         M,
-        "02",
+        sn(),
         t(lang, "renderQuotePdf.section.paymentSchedule"),
         bold,
         PINK,
@@ -464,7 +471,7 @@ export class RenderQuotePdf {
         page,
         y,
         M,
-        "03",
+        sn(),
         t(lang, "renderQuotePdf.section.schedule"),
         bold,
         PINK,
@@ -519,7 +526,7 @@ export class RenderQuotePdf {
         page,
         y,
         M,
-        "04",
+        sn(),
         t(lang, "renderQuotePdf.section.terms"),
         bold,
         PINK,
@@ -626,7 +633,7 @@ export class RenderQuotePdf {
       page,
       y,
       M,
-      "05",
+      sn(),
       t(lang, "renderQuotePdf.section.finePrint"),
       bold,
       PINK,
@@ -688,7 +695,7 @@ export class RenderQuotePdf {
       page,
       y,
       M,
-      "06",
+      sn(),
       t(lang, "renderQuotePdf.section.signatures"),
       bold,
       PINK,
