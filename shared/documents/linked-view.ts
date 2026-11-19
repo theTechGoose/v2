@@ -709,3 +709,30 @@ export function workOrderNextStatuses(
       return [];
   }
 }
+
+/** REQ-984 (LOOP-007 q1-60): what an invoice is headed by. */
+export interface InvoiceTitleDoc {
+  /** the job's name / summary in the page's language, when there is one */
+  jobName?: string;
+  summary?: string;
+  /** the invoice's own lines' descriptions, in the page's language */
+  lineDescriptions?: readonly (string | undefined)[];
+  /** "INV-001" */
+  number: string;
+}
+
+/**
+ * REQ-984 (LOOP-007 q1-60) — an invoice's title names the document itself:
+ * the job name, else its summary, else its first line's description, else the
+ * invoice by number ("Invoice INV-001" / "Factura INV-001"). Never a generic
+ * placeholder like "Project" — an amount-only invoice has no job name.
+ */
+export function invoiceTitle(doc: InvoiceTitleDoc, lang: Lang = "en"): string {
+  const named = doc.jobName?.trim() || doc.summary?.trim();
+  if (named) return named;
+  const first = (doc.lineDescriptions ?? [])
+    .map((d) => d?.trim())
+    .find((d): d is string => Boolean(d));
+  if (first) return first;
+  return `${WORDS[lang === "es" ? "es" : "en"].invoice} ${doc.number}`;
+}

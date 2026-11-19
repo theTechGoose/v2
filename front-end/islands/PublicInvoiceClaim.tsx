@@ -7,6 +7,7 @@ import {
 import { fmtMoneyExact, fmtPayHandle } from "../lib/format.ts";
 import { startInvoiceRefresh } from "../lib/public-invoice-refresh.ts";
 import { announceChange } from "../lib/change-announce.ts";
+import { flipInvoiceHeadline } from "../lib/invoice-headline-flip.ts"; // REQ-984
 import {
   claimBody,
   claimDecision,
@@ -446,6 +447,7 @@ export default function PublicInvoiceClaim(
             pill.style.color = GREEN;
           }
         } catch { /* decorative */ }
+        flipInvoiceHeadline("paid", lang); // REQ-984: the headline agrees
         return;
       }
       if (decision.kind === "error") {
@@ -486,6 +488,9 @@ export default function PublicInvoiceClaim(
           );
         }
       } catch { /* decorative — the reload path renders the same states */ }
+      // REQ-984 (LOOP-007 q1-60): …and the headline above it, so it reads
+      // "Payment reported", never "Sent" under AWAITING CONFIRMATION.
+      flipInvoiceHeadline("claimed", lang);
     } catch (err) {
       setError((err as Error).message);
     } finally {

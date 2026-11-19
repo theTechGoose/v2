@@ -1,5 +1,6 @@
 import { Injectable } from "#danet/core";
 import { paidHow } from "#documents/paid-how.ts"; // REQ-928
+import { invoiceTitle } from "#documents/linked-view.ts"; // REQ-984
 import { EventBus } from "@core/business/events/mod.ts";
 import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
@@ -1450,8 +1451,14 @@ export function renderInvoiceHtml(
   const jobName = (quote?.jobNameByLang?.[lang] ?? quote?.jobName)?.trim();
   const summaryClean = ((quote?.summaryByLang?.[lang] ?? quote?.summary) ?? "")
     .replace(/^\s*quote\s*:\s*/i, "").trim();
-  const heroRaw = jobName || summaryClean ||
-    t(lang, "publicInvoice.jobNameFallback");
+  // REQ-984 (LOOP-007 q1-60): named like the /i page — the job, else its first
+  // line, else "Invoice INV-001" — never the placeholder "Project".
+  const heroRaw = invoiceTitle({
+    jobName,
+    summary: summaryClean,
+    lineDescriptions: items.map((it) => it.description),
+    number: docRef(i),
+  }, lang);
   // P-07: Unicode-aware title case (accents survive, es stopwords stay low).
   const heroTitle = titleCaseJobName(heroRaw, lang, {
     keep: [customer?.name],

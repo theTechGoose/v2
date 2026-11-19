@@ -47,6 +47,7 @@ import PayByCard from "../../components/PayByCard.tsx"; // REQ-782
 import { cardPayWay } from "../../../shared/payments/pay-links.ts"; // REQ-782
 import {
   invoiceHeadline,
+  invoiceTitle,
   shortDate,
   stateLabel,
 } from "../../../shared/documents/linked-view.ts";
@@ -394,12 +395,6 @@ function InvoiceDoc(
   // REQ-628: the business, else the contractor — never DocuMonster
   const businessLabel = publicBusinessLabel(invoice.contractor) ??
     tFor(lang, "publicInvoice.contractorFallback.capital");
-  const jobName =
-    (invoice.jobDetails?.jobNameByLang?.[lang] ?? invoice.jobDetails?.jobName)
-      ?.trim() ||
-    (invoice.jobDetails?.summaryByLang?.[lang] ?? invoice.jobDetails?.summary)
-      ?.trim() ||
-    tFor(lang, "publicInvoice.jobNameFallback");
   const idx = invoice.installmentIndex;
   const total = invoice.installmentTotal;
   const milestoneLabel = idx && total
@@ -472,6 +467,19 @@ function InvoiceDoc(
   );
   const agreementTotal = invoice.agreementTotal ??
     (items.length ? sumLineTotals(items) : undefined);
+  // REQ-984 (LOOP-007 q1-60): the hero names the document — the job, else its
+  // first line, else "Invoice INV-001" — never the placeholder "Project".
+  const jobName = invoiceTitle(
+    {
+      jobName: invoice.jobDetails?.jobNameByLang?.[lang] ??
+        invoice.jobDetails?.jobName,
+      summary: invoice.jobDetails?.summaryByLang?.[lang] ??
+        invoice.jobDetails?.summary,
+      lineDescriptions: items.map((it) => it.description),
+      number: docNumber,
+    },
+    lang,
+  );
   // REQ-679 (cycle 5, M18): the schedule is the agreement's REAL
   // installments — an approved change order lands on the invoice it revised
   // (8,150 deposit · 9,750 balance), never a re-split of the total.
@@ -521,8 +529,21 @@ function InvoiceDoc(
                 name={businessLabel}
               />
               {/* REQ-201: number · version · state (· date) */}
+              {
+                /* REQ-984 (LOOP-007 q1-60): its parts ride along so an island
+                  that flips the badge (a claim, a card payment) rebuilds this
+                  line with the same invoiceHeadline — never "Sent" under
+                  AWAITING CONFIRMATION. */
+              }
               <div
                 data-cy="invoice-headline"
+                data-headline-number={docNumber}
+                data-headline-version={String(invoice.version ?? 1)}
+                data-headline-published={invoice.publishedAt}
+                data-headline-due={invoice.dueDate}
+                data-headline-internal={invoice.internal === true
+                  ? "1"
+                  : undefined}
                 style={`margin-top:6px;font-size:13px;font-weight:800;color:${TEAL}`}
               >
                 {headline}
