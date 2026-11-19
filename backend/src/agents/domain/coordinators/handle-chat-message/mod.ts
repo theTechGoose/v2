@@ -183,7 +183,11 @@ import {
 } from "#quote-flow/customer-dedupe.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import type { Customer } from "@crm/dto/customer.ts";
-import { isValidJobName, jobNameCase } from "#quote-flow/job-name.ts";
+import {
+  fitJobNameToBudget,
+  isValidJobName,
+  jobNameCase,
+} from "#quote-flow/job-name.ts";
 import type { AgentConversation } from "@agents/dto/conversation.ts";
 import type { AgentMessage } from "@agents/dto/message.ts";
 // REQ-392 (demo-loop cycle 2, M7): a message typed on a guided step.
@@ -3759,9 +3763,15 @@ export class HandleChatMessage {
           // valid one; otherwise the store derives it — in the CONTRACTOR's
           // language (a Spanish summary must not come out "Mantenimiento De
           // Jardín"), the summary's "— <customer>" tail stripped.
+          // REQ-1051 (LOOP-007 q2-35): an over-budget model name is FITTED
+          // to the budget (every area kept, each shortened), never dropped
+          // whole — dropping it let the fallback cut the fence off.
           const modelJobName = action.payload.jobName?.trim() ?? "";
-          const jobName = isValidJobName(modelJobName)
-            ? jobNameCase(modelJobName, replyLang)
+          const fittedJobName = modelJobName && !isValidJobName(modelJobName)
+            ? fitJobNameToBudget(modelJobName)
+            : modelJobName;
+          const jobName = isValidJobName(fittedJobName)
+            ? jobNameCase(fittedJobName, replyLang)
             : undefined;
           quote = await this.quotes.create(input.userId, {
             summary: action.payload.summary,
