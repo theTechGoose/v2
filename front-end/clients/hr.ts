@@ -205,6 +205,8 @@ export interface SignPacket {
   status: HireStatus;
   progress: { done: number; total: number };
   docs: SignDoc[];
+  /** REQ-1156 — the accounts the hire's provisioning plan will create (0: no systems) */
+  accounts: number;
 }
 
 export interface NewHire {

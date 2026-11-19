@@ -21,7 +21,14 @@ import {
   useToast,
 } from "../components/hr/bits.tsx";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { armKey, fmtDate, fmtWhen, initialsOf, inviteText } from "../lib/hr.ts";
+import {
+  accountsAction,
+  armKey,
+  fmtDate,
+  fmtWhen,
+  initialsOf,
+  inviteText,
+} from "../lib/hr.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 
 export default function HrHireDetailPage({ id }: { id: string }) {
@@ -85,7 +92,8 @@ export default function HrHireDetailPage({ id }: { id: string }) {
   const expired = h.status === "expired";
   const closed = h.status === "offboarded";
   const company = settings?.companyName || "";
-  const canProvision = ["signed", "provisioning", "active"].includes(h.status);
+  // REQ-1156 — no "Create accounts" for a hire with no systems; a signed one gets "Mark ready"
+  const accountsAct = closed ? null : accountsAction(h);
 
   return (
     <>
@@ -288,7 +296,7 @@ export default function HrHireDetailPage({ id }: { id: string }) {
       <section class="panel">
         <h2 class="panel__title">
           {t("hr.detail.accounts")}
-          {canProvision && !closed && (
+          {accountsAct === "provision" && (
             <button
               type="button"
               class="btn btn--teal btn--sm"
@@ -298,6 +306,18 @@ export default function HrHireDetailPage({ id }: { id: string }) {
               onClick={() => act(() => hrClient.provision(id))}
             >
               <I d={ICN.bolt} size={14} /> {t("hr.detail.provisionNow")}
+            </button>
+          )}
+          {accountsAct === "finish" && (
+            <button
+              type="button"
+              class="btn btn--teal btn--sm"
+              style="margin-left:auto"
+              data-cy="hr-finish"
+              disabled={busy}
+              onClick={() => act(() => hrClient.provision(id))}
+            >
+              <I d={ICN.check} size={14} /> {t("hr.detail.markReady")}
             </button>
           )}
         </h2>

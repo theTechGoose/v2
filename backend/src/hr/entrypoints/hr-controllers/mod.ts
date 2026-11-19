@@ -983,6 +983,9 @@ export class HrSignController {
       status: h.status,
       progress: packetProgress(h.packet),
       docs,
+      // REQ-1156 — how many accounts the provisioning plan will create, so the done screen never
+      // promises accounts to a hire whose department has no systems
+      accounts: (await this.provisioner.plan(h)).length,
     };
   }
 
