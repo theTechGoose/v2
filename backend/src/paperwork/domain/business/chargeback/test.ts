@@ -3,7 +3,7 @@
  * when the chargeback is clicked to add a fee." The fee joins the reopened
  * invoice as its own untaxed line, and comes off again on undo.
  */
-import { assertEquals } from "#std/assert";
+import { assertEquals, assertNotEquals } from "#std/assert";
 import {
   CHARGEBACK_FEE_LABEL,
   withChargebackFee,
@@ -71,4 +71,54 @@ Deno.test("REQ-926 withoutChargebackFee: takes that payment's fee line off and l
   assertEquals([removed.subtotalCents, removed.amount], [10000, 10000]);
   assertEquals(withoutChargebackFee(added, "pay-other"), null);
   assertEquals(withoutChargebackFee({ amount: 5 }, "pay-1"), null);
+});
+
+/*
+ * REQ-1124 (LOOP-007 q3, q3-52) — an amount-only invoice with no job name and
+ * no description must not gain a made-up English "Services" line: the /i hero
+ * (REQ-984: job, else first line, else "Invoice INV-001") would then read
+ * "Services", in English, on a Spanish bill too. The base line is honest,
+ * in the invoice's language, tagged as the chargeback's own, and Undo takes
+ * it off with the fee so the invoice is amount-only again.
+ */
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-1124 (q3-52) withChargebackFee: a bare amount-only invoice (${lang}) gets no made-up "Services" line — the base line is localized and tagged for the payment`, () => {
+    const patch = withChargebackFee(
+      { amount: 100050, lang },
+      "pay-3",
+      3500,
+    );
+    assertEquals(patch.amount, 103550);
+    const base = patch.lineItems[0];
+    assertEquals(patch.lineItems.length, 2);
+    assertEquals(base.price, 100050);
+    assertNotEquals(
+      base.description,
+      "Services",
+      `the base line is the made-up English placeholder "Services" (${lang})`,
+    );
+    assertEquals(
+      base.chargebackBase,
+      "pay-3",
+      "the made-up base line is tagged as the chargeback's own (chargebackBase)",
+    );
+    if (lang === "es") {
+      const en = withChargebackFee({ amount: 100050 }, "pay-3", 3500);
+      assertNotEquals(
+        base.description,
+        en.lineItems[0].description,
+        "the Spanish base line is in Spanish, not the English text",
+      );
+    }
+  });
+}
+
+Deno.test("REQ-1124 (q3-52) withoutChargebackFee: undoing the only chargeback on a bare amount-only invoice gives back NO lines, not a leftover made-up base line", () => {
+  const added = withChargebackFee({ amount: 100050 }, "pay-3", 3500);
+  const removed = withoutChargebackFee(
+    { ...added, lineItems: added.lineItems },
+    "pay-3",
+  )!;
+  assertEquals(removed.lineItems, [], "the invoice is amount-only again");
+  assertEquals(removed.amount, 100050);
 });
