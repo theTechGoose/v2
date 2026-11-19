@@ -359,6 +359,20 @@ export function payWayNames(
 }
 
 /**
+ * REQ-1054 (LOOP-007 q2-37) — can the customer pay ONLINE at all? The one check the signed
+ * email's due line and the signed /q's "Pay now" ask, from the same inputs /i and the REQ-630
+ * invoice text/email use: a card (the business's own Stripe or Square, or its card pay link),
+ * Venmo / Cash App / PayPal / Zelle with a handle, or a custom pay link. Cash, check, ACH and
+ * "other" are not online — with only those, /i says "contact your contractor".
+ */
+export function hasOnlinePayWay(
+  apm: unknown,
+  opts: { card: boolean },
+): boolean {
+  return payWayNames(projectPayMethods(apm), { card: opts.card }).length > 0;
+}
+
+/**
  * REQ-630 AMENDMENT — "is payment set up?": any of the nine methods switched on, or any enabled
  * custom link with a safe https URL. The one rule every checklist / onboarding / assistant check uses,
  * so a business paid only through its own links ("Extra Pay") is never nagged to set up payments.

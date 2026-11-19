@@ -148,6 +148,10 @@ export interface QuotePublic {
   customer?: { name?: string; phoneNumber?: string; email?: string };
   /** REQ-403 (m11): which confirmation the signed page may promise. */
   confirmChannel?: ConfirmChannel;
+  /** REQ-1054 (LOOP-007 q2-37): the customer can pay online (a card, an app,
+   *  a pay link) — false → the signed page links the invoice but never says
+   *  "Pay now", since /i then says "contact your contractor". Absent = true. */
+  payOnline?: boolean;
   summary?: string;
   jobName?: string;
   description?: string;
@@ -460,6 +464,8 @@ export function QuoteDoc(
   // REQ-251 (demo m13): a signed agreement hands the customer straight to
   // the open invoice the signature billed — not just a small related row.
   const payNow = signed ? payNowTarget(quote) : undefined;
+  // REQ-1054: no "Pay now" / "Next: pay" when there is no online way to pay
+  const payOnline = quote.payOnline !== false;
   // REQ-457 (demo M27, cycle 3): a change order still waiting for the
   // customer is named on the signed agreement with the job's new total —
   // not hidden until they find the /co link some other way.
@@ -651,10 +657,16 @@ export function QuoteDoc(
                     style={`color:${PINK_DARK};font-weight:800;text-decoration:none`}
                   >
                     {
+                      // REQ-1054: a business with no online pay way gets the
+                      // neutral "Next: the $X invoice" line, never "pay".
                       // REQ-1048: name the invoice's stored due date — the
                       // same one the schedule row prints (REQ-954) — so the
                       // banner never reads as "pay right now".
-                      payNow.dueDate
+                      !payOnline
+                        ? tFor(lang, "quoteDoc.signedBanner.nextView", {
+                          amount: fmtMoneyExact(payNow.balanceCents),
+                        })
+                        : payNow.dueDate
                         ? payNow.dueDate.slice(0, 10) ===
                             new Date().toISOString().slice(0, 10)
                           ? tFor(lang, "quoteDoc.signedBanner.nextDueToday", {
@@ -1294,9 +1306,11 @@ export function QuoteDoc(
                     href={withLang(payNow.url, lang)}
                     style={`display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px 28px;border-radius:999px;background:${PINK};color:#fff;text-decoration:none;font-weight:800;font-size:16px;box-shadow:0 6px 18px rgba(255,107,107,0.35)`}
                   >
-                    {tFor(lang, "quoteDoc.payNow", {
-                      amount: fmtMoneyExact(payNow.balanceCents),
-                    })}
+                    {tFor(
+                      lang,
+                      payOnline ? "quoteDoc.payNow" : "quoteDoc.payNowView",
+                      { amount: fmtMoneyExact(payNow.balanceCents) },
+                    )}
                   </a>
                 </div>
               )}
