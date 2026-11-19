@@ -52,7 +52,7 @@ import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
-import { creditedPayments } from "../lib/headline-counts.ts";
+import { paidThisMonthCents } from "../lib/headline-counts.ts"; // REQ-959
 import { refreshDash } from "../lib/dash-cache.ts";
 import {
   chargebackFeeDollars,
@@ -383,21 +383,16 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
 
   // REQ-551 (demo B2): one "paid" definition with /invoices — a payment
   // counts what its bill still owed when it arrived; the overpaid rest is
-  // its own line under the hero, never part of the total.
-  const credited = creditedPayments(
-    s.payments.filter((p) => !p.reversedAt), // REQ-926
+  // its own line under the hero, never part of the total. REQ-959: the
+  // month's sum is the SAME helper the /invoices "Paid this month" tile
+  // calls, so a part payment counts on both screens.
+  const month = paidThisMonthCents(
+    s.payments, // reversed ones (REQ-926) are skipped inside
     Array.isArray(s.invoices) ? s.invoices : [],
+    monthCutoff,
   );
-  const creditOf = (p: { id: string; amount: number }) =>
-    credited.get(p.id) ?? { creditedCents: p.amount, overCents: 0 };
-  const monthTotal = landed.reduce(
-    (sum, p) => sum + creditOf(p).creditedCents,
-    0,
-  );
-  const monthOverpaid = landed.reduce(
-    (sum, p) => sum + creditOf(p).overCents,
-    0,
-  );
+  const monthTotal = month.cents;
+  const monthOverpaid = month.overCents;
   const attentionTotal = attention.reduce((sum, p) => sum + p.amount, 0);
 
   // Avg days to pay — over landed payments, average of receivedAt minus invoice issuedDate.
