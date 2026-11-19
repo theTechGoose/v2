@@ -5394,6 +5394,7 @@
   "worker.tomorrow": "Tomorrow",
   "worker.left": "{n} to go",
   "worker.freeDay": "Nothing scheduled.",
+  "worker.allDeferred": "Deferred to tomorrow.",
   "worker.visitDone": "Done",
   "nav.outbox": "Outbox",
   "outbox.docTitle": "Outbox",

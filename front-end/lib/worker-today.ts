@@ -19,3 +19,23 @@ export function workerTodayKey(n: number, isToday = true): WorkerTodayKey {
   if (n === 1) return "worker.today.one";
   return "worker.today";
 }
+
+/**
+ * REQ-1011 — LOOP-007 q1-97: one day, one story. The summary and the body read the same
+ * split: `live` tasks (neither deferred nor skipped) are what the day counts, `deferred` ones
+ * still draw their visit card (with its "deferred → tomorrow" hint) but no count. A day with
+ * neither shows the empty state; a deferred-only day says so instead of "Nothing scheduled."
+ */
+export type WorkerDayCounts = { live: number; deferred: number };
+
+export function workerDayCounts(
+  rows: ReadonlyArray<{ status: string }>,
+): WorkerDayCounts {
+  let live = 0;
+  let deferred = 0;
+  for (const r of rows) {
+    if (r.status === "deferred") deferred++;
+    else if (r.status !== "skipped") live++;
+  }
+  return { live, deferred };
+}
