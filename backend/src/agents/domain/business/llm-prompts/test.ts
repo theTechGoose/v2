@@ -67,6 +67,27 @@ Deno.test("REQ-261 M26 quote and terms prompts carry the PRIVATE COSTS rule", ()
   }
 });
 
+// REQ-1023 (LOOP-007 cycle 2, q2-3): "mano de obra 4200 materiales 1350" was
+// read as a private materials cost and left off the draft. Only a cost with a
+// cost cue is private; a labor/materials amount listed as the price is billed.
+Deno.test("REQ-1023 q2-3 quote and terms prompts: a listed labor/materials amount is a billed line, only a cost the contractor pays is private", () => {
+  for (const lang of ["en", "es"] as const) {
+    for (const key of ["prompts.systemQuote", "prompts.systemTerms"]) {
+      const p = t(lang, key);
+      assert(
+        /only a cost the contractor PAYS is private/.test(p),
+        `${lang} ${key}`,
+      );
+      assert(/materiales 1350/.test(p), `${lang} ${key} names the Q-002 shape`);
+      assert(/billed line on the quote/.test(p), `${lang} ${key}`);
+      assert(
+        !/material costs, 'Ray/.test(p),
+        `${lang} ${key} still calls material costs private`,
+      );
+    }
+  }
+});
+
 // REQ-388 (demo-loop cycle 2, run r561db6d4) — the pricing/billing rules both
 // chat prompts carry (REQ-368's prompts.pricingAndBilling).
 //   m38: the model told the contractor "obtén varias cotizaciones de

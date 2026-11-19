@@ -167,3 +167,74 @@ export function moneyAmounts(text: string): MoneyAmount[] {
   }
   return found.sort((a, b) => a.start - b.start);
 }
+
+/** REQ-1023 (LOOP-007 cycle 2, q2-3): the words that name a price the
+ *  contractor lists — "mano de obra 4200", "materiales 1350", "materials:
+ *  1,350", "total 5,550". Never "cerca" (Spanish "about") or a cost cue. */
+const PRICE_LABEL = String
+  .raw`(mano\s+de\s+obra|labou?r|materiales|materials?|suministros|supplies|total|precio|price)`;
+/** What may sit between the label and its amount: nothing, a colon or an
+ *  equals sign, or one linking word ("material de 1350", "labor is 4200"). */
+const LABEL_LINK = String
+  .raw`\s*(?:[:=]\s*|-\s*|(?:de|of|is|es|son|are|was|fue)\s+)?\$?\s?`;
+/** What may follow a BARE labelled amount for it to be money: the end, a
+ *  pause, another price label, a joining word or a currency — never "total 2
+ *  rooms", "material 3 coats" or "materials 10%". */
+const LABEL_FOLLOW = String
+  .raw`(?=\s*(?:$|[.,;:!?)\]…"'”+/]|-\s|(?:${CURRENCY}|y|e|and|plus|m[aá]s|con|with|para|for|total|en|al|a|the|el|la|de|anticipo|deposit|down|mano|labou?r|materiales|materials?|suministros|supplies|precio|price)(?![\p{L}])))`;
+const BARE_LABELLED = new RegExp(
+  String
+    .raw`(?<![\p{L}])${PRICE_LABEL}${LABEL_LINK}(?<![\d$.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(?![\d%]|[.,]\d)${UNIT_AFTER}${LABEL_FOLLOW}`,
+  "giud",
+);
+/** The label right before an amount found by `moneyAmounts`. */
+const LABEL_BEFORE = new RegExp(
+  String.raw`(?<![\p{L}])${PRICE_LABEL}${LABEL_LINK}$`,
+  "iu",
+);
+
+/** One typed amount, with the price label it was typed under, if any. */
+export interface LabelledAmount extends MoneyAmount {
+  /** "mano de obra", "materiales", "total" — as typed, lower-cased. */
+  label?: string;
+}
+
+/**
+ * REQ-1023 (LOOP-007 cycle 2, q2-3): every amount `moneyAmounts` reads, plus
+ * a BARE number typed right after a price label — "mano de obra 4200
+ * materiales 1350", "materials: 1,350", "falta el material de 1350", "total
+ * 5,550" — in order, each carrying its label. A phone, a street number, a
+ * zip, a quantity ("18 pies", "2 manos") or a percentage is never read: the
+ * label must sit right before the number.
+ */
+export function labelledAmounts(text: string): LabelledAmount[] {
+  const s = text ?? "";
+  const found: LabelledAmount[] = moneyAmounts(s).map((a) => {
+    const m = s.slice(Math.max(0, a.start - 24), a.start).match(LABEL_BEFORE);
+    return m ? { ...a, label: labelOf(m[1]) } : { ...a };
+  });
+  for (const m of s.matchAll(BARE_LABELLED)) {
+    const start = m.indices?.[2]?.[0] ?? m.index!;
+    const end = m.index! + m[0].length;
+    if (found.some((f) => start < f.end && end > f.start)) continue;
+    const cents = centsOf(m[2], m[3]);
+    if (cents <= 0) continue;
+    const after = s.slice(end);
+    const rate = RATE_AFTER.test(after);
+    const per = rate ? undefined : perAfter(after);
+    found.push({
+      cents,
+      start,
+      end,
+      rate,
+      negative: false,
+      label: labelOf(m[1]),
+      ...(per ? { per } : {}),
+    });
+  }
+  return found.sort((a, b) => a.start - b.start);
+}
+
+function labelOf(raw: string): string {
+  return raw.toLowerCase().replace(/\s+/g, " ");
+}
