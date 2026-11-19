@@ -237,6 +237,125 @@ export function settleToTotal<T extends RevisableLine>(
 }
 
 // ---------------------------------------------------------------------------
+// REQ-1024 (LOOP-007 q2-6): a line taken off takes its job-details bullet
+// with it. "quita la reparación de la cerca" removed the fence LINE from a
+// sent quote, but its bullet "También incluye la reparación de la cerca …"
+// stayed in the job details and Version 2 told the customer the fence repair
+// was still included.
+// ---------------------------------------------------------------------------
+
+export interface JobDetailsText {
+  description?: string;
+  descriptionByLang?: Record<string, string>;
+}
+
+export interface JobDetailsDrop extends JobDetailsText {
+  /** Some bullet was dropped (or a stale translation cleared). */
+  changed: boolean;
+  /** Names whose bullet also names a line that stays — left for the owner. */
+  unsure: string[];
+}
+
+/** The indexes (into `text.split("\n")`) of the lines that are bullets. */
+function bulletRows(text: string): number[] {
+  return text.split("\n").flatMap((l, i) => l.trim() ? [i] : []);
+}
+
+function bulletText(row: string): string {
+  return row.replace(/^\s*(?:[-•*·]|\d+[.)])\s*/u, "").trim();
+}
+
+function names(bullet: string, name: string): boolean {
+  return findLine([{ description: bulletText(bullet) }], name) >= 0;
+}
+
+/**
+ * The job details with every bullet that names a removed line dropped, in
+ * the base text and in every language. `removed` holds, per removed line,
+ * the names it goes by (what the user said, its description, its
+ * translations); `kept` are the lines that stay. A bullet that also names a
+ * kept line is not dropped — its name goes in `unsure`. A translation whose
+ * bullets line up one-to-one with the base text loses the same rows; one
+ * that does not and names nothing removed by itself is cleared (stale — the
+ * next translate run refills it from the new base text).
+ */
+export function dropRemovedLineBullets(
+  details: JobDetailsText,
+  removed: readonly { names: readonly string[] }[],
+  kept: readonly RevisableLine[],
+): JobDetailsDrop {
+  const unsure: string[] = [];
+  const keptNames = kept.flatMap((l) => [
+    l.description,
+    ...Object.values(l.descriptionByLang ?? {}),
+  ]).filter((n) => lineKey(n));
+  /** The rows of `text` to drop — by the removed lines' names. */
+  const rowsToDrop = (text: string, report: boolean): Set<number> => {
+    const rows = text.split("\n");
+    const out = new Set<number>();
+    for (const i of bulletRows(text)) {
+      const hit = removed.find((r) => r.names.some((n) => names(rows[i], n)));
+      if (!hit) continue;
+      if (keptNames.some((n) => names(rows[i], n))) {
+        if (report) unsure.push(hit.names[0]);
+        continue;
+      }
+      out.add(i);
+    }
+    return out;
+  };
+  const without = (text: string, drop: Set<number>) =>
+    text.split("\n").filter((_, i) => !drop.has(i)).join("\n").trim();
+
+  const base = details.description;
+  const baseDrop = typeof base === "string"
+    ? rowsToDrop(base, true)
+    : new Set<number>();
+  const baseBullets = typeof base === "string" ? bulletRows(base) : [];
+  /** The base text's dropped rows, as bullet positions (0th bullet, …). */
+  const droppedBullets = new Set(
+    baseBullets.flatMap((row, k) => baseDrop.has(row) ? [k] : []),
+  );
+  let changed = baseDrop.size > 0;
+  const out: JobDetailsDrop = { changed, unsure };
+  if (typeof base === "string") out.description = without(base, baseDrop);
+
+  if (details.descriptionByLang) {
+    const byLang: Record<string, string> = {};
+    for (const [lang, text] of Object.entries(details.descriptionByLang)) {
+      if (typeof text !== "string") continue;
+      if (typeof base === "string" && text.trim() === base.trim()) {
+        byLang[lang] = out.description!;
+        continue;
+      }
+      const rows = bulletRows(text);
+      if (typeof base === "string" && rows.length === baseBullets.length) {
+        const drop = new Set(
+          rows.flatMap((row, k) => droppedBullets.has(k) ? [row] : []),
+        );
+        byLang[lang] = without(text, drop);
+        continue;
+      }
+      const own = rowsToDrop(text, typeof base !== "string");
+      if (own.size > 0) {
+        byLang[lang] = without(text, own);
+        changed = true;
+        continue;
+      }
+      if (droppedBullets.size > 0) {
+        changed = true; // stale: still describes what the base text dropped
+        continue;
+      }
+      byLang[lang] = text;
+    }
+    out.descriptionByLang = byLang;
+  }
+  out.changed = changed;
+  out.unsure = [...new Set(unsure)];
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Reading a reprice out of plain words ("change plumbing fixtures to $1,300").
 // The demo's model sent exactly that sentence to change_order as "Adjust
 // plumbing fixtures to $1,300" (+$150), and "change order for Dana on Q-001:

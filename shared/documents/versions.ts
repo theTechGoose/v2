@@ -367,9 +367,15 @@ interface LineLike {
 
 /**
  * REQ-248: compare two versions' content — the total (`estimatedTotal` for a
- * quote, `amount` for an invoice) and the line items, matched by position:
- * the lines both have are "changed" when any of description / quantity /
- * unit / price differs; the rest were added or removed.
+ * quote, `amount` for an invoice) and the line items.
+ *
+ * REQ-1024 (LOOP-007 q2-6, q2-42): lines are matched by IDENTITY, not by
+ * position — removing the middle line used to shift every later line onto
+ * its neighbour ("Removed: <last line> · Changed: <middle> → <last>"). First
+ * lines with the same (normalised) description pair up, whatever their order;
+ * a pair is "changed" when its quantity / unit / price differs. The lines
+ * left over pair up in order only when both sides have the same number left
+ * (a rename in place); anything still left over was added or removed.
  */
 export function versionChanges(
   before: Record<string, unknown> | null | undefined,
@@ -385,17 +391,17 @@ export function versionChanges(
   const to = totalOf(after);
   const a = linesOf(before);
   const b = linesOf(after);
-  const shared = Math.min(a.length, b.length);
+  const { pairs, added: addedIdx, removed: removedIdx } = matchLines(a, b);
   const changed: { from: LineSummary; to: LineSummary }[] = [];
-  for (let i = 0; i < shared; i++) {
+  for (const [i, j] of pairs) {
     const x = a[i] ?? {};
-    const y = b[i] ?? {};
+    const y = b[j] ?? {};
     if (!sameLine(x, y)) {
       changed.push({ from: lineSummary(x), to: lineSummary(y) });
     }
   }
-  const added = b.slice(shared).map(lineSummary);
-  const removed = a.slice(shared).map(lineSummary);
+  const added = addedIdx.map((j) => lineSummary(b[j] ?? {}));
+  const removed = removedIdx.map((i) => lineSummary(a[i] ?? {}));
   // REQ-561 (demo M28): the bullets the customer reads are content too.
   const textOf = (c: Record<string, unknown> | null | undefined) =>
     typeof c?.description === "string" ? c.description.trim() : "";
@@ -412,6 +418,48 @@ export function versionChanges(
     ...(changed.length ? { changed } : {}),
     ...(descriptionChanged ? { descriptionChanged } : {}),
   };
+}
+
+/** REQ-1024: a line's identity — its description, case/accents/spacing aside. */
+function lineIdentity(l: LineLike): string {
+  return (l.description ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * REQ-1024: pair the lines of two versions by identity. Same description
+ * first (in `before`'s order, any position); then the leftovers in order,
+ * only when both sides have the same number left (a rename in place).
+ * Returns the [beforeIndex, afterIndex] pairs and the unpaired indexes.
+ */
+function matchLines(
+  a: readonly LineLike[],
+  b: readonly LineLike[],
+): { pairs: [number, number][]; added: number[]; removed: number[] } {
+  const pairs: [number, number][] = [];
+  const usedB = new Set<number>();
+  const leftA: number[] = [];
+  const keysB = b.map((l) => lineIdentity(l ?? {}));
+  a.forEach((x, i) => {
+    const key = lineIdentity(x ?? {});
+    const j = keysB.findIndex((k, jj) => !usedB.has(jj) && k === key);
+    if (j >= 0) {
+      usedB.add(j);
+      pairs.push([i, j]);
+    } else leftA.push(i);
+  });
+  const leftB = b.map((_, j) => j).filter((j) => !usedB.has(j));
+  if (leftA.length === leftB.length) {
+    leftA.forEach((i, k) => pairs.push([i, leftB[k]]));
+    pairs.sort((p, q) => p[0] - q[0]);
+    return { pairs, added: [], removed: [] };
+  }
+  pairs.sort((p, q) => p[0] - q[0]);
+  return { pairs, added: leftB, removed: leftA };
 }
 
 function sameLine(x: LineLike, y: LineLike): boolean {

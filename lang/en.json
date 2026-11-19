@@ -5004,6 +5004,7 @@
   "chatCoordinator.reviseQuote.coRemoved": "Remove {line} ({amount})",
   "chatCoordinator.reviseQuote.noSuchLine": "I couldn't find a line called \"{line}\" on {job}, so I changed nothing. Its lines are:\n{list}\nTell me which one to change.",
   "chatCoordinator.reviseQuote.jobDetailsLine": "\"{line}\" is in the job details of {job}, not one of its priced lines, so I didn't change it — ask me to update the job details and I'll reword it.",
+  "chatCoordinator.reviseQuote.jobDetailsCheck": "The job details of {job} still mention \"{line}\" in a sentence about other work too, so I left it — check them before you publish, or ask me to update the job details.",
   "chatCoordinator.reviseQuote.askCustomer": "Which customer's quote should I change?",
   "chatCoordinator.reviseQuote.none": "I couldn't find a quote for {name}, so I changed nothing. Which quote should I change?",
   "chatCoordinator.reviseQuote.ambiguous": "Which quote should I change?\n{list}\nTell me the quote number or the customer's full name.",

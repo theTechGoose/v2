@@ -15,6 +15,7 @@ import {
   typedAmountsCents,
 } from "@agents/domain/business/change-order-intent/mod.ts";
 import {
+  dropRemovedLineBullets,
   findLine,
   type LineChange,
   reviseLineItems,
@@ -419,30 +420,82 @@ export class ReviseQuote {
       rev.lineItems.map(asRevisionLine),
       input.userText,
     );
-    const patch = {
+    const patch: Record<string, unknown> = {
       lineItems: rev.lineItems,
       estimatedTotal: rev.estimatedTotal,
     };
+    // REQ-1024 (LOOP-007 q2-6): a line taken off takes its job-details
+    // bullet with it — Version 2 of Q-002 dropped the fence line but still
+    // told the customer "También incluye la reparación de la cerca …". Not
+    // when this turn already rewrote the job details itself.
+    let checkNote = "";
+    if (remove.length > 0 && !input.jobDetailsUpdated) {
+      const removedLines = remove
+        .map((r) => ({ r, i: findLine(base, r) }))
+        .filter(({ i }) => i >= 0)
+        .map(({ r, i }) => ({
+          names: [
+            r,
+            base[i].description,
+            ...Object.values(base[i].descriptionByLang ?? {}),
+          ],
+        }));
+      const pending = quote.pendingRevision as
+        | Record<string, unknown>
+        | undefined;
+      const current = {
+        description: (pending && "description" in pending
+          ? pending.description
+          : quote.description) as string | undefined,
+        descriptionByLang: (pending && "descriptionByLang" in pending
+          ? pending.descriptionByLang
+          : quote.descriptionByLang) as Record<string, string> | undefined,
+      };
+      const details = dropRemovedLineBullets(
+        current,
+        removedLines,
+        rev.lineItems,
+      );
+      if (details.changed) {
+        if (details.description !== undefined) {
+          patch.description = details.description;
+        }
+        if (details.descriptionByLang !== undefined) {
+          patch.descriptionByLang = details.descriptionByLang;
+        }
+      }
+      if (details.unsure.length > 0) {
+        checkNote = t(lang, "chatCoordinator.reviseQuote.jobDetailsCheck", {
+          ...vars,
+          line: details.unsure.join('", "'),
+        });
+      }
+    }
+    const withCheck = (text: string) =>
+      checkNote ? `${text} ${checkNote}` : text;
 
     // Issued, unsigned → the next version, published by the contractor.
     if (isQuoteIssued(quote)) {
       await this.quotes.setPending(quote.id, userId, patch);
       const nextVersion = versionOf(quote) + 1;
       return {
-        text: withNote(
+        text: withCheck(withNote(
           `${text} ${
             t(lang, "chatCoordinator.reviseQuote.publishHint", {
               ...vars,
               version: nextVersion,
             })
           }`,
-        ),
+        )),
         outcome: { kind: "pending_revision", ...ref, nextVersion },
       };
     }
 
     // A draft → edited in place.
     await this.quotes.update(quote.id, userId, patch);
-    return { text: withNote(text), outcome: { kind: "draft_updated", ...ref } };
+    return {
+      text: withCheck(withNote(text)),
+      outcome: { kind: "draft_updated", ...ref },
+    };
   }
 }
