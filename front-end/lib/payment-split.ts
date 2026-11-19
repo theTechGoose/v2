@@ -20,7 +20,10 @@
  */
 import { parseRecurringTerm } from "../../shared/quote-flow/recurring-billing.ts";
 
-import { parseDepositTerm } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
+import {
+  depositDollars,
+  parseDepositTerm,
+} from "../../shared/quote-flow/deposit-term.ts"; // REQ-678, REQ-1091
 
 export type MilestoneRole =
   | "deposit"
@@ -131,9 +134,10 @@ export function computePaymentSplit(
 
 /**
  * REQ-491 (demo-loop cycle 3, m60): the i18n vars for the "Deposit + balance"
- * option's sub-line — `{pct}` always, and `{deposit}` / `{balance}` (whole
- * dollars, the split computePaymentSplit bills) only for a positive total,
- * so the contractor sees "20% upfront, rest when done · $90 / $360" before
+ * option's sub-line — `{pct}` always, and `{deposit}` / `{balance}` (the
+ * exact split computePaymentSplit bills — to the cent unless whole, REQ-961 /
+ * REQ-1091) only for a positive total, so the contractor sees "20% upfront,
+ * rest when done · $90 / $360" (or "· $1,025.10 / $4,100.40") before
  * picking it. The wizard emitter (backend localizeOptions) and the
  * assistant's fallback picker both read it.
  */
@@ -151,12 +155,11 @@ export function depositBalanceSubVars(
     ? computePaymentSplit(term, totalCents)
     : [];
   if (parts.length !== 2) return { pct: statedPct };
-  const usd = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
   return {
     // a dollar deposit names its share of the total, rounded
     pct: picked && "cents" in picked ? Math.round(parts[0].pct) : statedPct,
-    deposit: usd(parts[0].amountCents),
-    balance: usd(parts[1].amountCents),
+    deposit: depositDollars(parts[0].amountCents),
+    balance: depositDollars(parts[1].amountCents),
   };
 }
 

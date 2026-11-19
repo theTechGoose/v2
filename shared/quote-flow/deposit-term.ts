@@ -30,8 +30,12 @@ type Translate = (
 const DEPOSIT_RE =
   /^deposit\s+(?:(\d+(?:\.\d+)?)\s*%|\$\s*(\d[\d,]*(?:\.\d{1,2})?))\s*\+\s*balance$/i;
 
-/** "$500" / "$1,500.50" — whole dollars drop the cents. */
-function dollars(cents: number): string {
+/**
+ * "$500" / "$1,500.50" — whole dollars drop the cents (the REQ-961 rule,
+ * fmtMoneyTotal's). REQ-1091: the chat's deposit / balance sub-lines read
+ * through this too, so they match the preview and agreement to the cent.
+ */
+export function depositDollars(cents: number): string {
   const whole = cents % 100 === 0;
   return "$" + (cents / 100).toLocaleString("en-US", {
     minimumFractionDigits: whole ? 0 : 2,
@@ -41,7 +45,7 @@ function dollars(cents: number): string {
 
 /** The amount as it reads inside the term: "30%" or "$500". */
 export function depositAmountText(d: DepositAmount): string {
-  return "pct" in d ? `${d.pct}%` : dollars(d.cents);
+  return "pct" in d ? `${d.pct}%` : depositDollars(d.cents);
 }
 
 /** The stored English term value for a picked deposit. */
@@ -103,12 +107,17 @@ export function depositChoices(
   const total = typeof totalCents === "number" && totalCents > 0
     ? totalCents
     : 0;
-  const usd = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
   return DEPOSIT_PCT_CHOICES.map((pct) => {
     const value = depositTermValue({ pct });
     if (!total) return { pct, value };
     const dep = Math.round((total * pct) / 100);
-    return { pct, value, deposit: usd(dep), balance: usd(total - dep) };
+    // REQ-1091: to the cent unless whole — the halves add up to the total
+    return {
+      pct,
+      value,
+      deposit: depositDollars(dep),
+      balance: depositDollars(total - dep),
+    };
   });
 }
 

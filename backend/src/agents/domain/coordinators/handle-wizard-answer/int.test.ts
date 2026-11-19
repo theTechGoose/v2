@@ -1699,3 +1699,50 @@ Deno.test("REQ-1088 q3-5 handle-wizard-answer: an address typed at the customer 
   );
   await resetKv();
 });
+
+// REQ-1091 — LOOP-007 cycle 3, issue q3-7: "Chat payment step rounds
+// deposit/balance to whole dollars while the preview and agreement show
+// cents". On a $5,125.50 quote the payment step's 'Deposit + balance'
+// sub-line names the exact split computePaymentSplit bills, to the cent
+// (REQ-961) — not "$1,025 / $4,100".
+Deno.test("REQ-1091 (LOOP-007 q3, q3-7) handle-wizard-answer: the payment step's 'Deposit + balance' sub-line keeps the cents of a $5,125.50 quote ($1,025.10 / $4,100.40)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const quote = await ctx.quotes.create("u-1", {
+    summary: "Deck rebuild",
+    lineItems: [],
+    estimatedTotal: 512_550,
+    status: "draft",
+  });
+  const conv = await ctx.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+    customerId: "cust-1",
+  });
+  await ctx.transitionFlow.run({ userId: "u-1", conversationId: conv.id });
+  let last: AgentMessage | undefined;
+  for (const step of TERMS_WIZARD_V1.steps) {
+    if (step.id === "payment_terms") break;
+    const opt = step.options.find((o) => !o.isCustom)!;
+    const r = await ctx.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      stepId: step.id,
+      optionId: opt.id,
+    });
+    last = r.newMessages.at(-1);
+  }
+  const p = last?.payload as {
+    stepId?: string;
+    options?: { id: string; sub?: string }[];
+  };
+  assertEquals(p.stepId, "payment_terms");
+  const [dep, bal] = computePaymentSplit("Deposit + balance", 512_550);
+  assertEquals([dep.amountCents, bal.amountCents], [102_510, 410_040]);
+  assertEquals(
+    p.options?.find((o) => o.id === "deposit_bal")?.sub,
+    "20% deposit due a week after signing, rest when done · $1,025.10 / $4,100.40",
+  );
+  await resetKv();
+});
