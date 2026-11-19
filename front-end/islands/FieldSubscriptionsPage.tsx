@@ -37,6 +37,7 @@ import {
   overheadText,
 } from "../../shared/field/overhead.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import { zoneName } from "../lib/field-zone-name.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
@@ -200,11 +201,6 @@ function errMsg(err: unknown): string {
   }
   if (err instanceof Error && err.message) return err.message;
   return t("field.common.error");
-}
-
-/** "Zona 3" reads "Zone 3" in English (the server names zones in Spanish) */
-function zoneName(name: string, lang: "en" | "es"): string {
-  return lang === "en" ? name.replace(/^Zona /, "Zone ") : name;
 }
 
 /** every customer, page after page (REQ-137 — the existing resource) */

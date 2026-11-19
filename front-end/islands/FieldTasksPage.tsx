@@ -42,6 +42,7 @@ import {
   jobSpanProblem,
 } from "../lib/field-job.ts";
 import { groupTasks, workerZoneLabel } from "../lib/field-task-groups.ts";
+import { zoneName } from "../lib/field-zone-name.ts";
 import {
   addedNotice,
   addTaskProblem,
@@ -588,7 +589,7 @@ export default function FieldTasksPage(
 
   // REQ-365 — group by worker + zone id, in first-seen order; a one-off with no zone
   // is titled with the worker alone
-  const groups = groupTasks(tasks);
+  const groups = groupTasks(tasks, lang);
 
   // the worker's note belongs to the visit — show it once per subscription+day
   const seenNote = new Set<string>();
@@ -724,7 +725,7 @@ export default function FieldTasksPage(
           <div class="task__client">{x.customerName}</div>
           {x.address && <div class="task__addr">{x.address}</div>}
           <div class="hint">
-            {workerZoneLabel(x)}
+            {workerZoneLabel(x, lang)}
           </div>
           {!!x.crewNames?.length && (
             <div class="hint" data-cy="tk-crew">
@@ -1390,7 +1391,7 @@ export default function FieldTasksPage(
                   href="/field/assignments"
                   style="text-decoration:none"
                 >
-                  {s.regionName}
+                  {zoneName(s.regionName, lang)}
                 </a>
               </div>
             ))}

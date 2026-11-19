@@ -7,6 +7,7 @@
  * known code (or a network failure) is the house fallback, `field.common.error`.
  */
 import { ApiError } from "./api.ts";
+import { zoneName } from "./field-zone-name.ts";
 
 /** the add-form box an error belongs under; null → the form's (or row's) own alert */
 export type WorkerErrField = "name" | "phone" | "pin" | null;
@@ -42,10 +43,8 @@ const CODES: Record<string, { key: string; field: WorkerErrField }> = {
   cover_self: { key: "field.away.coverRequired", field: null },
 };
 
-/** "Zona 3" reads "Zone 3" in English (the server names zones in Spanish) */
-export function zoneName(name: string, lang: "en" | "es"): string {
-  return lang === "en" ? name.replace(/^Zona /, "Zone ") : name;
-}
+/** REQ-994 — the shared zone-name helper, re-exported for the /field/workers callers */
+export { zoneName };
 
 /** the worded error for a failed /field/workers, /field/crews or /field/absences call (REQ-840/842) */
 export function workerError(err: unknown, lang: "en" | "es"): WorkerErr {
