@@ -143,3 +143,75 @@ Deno.test("REQ-744 (demo p18-8a, cycle 5): /worker's day summary says '0 of 1 ta
     );
     expect(!none.includes("0 of 0"), `no "0 of 0" line ("${none}")`);
   }));
+
+/** the company's tomorrow (YYYY-MM-DD) */
+const tomorrowIso = () => {
+  const [y, m, d] = todayIso().split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+};
+
+Deno.test("REQ-1005 (LOOP-007 q1, q1-91): an empty Tomorrow on /worker?date=<tomorrow> never says 'No tasks today' / 'Sin tareas hoy'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await owner(http);
+    const cell = `843${digits()}`;
+    const r = await http("/api/field/workers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Pedro",
+        phoneNumber: cell,
+        pin: "1234",
+        language: "en",
+      }),
+    });
+    await r.body?.cancel();
+
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies(
+      [...hosts].map((domain) => ({
+        name: "pm_lang",
+        value: "en",
+        domain,
+        path: "/",
+      })),
+    );
+
+    await page.goto("/worker");
+    await page.locator("[data-cy='w-cell']").fill(cell);
+    await page.locator("[data-cy='w-pin']").fill("1234");
+    await page.locator("[data-cy='w-login']").click();
+    await page.getByText("Hey, Pedro").waitFor({ timeout: 15_000 });
+
+    const tomorrow = tomorrowIso();
+    const countOn = async (q: string) => {
+      await page.goto(`/worker?date=${tomorrow}${q}`);
+      await page.locator("[data-cy='w-preview']").waitFor({ timeout: 15_000 });
+      const count = page.locator("[data-cy='w-count']");
+      await count.waitFor({ timeout: 15_000 });
+      return (await count.textContent())?.trim() ?? "";
+    };
+
+    const en = await countOn("");
+    expect(
+      !en.toLowerCase().includes("today"),
+      `an empty Tomorrow does not say "today" (got "${en}")`,
+    );
+    expect(
+      en === "No tasks this day",
+      `an empty Tomorrow reads "No tasks this day" (got "${en}")`,
+    );
+
+    const es = await countOn("&lang=es");
+    expect(
+      !es.toLowerCase().includes("hoy"),
+      `es: an empty Tomorrow does not say "hoy" (got "${es}")`,
+    );
+    expect(
+      es === "Sin tareas este día",
+      `es: an empty Tomorrow reads "Sin tareas este día" (got "${es}")`,
+    );
+  }));
