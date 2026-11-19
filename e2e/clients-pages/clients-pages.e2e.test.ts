@@ -342,3 +342,72 @@ Deno.test("REQ-743 (demo c5 p18-6c, p18-8b): a handyman's customer card has no r
     await expect.see("Repeat visits");
     await expect.notSee("Subscriptions");
   }));
+
+Deno.test("REQ-1029 (LOOP-007 q2-10): a customer who owes money with a fictional 555-01xx phone + an email — the board's 'Send a kind reminder' opens the send sheet with email recommended, Send puts an email in the Outbox, and the page never goes to sms:", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const rosa = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Rosa Delgado", phoneNumber: "843-555-0111", email: "rosa@blackhole.postmarkapp.com" }),
+    })).json() as { id: string };
+    const today = new Date().toISOString().slice(0, 10);
+    const due = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+    const inv = await (await http("/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: rosa.id,
+        status: "sent",
+        jobName: "Deck stain REQ-1029",
+        description: "Deck stain",
+        lineItems: [{ description: "Deck stain", quantity: 1, price: 64000 }],
+        amount: 64000,
+        issuedDate: today,
+        dueDate: due,
+      }),
+    })).json() as { id?: string };
+    expect(typeof inv.id === "string", `invoice created (${JSON.stringify(inv)})`);
+    type Row = { channel: string; kind: string; to?: string };
+    const emails = async () =>
+      (await (await http("/api/outbox", { headers: auth })).json() as Row[]).filter((r) => r.channel === "email").length;
+    const before = await emails();
+
+    const navigated: string[] = [];
+    page.on("framenavigated", (f) => {
+      if (f === page.mainFrame()) navigated.push(f.url());
+    });
+
+    await page.goto("/customers");
+    await expect.see("Rosa Delgado");
+    const card = page.locator(".ccard2", { hasText: "Rosa Delgado" });
+    const nudge = card.locator("[data-cy='ccard2-nudge']");
+    await nudge.waitFor({ timeout: 15_000 });
+    const label = (await nudge.innerText()).trim();
+    expect(/kind reminder/i.test(label), `the nudge reads "Send a kind reminder" (${label})`);
+
+    const dialog = page.locator("[data-cy='send-dialog']");
+    let opened = true;
+    try {
+      await clickUntil(page, ".ccard2:has-text('Rosa Delgado') [data-cy='ccard2-nudge']", async () => (await dialog.count()) > 0);
+    } catch {
+      opened = false;
+    }
+    expect(!navigated.some((u) => u.startsWith("sms:")) && !page.url().startsWith("sms:"), `the page never went to sms: (${JSON.stringify(navigated)}, now ${page.url()})`);
+    expect(opened, `the reminder opened the in-app send sheet (no [data-cy='send-dialog'] after clicking "${label}"; page ${page.url()})`);
+    if (!opened) return;
+
+    const emailOpt = dialog.locator("[data-cy='send-option-email']");
+    const emailText = await emailOpt.innerText();
+    expect(/Recommended/i.test(emailText), `email is the recommended channel (${emailText})`);
+    expect((await emailOpt.getAttribute("aria-checked")) === "true", "email is picked");
+
+    await dialog.locator("[data-cy='send-keep']").click();
+    let after = before;
+    for (let i = 0; i < 50 && after <= before; i++) {
+      await page.waitForTimeout(200);
+      after = await emails();
+    }
+    expect(after === before + 1, `one new email in the Outbox (${before} → ${after})`);
+    expect(!page.url().startsWith("sms:"), `still in the app after Send (${page.url()})`);
+  }));
