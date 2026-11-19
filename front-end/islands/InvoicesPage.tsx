@@ -91,6 +91,7 @@ import {
   invoicesHeroEyebrowKey,
   invoicesHeroGood,
   invoicesHeroMode,
+  invoicesHeroOutstandingKey,
   paidKpiInvoiceCents,
   reloadInvoiceData,
   scheduledHeroSubKey,
@@ -1628,7 +1629,8 @@ function InvoicesHero(
             : (
               <>
                 <em>{fmtMoney(outstandingTotal)}</em>{" "}
-                {tFor(lang, "invoicesPage.hero.onTheWay")}
+                {/* REQ-958: overdue money is not "on the way" (the Out tile's phrase) */}
+                {tFor(lang, invoicesHeroOutstandingKey(overdueCount))}
                 <br />
                 {/* REQ-478: the total includes claimed bills, so the count does too */}
                 {tFor(lang, "invoicesPage.hero.across")}{" "}

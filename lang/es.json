@@ -1815,6 +1815,7 @@
   "invoicesPage.hero.expectedThisWeek": "esperados esta semana",
   "invoicesPage.hero.onTheWay": "en camino",
   "invoicesPage.hero.quietPre": "Semana tranquila —",
+  "invoicesPage.hero.stillOwed": "aún te deben",
   "invoicesPage.hero.scheduled": "{amount} programado — aún sin enviar.",
   "invoicesPage.kpi.drafting": "Borradores",
   "invoicesPage.kpi.draftingSub": "termina + envía",

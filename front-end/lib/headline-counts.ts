@@ -106,6 +106,21 @@ export function invoicesHeroMode(input: {
   return "outstanding";
 }
 
+/** REQ-958 (LOOP-007 q1-33): the wording after the "outstanding" hero's
+ *  total. That total is every balance still owed (REQ-566: overdue + out +
+ *  claimed), but "on the way" is the Out for payment tile's phrase ("{n} on
+ *  the way") and overdue money is not in that tile — so one overdue $1,000
+ *  read "$1,000 on the way" beside "$0 · 0 on the way". While any overdue
+ *  balance is in the total the hero says "still owed to you" instead; with
+ *  none, the total equals the Out tile and "on the way" stays true. */
+export function invoicesHeroOutstandingKey(
+  overdueCount: number,
+): "invoicesPage.hero.stillOwed" | "invoicesPage.hero.onTheWay" {
+  return overdueCount > 0
+    ? "invoicesPage.hero.stillOwed"
+    : "invoicesPage.hero.onTheWay";
+}
+
 /** REQ-697 (demo-loop cycle 5, m13): the /invoices eyebrow follows the hero
  *  mode — "Receivables · this week" read over "$180 on the way" for a bill
  *  due 19 dic. Only the week-scoped headlines name a week. */
