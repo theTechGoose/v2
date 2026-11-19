@@ -72,6 +72,7 @@ import { parseInvoiceSendPreviewQuery } from "#quote-flow/send-preview.ts"; // R
 import { EventBus } from "@core/business/events/mod.ts";
 import {
   invoiceIssuedEvent,
+  invoiceVoidedEvent, // REQ-1134
   isIssuingTransition,
 } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { billToCustomerPlan } from "@paperwork/domain/business/bill-to-customer/mod.ts"; // REQ-696
@@ -145,6 +146,23 @@ async function announceIssued(
       .then((c) => c.name || undefined, () => undefined)
     : undefined;
   await bus.emit(invoiceIssuedEvent(userId, inv, customerName));
+}
+
+/** REQ-1134 (LOOP-007 q3-66): tell the bus the owner voided this invoice —
+ *  every void path (single, void & duplicate, bulk) goes through removeOne,
+ *  which calls this once the status is "void". */
+function voidAnnouncer(
+  bus: EventBus,
+  customers: CustomerStore,
+  userId: string,
+): (inv: Invoice) => Promise<void> {
+  return async (inv) => {
+    const customerName = inv.customerId
+      ? await customers.getOwned(inv.customerId, userId)
+        .then((c) => c.name || undefined, () => undefined)
+      : undefined;
+    await bus.emit(invoiceVoidedEvent(userId, inv, customerName));
+  };
 }
 
 @Controller("invoices")
@@ -277,7 +295,11 @@ export class InvoiceController {
         id,
         user.id,
         b.action,
-        { by, reason },
+        {
+          by,
+          reason,
+          onVoided: voidAnnouncer(this.bus, this.customers, user.id),
+        },
       );
       // REQ-1135: each voided one the customer was sent can tell her
       const notice = r.outcome === "voided" && b.notify === true
@@ -311,6 +333,7 @@ export class InvoiceController {
     const r = await removeOne(this.store, this.payments, id, user.id, "void", {
       by,
       reason: cleanReason((body as { reason?: unknown } | null)?.reason),
+      onVoided: voidAnnouncer(this.bus, this.customers, user.id), // REQ-1134
     });
     if (r.outcome === "skipped") {
       return ctx.json(
@@ -346,6 +369,7 @@ export class InvoiceController {
     const r = await removeOne(this.store, this.payments, id, user.id, "void", {
       by,
       reason: cleanReason((body as { reason?: unknown } | null)?.reason),
+      onVoided: voidAnnouncer(this.bus, this.customers, user.id), // REQ-1134
     });
     if (r.outcome === "skipped") {
       return ctx.json({ ok: false, reason: r.reason }, 409);
@@ -1146,7 +1170,12 @@ async function removeOne(
   id: string,
   userId: string,
   action: "delete" | "void",
-  opts: { by?: VoidedBy; reason?: string } = {},
+  opts: {
+    by?: VoidedBy;
+    reason?: string;
+    /** REQ-1134: the owner-activity feed row, once the void is stored */
+    onVoided?: (inv: Invoice) => Promise<void>;
+  } = {},
 ): Promise<{ outcome: "deleted" | "voided" | "skipped"; reason?: string }> {
   let inv: Invoice;
   try {
@@ -1170,12 +1199,13 @@ async function removeOne(
     return { outcome: "deleted" };
   }
   if (d.action !== "void") return { outcome: "skipped", reason: "must_delete" };
-  await store.update(id, userId, {
+  const voided = await store.update(id, userId, {
     status: "void",
     voidedAt: new Date().toISOString(),
     ...(opts.by ? { voidedBy: opts.by } : {}),
     ...(opts.reason ? { voidReason: opts.reason } : {}),
   });
+  await opts.onVoided?.(voided);
   return { outcome: "voided" };
 }
 

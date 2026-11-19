@@ -353,6 +353,47 @@ export function notificationL10n(event: DomainEvent): NotificationL10n | null {
       titleParams: money ? { ...nameParams, amountCents } : nameParams,
     };
   }
+  // REQ-1134 (LOOP-007 q3-66): a chargeback (and its undo) is owner work
+  // too — without it the feed kept "Payment recorded: $400.25" as if the
+  // bounced check were good. The fee rides as raw cents (`{fee}`).
+  if (
+    event.entityType === "invoice" &&
+    (event.action === "payment_reversed" ||
+      event.action === "payment_reversal_undone")
+  ) {
+    const undone = event.action === "payment_reversal_undone";
+    const amountCents = event.data?.amountCents;
+    const feeCents = event.data?.feeCents;
+    const money = typeof amountCents === "number" && amountCents > 0;
+    const fee = !undone && typeof feeCents === "number" && feeCents > 0;
+    const base = undone
+      ? "notify.payment.reversalUndone"
+      : "notify.payment.reversed";
+    return {
+      type: undone ? "invoice_paid" : "invoice_overdue",
+      titleKey: `${base}${money ? "Amount" : ""}${fee ? "Fee" : ""}`,
+      titleParams: {
+        ...(nameParams ?? {}),
+        ...(money ? { amountCents } : {}),
+        ...(fee ? { feeCents } : {}),
+      },
+    };
+  }
+  // REQ-1134 (LOOP-007 q3-66): a voided invoice — "Invoice INV-003 for
+  // Rosa Delgado voided".
+  if (event.entityType === "invoice" && event.action === "voided") {
+    const number = event.data?.invoiceNumber;
+    const hasNumber = typeof number === "string" && number.trim() !== "";
+    return {
+      type: "generic",
+      titleKey: hasNumber
+        ? "notify.invoice.voidedNumber"
+        : "notify.invoice.voided",
+      titleParams: hasNumber
+        ? { ...(nameParams ?? {}), number: number.trim() }
+        : nameParams,
+    };
+  }
   if (event.entityType === "task" && event.action === "completed") {
     const task = (event.data?.task as string | undefined) ?? "";
     const worker = event.data?.worker as string | undefined;

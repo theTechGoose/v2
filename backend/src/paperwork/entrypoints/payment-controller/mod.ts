@@ -19,7 +19,7 @@ import {
   parseCreatePayment,
   parseUpdatePayment,
 } from "@paperwork/dto/payment.ts";
-import type { PaymentMethod } from "@paperwork/dto/payment.ts";
+import type { Payment, PaymentMethod } from "@paperwork/dto/payment.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
 import { SendPaymentReceipt } from "@paperwork/domain/coordinators/send-payment-receipt/mod.ts"; // REQ-963
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
@@ -36,7 +36,10 @@ import {
 } from "#documents/exports.ts"; // REQ-795
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
-import { paymentRecordedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
+import {
+  paymentRecordedEvent, // REQ-566
+  paymentReversedEvent, // REQ-1134
+} from "@paperwork/domain/business/owner-activity/mod.ts";
 
 /** REQ-551: the over-the-balance acknowledgement is a request flag, never a
  *  stored field (same shape as REQ-233's over-billing `override`). */
@@ -149,6 +152,32 @@ async function ownedOr404<T>(
     }
     throw e;
   }
+}
+
+/** REQ-1134 (LOOP-007 q3-66): tell the bus the owner charged a payment back
+ *  (or undid it) — the dashboard's activity feed. A module function: Danet
+ *  routes every method of a controller class. A feed write never fails the
+ *  chargeback itself. */
+async function announceReversal(
+  bus: EventBus,
+  invoices: InvoiceStore,
+  customers: CustomerStore,
+  userId: string,
+  opts: { payment: Payment; feeCents?: number; undone?: boolean },
+): Promise<void> {
+  const customerId = await invoices.getOwned(opts.payment.invoiceId, userId)
+    .then((inv) => inv.customerId, () => undefined);
+  const customerName = customerId
+    ? await customers.getOwned(customerId, userId)
+      .then((c) => c.name || undefined, () => undefined)
+    : undefined;
+  await bus.emit(
+    paymentReversedEvent(userId, opts.payment, {
+      customerName,
+      feeCents: opts.feeCents,
+      undone: opts.undone,
+    }),
+  );
 }
 
 @Controller("payments")
@@ -302,6 +331,13 @@ export class PaymentController {
     );
     if (r instanceof Response) return r;
     if (!r.ok) return ctx.json({ ok: false, reason: r.reason }, 409);
+    // REQ-1134 (LOOP-007 q3-66): the chargeback is owner work — the
+    // dashboard's "What we handled today" names it, so the earlier
+    // "Payment recorded" row no longer stands alone as if the money cleared.
+    await announceReversal(this.bus, this.invoices, this.customers, user.id, {
+      payment: r.payment,
+      feeCents,
+    });
     return ctx.json(r.payment);
   }
 
@@ -316,6 +352,11 @@ export class PaymentController {
     const r = await ownedOr404(ctx, () => this.chargeback.undo(id, user.id));
     if (r instanceof Response) return r;
     if (!r.ok) return ctx.json({ ok: false, reason: r.reason }, 409);
+    // REQ-1134: the undo is a feed row too — the payment counts again.
+    await announceReversal(this.bus, this.invoices, this.customers, user.id, {
+      payment: r.payment,
+      undone: true,
+    });
     return ctx.json(r.payment);
   }
 

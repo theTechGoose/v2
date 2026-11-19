@@ -231,6 +231,25 @@ const NOTIF_ICON: Record<
   generic: { icon: "sparkle", bg: "var(--teal-50)", fg: "var(--teal-600)" },
 };
 
+/**
+ * REQ-1134 (LOOP-007 q3-66): "What we handled today" is the whole day, not
+ * the 4 newest rows — a fixed `slice(0, 4)` pushed the morning's confirmed
+ * payment off as soon as four more things happened. Every row created on
+ * the viewer's calendar day stays; a quiet day still shows the 4 newest.
+ * The feed is newest-first, so this keeps a prefix.
+ */
+function handledTodayRows<T extends { createdAt: string }>(
+  rows: T[],
+  now: Date,
+): T[] {
+  const sameDay = (iso: string) => {
+    const d = new Date(iso);
+    return d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  };
+  return rows.filter((n, i) => i < 4 || sameDay(n.createdAt));
+}
+
 function notifToActivity(
   n: Notification,
   now: Date,
@@ -583,17 +602,19 @@ export default function DashboardPage(
       grouped.push(n);
     }
   }
-  const activityRows: ActivityEntry[] = grouped.slice(0, 4).map((n) => {
-    const dupes = (n as Notification & { _dupes?: number })._dupes ?? 1;
-    const entry = notifToActivity(n, now, lang);
-    return dupes > 1
-      ? {
-        ...entry,
-        html:
-          `${entry.html} <span style="color:var(--fg-muted);font-weight:600">· ${dupes}×</span>`,
-      }
-      : entry;
-  });
+  const activityRows: ActivityEntry[] = handledTodayRows(grouped, now).map(
+    (n) => {
+      const dupes = (n as Notification & { _dupes?: number })._dupes ?? 1;
+      const entry = notifToActivity(n, now, lang);
+      return dupes > 1
+        ? {
+          ...entry,
+          html:
+            `${entry.html} <span style="color:var(--fg-muted);font-weight:600">· ${dupes}×</span>`,
+        }
+        : entry;
+    },
+  );
 
   return (
     <>

@@ -1,6 +1,6 @@
 /**
  * REQ-299 (demo cycle 1, issue p4 "heavy polling") — the one client-side copy of the user's
- * latest notifications (`GET /notifications?limit=10`).
+ * latest notifications (`GET /notifications?limit=25`, REQ-1134; was 10).
  *
  * Before: DashboardPage fetched the list on load for its Activity panel and DashTopbar fetched it
  * every 10 s for its ticker, each into its own state — two fetchers of one resource, and the panel
@@ -19,7 +19,10 @@ import { dashboardClient, type Notification } from "../clients/dashboard.ts";
 type Fetcher = () => Promise<Notification[]>;
 type Listener = (items: Notification[]) => void;
 
-const DEFAULT_FETCHER: Fetcher = () => dashboardClient.notifications(10);
+// REQ-1134 (LOOP-007 q3-66): 25, not 10 — "What we handled today" shows the
+// whole day's rows, and a busy day's issue / payment / chargeback / void
+// rows outran 10.
+const DEFAULT_FETCHER: Fetcher = () => dashboardClient.notifications(25);
 
 let fetcher: Fetcher = DEFAULT_FETCHER;
 let items: Notification[] = [];

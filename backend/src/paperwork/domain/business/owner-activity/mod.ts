@@ -59,3 +59,50 @@ export function paymentRecordedEvent(
     },
   };
 }
+
+/** REQ-1134 (LOOP-007 q3-66): `invoice:payment_reversed` — the owner charged
+ *  a recorded payment back (a bounced check), with the fee it added; the
+ *  undo is `invoice:payment_reversal_undone`. Keyed on the invoice like
+ *  `payment_recorded`, so the row links where the reopened balance is. */
+export function paymentReversedEvent(
+  userId: string,
+  payment: { invoiceId: string; amount: number; method?: string },
+  opts: { customerName?: string; feeCents?: number; undone?: boolean } = {},
+): BusEvent {
+  return {
+    userId,
+    entityType: "invoice",
+    entityId: payment.invoiceId,
+    action: opts.undone ? "payment_reversal_undone" : "payment_reversed",
+    data: {
+      amountCents: payment.amount,
+      ...(payment.method ? { method: payment.method } : {}),
+      ...(!opts.undone && typeof opts.feeCents === "number" && opts.feeCents > 0
+        ? { feeCents: opts.feeCents }
+        : {}),
+      ...(opts.customerName ? { customerName: opts.customerName } : {}),
+    },
+  };
+}
+
+/** REQ-1134 (LOOP-007 q3-66): `invoice:voided` — the owner cancelled an
+ *  issued invoice ("Invoice INV-003 for Rosa Delgado voided"). */
+export function invoiceVoidedEvent(
+  userId: string,
+  invoice: { id: string; number?: string | null; amount?: number | null },
+  customerName?: string,
+): BusEvent {
+  return {
+    userId,
+    entityType: "invoice",
+    entityId: invoice.id,
+    action: "voided",
+    data: {
+      ...(invoice.number ? { invoiceNumber: invoice.number } : {}),
+      ...(typeof invoice.amount === "number"
+        ? { amountCents: invoice.amount }
+        : {}),
+      ...(customerName ? { customerName } : {}),
+    },
+  };
+}
