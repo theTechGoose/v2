@@ -17,10 +17,13 @@ import { fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts";
 import { liveIds } from "@field/domain/business/live-invoices/mod.ts";
 import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
 import {
+  hasEnded,
+  isRunning,
   isUnbilled,
   monthlyVisits,
   nextVisits,
   perVisitCents,
+  remainingVisits,
   workspaceSummary,
 } from "@analytics/domain/business/customer-workspace/mod.ts";
 import { isOpenReceivable, receivableBalanceCents } from "@paperwork/domain/business/open-receivable/mod.ts";
@@ -141,6 +144,9 @@ export class BuildCustomerWorkspace {
         const view = this.views.subscription(s, names);
         const perVisit = perVisitCents(view);
         const unbilled = visits.filter((v) => v.subscriptionId === s.id && v.unbilled);
+        // a day already done or skipped is not a next visit (nor one left)
+        const taken = new Set(visits.filter((v) => v.subscriptionId === s.id && (v.status === "complete" || v.status === "skipped")).map((v) => v.date));
+        const left = remainingVisits(s, today, taken);
         return {
           id: s.id,
           address: s.address,
@@ -154,13 +160,14 @@ export class BuildCustomerWorkspace {
           ...(s.endDate ? { endDate: s.endDate } : {}),
           perVisitCents: perVisit,
           monthlyCents: Math.round(perVisit * monthlyVisits(s)),
-          // a day already done or skipped is not a next visit
-          nextVisits: nextVisits(s, today, 5, new Set(visits.filter((v) => v.subscriptionId === s.id && (v.status === "complete" || v.status === "skipped")).map((v) => v.date))),
+          ...(hasEnded(s, today) ? { ended: true } : {}),
+          ...(left !== undefined ? { remainingCents: perVisit * left } : {}),
+          nextVisits: nextVisits(s, today, 5, taken),
           unbilledVisits: unbilled.length,
           unbilledCents: unbilled.reduce((sum, v) => sum + v.priceCents, 0),
         };
       })
-      .sort((a, b) => Number(b.active) - Number(a.active));
+      .sort((a, b) => Number(isRunning(b, today)) - Number(isRunning(a, today)));
 
     const workOrders = allWorkOrders
       .filter((w) => w.customerId === customerId)
@@ -180,11 +187,11 @@ export class BuildCustomerWorkspace {
       invoices: mine,
       payments: payments.map((p) => ({ amount: p.amountCents, method: p.method, receivedAt: p.receivedAt })),
       quotes: myQuotes,
-      services: services.map((s) => ({ active: s.active, perVisitCents: s.perVisitCents, monthlyVisits: s.perVisitCents ? s.monthlyCents / s.perVisitCents : 0, nextVisit: s.nextVisits[0] })),
+      services: services.map((s) => ({ active: s.active, perVisitCents: s.perVisitCents, monthlyVisits: s.perVisitCents ? s.monthlyCents / s.perVisitCents : 0, ...(s.endDate ? { endDate: s.endDate } : {}), nextVisit: s.nextVisits[0] })),
       unbilledVisitCents: visits.filter((v) => v.unbilled).map((v) => v.priceCents),
     });
     // the services' monthly figure is already rounded per service; the summary sums those
-    summary.recurringMonthlyCents = services.filter((s) => s.active).reduce((sum, s) => sum + s.monthlyCents, 0);
+    summary.recurringMonthlyCents = services.filter((s) => isRunning(s, today)).reduce((sum, s) => sum + s.monthlyCents, 0);
 
     return { customer, today, summary, invoices, quotes, payments, services, visits, workOrders };
   }
