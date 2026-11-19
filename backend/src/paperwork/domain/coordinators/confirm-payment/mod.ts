@@ -31,7 +31,9 @@ export {
  *   3. Flip the invoice to `paid`, stamp `paidAt`, clear the intent.
  *   4-5. Send the receipt — SendPaymentReceipt (REQ-963): PDF, email to the
  *      customer + CC contractor, SMS with a short-link to the public invoice
- *      page, outbox + comms trail, receiptSentVia.
+ *      page, outbox + comms trail, receiptSentVia. REQ-1116: a claim that
+ *      closes the bill sends no receipt EMAIL — the PAID invoice email
+ *      (MarkInvoicePaid, with the receipt PDF) is the customer's one email.
  *   6. Emit an `invoice:paid` domain event.
  *
  * Idempotent: if the invoice is already `paid`, the coordinator no-ops
@@ -107,21 +109,26 @@ export class ConfirmPayment {
     // the invoice stamped PAID, REQ-020) or leaves a balance (a partial
     // payment: the invoice reopens for the rest). The claim is consumed
     // either way.
-    // REQ-941: the receipt email below carries the PDF, so the paid
-    // invoice email does not attach a second one.
-    await this.balance.run(invoice.id, userId, { receiptPdf: false });
+    // REQ-1116 (LOOP-007 q3-40): a claim that closes the bill gets ONE
+    // customer email — the PAID invoice, carrying the receipt PDF (REQ-941;
+    // MarkInvoicePaid records receiptSentVia "email") — exactly like a
+    // closing payment recorded by hand (PaymentController.create).
+    const ledger = await this.balance.run(invoice.id, userId);
     const paidAt = new Date().toISOString();
     await this.invoices.update(invoice.id, userId, { paymentIntent: null });
 
     // 3. REQ-963: the receipt — PDF, email cc'd to the contractor, text,
     // outbox + comms trail, receiptSentVia — the same one the Record payment
     // dialog sends for a part payment (SendPaymentReceipt). Best-effort.
+    // REQ-1116: when the claim closed the bill its email is NOT sent — the
+    // PAID invoice email above already carries the receipt PDF; the text
+    // still goes.
     const { customerName } = await this.receipt.run(userId, invoice.id, {
       amount: intent.amount,
       method: intent.method,
       ...(intent.reference ? { reference: intent.reference } : {}),
       receivedAt: paidAt,
-    });
+    }, { email: ledger.status !== "paid" });
 
     // 4. Emit event for activity feed + dashboard counters.
     try {

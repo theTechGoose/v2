@@ -371,9 +371,11 @@ Deno.test("REQ-715: her payment receipt is in Spanish — email, PDF — and its
       customerId: carmen.id,
       status: "claimed",
       amount: 450_00,
+      // REQ-1116: a part payment — the receipt email goes only when a balance
+      // is left (a claim that closes the bill gets the PAID invoice email)
       paymentIntent: {
         method: "zelle",
-        amount: 450_00,
+        amount: 200_00,
         claimedAt: new Date().toISOString(),
       },
     } as never);

@@ -15,8 +15,8 @@ import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 
 export interface MarkInvoicePaidOptions {
   /** REQ-941: attach the customer's PDF receipt to the paid email (default
-   *  true). ConfirmPayment passes false — its own receipt email carries the
-   *  PDF, so the customer never gets two. */
+   *  true). REQ-1116: every closing path (ConfirmPayment included) leaves it
+   *  on — the paid email is the customer's one email and carries the PDF. */
   receiptPdf?: boolean;
 }
 
@@ -29,8 +29,8 @@ export interface MarkInvoicePaidOptions {
  * that flips an invoice to paid behaves the same:
  *   - ComputeInvoiceBalance (a recorded payment closes the balance —
  *     POST/PUT/DELETE /payments, the REQ-018 "Payment received" button);
- *   - ConfirmPayment (the contractor confirms a customer claim — which keeps
- *     its receipt on top).
+ *   - ConfirmPayment (the contractor confirms a customer claim — REQ-1116:
+ *     no receipt email on top; this one email carries the receipt PDF).
  *
  * Best-effort: a mail failure never breaks the payment. The dispatch is
  * logged in the customer's comms trail by SendPaperworkEmail itself.
@@ -38,14 +38,13 @@ export interface MarkInvoicePaidOptions {
  * REQ-556 (demo-loop cycle 4, M7): the result is recorded on the invoice —
  * `receiptSentVia` "none" when the email was not delivered (no address,
  * refused, thrown) — so /invoices and /i never say a receipt went out that
- * did not. ConfirmPayment upgrades it when its own receipt email or text
- * gets through.
+ * did not. (A part payment's receipt — SendPaymentReceipt — stamps its own.)
  *
  * REQ-941 (LOOP-007 q1-7): /i reads "email" as "A PDF receipt is in your
  * inbox", so the paid email now carries that PDF receipt (RenderReceiptPdf,
  * in the language the email resolves to), and "email" is recorded only when
- * it did. A delivered paid email without the PDF (the render failed, or
- * ConfirmPayment's own receipt carries it) records "paid_email".
+ * it did. A delivered paid email without the PDF (the render failed, or a
+ * caller passed receiptPdf: false) records "paid_email".
  */
 @Injectable()
 export class MarkInvoicePaid {

@@ -49,6 +49,15 @@ export interface ReceiptPayment {
   receivedAt: string;
 }
 
+/** REQ-1116 (LOOP-007 q3-40): what this receipt may send. */
+export interface ReceiptOptions {
+  /** Send the receipt email (with its PDF). Default true. False when the
+   *  payment closed the bill: the PAID invoice email (MarkInvoicePaid)
+   *  already carries the receipt PDF and is the customer's one email. The
+   *  text still goes. */
+  email?: boolean;
+}
+
 export interface ReceiptResult {
   /** The receipt email was accepted by the provider. */
   emailed: boolean;
@@ -64,8 +73,9 @@ export interface ReceiptResult {
  * Extracted from ConfirmPayment so every path that records money the
  * customer paid receipts it the same way: the claim confirm and the
  * assistant (ConfirmPayment) and the Record payment dialog
- * (POST /payments, PaymentController.create — for a payment that leaves a
- * balance; the one that closes it gets the PAID invoice, REQ-020).
+ * (POST /payments, PaymentController.create) — both only for a payment that
+ * leaves a balance; the one that closes it gets the PAID invoice with the
+ * receipt PDF instead, never this on top (REQ-020, REQ-1116).
  *
  *   1. Render the receipt PDF (RenderReceiptPdf) in the customer's language.
  *   2. Email it to the customer, the contractor cc'd; list it in the outbox
@@ -98,7 +108,9 @@ export class SendPaymentReceipt {
     userId: string,
     invoiceId: string,
     payment: ReceiptPayment,
+    opts: ReceiptOptions = {},
   ): Promise<ReceiptResult> {
+    const sendEmail = opts.email !== false;
     // REQ-224: the feed line names the client as the bill shows them.
     let customerName: string | undefined;
     // REQ-556 (demo-loop cycle 4, M7): what this receipt actually reached.
@@ -143,22 +155,25 @@ export class SendPaymentReceipt {
       const balanceCents = invoice.status === "paid"
         ? 0
         : balanceDue(invoice, invoice.paidCents ?? 0);
-      const pdfBytes = await this.receiptPdf.run({
-        invoice: invoice,
-        customer,
-        contractor,
-        ...(businessName ? { businessName } : {}),
-        // REQ-1110 (q3-34): the payment received, not the invoice total
-        amount: payment.amount,
-        totalCents,
-        balanceCents,
-        method: payment.method,
-        ...(payment.reference ? { reference: payment.reference } : {}),
-        confirmedAt: payment.receivedAt,
-        lang,
-        // REQ-628: the business's logo heads the receipt
-        logo: await this.logos.run(userId),
-      });
+      // the PDF rides only on the receipt email (REQ-1114 q3-40)
+      const pdfBytes = sendEmail && customer?.email
+        ? await this.receiptPdf.run({
+          invoice: invoice,
+          customer,
+          contractor,
+          ...(businessName ? { businessName } : {}),
+          // REQ-1110 (q3-34): the payment received, not the invoice total
+          amount: payment.amount,
+          totalCents,
+          balanceCents,
+          method: payment.method,
+          ...(payment.reference ? { reference: payment.reference } : {}),
+          confirmedAt: payment.receivedAt,
+          lang,
+          // REQ-628: the business's logo heads the receipt
+          logo: await this.logos.run(userId),
+        })
+        : undefined;
 
       // A shortlink back to the public invoice page, opened in the receipt's
       // language — minted once: the text links it, and (REQ-1071, q2-60) the
@@ -175,7 +190,7 @@ export class SendPaymentReceipt {
         invoiceUrl = withSendLang(`${appUrl}/s/${link.code}`, lang);
       } catch { /* fall through to no-url receipt */ }
 
-      if (customer?.email) {
+      if (pdfBytes && customer?.email) {
         // REQ-204: "Receipt for INV-5000" — the receipt names the bill by number
         const subject = renderReceiptSubject(invoice, lang);
         const htmlBody = renderReceiptHtml({
