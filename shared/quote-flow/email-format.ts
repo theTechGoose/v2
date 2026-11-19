@@ -39,12 +39,37 @@ export function titleCaseJobName(
 ): string {
   if (lang === "es") return spanishHeroCase(name, opts?.keep);
   const locale = localeOf(lang);
+  // REQ-1087 (LOOP-007 q3, q3-4): the joining words stay lowercase mid-title
+  // ("Exterior Painting and Fence Staining", never "… And …").
   return name
     .trim()
     .split(/\s+/)
-    .map((word) => word.charAt(0).toLocaleUpperCase(locale) + word.slice(1))
+    .map((word, i) =>
+      i > 0 && EN_TITLE_SMALL.has(word.toLowerCase())
+        ? word.toLowerCase()
+        : word.charAt(0).toLocaleUpperCase(locale) + word.slice(1)
+    )
     .join(" ");
 }
+
+/** English Title Case keeps these lowercase after the first word. */
+const EN_TITLE_SMALL = new Set([
+  "a",
+  "an",
+  "and",
+  "at",
+  "but",
+  "by",
+  "for",
+  "in",
+  "nor",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+]);
 
 /**
  * REQ-756 (demo-loop cycle 5v2, p18-2a): REQ-720's sentence case is for the
