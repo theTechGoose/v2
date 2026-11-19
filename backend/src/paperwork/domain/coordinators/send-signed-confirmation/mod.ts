@@ -401,7 +401,7 @@ export class SendSignedConfirmation {
           ...(businessName ? { fallbackName: businessName } : {}),
         }),
       });
-      const fileName = agreementFileName(quote);
+      const fileName = agreementFileName(quote, lang);
       sent = await this.email.send({
         to: recipient,
         subject,
@@ -562,11 +562,15 @@ export class SendSignedConfirmation {
 
 /* ---------------- helpers ---------------- */
 
-/** REQ-204: "Agreement-Q-001.pdf" — the attachment is named by the quote's number. */
+/** REQ-204: "Agreement-Q-001.pdf" — the attachment is named by the quote's
+ *  number. REQ-1079: in the send language — "Acuerdo-Q-001.pdf" in Spanish. */
 export function agreementFileName(
   quote: { id: string; number?: string },
+  lang: Lang,
 ): string {
-  return `Agreement-${docRef(quote).replace(/^#/, "")}.pdf`;
+  return t(lang, "signedConfirm.email.attachmentName", {
+    id: docRef(quote).replace(/^#/, ""),
+  });
 }
 
 /** Resolve the contractor's chosen payment terms into one amount per
@@ -919,7 +923,7 @@ ${
               </td>
               <td style="padding:16px 20px 16px 0;vertical-align:middle">
                 <div style="color:${COLOR_INK};font-weight:800;font-size:14px">${
-    escapeHtml(agreementFileName(quote))
+    escapeHtml(agreementFileName(quote, lang))
   }</div>
                 <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
     t(lang, "signedConfirm.email.attachmentSub")

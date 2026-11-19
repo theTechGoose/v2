@@ -6263,6 +6263,8 @@
   "worker.crewLead": "Crew foreman",
   "workOrders.modal.assigneeNone": "Not assigned",
   "worker.workOrder": "Work order {number}",
+  "paperworkEmail.quote.attachmentName": "Quote-{id}.pdf",
+  "signedConfirm.email.attachmentName": "Agreement-{id}.pdf",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",
