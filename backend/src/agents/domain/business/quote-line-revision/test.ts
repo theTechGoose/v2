@@ -8,6 +8,7 @@
 import { assertEquals } from "#std/assert";
 import {
   changeOrderAsReprice,
+  dropRemovedLineBullets,
   findLine,
   lineKey,
   parseLineReprice,
@@ -304,4 +305,46 @@ Deno.test("REQ-583 M2 changeOrderAsReprice: the demo model's change_order on 'Ma
     ),
     undefined,
   );
+});
+
+Deno.test("REQ-1024 dropRemovedLineBullets: the removed line's bullet goes in every language; the rest stay", () => {
+  const es =
+    "- Pintura exterior.\n- Reparación de la cerca de madera.\n- Materiales.";
+  const en = "- Exterior paint.\n- Wood fence repair.\n- Materials.";
+  const out = dropRemovedLineBullets(
+    { description: es, descriptionByLang: { es, en } },
+    [{ names: ["cerca", "Reparación de cerca de madera"] }],
+    [{ description: "Pintura exterior" }, { description: "Materiales" }],
+  );
+  assertEquals(out.changed, true);
+  assertEquals(out.unsure, []);
+  assertEquals(out.description, "- Pintura exterior.\n- Materiales.");
+  assertEquals(out.descriptionByLang, {
+    es: "- Pintura exterior.\n- Materiales.",
+    en: "- Exterior paint.\n- Materials.",
+  });
+});
+
+Deno.test("REQ-1024 dropRemovedLineBullets: a bullet that also names a kept line stays, and is reported unsure", () => {
+  const es = "- Pintura exterior y reparación de la cerca.\n- Materiales.";
+  const out = dropRemovedLineBullets(
+    { description: es },
+    [{ names: ["cerca"] }],
+    [{ description: "Pintura exterior" }],
+  );
+  assertEquals(out.changed, false);
+  assertEquals(out.unsure, ["cerca"]);
+  assertEquals(out.description, es);
+});
+
+Deno.test("REQ-1024 dropRemovedLineBullets: a translation that does not line up and names nothing is cleared as stale", () => {
+  const es = "- Pintura.\n- Reparación de la cerca.";
+  const en = "Exterior paint plus a wood fence repair, all in one.";
+  const out = dropRemovedLineBullets(
+    { description: es, descriptionByLang: { en } },
+    [{ names: ["cerca"] }],
+    [{ description: "Pintura" }],
+  );
+  assertEquals(out.description, "- Pintura.");
+  assertEquals(out.descriptionByLang, {});
 });

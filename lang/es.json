@@ -5004,6 +5004,7 @@
   "chatCoordinator.reviseQuote.coRemoved": "Quitar {line} ({amount})",
   "chatCoordinator.reviseQuote.noSuchLine": "No encontré una partida llamada \"{line}\" en {job}, así que no cambié nada. Sus partidas son:\n{list}\nDime cuál cambiar.",
   "chatCoordinator.reviseQuote.jobDetailsLine": "\"{line}\" está en los detalles del trabajo de {job}, no es una de sus partidas con precio, así que no lo cambié — pídeme que actualice los detalles del trabajo y lo cambio.",
+  "chatCoordinator.reviseQuote.jobDetailsCheck": "Los detalles del trabajo de {job} todavía mencionan \"{line}\" junto con otro trabajo, así que no los toqué — revísalos antes de publicar, o pídeme que actualice los detalles del trabajo.",
   "chatCoordinator.reviseQuote.askCustomer": "¿La cotización de qué cliente debo cambiar?",
   "chatCoordinator.reviseQuote.none": "No encontré una cotización para {name}, así que no cambié nada. ¿Qué cotización debo cambiar?",
   "chatCoordinator.reviseQuote.ambiguous": "¿Qué cotización debo cambiar?\n{list}\nDime el número de la cotización o el nombre completo del cliente.",
