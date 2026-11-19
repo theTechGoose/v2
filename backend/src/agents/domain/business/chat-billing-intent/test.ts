@@ -559,6 +559,7 @@ Deno.test("REQ-939 q1-15 parseJobDoneInvoiceAsk: the tester's message opens the 
     amountCents: 85_000,
     depositPaidCents: 20_000,
     customerName: "Dana Whitfield",
+    dueDays: 7, // REQ-935 (q1-16): "due in 7 days" / "a 7 días" is kept
   } as ReturnType<typeof parseJobDoneInvoiceAsk>);
 });
 
@@ -567,6 +568,7 @@ Deno.test("REQ-939 q1-15 parseJobDoneInvoiceAsk: the Spanish equivalent ('ya pag
     amountCents: 85_000,
     depositPaidCents: 20_000,
     customerName: "Dana Whitfield",
+    dueDays: 7, // REQ-935 (q1-16): "due in 7 days" / "a 7 días" is kept
   } as ReturnType<typeof parseJobDoneInvoiceAsk>);
 });
 

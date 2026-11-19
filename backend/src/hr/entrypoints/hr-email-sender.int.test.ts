@@ -83,6 +83,17 @@ Deno.test(
         division: "outbound",
       }, H);
       assertEquals(dept.status, 201, dept.text);
+      // REQ-932 (q1-18): a hire needs a department with a document to sign
+      const doc = await call("POST", "/hr/documents", {
+        name: "Handbook",
+        kind: "ack",
+        contentHtml: "<p>Be kind.</p>",
+      }, H);
+      assertEquals(doc.status, 201, doc.text);
+      const cfg = await call("PUT", `/hr/departments/${dept.body.id}`, {
+        docIds: [doc.body.id],
+      }, H);
+      assertEquals(cfg.status, 200, cfg.text);
 
       sent.length = 0;
       const hire = await call("POST", "/hr/hires", {

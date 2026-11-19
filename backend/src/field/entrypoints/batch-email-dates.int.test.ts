@@ -21,7 +21,7 @@ import { bootstrapServer } from "#mrg-keystone/danet";
 import { FieldModule } from "@field/mod-root.ts";
 import { OtpStore } from "@users/domain/data/otp-store/mod.ts";
 import { resetKv } from "@core/data/kv/mod.ts";
-import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { shiftDate, todayIn } from "@field/domain/business/schedule/mod.ts";
 import {
   EmailService,
   type SendEmailInput,
@@ -107,7 +107,9 @@ Deno.test("REQ-944 q1-13: a batch-sent invoice email shows its issue date, and D
       phoneNumber: "843-555-0201",
       pin: "1234",
     }, H)).body;
-    const today = fieldToday();
+    // REQ-940: the batch is dated in the business's zone (the identity's,
+    // set above) — not FIELD_TZ, which a parallel test file may change.
+    const today = todayIn(zone);
     const sub = (await call("POST", "/field/subscriptions", {
       customerId: customer.id,
       address: "4601 Dick Pond Rd, Myrtle Beach, SC",

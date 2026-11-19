@@ -35,7 +35,8 @@ const LINK_BUILDERS = [
   "send-inquiry-alert",
   "send-change-order-alert",
   "send-payment-reminder",
-  "confirm-payment",
+  // REQ-963 (q1-37): ConfirmPayment's receipt (and its link) moved here
+  "send-payment-receipt",
   "render-invoice-pdf",
 ].map((name) => `${COORDINATORS}/${name}/mod.ts`);
 
