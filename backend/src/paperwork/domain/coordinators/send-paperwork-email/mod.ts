@@ -100,7 +100,7 @@ import type { User } from "@users/dto/user.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { localizePaymentInstructions, paymentInstructionsBeyond } from "#documents/invoice-form.ts"; // REQ-710, REQ-1117
 import { projectPayMethods } from "#payments/pay-links.ts"; // REQ-1117
-import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
+import { invoiceLineItemsByLang, invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
 
 export type PaperworkKind = "quote" | "invoice";
 
@@ -1634,7 +1634,7 @@ export function renderInvoicePaidSubject(
  * agreement" link when the linked quote is accepted.
  *
  * Quote-linked invoices only — a standalone invoice (no linked quote)
- * has no itemized job to show and falls back to renderInvoiceBasicHtml.
+ * falls back to renderInvoiceBasicHtml, which prices its own lines.
  */
 /** REQ-020: the money-card label — "Amount due" on a bill, "PAID <date>"
  *  on the invoice stamped paid. */
@@ -1817,43 +1817,7 @@ export function renderInvoiceHtml(
       : ""
   }${heroRaw} · ${fmtUSD(amount)}`;
 
-  const lineRows = items.map((li, idx) => {
-    const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
-    const qty = li.quantity ?? 1;
-    const subBits = [
-      // P-51: localized unit — the "ea" fallback maps to quoteDoc.unitEach
-      // ("c/u" in es); custom units pass through.
-      qty > 1 ? `${qty} ${escapeHtml(unitLabel(li.unit, lang))}` : null,
-      qty > 1
-        ? t(lang, "paperworkEmail.quote.lineEach", {
-          price: fmtUSD(li.price ?? 0),
-        })
-        : null,
-    ].filter(Boolean).join(" · ");
-    const sub = subBits
-      ? `<div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${subBits}</div>`
-      : "";
-    const last = idx === items.length - 1;
-    const border = last ? "" : `border-bottom:1px solid ${COLOR_LINE};`;
-    return `<tr>
-      <td style="padding:14px 0;${border}vertical-align:middle">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-          <tr>
-            <td style="vertical-align:middle;width:18px">
-              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${COLOR_PINK};vertical-align:middle"></span>
-            </td>
-            <td style="vertical-align:middle;color:${COLOR_INK};font-size:15px;font-weight:600">
-              ${escapeHtml(li.description)}
-              ${sub}
-            </td>
-            <td style="vertical-align:middle;text-align:right;color:${COLOR_INK};font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:14px">
-              ${fmtUSD(lineTotal)}
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>`;
-  }).join("");
+  const lineRows = invoiceLineRowsHtml(items, lang);
 
   const descLines = (description ?? "")
     .split(/\r?\n/)
@@ -2146,8 +2110,60 @@ function invoiceCtaKey(paid: boolean, payWays: string): string {
   return payWays ? "paperworkEmail.invoice.cta" : "paperworkEmail.invoice.ctaView";
 }
 
-/** Lightweight amount-only invoice email (the original) — used for standalone
- *  invoices with no linked quote to itemize. */
+/** The itemized email's line rows — name, "2 ea · $X each" for qty > 1, and
+ *  the right-aligned line total. Shared by the itemized invoice email and,
+ *  REQ-1127 (q3-55), the standalone one, so both price every line. */
+function invoiceLineRowsHtml(
+  items: {
+    description: string;
+    quantity?: number;
+    price?: number;
+    unit?: string;
+  }[],
+  lang: Lang,
+): string {
+  return items.map((li, idx) => {
+    const lineTotal = (li.price ?? 0) * (li.quantity ?? 1);
+    const qty = li.quantity ?? 1;
+    const subBits = [
+      // P-51: localized unit — the "ea" fallback maps to quoteDoc.unitEach
+      // ("c/u" in es); custom units pass through.
+      qty > 1 ? `${qty} ${escapeHtml(unitLabel(li.unit, lang))}` : null,
+      qty > 1
+        ? t(lang, "paperworkEmail.quote.lineEach", {
+          price: fmtUSD(li.price ?? 0),
+        })
+        : null,
+    ].filter(Boolean).join(" · ");
+    const sub = subBits
+      ? `<div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${subBits}</div>`
+      : "";
+    const last = idx === items.length - 1;
+    const border = last ? "" : `border-bottom:1px solid ${COLOR_LINE};`;
+    return `<tr>
+      <td style="padding:14px 0;${border}vertical-align:middle">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+          <tr>
+            <td style="vertical-align:middle;width:18px">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${COLOR_PINK};vertical-align:middle"></span>
+            </td>
+            <td style="vertical-align:middle;color:${COLOR_INK};font-size:15px;font-weight:600">
+              ${escapeHtml(li.description)}
+              ${sub}
+            </td>
+            <td style="vertical-align:middle;text-align:right;color:${COLOR_INK};font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:14px">
+              ${fmtUSD(lineTotal)}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+/** The invoice email for a standalone invoice (no linked quote). An
+ *  amount-only bill keeps the original lightweight look; one with its own
+ *  service lines (REQ-921) lists them with their prices (REQ-1127). */
 export function renderInvoiceBasicHtml(
   i: Invoice,
   liveCustomer: RenderedCustomer | undefined,
@@ -2181,6 +2197,25 @@ export function renderInvoiceBasicHtml(
   const description = visits
     ? undefined
     : (own.descriptionByLang?.[lang] ?? i.description)?.trim();
+  // REQ-1127 (LOOP-007 q3-55): a standalone bill made of service lines
+  // (REQ-921) prices each line, as /i and the PDF do — REQ-946's "the email
+  // still shows the line items". In the email's language (REQ-710). A lone
+  // qty-1 line that only repeats the job name (or under its own Job details
+  // note) adds nothing to the amount card, so the original look stays.
+  const lines = visits ? [] : localizeLineItems(
+    invoiceLineItemsByLang(i, i.lineItems),
+    lang,
+    i.lang ?? undefined,
+  ).filter((li) => li.description?.trim());
+  const showLines = lines.length > 1 ||
+    lines.some((li) => (li.quantity ?? 1) > 1) ||
+    (lines.length === 1 && !description &&
+      lines[0].description.trim() !== jobName);
+  const linesBlock = showLines
+    ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:0 0 16px;border-collapse:collapse"><tbody>${
+      invoiceLineRowsHtml(lines, lang)
+    }</tbody></table>`
+    : "";
   const visitsBlock = visits
     ? visits.map((g) =>
       `<div data-visit-address style="margin:0 0 6px;font-size:15px;font-weight:800;color:${COLOR_TEAL}">${
@@ -2203,11 +2238,11 @@ export function renderInvoiceBasicHtml(
       }</table>`
     ).join("")
     : "";
-  const jobBlock = (jobName || description || visits)
+  const jobBlock = (jobName || description || visits || linesBlock)
     ? `${
       jobName
         ? `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:22px;letter-spacing:-0.02em;color:${COLOR_TEAL};margin-bottom:${
-          description || visits ? "10" : "16"
+          description || visits || linesBlock ? "10" : "16"
         }px">${escapeHtml(jobName)}</div>`
         : ""
     }${visitsBlock}${
@@ -2216,7 +2251,7 @@ export function renderInvoiceBasicHtml(
           escapeHtml(description)
         }</p>`
         : ""
-    }`
+    }${linesBlock}`
     : "";
 
   const body = `${revisedBanner("invoice", i, lang)}${jobBlock}
