@@ -11,6 +11,7 @@
  * - the public projection: the old `{ method, handle }` rows unchanged, then one
  *   `{ method: "link", id, name, url }` row per enabled, safe link (extend, never rename).
  */
+import { fmtPayHandle } from "../identity/phone.ts";
 
 /** At most this many custom payment links per business. */
 export const MAX_PAY_LINKS = 10;
@@ -47,7 +48,16 @@ export type PayButton =
     /** the handle the link pays, shown under the label */
     detail?: string;
   }
-  | { kind: "copy"; key: string; method: string; label: string; value: string };
+  | {
+    kind: "copy";
+    key: string;
+    method: string;
+    label: string;
+    /** the raw handle, what the Copy button copies */
+    value: string;
+    /** REQ-1032: the handle as the customer reads it — a phone reads "(512) 555-0700" */
+    display: string;
+  };
 
 const BRAND: Record<string, string> = {
   venmo: "Venmo",
@@ -292,7 +302,7 @@ export function payButtons(
         method,
         label: BRAND[method],
         href,
-        ...(m.handle?.trim() ? { detail: m.handle.trim() } : {}),
+        ...(m.handle?.trim() ? { detail: fmtPayHandle(m.handle.trim()) } : {}),
       });
     } else if (m.handle?.trim()) {
       copies.push({
@@ -301,6 +311,7 @@ export function payButtons(
         method,
         label: BRAND[method],
         value: m.handle.trim(),
+        display: fmtPayHandle(m.handle.trim()),
       });
     }
   }
@@ -324,6 +335,7 @@ export function payButtons(
       method: "zelle",
       label: BRAND.zelle,
       value: zelle.handle.trim(),
+      display: fmtPayHandle(zelle.handle.trim()),
     });
   }
   return [...links, ...copies];

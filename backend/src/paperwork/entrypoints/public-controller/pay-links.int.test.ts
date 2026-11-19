@@ -32,6 +32,7 @@ import { LogPaperworkMessage } from "@communication/domain/coordinators/log-pape
 import { ConversationStore } from "@communication/domain/data/conversation-store/mod.ts";
 import { MessageStore } from "@communication/domain/data/message-store/mod.ts";
 import { StripeSettingsStore } from "@users/domain/data/stripe-settings-store/mod.ts";
+import { paymentInstructionsFromMethods } from "#documents/invoice-form.ts";
 
 @Module({ imports: [UsersModule, PaperworkModule] })
 class TestApp {}
@@ -392,5 +393,76 @@ Deno.test("REQ-980 (q1-61) the amount-only invoice email: header date labelled I
       wrong.push("the 'Ways to pay' block leaves out Check, which the business accepts");
     }
     assertEquals(wrong, [], "the standalone invoice email contradicts itself");
+  });
+});
+
+// REQ-1032 (LOOP-007 q2, q2-15) — one Zelle phone, one display. The tester typed the Zelle handle
+// as 5125550700; the invoice form fills Payment instructions from the methods
+// (paymentInstructionsFromMethods → "Zelle: (512) 555-0700"), and the Spanish invoice email sent
+// through the real coordinator printed "Instrucciones de pago Zelle: (512) 555-0700" over
+// "Formas de pago Zelle: envía a 5125550700".
+Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one way — '(512) 555-0700' in Payment instructions and in Ways to pay, never '5125550700'", async () => {
+  await withServer(async (sid, userId) => {
+    const methods = { zelle: { enabled: true, handle: "5125550700" } };
+    const put = await putIdentity(sid, {
+      businessName: "A2Z Landscape",
+      acceptedPaymentMethods: methods,
+    });
+    assertEquals(put.status, 200, await put.text());
+    await new BusinessIdentityStore().upsert(userId, { commsLanguage: "es" });
+    const customer = await fetch(url("/customers"), {
+      method: "POST",
+      headers: H(sid),
+      body: JSON.stringify({
+        name: "Ana Torres",
+        email: "ana@blackhole.postmarkapp.com",
+        phoneNumber: "+15127771234",
+      }),
+    }).then((r) => r.json());
+    const instructions = paymentInstructionsFromMethods(methods, "es");
+    const inv = await fetch(url("/invoices"), {
+      method: "POST",
+      headers: H(sid),
+      body: JSON.stringify({
+        customerId: customer.id,
+        status: "sent",
+        jobName: "Lawn care",
+        amount: 6500,
+        issuedDate: "2026-11-01",
+        dueDate: "2026-11-30",
+        paymentInstructions: instructions,
+      }),
+    }).then((r) => r.json());
+
+    const email = new EmailService();
+    const sent: SendEmailInput[] = [];
+    email.send = (input: SendEmailInput) => {
+      sent.push(input);
+      return Promise.resolve({ ok: true, reason: "test_capture" });
+    };
+    const emailer = new SendPaperworkEmail(
+      new QuoteStore(),
+      new InvoiceStore(),
+      new CustomerStore(),
+      new UserStore(),
+      new BusinessIdentityStore(),
+      email,
+      new LogPaperworkMessage(new ConversationStore(), new MessageStore()),
+      undefined,
+      undefined,
+      new StripeSettingsStore(),
+    );
+    const r = await emailer.run(userId, { kind: "invoice", resourceId: inv.id });
+    assertEquals(r.ok, true, JSON.stringify(r));
+    const html = sent[0].htmlBody ?? "";
+    const instr = html.match(/<p data-payment-instructions[^>]*>([^<]*)<\/p>/)?.[1] ?? "";
+    const zelleRow = html.match(/<div data-pay-way="zelle"[^>]*>([^<]*)<\/div>/)?.[1] ?? "";
+    assertStringIncludes(instr, "Zelle: (512) 555-0700", "Payment instructions line");
+    assertEquals(
+      { instructions: instr, waysToPay: zelleRow },
+      { instructions: instr, waysToPay: "Zelle: envía a (512) 555-0700" },
+      "the Ways-to-pay Zelle row prints the phone differently from Payment instructions",
+    );
+    assert(!html.includes("5125550700"), "the email prints the raw digits 5125550700");
   });
 });

@@ -102,7 +102,7 @@ export function payWaysEmailHtml(
           esc(
             t(lang, "payLinks.email.copyTo", {
               brand: b.label,
-              handle: b.value,
+              handle: b.display,
             }),
           )
         }</div>`,
