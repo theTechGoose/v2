@@ -6,6 +6,8 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { BusinessIdentityStore } from "@profile/domain/data/business-identity-store/mod.ts";
+import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts"; // REQ-944
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { businessFrom } from "@communication/domain/business/sender/mod.ts";
@@ -97,6 +99,8 @@ const APP_URL = (() => {
  */
 @Injectable()
 export class SendSignedConfirmation {
+  /** REQ-944: the business address (its state names the zone when none is picked) */
+  private addresses = new BusinessAddressStore();
   constructor(
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
@@ -344,6 +348,12 @@ export class SendSignedConfirmation {
           invoiceNetDays: accountNetDays(ident?.invoiceNetDays),
           // REQ-628: the business's logo heads the signed agreement
           logo: await this.logos.run(quote.userId),
+          // REQ-944: its dates are the business's day
+          timezone: businessTimezone({
+            timezone: ident?.timezone,
+            state: (await this.addresses.get(quote.userId).catch(() => null))
+              ?.state,
+          }),
         });
       } catch (err) {
         console.error("[send-signed-confirmation] PDF render failed:", err);

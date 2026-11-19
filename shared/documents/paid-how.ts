@@ -71,8 +71,10 @@ export function paidLine(
     paidAt?: string | null;
     paidMethods?: readonly string[] | null;
   },
+  /** REQ-944: the business's zone — the paid instant prints as its day there */
+  tz?: string,
 ): string {
-  const date = formatLongDate(paidAt ?? undefined, lang);
+  const date = formatLongDate(paidAt ?? undefined, lang, tz);
   const how = paidHow(t, paidMethods);
   const head = date ? t("paidHow.paidOn", { date }) : t("paidHow.paid");
   return how ? `${head} · ${how}` : head;

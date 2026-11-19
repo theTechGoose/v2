@@ -202,14 +202,37 @@ export function amountInWords(cents: number, lang: Lang): string {
 
 type DateLike = Date | string | number;
 
-/** A clock time in the viewer's local zone, written the app language's way:
- *  en "8:55 PM", es "8:55 p. m." (12-hour, as US Spanish reads it). */
-export function formatClockTime(when: DateLike, lang: Lang): string {
+/** [hour 0-23, minute] of `d` in `timeZone` (local when unset/unknown) */
+function clockParts(d: Date, timeZone?: string): [number, number] {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour: "numeric",
+        minute: "numeric",
+        hourCycle: "h23",
+      }).formatToParts(d);
+      const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+      const h = get("hour") % 24, m = get("minute");
+      if (!Number.isNaN(h) && !Number.isNaN(m)) return [h, m];
+    } catch { /* unknown zone → local */ }
+  }
+  return [d.getHours(), d.getMinutes()];
+}
+
+/** A clock time, written the app language's way: en "8:55 PM", es
+ *  "8:55 p. m." (12-hour, as US Spanish reads it). REQ-944: in `timeZone`
+ *  (the business's) when given — else the viewer's local zone. */
+export function formatClockTime(
+  when: DateLike,
+  lang: Lang,
+  opts: { timeZone?: string } = {},
+): string {
   const d = when instanceof Date ? when : new Date(when);
   if (Number.isNaN(+d)) return "";
-  const h24 = d.getHours();
+  const [h24, min] = clockParts(d, opts.timeZone);
   const h = h24 % 12 === 0 ? 12 : h24 % 12;
-  const mm = String(d.getMinutes()).padStart(2, "0");
+  const mm = String(min).padStart(2, "0");
   const pm = h24 >= 12;
   if (lang === "es") return `${h}:${mm} ${pm ? "p. m." : "a. m."}`;
   return `${h}:${mm} ${pm ? "PM" : "AM"}`;

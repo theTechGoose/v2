@@ -4168,7 +4168,7 @@
   "field.sms.customerCanceled": "{business}: your {service} on {date} was canceled. We'll be in touch to reschedule.",
   "field.sms.customerDeferred": "{business}: your {service} moved from {from} to {to}. Sorry for the change.",
   "field.settings.timezone": "Time zone",
-  "field.settings.timezoneHint": "Your customers get their \"you're on today's schedule\" text at 9 am in this zone.",
+  "field.settings.timezoneHint": "Your documents and emails are dated in this zone, and your customers get their \"you're on today's schedule\" text at 9 am in it.",
   "settings.tz.America/New_York": "Eastern (New York)",
   "settings.tz.America/Chicago": "Central (Chicago)",
   "settings.tz.America/Denver": "Mountain (Denver)",

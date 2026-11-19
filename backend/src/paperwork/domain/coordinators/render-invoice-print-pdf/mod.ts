@@ -17,6 +17,7 @@
  * not the owner's throws (the controller answers 404).
  */
 import { Injectable } from "#danet/core";
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import {
   PDFDocument,
   type PDFFont,
@@ -77,7 +78,7 @@ function fmtUSD(cents: number | undefined): string {
   return `${c < 0 ? "-" : ""}$${s}`;
 }
 
-function fmtDate(iso: string | undefined, lang: Lang): string {
+function fmtDate(iso: string | undefined, lang: Lang, tz?: string): string {
   if (!iso) return "";
   const d = new Date(
     /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00Z` : iso,
@@ -87,8 +88,19 @@ function fmtDate(iso: string | undefined, lang: Lang): string {
     month: "short",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: dateZone(iso, tz),
   });
+}
+
+/** REQ-944: a date-only value is a day (UTC-anchored); an instant prints in the business's zone */
+function dateZone(iso: string, tz: string | undefined): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso) || !tz) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
 }
 
 function wrap(
@@ -132,6 +144,8 @@ interface Biz {
   lines: string[];
   image?: PDFImage;
   lang: Lang;
+  /** REQ-944: the business's IANA zone — instants print as its day */
+  tz: string;
   pay: { label: string; value: string }[];
 }
 
@@ -188,6 +202,7 @@ export class RenderInvoicePrintPdf {
         contractor?.email,
       ].filter((v): v is string => !!v && v.trim().length > 0),
       lang,
+      tz: businessTimezone({ timezone: ident?.timezone, state: addr?.state }),
       pay: payOptionLines(
         ident?.acceptedPaymentMethods,
         lang,
@@ -281,14 +296,19 @@ function drawInvoice(
   });
   text(ref, R, H - 76, { size: 11, font: bold, right: true });
   const issued = inv.issuedDate ?? inv.sentAt ?? inv.createdAt;
-  text(`${t(lang, "printPdf.issued")}: ${fmtDate(issued, lang)}`, R, H - 92, {
-    size: 9,
-    color: SOFT,
-    right: true,
-  });
+  text(
+    `${t(lang, "printPdf.issued")}: ${fmtDate(issued, lang, biz.tz)}`,
+    R,
+    H - 92,
+    {
+      size: 9,
+      color: SOFT,
+      right: true,
+    },
+  );
   if (inv.dueDate) {
     text(
-      `${t(lang, "printPdf.due")}: ${fmtDate(inv.dueDate, lang)}`,
+      `${t(lang, "printPdf.due")}: ${fmtDate(inv.dueDate, lang, biz.tz)}`,
       R,
       H - 104,
       {
@@ -315,7 +335,7 @@ function drawInvoice(
       right: true,
     });
     // REQ-928: when and how — "Paid November 11, 2026 · Electronic (Venmo)"
-    text(paidLine((k, v) => t(lang, k, v), lang, inv), R, H - 146, {
+    text(paidLine((k, v) => t(lang, k, v), lang, inv, biz.tz), R, H - 146, {
       size: 8.5,
       font: reg,
       color: SOFT,

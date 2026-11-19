@@ -95,6 +95,9 @@ interface Contractor {
   websiteUrl?: string;
   addressLine?: string;
   state?: string;
+  /** REQ-944: the business's IANA zone — every instant on the page (sent,
+   *  effective, signed) prints as that zone's calendar day. */
+  timezone?: string;
   /** Outgoing-comms language (roadmap p.13) — drives this page's copy. */
   commsLanguage?: string;
   /** REQ-925: Settings → "Languages you send in" — the page renders only in these. */
@@ -374,6 +377,8 @@ export function QuoteDoc(
   const customerName = quote.customer?.name?.trim() ||
     quote.acceptedName?.trim() || undefined;
   const contractor = quote.contractor;
+  /** REQ-944: the business's zone — dates are its day, not the UTC day */
+  const tz = contractor?.timezone;
   const t = cstr(lang, quote.terms);
   // REQ-628: the business, else the contractor — never DocuMonster
   const businessLabel = publicBusinessLabel(contractor) ??
@@ -470,7 +475,7 @@ export function QuoteDoc(
     : undefined;
   const contractorDateLine = sig
     ? sig.contractor.dateLine
-    : `${t.date} ${effective ? fmtDate(effective, lang) : t.today}`;
+    : `${t.date} ${effective ? fmtDate(effective, lang, tz) : t.today}`;
   const customerInstruction = sig ? sig.customer.instruction : t.signTypeBelow;
 
   // Sequential section numbers. Sections are conditionally rendered, so
@@ -599,7 +604,9 @@ export function QuoteDoc(
                   : "quoteDoc.signedBanner.thanks",
                 {
                   name: signerName,
-                  date: view.acceptedAt ? fmtDate(view.acceptedAt, lang) : "",
+                  date: view.acceptedAt
+                    ? fmtDate(view.acceptedAt, lang, tz)
+                    : "",
                 },
               )}
             </div>
@@ -742,7 +749,7 @@ export function QuoteDoc(
                   bg="rgba(81,152,67,0.15)"
                   color={GREEN}
                   label={t.signed(
-                    view.acceptedAt ? fmtDate(view.acceptedAt, lang) : "",
+                    view.acceptedAt ? fmtDate(view.acceptedAt, lang, tz) : "",
                   )}
                 />
               )
@@ -803,7 +810,7 @@ export function QuoteDoc(
                   <>
                     {" "}· {t.effective}{" "}
                     <strong style={`color:${INK}`}>
-                      {fmtDate(effective, lang)}
+                      {fmtDate(effective, lang, tz)}
                     </strong>
                   </>
                 )
@@ -1027,7 +1034,7 @@ export function QuoteDoc(
                       style={`margin-top:6px;font-size:11px;font-style:italic;color:${MUTED}`}
                     >
                       {t.contractorSignedBySending(
-                        fmtDate(quote.publishedAt, lang),
+                        fmtDate(quote.publishedAt, lang, tz),
                       )}
                     </div>
                   )}
@@ -1089,7 +1096,7 @@ export function QuoteDoc(
                         style={`margin-top:2px;font-size:11px;color:${MUTED}`}
                       >
                         {t.date} {view.acceptedAt
-                          ? fmtDate(view.acceptedAt, lang)
+                          ? fmtDate(view.acceptedAt, lang, tz)
                           : t.today}
                       </div>
                     </div>
@@ -1431,6 +1438,7 @@ export function QuoteDoc(
                         (k, v) => tFor(lang, k, v),
                         lang === "es" ? "es" : "en",
                         r,
+                        tz,
                       )
                       : r.stateLabel}
                   </span>

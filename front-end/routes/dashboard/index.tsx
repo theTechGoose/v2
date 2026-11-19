@@ -7,36 +7,13 @@ import type { Lang } from "../../lib/lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
+import { greetingDate as greetingDateIn } from "../../lib/greeting-date.ts"; // REQ-944
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
 import DashboardPage from "../../islands/DashboardPage.tsx";
 import AssistantCoachmark from "../../islands/AssistantCoachmark.tsx";
 import WelcomeBackToast from "../../islands/WelcomeBackToast.tsx";
 import StaffNamePrompt from "../../islands/StaffNamePrompt.tsx";
-
-const WEEKDAY_KEYS = [
-  "dashboardPage.weekday.sunday",
-  "dashboardPage.weekday.monday",
-  "dashboardPage.weekday.tuesday",
-  "dashboardPage.weekday.wednesday",
-  "dashboardPage.weekday.thursday",
-  "dashboardPage.weekday.friday",
-  "dashboardPage.weekday.saturday",
-];
-const MONTH_KEYS = [
-  "dashboardPage.month.january",
-  "dashboardPage.month.february",
-  "dashboardPage.month.march",
-  "dashboardPage.month.april",
-  "dashboardPage.month.may",
-  "dashboardPage.month.june",
-  "dashboardPage.month.july",
-  "dashboardPage.month.august",
-  "dashboardPage.month.september",
-  "dashboardPage.month.october",
-  "dashboardPage.month.november",
-  "dashboardPage.month.december",
-];
 
 export default define.page(function Dashboard(ctx) {
   const user = ctx.state.user;
@@ -56,10 +33,8 @@ export default define.page(function Dashboard(ctx) {
     : "dashTopbar.greetingNoName";
   // REQ-355 — staff skip the customer wizard (REQ-227), its name question too: ask here
   const askName = user?.superAdmin === true && isPlaceholderName(user?.name);
-  const now = new Date();
-  const greetingDate = `${tFor(lang, WEEKDAY_KEYS[now.getDay()])} · ${
-    tFor(lang, MONTH_KEYS[now.getMonth()])
-  } ${now.getDate()}`;
+  // REQ-944: today in the business's zone, not the server's
+  const greetingDate = greetingDateIn(lang, user?.businessTimezone);
 
   return (
     <>

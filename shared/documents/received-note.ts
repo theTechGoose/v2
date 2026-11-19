@@ -29,13 +29,15 @@ export type Translate = (
 export function receivedNoteBody(
   t: Translate,
   lang: "en" | "es",
-  { paidAt, who, channel }: {
+  { paidAt, who, channel, tz }: {
     paidAt?: string;
     who: string;
     channel?: ReceiptChannel;
+    /** REQ-944: the business's zone — the paid instant prints as its day there */
+    tz?: string;
   },
 ): string {
-  const date = formatLongDate(paidAt, lang);
+  const date = formatLongDate(paidAt, lang, tz);
   const when = date ? t("publicInvoice.received.onDate", { date }) : "";
   const key = channel === "none"
     ? "publicInvoice.received.bodyNone"

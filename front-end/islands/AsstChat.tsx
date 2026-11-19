@@ -747,6 +747,8 @@ interface Props {
    *  Defaults to "en". (The customer-facing quote preview uses its own
    *  `previewLang` toggle, sourced from `sendLanguages`.) */
   lang?: Lang;
+  /** REQ-944: the business's IANA zone — message clocks print in it */
+  timeZone?: string;
 }
 
 /** Derive a stable 1-2 letter avatar string. Mirrors the backend
@@ -784,9 +786,14 @@ export function deriveUserInitials(input: {
   return "👤";
 }
 
+/** REQ-944: the business's zone (the route's /me businessTimezone) — set by
+ *  AsstChat each render, so SSR and the browser print the same clock. */
+let chatZone: string | undefined;
+
 // REQ-276: the app language, not the browser locale ("8:55 p. m." in es).
+// REQ-944: in the business's time zone, not the device's.
 function fmtTime(ts: number | string, lang: Lang): string {
-  return formatClockTime(ts, lang);
+  return formatClockTime(ts, lang, { timeZone: chatZone });
 }
 
 function fmtKB(bytes: number): string {
@@ -876,7 +883,9 @@ export default function AsstChat({
   from,
   sendLanguages,
   invoiceNetDays,
+  timeZone,
 }: Props) {
+  chatZone = timeZone; // REQ-944
   // REQ-230 (demo M14): what a load paints from the server's copy of the
   // flow. Computed once (SSR included) and used as every flow state's seed.
   const [seed] = useState<AssistantDraft | null>(() => {

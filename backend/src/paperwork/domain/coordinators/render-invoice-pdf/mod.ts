@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { t } from "@core/i18n/mod.ts";
 import { computePaymentSplit, type MilestoneRole } from "#payment-split";
@@ -132,6 +133,11 @@ export class RenderInvoicePdf {
         this.logos.run(invoice.userId),
       ]);
     const businessName = ident?.businessName ?? ident?.legalName;
+    // REQ-944: the business's zone — instants print as its day, not the UTC day
+    const tz = businessTimezone({
+      timezone: ident?.timezone,
+      state: addr?.state,
+    });
     const es = ident?.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
 
@@ -345,11 +351,16 @@ export class RenderInvoicePdf {
     );
     const sub = paid
       // REQ-928: when and how — "Paid November 11, 2026 · Electronic (Venmo)"
-      ? paidLine((k, v) => t(lang, k, v), lang === "es" ? "es" : "en", invoice)
+      ? paidLine(
+        (k, v) => t(lang, k, v),
+        lang === "es" ? "es" : "en",
+        invoice,
+        tz,
+      )
       : partial
       ? payState.headline
       : invoice.dueDate
-      ? t(lang, "publicInvoice.dueOn", { date: fmtDate(invoice.dueDate) })
+      ? t(lang, "publicInvoice.dueOn", { date: fmtDate(invoice.dueDate, tz) })
       : undefined;
     if (sub) {
       page.drawText(sub, {
@@ -399,9 +410,11 @@ export class RenderInvoicePdf {
       }
       if (invoice.serviceDateFrom || invoice.serviceDateTo) {
         const from = invoice.serviceDateFrom
-          ? fmtDate(invoice.serviceDateFrom)
+          ? fmtDate(invoice.serviceDateFrom, tz)
           : "";
-        const to = invoice.serviceDateTo ? fmtDate(invoice.serviceDateTo) : "";
+        const to = invoice.serviceDateTo
+          ? fmtDate(invoice.serviceDateTo, tz)
+          : "";
         rows.push([
           renderWord(lang, "serviceDates"),
           from && to && from !== to ? `${from} – ${to}` : from || to,
@@ -868,7 +881,7 @@ export class RenderInvoicePdf {
           font: bold,
           color: MUTED,
         });
-        const v = fmtDate(quote.startDate);
+        const v = fmtDate(quote.startDate, tz);
         page.drawText(v, {
           x: W - M - bold.widthOfTextAtSize(v, 11),
           y,
@@ -886,7 +899,7 @@ export class RenderInvoicePdf {
           font: bold,
           color: MUTED,
         });
-        const v = fmtDate(quote.estimatedCompletionDate);
+        const v = fmtDate(quote.estimatedCompletionDate, tz);
         page.drawText(v, {
           x: W - M - bold.widthOfTextAtSize(v, 11),
           y,
@@ -1001,7 +1014,7 @@ export class RenderInvoicePdf {
       page,
       `${docRefWithVersion(invoice, lang)} · ${
         renderWord(lang, "generated", {
-          date: fmtDate(new Date().toISOString()),
+          date: fmtDate(new Date().toISOString(), tz),
         })
       }`,
       W,
@@ -1132,7 +1145,7 @@ function fmtUSD(cents: number | undefined): string {
   }`;
 }
 
-function fmtDate(iso: string | undefined): string {
+function fmtDate(iso: string | undefined, tz?: string): string {
   if (!iso) return "—";
   const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
   const d = new Date(isDateOnly ? `${iso}T12:00:00Z` : iso);
@@ -1141,8 +1154,19 @@ function fmtDate(iso: string | undefined): string {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: dateZone(iso, tz),
   });
+}
+
+/** REQ-944: a date-only value is a day (UTC-anchored); an instant prints in the business's zone */
+function dateZone(iso: string, tz: string | undefined): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso) || !tz) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
 }
 
 function termValue(

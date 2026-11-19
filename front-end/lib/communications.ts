@@ -185,12 +185,24 @@ export function sortCalls<T extends Pick<Call, "startedAt" | "createdAt">>(
   );
 }
 
-/** a short local time for a list row */
-export function shortTime(iso: string, now = Date.now()): string {
+/** a short time for a list row — REQ-944: in the business's `timeZone`
+ *  (GET /me businessTimezone) when given, else the device's */
+export function shortTime(
+  iso: string,
+  now = Date.now(),
+  timeZone?: string,
+): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const sameDay = new Date(now).toDateString() === d.toDateString();
+  const day = (at: Date) =>
+    at.toLocaleDateString("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  const sameDay = day(new Date(now)) === day(d);
   return sameDay
-    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : d.toLocaleDateString([], { month: "short", day: "numeric" });
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone })
+    : d.toLocaleDateString([], { month: "short", day: "numeric", timeZone });
 }

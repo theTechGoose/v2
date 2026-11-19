@@ -290,10 +290,12 @@ export function sumLineTotals(items: LineItem[] | undefined): number {
  * formatter so the web page, the PDF and the email can never drift — and so
  * a Spanish agreement stops printing "FIRMADO AUGUST 18, 2026".
  * `lang` defaults to English only so an un-migrated caller keeps its old
- * output; every customer-facing call site passes the document language.
+ * output; every customer-facing call site passes the document language
+ * and (REQ-944) the business's time zone.
  */
-export function fmtDate(iso: string, lang: Lang = "en"): string {
-  return formatLongDate(iso, lang);
+export function fmtDate(iso: string, lang: Lang = "en", tz?: string): string {
+  // REQ-944: `tz` — the business's zone; an instant prints as its day there
+  return formatLongDate(iso, lang, tz);
 }
 
 export function termValue(

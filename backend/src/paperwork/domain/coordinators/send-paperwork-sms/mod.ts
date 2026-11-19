@@ -41,6 +41,8 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import type { BusinessIdentity } from "@users/dto/business-identity.ts";
+import { BusinessAddressStore } from "@users/domain/data/business-address-store/mod.ts"; // REQ-944
+import { businessTimezone, todayInZone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 
 export type PaperworkKind = "quote" | "invoice";
@@ -85,6 +87,8 @@ export interface SendPaperworkSmsResult {
  */
 @Injectable()
 export class SendPaperworkSms {
+  /** REQ-944: the business address — its state names the zone when none is picked */
+  private addresses = new BusinessAddressStore();
   constructor(
     private quotes: QuoteStore,
     private invoices: InvoiceStore,
@@ -151,6 +155,8 @@ export class SendPaperworkSms {
     let customerIdForLog: string | undefined;
     let quoteForStamp: Quote | undefined;
     let invoiceToIssue = false;
+    /** REQ-944: the issue date this delivery stamps */
+    let issuedDayForStamp: string | undefined;
     let customerNameForEvent: string | undefined;
     /** REQ-715: the document's customer — their language joins the resolution */
     let docCustomer: Customer | undefined;
@@ -186,7 +192,13 @@ export class SendPaperworkSms {
       // REQ-480: an unissued invoice is issued by this delivery — the stamp
       // lands only once the text actually went.
       invoiceToIssue = isUnissuedInvoice(stored);
-      const invoice = invoiceToIssue ? asDelivered(stored) : stored;
+      // REQ-944: issued on the business's day, the same one the email path stamps
+      const issuedDay = todayInZone(businessTimezone({
+        timezone: rawBiz?.timezone,
+        state: (await this.addresses.get(userId).catch(() => null))?.state,
+      }));
+      const invoice = invoiceToIssue ? asDelivered(stored, issuedDay) : stored;
+      issuedDayForStamp = invoice.issuedDate;
       const customer = await this.tryGetCustomer(userId, invoice.customerId);
       docCustomer = customer;
       const { lang, senderBiz } = resolve(customer);
@@ -276,7 +288,7 @@ export class SendPaperworkSms {
     // REQ-480 (demo-loop cycle 3, M18): a draft / scheduled invoice becomes
     // "sent" only now that the text was delivered.
     if (result.ok && invoiceToIssue) {
-      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId);
+      const issued = await stampInvoiceDelivered(this.invoices, input.resourceId, userId, issuedDayForStamp);
       // REQ-566 (cycle 4, m11): the owner's activity feed says it went out.
       if (issued) await this.bus?.emit(invoiceIssuedEvent(userId, issued, customerNameForEvent));
     }

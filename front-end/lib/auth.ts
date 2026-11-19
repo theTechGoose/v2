@@ -34,6 +34,10 @@ export interface User {
   };
   /** REQ-929 — sign out after this many idle minutes (0/unset = Never) */
   idleLogoutMinutes?: number;
+  /** REQ-944 — the account's business IANA zone (picked → state → New York):
+   *  the header date and the chat clocks print in it, never the server's or
+   *  the device's zone */
+  businessTimezone?: string;
   createdAt: number;
   updatedAt: number;
 }

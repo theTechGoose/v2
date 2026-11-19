@@ -38,7 +38,7 @@ export default define.page(function CommunicationsRoute(ctx) {
         <main class="main">
           <DashTopbar pageTitleKey="nav.phone" greetingName={greetingName} />
           <div class="content">
-            <PhonePage />
+            <PhonePage timeZone={ctx.state.user?.businessTimezone} />
             <SiteFooter lang={lang} compact />
           </div>
         </main>

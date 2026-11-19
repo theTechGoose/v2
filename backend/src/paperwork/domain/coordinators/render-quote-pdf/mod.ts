@@ -60,6 +60,9 @@ export interface RenderQuotePdfInput {
   invoiceNetDays?: number;
   /** REQ-628: the business's logo — heads the document; absent → name wordmark. */
   logo?: LogoBytes;
+  /** REQ-944: the business's IANA zone — a timestamp (createdAt, acceptedAt)
+   *  prints as that zone's calendar day. Omit → UTC (the old behaviour). */
+  timezone?: string;
 }
 
 /**
@@ -92,6 +95,7 @@ export class RenderQuotePdf {
     // Roadmap p.13: the PDF is the customer's copy → outgoing-comms language.
     const es = input.commsLanguage === "es";
     const lang: "en" | "es" = es ? "es" : "en";
+    const tz = input.timezone; // REQ-944
     // REQ-204: an issued agreement shows the customer as snapshotted when it
     // was issued; a draft may show the live record.
     const customer = customerOnDocument(quote, input.customer);
@@ -162,7 +166,9 @@ export class RenderQuotePdf {
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
     // REQ-202: "Accepted and signed · <date>" once the customer signed
     const statusText = isAccepted(quote)
-      ? `${renderWord(lang, "acceptedSigned")} · ${fmtDate(quote.acceptedAt)}`
+      ? `${renderWord(lang, "acceptedSigned")} · ${
+        fmtDate(quote.acceptedAt, tz)
+      }`
       : (quote.status ?? "DRAFT").toUpperCase();
     const statusW = bold.widthOfTextAtSize(statusText, 8.5);
     page.drawText(statusText, {
@@ -214,7 +220,7 @@ export class RenderQuotePdf {
         : "") +
       (quote.effectiveDate
         ? t(lang, "renderQuotePdf.recital.effective", {
-          date: fmtDate(quote.effectiveDate),
+          date: fmtDate(quote.effectiveDate, tz),
         })
         : "");
     drawWrappedText(page, recital, M, y, W - 2 * M, reg, 10, MUTED, 13);
@@ -479,8 +485,8 @@ export class RenderQuotePdf {
           font: bold,
           color: MUTED,
         });
-        page.drawText(fmtDate(quote.startDate), {
-          x: W - M - bold.widthOfTextAtSize(fmtDate(quote.startDate), 11),
+        page.drawText(fmtDate(quote.startDate, tz), {
+          x: W - M - bold.widthOfTextAtSize(fmtDate(quote.startDate, tz), 11),
           y,
           size: 11,
           font: bold,
@@ -496,10 +502,10 @@ export class RenderQuotePdf {
           font: bold,
           color: MUTED,
         });
-        page.drawText(fmtDate(quote.estimatedCompletionDate), {
+        page.drawText(fmtDate(quote.estimatedCompletionDate, tz), {
           x: W - M -
             bold.widthOfTextAtSize(
-              fmtDate(quote.estimatedCompletionDate),
+              fmtDate(quote.estimatedCompletionDate, tz),
               11,
             ),
           y,
@@ -754,7 +760,7 @@ export class RenderQuotePdf {
     }
     page.drawText(
       t(lang, "renderQuotePdf.sig.date", {
-        date: fmtDate(quote.effectiveDate ?? quote.createdAt),
+        date: fmtDate(quote.effectiveDate ?? quote.createdAt, tz),
       }),
       {
         x: M + 12,
@@ -813,7 +819,7 @@ export class RenderQuotePdf {
       });
     }
     if (quote.acceptedAt) {
-      const dateStr = fmtDate(quote.acceptedAt);
+      const dateStr = fmtDate(quote.acceptedAt, tz);
       page.drawText(dateStr, {
         x: cx + halfW - 12 - reg.widthOfTextAtSize(dateStr, 9),
         y: y - 70,
@@ -838,7 +844,7 @@ export class RenderQuotePdf {
       page,
       `${docRefWithVersion(quote, lang)} · ${
         renderWord(lang, "generated", {
-          date: fmtDate(new Date().toISOString()),
+          date: fmtDate(new Date().toISOString(), tz),
         })
       }`,
       W,
@@ -962,17 +968,29 @@ function fmtUSD(cents: number | undefined): string {
   }`;
 }
 
-function fmtDate(iso: string | undefined): string {
+function fmtDate(iso: string | undefined, tz?: string): string {
   if (!iso) return "—";
   const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
   const d = new Date(isDateOnly ? `${iso}T12:00:00Z` : iso);
   if (Number.isNaN(+d)) return iso;
+  // REQ-944: a date-only value is already a day; an instant is the business's day
+  const zone = isDateOnly ? "UTC" : validZone(tz) ?? "UTC";
   return d.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: zone,
   });
+}
+
+function validZone(tz: string | undefined): string | undefined {
+  if (!tz) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return undefined;
+  }
 }
 
 function dataUrlToBytes(dataUrl: string): Uint8Array | undefined {
