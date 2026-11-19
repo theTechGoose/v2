@@ -77,6 +77,9 @@ import {
   newId,
 } from "@field/domain/coordinators/field-zones/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
+import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-1022
+import { woStaffOn } from "@field/domain/business/work-order-day/mod.ts"; // REQ-1022
+import { docNumberOf } from "#documents/numbering.ts"; // REQ-1022
 import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { FieldBatches } from "@field/domain/coordinators/field-batches/mod.ts";
 import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
@@ -1180,33 +1183,71 @@ async function redoAbsence(
   );
 }
 
+/**
+ * REQ-1022 (LOOP-007 q2-12): the work orders an absence takes off its worker (or a member of its
+ * crew) — scheduled in its range, not cancelled — each with who has it that day (`coverName`), or
+ * none when the work is deferred / skipped / the cover is out too, so the owner reschedules it.
+ */
+async function awayOrders(
+  deps: { workOrders: WorkOrderStore; absences: AbsenceStore; workers: FieldWorkerStore; crews: CrewStore },
+  userId: string,
+) {
+  const [wos, absences, workers, crews] = await Promise.all([
+    deps.workOrders.listByUser(userId),
+    deps.absences.listByUser(userId),
+    deps.workers.listByUser(userId),
+    deps.crews.listByUser(userId),
+  ]);
+  const name = new Map(workers.map((w) => [w.id, w.name]));
+  const crewOf = new Map(workers.map((w) => [w.id, w.crewId]));
+  return (a: Absence) => {
+    const hit = wos.filter((wo) =>
+      !!wo.assigneeWorkerId && !!wo.scheduledFor && wo.status !== "cancelled" &&
+      a.from <= wo.scheduledFor && wo.scheduledFor <= a.to &&
+      (a.workerId ? wo.assigneeWorkerId === a.workerId : crewOf.get(wo.assigneeWorkerId) === a.crewId)
+    ).sort((x, y) => x.scheduledFor!.localeCompare(y.scheduledFor!));
+    if (!hit.length) return {};
+    return {
+      workOrders: hit.map((wo) => {
+        const r = woStaffOn(wo, { absences, workers, crews, date: wo.scheduledFor! });
+        const coverName = r?.kind === "cover"
+          ? (r.staff.kind === "crew" ? r.staff.crew.name : name.get(r.staff.workerId) ?? "—")
+          : undefined;
+        return { id: wo.id, number: docNumberOf(wo), date: wo.scheduledFor!, ...(coverName ? { coverName } : {}) };
+      }),
+    };
+  };
+}
+
 /** REQ-842: who is out, when, and what happens to their work */
 @Controller("field/absences")
 export class FieldAbsencesController {
   constructor(
-    private absences: AbsenceStore,
-    private workers: FieldWorkerStore,
-    private crews: CrewStore,
+    readonly absences: AbsenceStore,
+    readonly workers: FieldWorkerStore,
+    readonly crews: CrewStore,
     private day: FieldDay,
     private views: FieldViews,
     private users: UserStore,
     private sessions: SessionStore,
+    readonly workOrders: WorkOrderStore, // REQ-1022
   ) {}
 
-  /** from today on, soonest first */
+  /** from today on, soonest first — REQ-1022: each with the work orders it takes the worker off */
   @Get()
   async list(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const today = await fieldTodayFor(user.id);
-    const [rows, n] = await Promise.all([
+    const [rows, n, wos] = await Promise.all([
       this.absences.listByUser(user.id),
       this.views.names(user.id),
+      awayOrders(this, user.id),
     ]);
     return rows.filter((a) => a.to >= today)
       .sort((a, b) =>
         a.from.localeCompare(b.from) || a.createdAt.localeCompare(b.createdAt)
       )
-      .map((a) => this.views.absence(a, n));
+      .map((a) => ({ ...this.views.absence(a, n), ...wos(a) }));
   }
 
   @Post()
@@ -1302,7 +1343,7 @@ export class FieldAbsencesController {
     await this.absences.put(a);
     await redoAbsence(this.day, this.workers, user.id, a);
     return ctx.json(
-      this.views.absence(a, await this.views.names(user.id)),
+      { ...this.views.absence(a, await this.views.names(user.id)), ...(await awayOrders(this, user.id))(a) }, // REQ-1022
       201,
     );
   }

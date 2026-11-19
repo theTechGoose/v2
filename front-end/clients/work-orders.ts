@@ -38,6 +38,10 @@ export interface WorkOrder {
   assignee?: string;
   /** REQ-1010 — the field worker it is assigned to (it lists on their /worker day) */
   assigneeWorkerId?: string;
+  /** REQ-1022 — the assignee is out on its day: who covers (a worker or a crew) */
+  coverAssignee?: string;
+  /** REQ-1022 — the assignee is out and nobody covers: deferred / skipped / the cover is out too */
+  assigneeOut?: "defer" | "skip" | "uncovered";
   notes?: string;
   publishedAt?: string;
   publishedBy?: { userId?: string; name?: string; customer?: boolean };

@@ -156,7 +156,8 @@ Deno.test("REQ-1022 (LOOP-007 q2-12) Jake out covered by a crew: the crew's lead
   assertEquals(r?.kind, "cover");
   assertEquals(r.staff.kind, "crew");
   assertEquals(r.staff.lead.id, "ana", "the crew's foreman leads it");
-  assertEquals([...r.staff.crewIds].sort(), ["ana", "pedro"]);
+  // Staff.crewIds is the crew's OTHER workers (crews/mod.ts crewStaff) — the lead + them is the whole crew
+  assertEquals([r.staff.lead.id, ...r.staff.crewIds].sort(), ["ana", "pedro"]);
   assertEquals(r.coverFor, "jake");
 });
 

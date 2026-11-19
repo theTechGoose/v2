@@ -16,6 +16,7 @@ import { fieldClient, type FieldWorker } from "../clients/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { langSignal, t } from "../lib/i18n.ts";
+import { assigneeLabel } from "../lib/work-order-assignee.ts"; // REQ-1022
 import {
   shortDate,
   versionHistoryLine,
@@ -348,7 +349,7 @@ export default function WorkOrderPage({ id }: { id: string }) {
                 )}
                 {kv(
                   t("workOrders.detail.assignee"),
-                  wo.assignee,
+                  assigneeLabel(wo, t),
                   "wo-assignee",
                 )}
               </div>
