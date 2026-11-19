@@ -26,6 +26,8 @@ import {
 import { quoteLedger } from "#documents/ledger.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import { QuoteTranslatorPort } from "@paperwork/domain/coordinators/quote-translator-port/mod.ts"; // REQ-973
+import { InvoiceTranslatorPort } from "@paperwork/domain/coordinators/invoice-translator-port/mod.ts"; // REQ-973
 
 /**
  * RevisionsController — REQ-201/202/205: publishing, versions, the ledger.
@@ -55,6 +57,8 @@ export class RevisionsController {
     private sessions: SessionStore,
     private bus: EventBus,
     private customers: CustomerStore,
+    private quoteTranslator?: QuoteTranslatorPort,
+    private invoiceTranslator?: InvoiceTranslatorPort,
   ) {}
 
   @Post("quotes/:id/publish")
@@ -75,12 +79,21 @@ export class RevisionsController {
       return ctx.json({ ok: false, reason: "nothing_to_publish" }, 409);
     }
     const by = await publisherOf(ctx, this.sessions, this.users, user);
-    const published = await this.quotes.publishRevision(
+    let published = await this.quotes.publishRevision(
       id,
       user.id,
       quote.pendingRevision,
       by,
     );
+    // REQ-973 (LOOP-007 q1-47): the published version is what the live link
+    // shows, so it gets REQ-264's translation pass before anyone is told —
+    // a line added in English (a chat change order) gets its Spanish text
+    // and vice versa. The port logs and swallows a failure: an untranslated
+    // revision is still published.
+    if (this.quoteTranslator) {
+      await this.quoteTranslator.run({ userId: user.id, quoteId: id });
+      published = await this.quotes.getOwned(id, user.id);
+    }
     await emitRevised(this.bus, this.customers, user.id, "quote", published);
     const notified = opts.notify
       ? await notify(this.email, this.sms, user.id, "quote", id, opts.language)
@@ -150,13 +163,24 @@ export class RevisionsController {
       return ctx.json({ ok: false, reason: "nothing_to_publish" }, 409);
     }
     const by = await publisherOf(ctx, this.sessions, this.users, user);
-    const published = await this.invoices.publishRevision(
+    let published = await this.invoices.publishRevision(
       id,
       user.id,
       invoice.pendingRevision,
       by,
       (next) => flagOverpayment(next),
     );
+    // REQ-973: a standalone invoice's revised concepts are translated before
+    // the link goes out (REQ-497); a quote-linked one takes its text from the
+    // quote.
+    if (this.invoiceTranslator && !published.quoteId) {
+      await this.invoiceTranslator.run({
+        userId: user.id,
+        invoiceId: id,
+        baseLang: user.language === "es" ? "es" : "en",
+      });
+      published = await this.invoices.getOwned(id, user.id);
+    }
     await emitRevised(this.bus, this.customers, user.id, "invoice", published);
     const notified = opts.notify
       ? await notify(
