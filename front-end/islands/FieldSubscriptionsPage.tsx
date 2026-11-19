@@ -28,6 +28,7 @@ import {
   ownItems,
   perVisitCents,
   prefillAddress,
+  subsAddItemIntent,
   todayIso,
 } from "../lib/field.ts";
 import {
@@ -79,6 +80,8 @@ interface Form {
   items: Item[];
   /** REQ-921: the service picked in the dropdown for the row being added ("" = none) */
   pickId: string;
+  /** REQ-1143: what is typed in the service box (a name + adds, creating it when it is no service) */
+  pickName: string;
   /** the price input for the row being added, as typed */
   price: string;
   /** REQ-174: days to pay, as typed (prefilled from Settings) */
@@ -158,6 +161,7 @@ function blankForm(defaultNetDays = 30, today?: string | null): Form {
     checklistId: "",
     items: [],
     pickId: "",
+    pickName: "",
     price: "",
     netDays: String(defaultNetDays),
     overhead: false,
@@ -259,6 +263,10 @@ export default function FieldSubscriptionsPage(
     null,
   );
   const priceRef = useRef<HTMLInputElement>(null);
+  /** REQ-1143: bumped after a line is added, so the service box starts empty again */
+  const [svcBox, setSvcBox] = useState(0);
+  /** REQ-1143: one + at a time (a typed service is created on the server first) */
+  const adding = useRef(false);
   /** REQ-921: the services catalogue — the only thing a visit can bill */
   const [catalog, setCatalog] = useState<TaskType[] | null>(null);
 
@@ -394,21 +402,58 @@ export default function FieldSubscriptionsPage(
     setForm(null);
   }
 
-  /** REQ-921: add the picked service + price as a row; an error when either is missing */
-  function addItem(f: Form): Form {
-    const svc = (catalog ?? []).find((c) => c.id === f.pickId);
-    const cents = Math.round(Number(f.price) * 100);
-    if (!svc) return { ...f, err: t("serviceLines.err.pick") };
-    if (!(cents > 0)) return { ...f, err: t("serviceLines.err.price") };
+  /** REQ-921: add the picked service + price as a row; an error when either is missing.
+   *  REQ-1143: nothing picked but a name typed → that service (any case), or a new one created
+   *  in the catalogue first (the same POST as the dropdown's create row, REQ-979). */
+  async function addItem(f: Form): Promise<Form> {
+    const intent = subsAddItemIntent({
+      catalog: catalog ?? [],
+      pickId: f.pickId,
+      typed: f.pickName,
+      price: f.price,
+    });
+    if (intent.kind === "err") return { ...f, err: t(intent.key) };
+    let svc = { id: "", name: intent.name };
+    if (intent.kind === "pick") svc = { id: intent.id, name: intent.name };
+    else {
+      try {
+        const made = await fieldClient.createTaskType({ name: intent.name });
+        setCatalog((c) => [...(c ?? []).filter((x) => x.id !== made.id), made]);
+        svc = { id: made.id, name: made.name };
+      } catch (e) {
+        return { ...f, err: e instanceof Error ? e.message : String(e) };
+      }
+    }
     const dup = f.items.some((it) => it.id === svc.id);
-    const items = dup
-      ? f.items
-      : [...f.items, { id: svc.id, name: svc.name, priceCents: cents }];
-    return { ...f, items, pickId: "", price: "", err: null };
+    const items = dup ? f.items : [...f.items, {
+      id: svc.id,
+      name: svc.name,
+      priceCents: intent.priceCents,
+    }];
+    setSvcBox((n) => n + 1);
+    return { ...f, items, pickId: "", pickName: "", price: "", err: null };
   }
 
-  function onAddItem() {
-    setForm((f) => (f ? addItem(f) : f));
+  async function onAddItem() {
+    if (!form || adding.current) return;
+    adding.current = true;
+    try {
+      const next = await addItem(form);
+      setForm((cur) =>
+        cur
+          ? {
+            ...cur,
+            items: next.items,
+            pickId: next.pickId,
+            pickName: next.pickName,
+            price: next.price,
+            err: next.err,
+          }
+          : cur
+      );
+    } finally {
+      adding.current = false;
+    }
   }
 
   function toggleDay(d: number) {
@@ -461,8 +506,8 @@ export default function FieldSubscriptionsPage(
     if (!form || form.saving) return;
     // a picked-but-not-added row counts, as in the demo
     let f: Form = { ...form, err: null, addressErr: null };
-    if (form.pickId || form.price) {
-      f = addItem(f);
+    if (form.pickId || form.pickName.trim() || form.price) {
+      f = await addItem(f);
       if (f.err) {
         setForm(f);
         return;
@@ -1352,10 +1397,12 @@ export default function FieldSubscriptionsPage(
                   lang={langSignal.value}
                   data-cy="subs-service"
                   aria-label={t("serviceLines.service")}
+                  key={`svc-${svcBox}`}
                   onPick={(id) => {
                     patch({ pickId: id });
                     setTimeout(() => priceRef.current?.focus(), 0);
                   }}
+                  onQuery={(q) => patch({ pickName: q })}
                   onCreate={async (name) => {
                     // REQ-979: a typed name becomes a real catalogue service, then the pick
                     try {
@@ -1405,8 +1452,8 @@ export default function FieldSubscriptionsPage(
               </div>
               {catalog && catalog.length === 0 && (
                 <span class="hint" data-cy="subs-no-services">
-                  {t("serviceLines.none")}{" "}
-                  <a href="/field/services">{t("serviceLines.manage")}</a>
+                  {/* REQ-1143: stays in the modal — + creates a typed service */}
+                  {t("field.subs.noServicesTyped")}
                 </span>
               )}
               {form.checklistId

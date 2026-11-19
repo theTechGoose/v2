@@ -477,3 +477,33 @@ export function addTaskServerProblem(
     ? { field: "worker", key: "field.tk.needWorker" }
     : null;
 }
+
+/** REQ-1143 (amends REQ-921/979) — what + / Enter does on the repeat-visit row being added:
+ *  a picked service wins; else a typed name matching a service (trimmed, any case) picks it;
+ *  else a typed name is created as a new service; nothing picked or typed asks for a pick.
+ *  The price must be above $0 either way. */
+export type SubsAddItemIntent =
+  | { kind: "pick"; id: string; name: string; priceCents: number }
+  | { kind: "create"; name: string; priceCents: number }
+  | { kind: "err"; key: "serviceLines.err.pick" | "serviceLines.err.price" };
+
+export function subsAddItemIntent(
+  { catalog, pickId, typed, price }: {
+    catalog: readonly { id: string; name: string }[];
+    pickId: string;
+    typed: string;
+    price: string;
+  },
+): SubsAddItemIntent {
+  const name = typed.trim().replace(/\s+/g, " ");
+  const svc = (pickId ? catalog.find((c) => c.id === pickId) : undefined) ??
+    (name
+      ? catalog.find((c) => c.name.trim().toLowerCase() === name.toLowerCase())
+      : undefined);
+  if (!svc && !name) return { kind: "err", key: "serviceLines.err.pick" };
+  const priceCents = Math.round(Number(price) * 100);
+  if (!(priceCents > 0)) return { kind: "err", key: "serviceLines.err.price" };
+  return svc
+    ? { kind: "pick", id: svc.id, name: svc.name, priceCents }
+    : { kind: "create", name, priceCents };
+}
