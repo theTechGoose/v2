@@ -171,10 +171,16 @@ export type Resolution =
 
 export type DayInput = StaffInput & { absences: Absence[]; date: string };
 
+/** what a day's crew / cover lookup needs: the account's crews, workers and absences, and the day */
+export type DayPeople = Pick<
+  DayInput,
+  "crews" | "workers" | "absences" | "date"
+>;
+
 /** the day's staff of a crew: its available members; the absence that empties it (when it is) */
 function crewOnDay(
   crew: Crew,
-  input: DayInput,
+  input: DayPeople,
 ): { staff: Staff | null; out?: Absence } {
   const crewOut = isOut(input.absences, { crewId: crew.id }, input.date);
   if (crewOut) return { staff: null, out: crewOut };
@@ -194,8 +200,8 @@ function crewOnDay(
   return { staff: null, out };
 }
 
-/** the staff named by a cover: a crew (its available members) or a worker — null when they are out too */
-function coverStaff(a: Absence, input: DayInput): Staff | null {
+/** the staff named by a cover: a crew (its available members) or a worker — null when they are out too (REQ-1022: work orders too) */
+export function coverStaff(a: Absence, input: DayPeople): Staff | null {
   if (a.coverCrewId) {
     const crew = input.crews.find((c) => c.id === a.coverCrewId);
     return crew ? crewOnDay(crew, input).staff : null;

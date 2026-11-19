@@ -969,6 +969,35 @@ export default function FieldWorkersPage(
                   >
                     {t("field.away.remove")}
                   </button>
+                  {/* REQ-1022 — the work orders this takes them off, and who has each */}
+                  {!!a.workOrders?.length && (
+                    <span
+                      style="flex-basis:100%;display:flex;flex-direction:column;gap:2px"
+                      data-cy="away-row-wos"
+                    >
+                      {a.workOrders.map((wo) => (
+                        <span
+                          key={wo.id}
+                          class="hint"
+                          style={wo.coverName
+                            ? undefined
+                            : "color:var(--danger)"}
+                          data-cy="away-row-wo"
+                        >
+                          {wo.coverName
+                            ? t("field.away.woCover", {
+                              number: wo.number,
+                              date: fmtDayRange(wo.date, wo.date, lang),
+                              name: wo.coverName,
+                            })
+                            : t("field.away.woResched", {
+                              number: wo.number,
+                              date: fmtDayRange(wo.date, wo.date, lang),
+                            })}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

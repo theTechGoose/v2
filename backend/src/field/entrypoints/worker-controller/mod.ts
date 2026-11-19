@@ -5,7 +5,7 @@
  */
 import { Body, Context, Controller, Get, Param, Post, Query } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
-import { CrewStore, FieldTaskStore, FieldWorkerStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
+import { AbsenceStore, CrewStore, FieldTaskStore, FieldWorkerStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { canActOn } from "@field/domain/business/crews/mod.ts"; // REQ-840
 import { WorkerSessionStore } from "@field/domain/data/worker-session-store/mod.ts";
 import { FieldDay } from "@field/domain/coordinators/field-day/mod.ts";
@@ -20,7 +20,7 @@ import { businessZoneOf, fieldTodayFor } from "@users/domain/coordinators/busine
 import { workerLang } from "@field/domain/business/worker-welcome/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-1010
-import { workOrderRow, workOrdersOn } from "@field/domain/business/work-order-day/mod.ts"; // REQ-1010
+import { woDayStaff, workOrderRow, workOrdersOn } from "@field/domain/business/work-order-day/mod.ts"; // REQ-1010, REQ-1022
 import { CAP, type Crew, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
 
 type Body_ = Record<string, unknown>;
@@ -99,6 +99,7 @@ export class FieldWorkerController {
     private activity: FieldActivity,
     private crews: CrewStore, // REQ-840
     private workOrders: WorkOrderStore, // REQ-1010
+    private absences: AbsenceStore, // REQ-1022
   ) {}
 
   /** REQ-138: cell + PIN; five misses lock the worker for a minute */
@@ -147,11 +148,21 @@ export class FieldWorkerController {
       .filter(mine)
       .sort((a, b) => (onTask(w.id, a) ? 0 : 1) - (onTask(w.id, b) ? 0 : 1))
       .map((t) => this.views.workerTask(t, n));
-    // REQ-1010: a work order assigned to a worker for this day is on their day too (read-only, no price)
-    const orders = workOrdersOn(await this.workOrders.listByUser(w.userId), d)
-      .filter((wo) => mine({ workerId: wo.assigneeWorkerId! }))
-      .sort((a, b) => (a.assigneeWorkerId === w.id ? 0 : 1) - (b.assigneeWorkerId === w.id ? 0 : 1))
-      .map((wo) => workOrderRow(wo, n));
+    // REQ-1010: a work order assigned to a worker for this day is on their day too (read-only, no price).
+    // REQ-1022: the assignee out that day → the absence's cover has it instead (covering for them).
+    const [wos, absences, workers, crews] = await Promise.all([
+      this.workOrders.listByUser(w.userId),
+      this.absences.listByUser(w.userId),
+      this.workers.listByUser(w.userId),
+      this.crews.listByUser(w.userId),
+    ]);
+    const people = { absences, workers, crews, date: d };
+    const orders = workOrdersOn(wos, d)
+      .map((wo) => ({ wo, staff: woDayStaff(wo, people) }))
+      // an uncovered absence (the cover is out too) puts it on nobody's own day; the account foreman still sees it
+      .filter(({ staff }) => everyone || (!!staff && mine(staff)))
+      .map(({ wo, staff }) => workOrderRow(wo, n, staff ?? undefined))
+      .sort((a, b) => (onTask(w.id, a) ? 0 : 1) - (onTask(w.id, b) ? 0 : 1));
     return [...tasks, ...orders];
   }
 

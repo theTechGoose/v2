@@ -46,7 +46,7 @@ export class WorkOrderController {
     readonly customers: CustomerStore,
     private users: UserStore,
     private sessions: SessionStore,
-    private workers: WorkOrderWorkerPort, // REQ-1010
+    readonly workers: WorkOrderWorkerPort, // REQ-1010; REQ-1022 covers
   ) {}
 
   @Get()
@@ -61,7 +61,8 @@ export class WorkOrderController {
       (!quoteId || w.quoteId === quoteId) &&
       (!invoiceId || w.invoiceId === invoiceId)
     );
-    return ctx.json(rows.map(summary));
+    const covers = await this.workers.coversOf(user.id, rows); // REQ-1022
+    return ctx.json(rows.map((wo, i) => ({ ...summary(wo), ...covers[i] })));
   }
 
   @Post()
@@ -188,6 +189,7 @@ async function withLinks(
     quotes: QuoteStore;
     invoices: InvoiceStore;
     customers: CustomerStore;
+    workers?: WorkOrderWorkerPort;
   },
   wo: WorkOrder,
   userId: string,
@@ -205,8 +207,12 @@ async function withLinks(
       ) => (c.userId === userId ? c : null)).catch(() => null)
       : null,
   ]);
+  const [cover] = deps.workers
+    ? await deps.workers.coversOf(userId, [wo])
+    : [{}]; // REQ-1022
   return {
     ...summary(wo),
+    ...cover,
     links: {
       ...(quote
         ? {

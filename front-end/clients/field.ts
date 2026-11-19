@@ -113,6 +113,13 @@ export interface AbsenceView {
   coverName?: string;
   note?: string;
   createdAt: string;
+  /** REQ-1022 — the work orders it takes the worker off: who has each that day (none: reschedule it) */
+  workOrders?: {
+    id: string;
+    number: string;
+    date: string;
+    coverName?: string;
+  }[];
 }
 
 export interface AbsenceInput {

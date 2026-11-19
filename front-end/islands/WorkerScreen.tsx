@@ -677,6 +677,11 @@ export default function WorkerScreen(
             <div class="hint" data-cy="w-wo-number">
               {t("worker.workOrder", { number: wo.workOrderNumber ?? "" })}
             </div>
+            {wo.coverForName && (
+              <div class="hint" data-cy="w-wo-cover">
+                {t("field.tk.coverFor", { name: wo.coverForName })}
+              </div>
+            )}
           </div>
           {done && (
             <span class="visit__state" data-cy="w-visit-state">

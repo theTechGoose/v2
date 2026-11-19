@@ -142,3 +142,47 @@ Deno.test("REQ-1010 (LOOP-007 q1-96) a work order can't be assigned to another a
     assertEquals(theirs.filter((t) => t.workOrderId).length, 0, "nothing reached the stranger's day");
   });
 });
+
+Deno.test("REQ-1022 (LOOP-007 q2-12) Jake marked out on D covered by Miguel: WO-001 moves to Miguel's /worker day (covering for Jake), off Jake's, and /work-orders names the cover", async () => {
+  await withServer(async (call) => {
+    const H = await owner(call, "+15125551022");
+    const jake = await worker(call, H, "Jake Fowler", "8435551022");
+    const miguel = await worker(call, H, "Miguel Torres", "8435551023");
+    const D = shiftDate(fieldToday(), 3);
+    const wo = ok(await call("POST", "/work-orders", {
+      description: "Fence repair walkthrough",
+      scheduledFor: D,
+      assignee: "Jake Fowler",
+      assigneeWorkerId: jake.id,
+    }, H)).body;
+    assertEquals((await onDay(call, jake.cookie, D, wo.id)).length, 1, "before: WO on Jake's day");
+
+    // the owner marks Jake out on D, covered by Miguel (the Mark out dialog's POST)
+    const away = await call("POST", "/field/absences", {
+      workerId: jake.id,
+      from: D,
+      to: D,
+      disposition: "cover",
+      coverWorkerId: miguel.id,
+    }, H);
+    assertEquals(away.status, 201, `mark Jake out: ${JSON.stringify(away.body)}`);
+
+    const migs = await onDay(call, miguel.cookie, D, wo.id);
+    assertEquals(migs.length, 1, `Miguel covers Jake on ${D}: WO ${wo.number} is on Miguel's /worker day (QA saw "Sin tareas este día")`);
+    assertEquals(migs[0].workerId, miguel.id, "the row is Miguel's");
+    assertEquals(migs[0].coverForName, "Jake Fowler", "the row says who Miguel covers for");
+    assertEquals((await onDay(call, jake.cookie, D, wo.id)).length, 0, "Jake is out: the WO is not on his day");
+
+    const list = ok(await call("GET", "/work-orders", undefined, H)).body as Row[];
+    const row = list.find((r) => r.id === wo.id)!;
+    assertEquals(row.coverAssignee, "Miguel Torres", "/work-orders shows who covers Jake's WO");
+    const detail = ok(await call("GET", `/work-orders/${wo.id}`, undefined, H)).body;
+    assertEquals(detail.coverAssignee, "Miguel Torres", "the WO page shows who covers it");
+    assertEquals(detail.assigneeWorkerId, jake.id, "the stored assignee is untouched (read-time resolution)");
+
+    // removing the absence puts it back on Jake
+    ok(await call("DELETE", `/field/absences/${away.body.id}`, undefined, H));
+    assertEquals((await onDay(call, jake.cookie, D, wo.id)).length, 1, "absence removed: back on Jake's day");
+    assertEquals((await onDay(call, miguel.cookie, D, wo.id)).length, 0, "absence removed: off Miguel's day");
+  });
+});
