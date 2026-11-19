@@ -26,7 +26,7 @@ import FieldHead from "../components/FieldHead.tsx";
 import { assignmentsMapView, US_MAP_VIEW } from "../lib/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { langSignal, t } from "../lib/i18n.ts";
+import { langSignal, t, tn } from "../lib/i18n.ts";
 import { zoneName } from "../lib/field-zone-name.ts";
 import type { FieldAssignmentsSeed } from "../lib/field-ssr.ts";
 
@@ -302,7 +302,7 @@ export default function FieldAssignmentsPage(
   const regroup = () =>
     run(async () => {
       const r = await fieldClient.regroup();
-      setFlash(t("field.asg.regrouped", { n: r.regions }));
+      setFlash(tn("field.asg.regrouped", r.regions));
     });
 
   /** REQ-841 — the zone's crews, toggled one at a time */
@@ -400,7 +400,7 @@ export default function FieldAssignmentsPage(
   return (
     <>
       <FieldHead
-        eyebrow={t("field.asg.eyebrow", { n: regions.length })}
+        eyebrow={tn("field.asg.eyebrow", regions.length)}
         title={t("field.asg.title")}
         sub={t("field.asg.sub")}
       >
@@ -445,11 +445,11 @@ export default function FieldAssignmentsPage(
           style="margin:0 0 10px"
           data-cy="asg-unstaffed-count"
         >
-          {t(
+          {tn(
             crews.length
               ? "field.asg.unstaffedCrews"
               : "field.asg.unstaffedCount",
-            { n: unstaffed },
+            unstaffed,
           )}
         </div>
       )}
@@ -466,7 +466,7 @@ export default function FieldAssignmentsPage(
                 key={c.id}
                 style={`background:${c.color}22;color:${c.color}`}
               >
-                <b>{c.name}</b> {t("field.asg.crewLoad", { zones: z })}
+                <b>{c.name}</b> {tn("field.asg.crewLoad", z)}
               </span>
             );
           })}
@@ -482,10 +482,10 @@ export default function FieldAssignmentsPage(
             const z = regions.filter((r) => r.workerId === w.id);
             return (
               <span class="chip" key={w.id} title={wname(w)}>
-                <b>{w.name}</b> {t("field.asg.load", {
-                  zones: z.length,
-                  subs: z.reduce((n, r) => n + r.subscriptions.length, 0),
-                })}
+                <b>{w.name}</b> {tn("field.asg.loadZones", z.length)} · {tn(
+                  "field.asg.loadVisits",
+                  z.reduce((n, r) => n + r.subscriptions.length, 0),
+                )}
               </span>
             );
           })}
