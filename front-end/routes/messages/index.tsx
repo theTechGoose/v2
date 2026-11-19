@@ -42,7 +42,8 @@ export default define.page(function MessagesRoute(ctx) {
         <main class="main">
           <DashTopbar pageTitleKey="nav.outbox" greetingName={greetingName} />
           <div class="content">
-            <OutboxPage />
+            {/* REQ-1037: the business's clock, as the chat prints it */}
+            <OutboxPage timeZone={user?.businessTimezone} />
             <SiteFooter lang={lang} compact />
           </div>
         </main>

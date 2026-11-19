@@ -64,7 +64,10 @@ export default define.page(async function CustomerRoute(ctx) {
             searchScope={{ customerId: id, customerName: name }}
           />
           <div class="content">
-            <CustomerWorkspace customerId={id} />
+            <CustomerWorkspace
+              customerId={id}
+              timeZone={ctx.state.user?.businessTimezone}
+            />
           </div>
         </main>
       </div>
