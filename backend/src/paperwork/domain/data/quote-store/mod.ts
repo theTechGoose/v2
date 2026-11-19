@@ -3,7 +3,10 @@ import {
   QuotePriceError,
   storedQuotePriceProblem,
 } from "#quote-flow/quote-price-guard.ts";
-import { summarizeJobName } from "#quote-flow/job-name.ts";
+import {
+  jobNameCoveringLines,
+  summarizeJobName,
+} from "#quote-flow/job-name.ts";
 import { messageLang } from "#quote-flow/message-language.ts";
 import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
@@ -129,7 +132,15 @@ export class QuoteStore {
         `${quote.summary ?? ""} ${quote.description ?? ""}`,
       );
       if (source) {
-        quote.jobName = summarizeJobName(source, typed ?? opts?.jobNameLang);
+        const lang = typed ?? opts?.jobNameLang;
+        // REQ-1094 (LOOP-007 q3-3): the summary may name one area of a
+        // two-area job ("Exterior painting" over house + fence lines) — the
+        // derived name still names every area the lines cover.
+        quote.jobName = jobNameCoveringLines(
+          summarizeJobName(source, lang),
+          (quote.lineItems ?? []).map((l) => l.description ?? ""),
+          lang,
+        );
       }
     }
     // REQ-710 (demo-loop cycle 5, M4): the base language is the language the

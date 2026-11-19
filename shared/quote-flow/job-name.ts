@@ -588,3 +588,161 @@ export function compactAreas(name: string): string | null {
   }
   return null;
 }
+
+/** REQ-1094: what a line DOES rather than what it is done to — shared by
+ *  every area of a job, so never the word that tells two areas apart
+ *  ("PAINT the backyard fence", "PINTURA de la cerca"). */
+const ACTION_WORDS = new Set([
+  "paint",
+  "painting",
+  "repaint",
+  "repainting",
+  "pintura",
+  "pintar",
+  "repair",
+  "repairs",
+  "reparación",
+  "reparacion",
+  "reparar",
+  "install",
+  "installation",
+  "instalación",
+  "instalacion",
+  "instalar",
+  "replace",
+  "replacement",
+  "reemplazo",
+  "cambio",
+  "remove",
+  "removal",
+  "clean",
+  "cleaning",
+  "limpieza",
+  "wash",
+  "washing",
+  "lavado",
+  "build",
+  "construcción",
+  "construccion",
+  "service",
+  "servicio",
+  "work",
+  "trabajo",
+  "new",
+  "nuevo",
+  "nueva",
+]);
+
+/** REQ-1094: lines that are a cost of the job, never an area of it. */
+const COST_WORDS = new Set([
+  "labor",
+  "labour",
+  "materials",
+  "material",
+  "materiales",
+  "mano",
+  "obra",
+  "permit",
+  "permits",
+  "permiso",
+  "permisos",
+  "disposal",
+  "cleanup",
+  "haul",
+  "hauling",
+  "fee",
+  "fees",
+  "tax",
+  "deposit",
+  "trip",
+  "travel",
+  "supplies",
+  "misc",
+  "miscellaneous",
+  "desecho",
+  "viaje",
+]);
+
+/** REQ-1094: a line's or name's words, lower case, punctuation dropped. */
+function contentWords(text: string): string[] {
+  return text.toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0 && !isNumeric(w));
+}
+
+/** REQ-1094: "paint" ~ "painting", "fence" ~ "fences" — one word's stem
+ *  opens the other's (at least 4 letters shared), or they are equal. */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+  return s.length >= 4 && l.startsWith(s);
+}
+
+const isAreaWord = (w: string) =>
+  !STOPWORDS.has(w) && !ES_STOPWORDS.has(w) && !ACTION_WORDS.has(w);
+
+/** REQ-1094: the noun a line names its area by — the object after its
+ *  "de"/"of" ("Pintura de la cerca del patio" → "cerca"), else the last area
+ *  word of an English noun phrase ("Paint the backyard fence" → "fence"). */
+function lineArea(words: string[]): string | null {
+  const obj = areaObject(words);
+  if (obj) {
+    const head = obj.find((w) => isAreaWord(w));
+    if (head) return head;
+  }
+  const area = words.filter(isAreaWord);
+  return area.length ? area[area.length - 1] : null;
+}
+
+/**
+ * REQ-1094 (LOOP-007 q3-3, amends REQ-1051): a job name that names every
+ * area its LINES cover. QA 5's "Exterior house paint $3,800 and paint the
+ * backyard fence $450.50" was named "Exterior Painting" — inside the budget,
+ * so REQ-1051's compaction never ran, and the agreement title, the /q
+ * heading and every email subject dropped the fence.
+ *
+ * A line is covered when the name says its area noun or a word only that
+ * line has (the action every line shares — "paint" — tells no area apart;
+ * a cost line — labor, materials, permit — is no area). Each uncovered
+ * area's noun is joined on ("Exterior Painting & Fence", "Pintura exterior
+ * y cerca"). The name is kept unchanged when it covers none of the lines
+ * (an umbrella name — "Kitchen Remodel" over its parts), when every line is
+ * covered, or when no joined name fits the budget.
+ */
+export function jobNameCoveringLines(
+  name: string,
+  lines: readonly string[],
+  lang?: "en" | "es",
+): string {
+  const trimmed = name.trim();
+  if (!trimmed || lines.length < 2) return trimmed;
+  const nameWords = contentWords(trimmed);
+  const says = (w: string) => nameWords.some((n) => sameWord(n, w));
+  const parsed = lines.map((l) => contentWords(l))
+    .filter((ws) => ws.some((w) => isAreaWord(w) && !COST_WORDS.has(w)));
+  if (parsed.length < 2) return trimmed;
+  const own = parsed.map((ws, i) =>
+    ws.filter((w) =>
+      isAreaWord(w) &&
+      !parsed.some((other, j) => j !== i && other.some((o) => sameWord(o, w)))
+    )
+  );
+  const missing: string[] = [];
+  let covered = 0;
+  parsed.forEach((ws, i) => {
+    const area = lineArea(ws);
+    if ((area && says(area)) || own[i].some(says)) covered++;
+    else if (area && !missing.some((m) => sameWord(m, area))) {
+      missing.push(area);
+    }
+  });
+  if (covered === 0 || missing.length === 0) return trimmed;
+  const es = lang === "es";
+  const joined = [
+    trimmed,
+    ...missing.map((a) => (es ? `y ${a}` : `& ${titleCase(a)}`)),
+  ].join(" ");
+  if (isValidJobName(joined)) return joined;
+  return compactAreas(joined) ?? trimmed;
+}
