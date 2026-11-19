@@ -449,7 +449,8 @@ describe("REQ-413 (p7) plain copy instead of idioms", () => {
       }`,
     )
       // REQ-530 (cycle 3, p7): the singular names a customer, not a boss.
-      .toBe("Tu primer cliente ya está en tu lista.");
+      // REQ-1077 (LOOP-007 q2-67): and makes no ordinal claim.
+      .toBe("Tienes un cliente en tu lista.");
     expect(read("front-end/components/ClientsSections.tsx")).not.toMatch(
       /emptyTitlePost/,
     );

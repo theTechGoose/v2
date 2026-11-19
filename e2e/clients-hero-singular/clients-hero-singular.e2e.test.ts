@@ -1,8 +1,9 @@
 /**
  * REQ-530 — demo-loop cycle 3, issue p7: with one customer on the books the
  * /customers hero read "The person / you work for." (es "La persona / para la
- * que trabajas.") — a boss, not a customer. It now reads "Your first customer
- * / is on your list." (es "Tu primer cliente / ya está en tu lista.").
+ * que trabajas.") — a boss, not a customer. It now reads "You have one
+ * customer / on your list." (es "Tienes un cliente / en tu lista.") — no
+ * ordinal "first" (REQ-1077: the count is of current customers).
  *
  * Page: /customers (islands/ClientsPage.tsx → components/ClientsSections.tsx).
  */
@@ -67,12 +68,12 @@ async function signInWithOneCustomer(
 const CASES = [
   {
     lang: "en",
-    want: "Your first customer is on your list.",
+    want: "You have one customer on your list.",
     bad: /person|work for/i,
   },
   {
     lang: "es",
-    want: "Tu primer cliente ya está en tu lista.",
+    want: "Tienes un cliente en tu lista.",
     bad: /persona|trabajas/i,
   },
 ] as const;

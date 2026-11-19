@@ -54,9 +54,10 @@ export function ClientsHero(
             <>
               {
                 /* Grammatical number drives the WHOLE headline, not just the
-                  noun (P-34): one customer reads "Your first customer / is on
-                  your list." ("Tu primer cliente / ya está en tu lista.") —
-                  never "The person you work for", a boss (REQ-530). */
+                  noun (P-34): one customer reads "You have one customer / on
+                  your list." ("Tienes un cliente / en tu lista.") — never
+                  "The person you work for", a boss (REQ-530), and never
+                  "first": the count is of current customers (REQ-1077). */
               }
               <h1 class="ph2__title">
                 {tFor(
