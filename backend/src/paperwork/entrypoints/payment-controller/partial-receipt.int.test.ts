@@ -189,3 +189,46 @@ Deno.test("REQ-963 q1-37: the payment that closes the balance sends exactly one 
     );
   });
 });
+
+/**
+ * REQ-1071 (LOOP-007 cycle 2, q2-60): QA paid $500 of a $1,190.75 invoice and
+ * the receipt read "We've recorded your payment of $500…" — no cents, no
+ * balance still due, no link back to the invoice to pay it.
+ */
+Deno.test("REQ-1071 q2-60: a $500 part payment on a $1,190.75 invoice emails a receipt with $500.00, the $690.75 balance and a link to pay it", async () => {
+  await withServer(async () => {
+    const auth = await login("+15125551071");
+    const customer = await call("POST", "/customers", auth, {
+      name: "Pat Doe",
+      email: CUSTOMER_EMAIL,
+    });
+    assertEquals(customer.status < 400, true, JSON.stringify(customer.body));
+    const inv = await call("POST", "/invoices", auth, {
+      customerId: customer.body.id,
+      jobName: "Kitchen repaint",
+      amount: 119075,
+      status: "sent",
+      dueDate: "2026-12-01",
+    });
+    assertEquals(inv.status < 400, true, JSON.stringify(inv.body));
+    mails.length = 0;
+
+    const pay = await call("POST", "/payments", auth, {
+      invoiceId: inv.body.id,
+      amount: 50000,
+      method: "check",
+      receivedAt: today(),
+    });
+    assertEquals(pay.status < 400, true, JSON.stringify(pay.body));
+
+    const receipts = toCustomer();
+    assertEquals(receipts.length, 1, "one receipt email to the customer");
+    const html = receipts[0].htmlBody ?? "";
+    assertStringIncludes(html, "$500.00", "the payment with cents");
+    assertStringIncludes(html, "$690.75", "the balance still due");
+    assert(
+      /href="[^"]*\/(s|i)\/[^"]+"/.test(html),
+      `a link back to the invoice (/s/… or /i/…) to pay the balance; got:\n${html}`,
+    );
+  });
+});

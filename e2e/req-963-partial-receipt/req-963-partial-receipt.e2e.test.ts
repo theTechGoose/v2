@@ -139,3 +139,76 @@ Deno.test("REQ-963 q1-37: a $400 part payment recorded in /invoices → Record p
     });
     expect.eq(await what.count(), 1, "a Receipt row on /messages");
   }));
+
+/**
+ * REQ-1071 — LOOP-007 cycle 2, issue q2-60 "Partial-payment receipt shows no
+ * remaining balance and no pay link". QA paid $500 of a $1,190.75 invoice;
+ * the receipt in the outbox read "We've recorded your payment of
+ * <strong>$500</strong>…" — no cents, no balance, no way back to pay it.
+ */
+Deno.test("REQ-1071 q2-60: a $500 part payment on a $1,190.75 invoice puts a receipt in the Outbox that shows $500.00, the $690.75 balance and a pay link", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Pat Doe",
+        email: "pat.doe@blackhole.postmarkapp.com",
+      }),
+    })).json();
+    const inv = await (await http("/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        status: "sent",
+        jobName: "Kitchen repaint",
+        dueDate: inDays(7),
+        lineItems: [{
+          description: "Kitchen repaint",
+          quantity: 1,
+          unit: "job",
+          price: 119075,
+        }],
+        amount: 119075,
+      }),
+    })).json() as { id: string };
+
+    await page.goto(`/invoices?open=${inv.id}`);
+    await page.locator("[data-cy='invoice-payment-received']").first().click();
+    await page.locator("[data-cy='pay-received-form']").waitFor({
+      timeout: 15_000,
+    });
+    await page.locator("[data-cy='pay-method-check']").click();
+    await page.locator("[data-cy='pay-received-amount']").fill("500");
+    const posted = page.waitForResponse((res) =>
+      res.request().method() === "POST" && /\/api\/payments$/.test(res.url())
+    );
+    await page.locator("[data-cy='pay-received-submit']").click();
+    const res = await posted;
+    expect(res.ok(), `POST /payments → ${res.status()}`);
+
+    const rows = await (await http("/api/outbox", { headers: auth }))
+      .json() as (Row & { id: string; docId?: string })[];
+    const row = rows.find((r) =>
+      r.kind === "receipt" && r.channel === "email" && r.docId === inv.id
+    );
+    expect(!!row, "a receipt email for this invoice is in the outbox");
+    if (!row) return;
+    const opened = await (await http(`/api/outbox/${row.id}`, {
+      headers: auth,
+    })).json() as { body?: string };
+    const body = opened.body ?? "";
+    expect(body.includes("$500.00"), "the receipt prints $500.00");
+    expect(
+      body.includes("$690.75"),
+      `the receipt shows the $690.75 balance still due (body: ${
+        body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400)
+      })`,
+    );
+    expect(
+      /href="[^"]*\/(s|i)\/[^"]+"/.test(body),
+      "the receipt links back to the invoice to pay the balance",
+    );
+  }));
