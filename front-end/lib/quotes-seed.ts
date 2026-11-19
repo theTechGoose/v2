@@ -50,6 +50,8 @@ export interface Quote {
   version?: number;
   /** REQ-481 (m10): change orders on this quote still waiting on the customer. */
   pendingChangeOrders?: string[];
+  /** REQ-1030 (LOOP-007 q2-14): change orders made but not sent yet. */
+  unsentChangeOrders?: string[];
   /** REQ-760 (cycle 5v2, m14): the server's word on a draft — ready to send
    *  (terms wizard done) or still in progress. Absent = ready (older server). */
   readyToSend?: boolean;

@@ -173,6 +173,10 @@ function mapCard(c: BackendQuoteCard, lang: "en" | "es"): Quote {
     ...(c.pendingChangeOrders?.length
       ? { pendingChangeOrders: c.pendingChangeOrders }
       : {}),
+    // REQ-1030 (LOOP-007 q2-14): made, not sent — never "waiting on" anyone.
+    ...(c.unsentChangeOrders?.length
+      ? { unsentChangeOrders: c.unsentChangeOrders }
+      : {}),
     // REQ-760 (cycle 5v2, m14): the hero says "ready to send" only for these.
     ...(typeof c.readyToSend === "boolean"
       ? { readyToSend: c.readyToSend }
@@ -2377,6 +2381,12 @@ export default function QuotesPage(
         quoteLimit={s.quoteLimit}
         pendingChangeOrders={real.flatMap((q) =>
           (q.pendingChangeOrders ?? []).map((number) => ({
+            number,
+            client: q.client,
+          }))
+        )}
+        unsentChangeOrders={real.flatMap((q) =>
+          (q.unsentChangeOrders ?? []).map((number) => ({
             number,
             client: q.client,
           }))

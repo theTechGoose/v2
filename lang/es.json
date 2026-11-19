@@ -2924,6 +2924,8 @@
   "quotesHero.clients.other": "{n} clientes",
   "quotesHero.coWaiting.one": "{number} está esperando a {client}.",
   "quotesHero.coWaiting.other": "{n} órdenes de cambio esperan a clientes — {number} a {client}.",
+  "quotesHero.coUnsent.one": "{number} aún no se ha enviado a {client}.",
+  "quotesHero.coUnsent.other": "{n} órdenes de cambio aún no se han enviado — {number} para {client}.",
   "quotesHero.cta": "Nueva cotización",
   "quoteLimit.message": "Ya hiciste tus {limit} cotizaciones de este mes en Monster Free. Monster tiene cotizaciones ilimitadas: mejora tu plan en Configuración → Facturación, o tus {limit} cotizaciones nuevas vuelven a empezar el día 1.",
   "quoteLimit.upgrade": "Ver planes",

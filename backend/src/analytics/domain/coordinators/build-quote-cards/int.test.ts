@@ -368,6 +368,8 @@ Deno.test("REQ-481 card: approvedChangeOrdersCents + pendingChangeOrders from th
       description: "Add closet",
       deltaAmountCents: 30000,
     });
+    // REQ-1030: "waiting on the customer" means the request reached them.
+    await cos.markSent(pending.id);
     const cards = await flow.run("u-1", NOW);
     const card = cards.find((c) => c.id === q.id)!;
     assertEquals(card.approvedChangeOrdersCents, 120000);

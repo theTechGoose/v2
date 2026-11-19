@@ -35,6 +35,21 @@ export interface ChangeOrder extends NumberedFields {
   /** REQ-948: the decision alerts (contractor text + email, the customer's
    *  receipt) already went for the decision stamped at `decidedAt`. */
   decisionNotifiedAt?: string;
+  /** REQ-1030 (LOOP-007 q2-14): when the approval request last reached the
+   *  customer (an email or a text went out). REQ-652 made a chat change order
+   *  unsent until an explicit Send, so "pending" alone no longer means
+   *  "waiting on the customer". Stamped by SendChangeOrderAlert. */
+  sentAt?: string;
+  /** REQ-1030: true on every order created since `sentAt` exists. Rows
+   *  without it predate the stamp — they were sent on create, so they keep
+   *  counting as sent. */
+  sendTracked?: boolean;
+}
+
+/** REQ-1030: has the approval request reached the customer? Legacy rows
+ *  (no `sendTracked`) were always sent when created. */
+export function changeOrderWasSent(co: ChangeOrder): boolean {
+  return !!co.sentAt || !co.sendTracked;
 }
 
 export class CreateChangeOrderDto {

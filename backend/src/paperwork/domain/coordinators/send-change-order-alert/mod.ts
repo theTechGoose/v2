@@ -363,6 +363,15 @@ export class SendChangeOrderAlert {
       }
     }
 
+    // REQ-1030 (LOOP-007 q2-14): the order is now waiting on the customer —
+    // the /quotes pipeline counts it as such only from here. A delivery that
+    // reached nobody leaves it unsent.
+    if (delivered.emailedTo || delivered.textedTo) {
+      await this.changeOrders.markSent(co.id).catch((err) =>
+        console.error("[send-change-order-alert] sent stamp failed:", err)
+      );
+    }
+
     // REQ-698 (demo-loop cycle 5, m14): a change order that reached the
     // customer is the owner's work — "What we handled today" (built from
     // notifications) never showed pair 5's CO-002. Every send path (the

@@ -8,7 +8,10 @@ import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ViewStore } from "@paperwork/domain/data/view-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
-import type { ChangeOrder } from "@paperwork/dto/change-order.ts";
+import {
+  type ChangeOrder,
+  changeOrderWasSent,
+} from "@paperwork/dto/change-order.ts";
 import { AgentConversationStore } from "@agents/domain/data/agent-conversation-store/mod.ts";
 import { readyToSendQuoteIds } from "@agents/domain/coordinators/list-conversations/mod.ts";
 import type { Quote, QuoteCard, QuoteStage } from "@paperwork/dto/quote.ts";
@@ -73,16 +76,28 @@ export class BuildQuoteCards {
 /** REQ-481 (demo-loop cycle 3, M28 + m10): what the /quotes card needs of
  *  the quote's change orders — the approved ones summed (the card's value is
  *  the agreement, as the ledger's agreementTotalCents) and the numbers of the
- *  ones still waiting on the customer ("CO-001 is waiting on Karen"). */
+ *  ones still waiting on the customer ("CO-001 is waiting on Karen").
+ *  REQ-1030 (LOOP-007 q2-14): only a pending order that REACHED the customer
+ *  is waiting on them; one the assistant made but never sent (REQ-652) is
+ *  listed as unsent instead. */
 function changeOrderFold(
   cos: ChangeOrder[],
-): { approvedChangeOrdersCents: number; pendingChangeOrders: string[] } {
+): {
+  approvedChangeOrdersCents: number;
+  pendingChangeOrders: string[];
+  unsentChangeOrders: string[];
+} {
+  const pending = cos.filter((c) => c.status === "pending");
   return {
     approvedChangeOrdersCents: cos
       .filter((c) => c.status === "approved")
       .reduce((s, c) => s + Math.round(c.deltaAmountCents), 0),
-    pendingChangeOrders: cos
-      .filter((c) => c.status === "pending")
+    pendingChangeOrders: pending
+      .filter(changeOrderWasSent)
+      .map((c) => c.number ?? c.id)
+      .sort(),
+    unsentChangeOrders: pending
+      .filter((c) => !changeOrderWasSent(c))
       .map((c) => c.number ?? c.id)
       .sort(),
   };
