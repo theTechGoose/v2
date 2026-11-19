@@ -98,7 +98,7 @@ Deno.test("REQ-941 (LOOP-007 q1-7): a hand-recorded payment that closes the invo
     const customer = await call("POST", "/customers", {
       name: "Hans Hansen",
       email: CUSTOMER_EMAIL,
-      preferredLanguage: "es",
+      language: "es", // the declared key — REQ-1119 refuses undeclared ones
     }, sid);
     assert(customer.status < 300, JSON.stringify(customer.body));
     const inv = await call("POST", "/invoices", {

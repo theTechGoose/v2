@@ -152,41 +152,68 @@ const draftCall = (lineItems: Line[]): LLMResponse => ({
 const cardOf = (msgs: AgentMessage[]) =>
   msgs.find((m) => m.kind === "action_card");
 
-Deno.test("REQ-1097 q3-22: 'materials around 600 labor 1400' answered with deck $2,000 + gutters $175 is saved at $2,175 — no re-ask, no separate $1,400 labor line", async () => {
-  const ctx = await fresh();
-  const conv = await ctx.conversations.create({ userId: "u-1" });
-  const seen: LLMRequest[] = [];
-  ctx.llm.setHandler((req) => {
-    seen.push(req);
-    const last = req.messages[req.messages.length - 1]?.content ?? "";
-    return draftCall(TYPED_PRICE_NOTE.test(last) ? REASKED : DRAFT);
-  });
-  const result = await ctx.flow.run({
-    userId: "u-1",
-    conversationId: conv.id,
-    content: Q3_22_MSG,
-  });
+/** The same message without the good/better ask (REQ-1096 reads that as two
+ *  options and drafts the first): one job, deck + gutters. */
+const Q3_22_ONE_JOB_MSG = Q3_22_MSG.replace(
+  " give her a good/better: good = deck only, better = deck + gutters",
+  "",
+);
 
-  const quoteId = result.conversation.quoteId;
-  assert(quoteId, "a draft quote is bound to the conversation");
-  const stored = await ctx.quotes.getOwned(quoteId, "u-1");
-  const lines = stored.lineItems.map((l) =>
-    `${l.description} ${l.price * (l.quantity ?? 1)}`
-  );
-  const reasks = seen.slice(1).map((r) =>
-    r.messages[r.messages.length - 1].content
-  );
-  assertEquals(
-    reasks.filter((n) => TYPED_PRICE_NOTE.test(n)),
-    [],
-    "the model is never re-asked to add labor as its own line",
-  );
-  assert(
-    !stored.lineItems.some((l) => /^labou?r/i.test(l.description)),
-    `no separate labor line — got ${JSON.stringify(lines)}`,
-  );
-  assertEquals(stored.estimatedTotal, 217_500, JSON.stringify(lines));
-  const card = cardOf(result.newMessages)!;
-  assertEquals((card.payload as { totalCents: number }).totalCents, 217_500);
-  await resetKv();
-});
+for (
+  const [label, content, wantTotal] of [
+    // REQ-1096 (q3-21) reads "good = deck only, better = deck + gutters" as
+    // two options and drafts the first (Good, $2,000) — never one summed total
+    [
+      "the tester's good/better message is drafted as Good, deck only, $2,000",
+      Q3_22_MSG,
+      200_000,
+    ],
+    [
+      "without the good/better ask it is saved at $2,175",
+      Q3_22_ONE_JOB_MSG,
+      217_500,
+    ],
+  ] as const
+) {
+  Deno.test(`REQ-1097 q3-22: 'materials around 600 labor 1400' answered with deck $2,000 + gutters $175 — no re-ask, no separate $1,400 labor line; ${label}`, async () => {
+    const ctx = await fresh();
+    const conv = await ctx.conversations.create({ userId: "u-1" });
+    const seen: LLMRequest[] = [];
+    ctx.llm.setHandler((req) => {
+      seen.push(req);
+      const last = req.messages[req.messages.length - 1]?.content ?? "";
+      return draftCall(TYPED_PRICE_NOTE.test(last) ? REASKED : DRAFT);
+    });
+    const result = await ctx.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      content,
+    });
+
+    const quoteId = result.conversation.quoteId;
+    assert(quoteId, "a draft quote is bound to the conversation");
+    const stored = await ctx.quotes.getOwned(quoteId, "u-1");
+    const lines = stored.lineItems.map((l) =>
+      `${l.description} ${l.price * (l.quantity ?? 1)}`
+    );
+    const reasks = seen.slice(1).map((r) =>
+      r.messages[r.messages.length - 1].content
+    );
+    assertEquals(
+      reasks.filter((n) => TYPED_PRICE_NOTE.test(n)),
+      [],
+      "the model is never re-asked to add labor as its own line",
+    );
+    assert(
+      !stored.lineItems.some((l) => /^labou?r/i.test(l.description)),
+      `no separate labor line — got ${JSON.stringify(lines)}`,
+    );
+    assertEquals(stored.estimatedTotal, wantTotal, JSON.stringify(lines));
+    const card = cardOf(result.newMessages)!;
+    assertEquals(
+      (card.payload as { totalCents: number }).totalCents,
+      wantTotal,
+    );
+    await resetKv();
+  });
+}
