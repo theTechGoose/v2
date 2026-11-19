@@ -9,6 +9,7 @@ import {
   isChangeOrderRequest,
   isCleanChangeClause,
   isNewQuoteRequest,
+  mergeChangeOrderCalls,
   parseChangeOrderRequest,
   parseNamedQuoteChange,
   parseTargetTotalChange,
@@ -989,4 +990,99 @@ Deno.test("REQ-1025 q2-7 parseChangeOrderRequest: QA's message → Q-001, a desc
     true,
     `description names both items (got ${JSON.stringify(r?.description)})`,
   );
+});
+
+// REQ-1025 (LOOP-007 cycle 2, q2-7): the model's two change_order calls for
+// work the owner priced together ("…a niche and a glass door, add $2,800")
+// are one change order at the typed amount; calls each priced by what was
+// typed stay apart.
+Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: two calls on Q-001 under one typed $2,800 → one call naming both items at $2,800", () => {
+  const edits = [
+    {
+      type: "change_order",
+      payload: {
+        quoteNumber: "Q-001",
+        description: "Recessed shampoo niche",
+        deltaAmountCents: 280_000,
+      },
+    },
+    {
+      type: "change_order",
+      payload: {
+        quoteNumber: "Q-001",
+        description: "Frameless glass door",
+        deltaAmountCents: 140_000,
+      },
+    },
+  ];
+  assertEquals(
+    mergeChangeOrderCalls(
+      edits,
+      "she wants a recessed shampoo niche and a frameless glass door, add $2,800",
+    ),
+    [{
+      type: "change_order",
+      payload: {
+        quoteNumber: "Q-001",
+        description: "Recessed shampoo niche and frameless glass door",
+        deltaAmountCents: 280_000,
+      },
+    }],
+  );
+});
+
+Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: deltas that add up to the typed amount merge at the sum", () => {
+  const out = mergeChangeOrderCalls([
+    {
+      type: "change_order",
+      payload: { description: "Niche", deltaAmountCents: 100_000 },
+    },
+    { type: "revise_quote", payload: {} },
+    {
+      type: "change_order",
+      payload: { description: "Glass door", deltaAmountCents: 180_000 },
+    },
+  ], "niche and glass door, $2,800 total");
+  assertEquals(out.length, 2);
+  assertEquals(out[0].payload, {
+    description: "Niche and glass door",
+    deltaAmountCents: 280_000,
+  });
+  assertEquals(out[1].type, "revise_quote");
+});
+
+Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: items each priced as typed, a new total, or nothing typed stay apart", () => {
+  const each = [
+    {
+      type: "change_order",
+      payload: { description: "Niche", deltaAmountCents: 50_000 },
+    },
+    {
+      type: "change_order",
+      payload: { description: "Glass door", deltaAmountCents: 120_000 },
+    },
+  ];
+  assertEquals(
+    mergeChangeOrderCalls(each, "add niche $500 and glass door $1,200"),
+    each,
+  );
+  assertEquals(
+    mergeChangeOrderCalls(each, "add a niche and a glass door"),
+    each,
+  );
+  const total = [
+    {
+      type: "change_order",
+      payload: {
+        description: "Niche",
+        deltaAmountCents: 0,
+        targetTotalCents: 2_080_000,
+      },
+    },
+    {
+      type: "change_order",
+      payload: { description: "Glass door", deltaAmountCents: 140_000 },
+    },
+  ];
+  assertEquals(mergeChangeOrderCalls(total, "change Q-001 to $20,800"), total);
 });

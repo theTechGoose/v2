@@ -112,6 +112,13 @@ const JOB_REF_RE = /^\s*(?:on|for|about|re|en|sobre)\b/i;
  *  ("… on the kitchen job add tile $300"). */
 const CHANGE_START_RE =
   /\b(?:add|adding|plus|remove|drop|credit|agregar|agrega|añadir|añade|quitar|quita)\b/i;
+/** REQ-1025 (LOOP-007 q2-7): a lead-in that says who wants the change —
+ *  "she wants to add", "the customer would like", "ella quiere agregar". */
+const WANTS_LEAD_RE =
+  /^(?:(?:she|he|they|the\s+(?:customer|client|homeowner)|ella|[eé]l|ellos|ellas|el\s+cliente|la\s+cliente)\s+(?:also\s+)?(?:wants?|would\s+like|needs?|quiere|quieren|necesita|necesitan)(?:\s+(?:to|a))?(?:\s+(?:add|have|get|agregar|añadir|poner))?)\s+/iu;
+/** REQ-1025: a verb left dangling where the amount was cut out ("…, add"). */
+const DANGLING_VERB_RE =
+  /[\s,;—–-]+(?:add|adding|plus|for|at|agrega|agregar|añade|añadir|por)$/iu;
 /** REQ-315: a leading article on the change ("add a heated floor" → "Heated floor"). */
 const ARTICLE_RE = /^(?:a|an|the|un|una|el|la|los|las)\s+/i;
 
@@ -354,6 +361,11 @@ export function parseChangeOrderRequest(
       .replace(/\s{2,}/g, " ")
       .replace(/\s+([.,;:!?])/g, "$1")
       .replace(/^[\s.,;:!?—–-]+|[\s.,;:!?—–-]+$/g, "")
+      .trim();
+    // REQ-1025 (LOOP-007 q2-7): "she wants to add X and Y, add $2,800" —
+    // who asked is not the item, and the "add" left in front of the amount
+    // is not either.
+    desc = desc.replace(WANTS_LEAD_RE, "").replace(DANGLING_VERB_RE, "")
       .trim();
     desc = desc.replace(ADD_VERBS, "").trim();
     desc = desc.replace(ARTICLE_RE, "").trim(); // REQ-315
@@ -1124,4 +1136,88 @@ export function askAmountExamples(input: {
   const typed = input.typed.find((c) => c > 0);
   const add = typed ?? (Math.round(total / 10 / 100) * 100 || 10_000);
   return { exampleAdd: dollars(add), exampleTotal: dollars(total + add) };
+}
+
+// ---------------------------------------------------------------------------
+// REQ-1025 (LOOP-007 cycle 2, q2-7): "…: she wants to add a recessed shampoo
+// niche and a frameless glass door, add $2,800" — the model split the work
+// into two change_order calls (niche $2,800, door at an amount nobody typed).
+// The first made CO-001, the second asked "How much should … add? — I didn't
+// change anything yet", both in one reply, and the payload kept the ask, so
+// no Send CO-001 button was drawn. Calls on one quote that share ONE typed
+// amount are one change order.
+// ---------------------------------------------------------------------------
+
+/** A change_order call, as far as merging needs it. */
+export interface ChangeOrderCallPayload {
+  customerName?: string;
+  quoteNumber?: string;
+  description: string;
+  deltaAmountCents: number;
+  targetTotalCents?: number;
+}
+
+function joinItems(items: readonly string[]): string {
+  const [first, ...rest] = items.map((d, i) =>
+    i === 0 || /^\p{Lu}{2}/u.test(d) ? d : d[0].toLowerCase() + d.slice(1)
+  );
+  if (rest.length === 0) return first;
+  const last = rest.pop()!;
+  return [first, ...rest].join(", ") + " and " + last;
+}
+
+/**
+ * Merge the change_order calls of one turn that point at the same quote and
+ * were priced together: the owner typed one amount and the calls' deltas are
+ * not each a typed amount ("$2,800 for both"), or the deltas add up to a
+ * typed amount. The merged call names every item and carries that amount;
+ * it sits where the first one was. Calls each priced by what was typed
+ * ("niche $500 and door $1,200"), a new total (REQ-377) or nothing typed
+ * stay as they are.
+ */
+export function mergeChangeOrderCalls<
+  T extends { type: string; payload: unknown },
+>(edits: readonly T[], userText: string): T[] {
+  const typed = changeOrderAmountsCents(userText);
+  if (typed.length === 0) return [...edits];
+  const co = (e: T) =>
+    e.type === "change_order" &&
+      (e.payload as ChangeOrderCallPayload).targetTotalCents === undefined
+      ? e.payload as ChangeOrderCallPayload
+      : undefined;
+  const keyOf = (
+    p: ChangeOrderCallPayload,
+  ) => (p.quoteNumber?.trim().toUpperCase() ||
+    p.customerName?.trim().toLowerCase() || "");
+  const groups = new Map<string, number[]>();
+  edits.forEach((e, i) => {
+    const p = co(e);
+    if (!p || !p.description?.trim()) return;
+    const k = keyOf(p);
+    groups.set(k, [...(groups.get(k) ?? []), i]);
+  });
+  const drop = new Set<number>();
+  const out = [...edits];
+  for (const idx of groups.values()) {
+    if (idx.length < 2) continue;
+    const calls = idx.map((i) => co(edits[i])!);
+    const deltas = calls.map((p) => Math.trunc(p.deltaAmountCents ?? 0));
+    if (deltas.every((d) => typed.includes(Math.abs(d)))) continue;
+    const sum = deltas.reduce((a, b) => a + b, 0);
+    const credit = deltas.every((d) => d < 0);
+    let amount: number | undefined;
+    if (typed.includes(Math.abs(sum))) amount = sum;
+    else if (typed.length === 1) amount = credit ? -typed[0] : typed[0];
+    if (amount === undefined) continue;
+    const named = calls.find((p) => p.quoteNumber || p.customerName);
+    const merged: ChangeOrderCallPayload = {
+      ...(named?.customerName ? { customerName: named.customerName } : {}),
+      ...(named?.quoteNumber ? { quoteNumber: named.quoteNumber } : {}),
+      description: joinItems(calls.map((p) => p.description.trim())),
+      deltaAmountCents: amount,
+    };
+    out[idx[0]] = { ...edits[idx[0]], payload: merged };
+    idx.slice(1).forEach((i) => drop.add(i));
+  }
+  return out.filter((_, i) => !drop.has(i));
 }

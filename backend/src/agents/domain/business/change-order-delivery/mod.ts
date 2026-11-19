@@ -35,6 +35,12 @@ export function changeOrderSentLine(
 
 const CO_NUMBER_RE = /(?<![\p{L}\d-])CO-\d+(?!\d)/iu;
 
+/** REQ-1025: "to maria (gonzalez)" / "a maria" — never "to me / us /
+ *  myself", and a second word only when it is no send word ("now", "by",
+ *  "later"…), so parseSendInvoiceAsk still reads those. */
+const TO_LOWER_NAME_RE =
+  /(\s(?:to|a)\s+)(?!(?:me|us|myself|m[ií]|ella|[eé]l|her|him|them)(?!\p{L}))\p{L}[\p{L}'’-]*(?:\s+(?!(?:by|via|por|now|right|today|tonight|asap|please|pls|then|again|already|too|out|off|thanks|later|tomorrow|next|until|after|ahora|ya|hoy|luego|mañana|despu[eé]s|hasta)(?!\p{L}))\p{L}[\p{L}'’-]*)?(?!\p{L})/iu;
+
 /** "Send CO-002" / "Enviar CO-002" (the Send button's words) and a whole-
  *  message "send it (to her)". Undefined for anything else. */
 export function parseSendChangeOrderAsk(
@@ -48,7 +54,18 @@ export function parseSendChangeOrderAsk(
   const asIt = s.replace(CO_NUMBER_RE, " ").replace(/\s{2,}/g, " ").trim()
     .replace(/^(\s*)enviar(?!\p{L})/iu, "$1envía")
     .replace(/^(\s*)mandar(?!\p{L})/iu, "$1manda");
-  const ask = parseSendInvoiceAsk(asIt);
+  // REQ-1025 (LOOP-007 q2-7): with the CO number named, "to maria" is the
+  // customer whatever the case — the invoice's NAME needs a capital only to
+  // tell a name from a word when nothing else says what is being sent.
+  const ask = parseSendInvoiceAsk(asIt) ??
+    (num
+      ? parseSendInvoiceAsk(
+        asIt.replace(
+          TO_LOWER_NAME_RE,
+          (_m, to: string) => `${to}${/^\s*a\s/i.test(to) ? "ella" : "her"}`,
+        ),
+      )
+      : undefined);
   if (!ask || ask.invoiceNumber) return undefined;
   return num ? { changeOrderNumber: num } : {};
 }
