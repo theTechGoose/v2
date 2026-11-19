@@ -212,27 +212,33 @@ function whenLabel(lang: Lang, daysAgo: number): string {
   return tFor(lang, "paymentsPage.when.daysAgo", { n: daysAgo });
 }
 
+/** REQ-960: a landed card's line states only what the owner recorded by hand
+ *  (REQ-018) — the method, the payer and the reference they typed. It never
+ *  claims how the money moved (mobile deposit, auto-pay, settlement days):
+ *  the app cannot know that. `_daysAgo` is kept for the call shape only. */
 function noteFor(
   lang: Lang,
   method: PaymentMethod,
-  daysAgo: number,
+  _daysAgo: number,
   client: string,
+  reference?: string,
 ): string {
   const name = client.split(/\s+/)[0];
-  switch (method) {
-    case "ach":
-      return tFor(lang, "paymentsPage.note.ach", { name });
-    case "card":
-      return tFor(lang, "paymentsPage.note.card", { name });
-    case "check":
-      return tFor(lang, "paymentsPage.note.check", { name });
-    case "cash":
-      return daysAgo === 0
-        ? tFor(lang, "paymentsPage.note.cashToday", { name })
-        : tFor(lang, "paymentsPage.note.cash", { name });
-    default:
-      return tFor(lang, "paymentsPage.note.default", { name });
+  const ref = reference?.trim();
+  if (method === "check" && ref) {
+    return tFor(lang, "paymentsPage.note.checkRef", { name, ref });
   }
+  const key = method === "ach"
+    ? "paymentsPage.note.ach"
+    : method === "card"
+    ? "paymentsPage.note.card"
+    : method === "cash"
+    ? "paymentsPage.note.cash"
+    : method === "check"
+    ? "paymentsPage.note.check"
+    : "paymentsPage.note.default";
+  const note = tFor(lang, key, { name });
+  return ref ? tFor(lang, "paymentsPage.note.withRef", { note, ref }) : note;
 }
 
 function enrich(
@@ -266,7 +272,7 @@ function enrich(
       ? tFor(lang, "paymentsPage.chargeback.note", {
         name: client.split(/\s+/)[0],
       }) + (p.reversedReason ? ` — ${p.reversedReason}` : "")
-      : noteFor(lang, p.method, daysAgo, client),
+      : noteFor(lang, p.method, daysAgo, client, p.reference),
     status,
   };
 }
