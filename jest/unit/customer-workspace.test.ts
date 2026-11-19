@@ -153,7 +153,10 @@ describe("REQ-924 the page, its client, its strings", () => {
     const ws = read("front-end/islands/CustomerWorkspace.tsx");
     expect(ws).toMatch(/NewInvoiceModal/);
     expect(ws).toMatch(/PaymentReceivedForm/);
-    expect(ws).toMatch(/InvoiceSendDialog/);
+    // REQ-1031 (amends REQ-924(d)): Remind reuses the reminder nudge flow
+    // (the /invoices card's "Send a nudge"), not the first-send sheet
+    expect(ws).toMatch(/InvoiceNudgeDialog/);
+    expect(ws).toMatch(/sendInvoiceNudge\(/);
     expect(ws).toMatch(/startConversation\(\{\s*customerId/);
     expect(ws).toMatch(/\/field\/subscriptions\?new=1&customerId=/);
     expect(ws).toMatch(/CustomerFormDialog/);

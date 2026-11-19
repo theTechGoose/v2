@@ -83,8 +83,8 @@ import {
 } from "../lib/invoice-card.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
+import { sendInvoiceNudge } from "../lib/invoice-nudge.ts";
 import {
-  nudgeNote,
   outReadKey,
   paidReadKey,
   wasUndelivered,
@@ -3755,28 +3755,15 @@ function useInvoiceDispatch(
     setSendFail(null);
     setSendNote(null);
     try {
-      const res = await fetch("/api/cron/invoice-reminder", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ invoiceId: inv.id, day }),
-      });
-      const body = res.ok
-        ? (await res.json().catch(() => ({}))) as {
-          channels?: string[];
-          reason?: string;
-        }
-        : null;
       // REQ-556 (cycle 4, M7): a 200 that reached nobody says why — no
       // email or phone on file, every channel failed, muted, or this rung
       // already fired — never "Already nudged" for a nudge that went nowhere.
-      const note = nudgeNote(body);
+      // REQ-1031: the one nudge sender, shared with the customer page.
+      const note = await sendInvoiceNudge(inv.id, day);
       // REQ-712 (cycle 5, m7): kept as the key, worded at render in the
       // live language — never "Recordatorio enviado" after a switch to EN.
       if (note.tone === "fail") setSendFail(worded((l) => tFor(l, note.key)));
       else setSendNote(worded((l) => tFor(l, note.key)));
-    } catch {
-      setSendFail(worded((l) => tFor(l, "invoicesPage.nudge.failed")));
     } finally {
       setBusy(false);
     }

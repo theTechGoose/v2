@@ -36,19 +36,15 @@ import {
 } from "../lib/outbox.ts";
 import { toE164 } from "../lib/communications.ts";
 import { assistantThreadPath } from "../lib/quote-panel-send.ts";
-import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
+import { sendInvoiceNudge } from "../lib/invoice-nudge.ts";
 import { initialsOf, invoiceFormTarget } from "../lib/customer-nav.ts";
 import { isIssuedState, zeroBalanceKey } from "../lib/clients-display.ts";
 import { CUSTOMERS_CHANGED } from "../components/CustomersNav.tsx";
 import Backdrop from "../components/Backdrop.tsx";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
-import InvoiceSendDialog from "../components/InvoiceSendDialog.tsx";
+import InvoiceNudgeDialog from "../components/InvoiceNudgeDialog.tsx";
 import CustomerFormDialog from "../components/CustomerForm.tsx";
-import {
-  dispatchFailureCopy,
-  dispatchInvoice,
-  NewInvoiceModal,
-} from "./InvoicesPage.tsx";
+import { NewInvoiceModal } from "./InvoicesPage.tsx";
 import {
   formatPhoneDisplay,
   telHref,
@@ -1051,26 +1047,35 @@ export default function CustomerWorkspace(
         </Backdrop>
       )}
       {modal?.kind === "remind" && (
-        <InvoiceSendDialog
+        // REQ-1031 (LOOP-007 q2-8; amends REQ-924(d)): Remind is the
+        // invoice's reminder nudge (REQ-021 / REQ-477), the /invoices card's
+        // "Send a nudge" — never the first-send email/text again.
+        <InvoiceNudgeDialog
           lang={lang}
-          invoice={{ id: modal.invoice.id, number: modal.invoice.number }}
-          customer={invoiceSendContact({ customerId: c.id }, c)}
+          invoice={{
+            id: modal.invoice.id,
+            number: modal.invoice.number,
+            dueDate: modal.invoice.dueDate,
+            status: modal.invoice.status,
+          }}
+          customerName={c.name}
           onCancel={() => setModal(null)}
-          onSend={async (pick) => {
+          onSend={async (day) => {
             const inv = modal.invoice;
-            const d = await dispatchInvoice(inv.id, {
-              ...pick,
-              hasCustomer: true,
-            });
+            const note = await sendInvoiceNudge(inv.id, day);
             setModal(null);
-            if (d.delivered) {
+            if (note.tone === "fail") {
+              setToast({ text: tFor(lang, note.key), err: true });
+            } else {
+              // the reminder lands in Activity: re-read the page
               await changed(
-                tFor(lang, "customerWs.remind.sent", { number: inv.number }),
+                note.key === "invoicesPage.nudge.sent"
+                  ? tFor(lang, "customerWs.remind.sent", {
+                    number: inv.number,
+                  })
+                  : tFor(lang, note.key),
               );
-            } else {setToast({
-                text: dispatchFailureCopy(lang, d, { number: inv.number }),
-                err: true,
-              });}
+            }
           }}
         />
       )}

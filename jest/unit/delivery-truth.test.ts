@@ -176,7 +176,13 @@ describe("REQ-556 (cycle 4, M7) a nudge that reached nobody says so", () => {
   test("the overdue card's nudge reads nudgeNote", () => {
     const src = read("front-end/islands/InvoicesPage.tsx");
     const fn = src.slice(src.indexOf("async function doSendNudge("));
-    expect(fn.slice(0, fn.indexOf("\n  }\n"))).toMatch(/nudgeNote\(/);
+    // REQ-1031: through the shared nudge sender (lib/invoice-nudge.ts),
+    // which maps the reply with nudgeNote
+    expect(fn.slice(0, fn.indexOf("\n  }\n"))).toMatch(
+      /nudgeNote\(|sendInvoiceNudge\(/,
+    );
+    const helper = read("front-end/lib/invoice-nudge.ts");
+    expect(helper).toMatch(/return nudgeNote\(body\)/);
   });
 });
 
