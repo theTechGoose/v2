@@ -1,4 +1,5 @@
 import { Injectable } from "#danet/core";
+import { withTidyAddresses } from "#customer-address/mod.ts"; // REQ-1088
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
@@ -28,6 +29,8 @@ export class InvoiceStore {
     input: CreateInvoiceDto,
     opts: CreateNumberedOpts = {},
   ): Promise<Invoice> {
+    // REQ-1088 (q3-6): the service / bill-to address is stored tidy
+    input = withTidyAddresses(input);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     // Stored rows always carry a dueDate (the controller defaults it; this
@@ -64,9 +67,9 @@ export class InvoiceStore {
     patch: Record<string, unknown>,
   ): Promise<Invoice> {
     const existing = await this.getOwned(id, userId);
-    const defined = Object.fromEntries(
+    const defined = withTidyAddresses(Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
-    );
+    )); // REQ-1088
     const updated: Invoice = {
       ...existing,
       pendingRevision: { ...(existing.pendingRevision ?? {}), ...defined },
@@ -98,7 +101,7 @@ export class InvoiceStore {
       kind: "invoice",
       prefix: PREFIX,
       id,
-      patch,
+      patch: withTidyAddresses(patch), // REQ-1088
       by,
       read: () => this.getOwned(id, userId),
       finish,
@@ -121,9 +124,9 @@ export class InvoiceStore {
       const entry = await kv.get<Invoice>([PREFIX, id]);
       if (!entry.value) throw new NotFoundError(PREFIX, id);
       if (!predicate(entry.value)) return null;
-      const definedPatch = Object.fromEntries(
+      const definedPatch = withTidyAddresses(Object.fromEntries(
         Object.entries(patch).filter(([_, v]) => v !== undefined),
-      );
+      )); // REQ-1088
       const updated: Invoice = {
         ...entry.value,
         ...definedPatch,
@@ -181,9 +184,9 @@ export class InvoiceStore {
     // `undefined` → leave the field untouched. `null` → explicitly clear it
     // (e.g. reject-claim wiping paymentIntent so a rejected claim can't later
     // be confirmed into a bogus payment).
-    const definedPatch = Object.fromEntries(
+    const definedPatch = withTidyAddresses(Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
-    );
+    )); // REQ-1088 (q3-6): the service / bill-to address, tidy
     const updated: Invoice = {
       ...existing,
       ...definedPatch,

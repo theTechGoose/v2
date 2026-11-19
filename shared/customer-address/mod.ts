@@ -98,15 +98,19 @@ const LOWER_WORD = /^\p{Ll}[\p{Ll}'’-]*$/u;
  *   "905 calle del sol san antonio tx 78207" → "905 Calle del Sol San Antonio, TX 78207"
  * Lower-case words are title-cased (connectors such as "del" stay lower
  * inside a name), a 2-letter state before the ZIP (or after a final comma) is
- * upper-cased, and — only for an all-lower-case, comma-less address — ", " goes
- * before the city and the state where they can be read. Words already in
- * mixed or upper case, numbers and anything it cannot read are never changed,
- * so an already-formatted address comes back exactly as it was. Pure.
+ * upper-cased, and ", " goes before the city and the state where they can be
+ * read. REQ-1088 (LOOP-007 q3-5/q3-6): the commas follow the address's
+ * STRUCTURE, not its letter case — a recognised state before a ZIP gets ", "
+ * before it whenever none is there ("2210 Burnet Rd Austin TX 78757",
+ * "4410 avenue h, austin tx 78751"), and the street's end (a street-type
+ * word) gets one when nothing separates the street from the city yet. Words
+ * already in mixed or upper case, numbers and anything it cannot read are
+ * never changed, so an already-formatted address comes back exactly as it
+ * was. Pure.
  */
 export function tidyServiceAddress(raw: string): string {
   const s = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
   if (!s) return s;
-  const reformat = !/\p{Lu}/u.test(s) && !s.includes(",");
   const toks = s.split(" ").map((t) => {
     const m = /^(.*?)([,;.]*)$/.exec(t)!;
     return { core: m[1], punct: m[2] };
@@ -134,12 +138,20 @@ export function tidyServiceAddress(raw: string): string {
     return { ...t, core: w[0].toUpperCase() + w.slice(1) };
   });
 
-  if (reformat && stateIdx >= 1) {
-    // ", " before the state …
+  // a state read from a trailing ZIP (not from a final comma) with no comma
+  // before it yet: ", " before the state …
+  if (
+    stateIdx >= 1 && ZIP_TOKEN.test(toks[n - 1].core) &&
+    !toks[stateIdx - 1].punct.includes(",")
+  ) {
     out[stateIdx - 1] = { ...out[stateIdx - 1], punct: "," };
   }
-  if (reformat && stateIdx >= 2 && /^\d/.test(toks[0].core)) {
-    // … and before the city, when the street's end can be read
+  // … and before the city, when the street's end can be read and no comma
+  // already separates the street from the city
+  const streetSeparated = toks.slice(0, Math.max(0, stateIdx - 1)).some((t) =>
+    t.punct.includes(",")
+  );
+  if (stateIdx >= 2 && !streetSeparated && /^\d/.test(toks[0].core)) {
     let streetEnd = -1;
     if (STREET_TYPE_FIRST_WORDS.has(lowerCore(1)) && stateIdx > 3) {
       streetEnd = 2; // "4410 avenue f austin tx …"
@@ -156,4 +168,26 @@ export function tidyServiceAddress(raw: string): string {
     }
   }
   return out.map((t) => t.core + t.punct).join(" ");
+}
+
+/**
+ * REQ-1088 (LOOP-007 q3-5/q3-6): a document write (quote / invoice create,
+ * update, pending revision) with its `serviceAddress` — and an invoice's
+ * typed `billTo.address` — tidied, so every writer (chat, wizard, New
+ * invoice form, API) stores the same tidy address. Fields the write does not
+ * carry (or carries as null = clear) are left alone; returns a copy.
+ */
+export function withTidyAddresses<T extends object>(write: T): T {
+  const w = write as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...w };
+  if (typeof w.serviceAddress === "string") {
+    out.serviceAddress = tidyServiceAddress(w.serviceAddress);
+  }
+  const billTo = w.billTo as Record<string, unknown> | null | undefined;
+  if (
+    billTo && typeof billTo === "object" && typeof billTo.address === "string"
+  ) {
+    out.billTo = { ...billTo, address: tidyServiceAddress(billTo.address) };
+  }
+  return out as T;
 }

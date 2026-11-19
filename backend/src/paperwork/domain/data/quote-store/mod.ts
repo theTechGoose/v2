@@ -6,6 +6,7 @@ import {
 import { summarizeJobName } from "#quote-flow/job-name.ts";
 import { messageLang } from "#quote-flow/message-language.ts";
 import { withoutMoneySentences } from "#quote-flow/private-cost.ts";
+import { withTidyAddresses } from "#customer-address/mod.ts"; // REQ-1088
 import { getKv, indexedIds, readMany } from "@core/data/kv/mod.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { DocNumbering } from "@core/data/doc-numbering/mod.ts";
@@ -96,6 +97,8 @@ export class QuoteStore {
       }
       & CreateNumberedOpts,
   ): Promise<Quote> {
+    // REQ-1088 (q3-5): the service address is stored tidy, whoever wrote it
+    input = withTidyAddresses(input);
     assertQuotePriced(input);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -187,9 +190,9 @@ export class QuoteStore {
     patch: Record<string, unknown>,
   ): Promise<Quote> {
     const existing = await this.getOwned(id, userId);
-    const defined = withoutPrivatePricing(Object.fromEntries(
+    const defined = withoutPrivatePricing(withTidyAddresses(Object.fromEntries(
       Object.entries(patch).filter(([_, v]) => v !== undefined),
-    ));
+    ))); // REQ-1088
     const { pendingRevision: prior, ...live } = existing;
     const pending = effectivePendingRevision(
       live as unknown as Record<string, unknown>,
@@ -235,7 +238,7 @@ export class QuoteStore {
       kind: "quote",
       prefix: PREFIX,
       id,
-      patch,
+      patch: withTidyAddresses(patch), // REQ-1088
       by,
       read: () => this.getOwned(id, userId),
       // REQ-1026: revising a declined quote reopens it for signing.
@@ -265,9 +268,11 @@ export class QuoteStore {
         throw new NotFoundError(PREFIX, id);
       }
       if (!predicate(entry.value)) return null;
-      const definedPatch = withoutPrivatePricing(Object.fromEntries(
-        Object.entries(patch).filter(([_, v]) => v !== undefined),
-      ));
+      const definedPatch = withoutPrivatePricing(withTidyAddresses(
+        Object.fromEntries(
+          Object.entries(patch).filter(([_, v]) => v !== undefined),
+        ),
+      )); // REQ-1088
       const updated: Quote = {
         ...entry.value,
         ...firstIssueStamp(entry.value, definedPatch), // REQ-248
@@ -329,9 +334,11 @@ export class QuoteStore {
     patch: UpdateQuoteDto & QuoteDeliveryFields,
   ): Promise<Quote> {
     const existing = await this.getOwned(id, userId);
-    const definedPatch = withoutPrivatePricing(Object.fromEntries(
-      Object.entries(patch).filter(([_, v]) => v !== undefined),
-    )) as Partial<Quote>;
+    const definedPatch = withoutPrivatePricing(withTidyAddresses(
+      Object.fromEntries(
+        Object.entries(patch).filter(([_, v]) => v !== undefined),
+      ),
+    )) as Partial<Quote>; // REQ-1088 (q3-5): the service address, tidy
     // REQ-460 (demo-loop cycle 3, B1): a signed quote's agreement is final.
     assertNotSigned(existing, definedPatch);
     // REQ-302: only the money fields the patch carries are judged — a lock

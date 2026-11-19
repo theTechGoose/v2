@@ -1122,11 +1122,13 @@ Deno.test("REQ-386 m17 handle-wizard-answer: the customer transcript line carrie
   });
   assertEquals(
     r.newMessages[0].content,
-    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+    // REQ-1088 (q3-5): the job address the step settled on, tidy
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin, TX 78745",
   );
   assertEquals(
     r.conversation.preview,
-    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+    // REQ-1088 (q3-5): the job address the step settled on, tidy
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin, TX 78745",
   );
   await resetKv();
 });
@@ -1512,7 +1514,8 @@ Deno.test("REQ-531 p8-pair6-a handle-wizard-answer: use_active with an address o
   });
   assertEquals(
     r.newMessages[0].content,
-    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin TX 78745",
+    // REQ-1088 (q3-5): the job address the step settled on, tidy
+    "Customer: Dave Roof — 88 Oak Hollow Dr, Austin, TX 78745",
   );
   await resetKv();
 });

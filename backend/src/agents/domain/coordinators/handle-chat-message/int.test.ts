@@ -3406,11 +3406,12 @@ Deno.test("REQ-435 M4 handle-chat-message integration: the draft action_card car
       "Paint my living room and hallway, $1,850. It's for Linda Moreno. Her phone 512-555-0177, linda.moreno@example.com, 4410 Avenue F Austin TX 78751",
   });
   const stored = await quotes.getOwned(result.conversation.quoteId!, "u-1");
-  assertEquals(stored.serviceAddress, "4410 Avenue F Austin TX 78751");
+  // REQ-1088 (q3-5): stored tidy — the commas follow the structure, not case
+  assertEquals(stored.serviceAddress, "4410 Avenue F, Austin, TX 78751");
   const card = result.newMessages.find((m) => m.kind === "action_card");
   assertEquals(
     (card?.payload as { serviceAddress?: string } | undefined)?.serviceAddress,
-    "4410 Avenue F Austin TX 78751",
+    "4410 Avenue F, Austin, TX 78751",
   );
   await resetKv();
 });

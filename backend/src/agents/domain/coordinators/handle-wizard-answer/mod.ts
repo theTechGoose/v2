@@ -24,6 +24,7 @@ import { isQuoteIssued, isQuoteLocked } from "#documents/versions.ts"; // REQ-46
 import { docNumberOf } from "#documents/numbering.ts"; // REQ-460
 import { formatTermDate } from "#quote-flow/format-helpers.ts"; // REQ-495
 import { withDeadlineTerm } from "#quote-flow/deadline-term.ts"; // REQ-771
+import { tidyServiceAddress } from "#customer-address/mod.ts"; // REQ-1088
 import {
   deadlineCheck,
   deadlineLine,
@@ -261,7 +262,9 @@ export class HandleWizardAnswer {
     const customVar = (v: string): ChatI18nVar =>
       input.stepId === "customer" || formatTermDate(v, "es") !== v
         ? { date: v }
-        : { byLang: { en: termValueText(v, "en"), es: termValueText(v, "es") } };
+        : {
+          byLang: { en: termValueText(v, "en"), es: termValueText(v, "es") },
+        };
     // REQ-678 (c3-m60): "Deposit + balance" names the amount picked —
     // "Payment: Deposit 30% + balance" / "Pago: Depósito 30% + saldo".
     const pickedDeposit = optionDef.amountPicker
@@ -785,14 +788,18 @@ export class HandleWizardAnswer {
     typed: string | undefined,
     customerAddress: string | undefined,
   ): Promise<string | undefined> {
-    const fallback = typed?.trim() || customerAddress?.trim() || undefined;
+    // REQ-1088 (LOOP-007 q3-5): the typed value and the customer record's
+    // address are tidied here too (the store tidies every write; tidying
+    // first keeps the no-op compare below and the transcript line honest).
+    const tidy = (a: string | undefined) =>
+      a?.trim() ? tidyServiceAddress(a) : undefined;
+    const fallback = tidy(typed) || tidy(customerAddress);
     if (!conv.quoteId) return fallback;
     const quote = await this.quotes.getOwned(conv.quoteId, userId)
       .catch(() => null);
     if (!quote) return fallback;
     const current = quote.serviceAddress?.trim() || undefined;
-    const next = typed?.trim() ||
-      (current ? undefined : customerAddress?.trim());
+    const next = tidy(typed) || (current ? undefined : tidy(customerAddress));
     if (!next || next === quote.serviceAddress) return current;
     await this.quotes.update(quote.id, userId, { serviceAddress: next });
     return next;
