@@ -4763,6 +4763,7 @@
   "quotes.ledger.fullyInvoiced": "Everything agreed is already invoiced.",
   "quotes.ledger.restScheduled": "The rest is on {number}, scheduled but not sent — we'll remind you on {date} to send it.",
   "quotes.ledger.restDrafted": "The rest is on {number}, a draft not sent yet.",
+  "quotes.ledger.declinedNoInvoice": "Declined — nothing to invoice.",
   "public.doc.publishedOn": "Published {date}",
   "public.doc.signedBy": "Signature of {name}",
   "public.doc.relatedDocuments": "Related documents",

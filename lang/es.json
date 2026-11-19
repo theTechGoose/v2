@@ -4763,6 +4763,7 @@
   "quotes.ledger.fullyInvoiced": "Todo lo acordado ya está facturado.",
   "quotes.ledger.restScheduled": "El resto está en {number}, programada y sin enviar — te recordamos enviarla el {date}.",
   "quotes.ledger.restDrafted": "El resto está en {number}, un borrador sin enviar.",
+  "quotes.ledger.declinedNoInvoice": "Rechazada — nada que facturar.",
   "public.doc.publishedOn": "Publicada {date}",
   "public.doc.signedBy": "Firma de {name}",
   "public.doc.relatedDocuments": "Documentos relacionados",
