@@ -348,3 +348,53 @@ Deno.test("REQ-1024 dropRemovedLineBullets: a translation that does not line up 
   assertEquals(out.description, "- Pintura.");
   assertEquals(out.descriptionByLang, {});
 });
+
+/**
+ * REQ-1084 (LOOP-007 cycle 3, q3-18) — "Jose quiere agregar pintar el pasillo
+ * por $450 y quitar el drywall. hazme una nueva versión" on the sent Q-002
+ * answered "No encontré una partida llamada 'Pintura interior (pasillo)' …
+ * así que no cambié nada". One Version must be able to ADD a line next to a
+ * removal: reviseLineItems takes a 4th argument, the lines to add.
+ */
+const Q002 = [
+  {
+    description: "Pintura interior (3 cuartos y sala, paredes y techos)",
+    quantity: 1,
+    unit: "trabajo",
+    price: 230_000,
+  },
+  {
+    description: "Reparación de drywall en la cocina",
+    quantity: 1,
+    unit: "trabajo",
+    price: 38_000,
+  },
+];
+
+Deno.test("REQ-1084 q3-18 reviseLineItems: add 'Pintura del pasillo' $450 + remove drywall on Q-002 → two lines, $2,300 + $450 = $2,750, nothing unmatched", () => {
+  // the 4th argument (lines to add) is the API this requirement adds
+  const revise = reviseLineItems as unknown as (
+    base: readonly RevisableLine[],
+    changes: readonly { match: string; amountCents?: number }[],
+    remove: readonly string[],
+    add: readonly { description: string; amountCents: number }[],
+  ) => { lineItems: RevisableLine[]; estimatedTotal: number; unmatched: string[] };
+  const out = revise(
+    Q002,
+    [],
+    ["drywall"],
+    [{ description: "Pintura del pasillo", amountCents: 45_000 }],
+  );
+  assertEquals(out.unmatched, []);
+  assertEquals(
+    out.lineItems.map((l) => [l.description, l.price, l.quantity ?? 1]),
+    [
+      ["Pintura interior (3 cuartos y sala, paredes y techos)", 230_000, 1],
+      ["Pintura del pasillo", 45_000, 1],
+    ],
+    "the painting line stays, drywall is gone, the hallway line is added",
+  );
+  assertEquals(out.estimatedTotal, 275_000);
+  // the input is not mutated
+  assertEquals(Q002.length, 2);
+});
