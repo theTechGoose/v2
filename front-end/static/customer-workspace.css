@@ -158,6 +158,22 @@
   .cws-money > *, .cws-money > :nth-child(n + 4) { grid-column: auto; }
   .cws-kpi--owes { grid-column: 1 / -1 !important; }
   .cws-tabs { padding: 0 8px; }
-  .cws-table th:nth-child(2), .cws-table td:nth-child(2) { display: none; }
-  .cws-rowact { flex-direction: column; align-items: stretch; }
+  /* REQ-1020 (q2-11): a phone gets each row as a stacked card — the 6-7 column table had a ~574px
+     min-content width that spilled out of a 322px card, and REQ-353's overflow-x: clip on .main cut off
+     the balance and the Remind / Mark paid buttons with no way to scroll to them. Each cell is one
+     "label · value" line; the label comes from the cell's data-label (the column header). */
+  .cws-table, .cws-table tbody, .cws-table tr { display: block; width: 100%; }
+  .cws-table thead { display: none; }
+  .cws-table tr { border: 1px solid var(--cws-line); border-radius: 12px; padding: 4px 12px; margin-bottom: 10px; box-sizing: border-box; }
+  .cws-table tr:last-child { margin-bottom: 0; }
+  .cws-table td { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--cws-line); text-align: right; min-width: 0; overflow-wrap: anywhere; flex-wrap: wrap; }
+  .cws-table td.cws-doc small { flex-basis: 100%; }
+  .cws-table tr td:last-child { border-bottom: 0; }
+  .cws-table td[data-label]::before { content: attr(data-label); flex: none; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cws-coffee); text-align: left; }
+  .cws-table .num { text-align: right; }
+  .cws-table td.cws-doc:first-child { display: block; text-align: left; }
+  .cws-table td.cws-doc:first-child::before { display: none; }
+  .cws-table td.cws-actcell { display: block; }
+  .cws-rowact { justify-content: stretch; }
+  .cws-rowact > .cws-btn { flex: 1 1 auto; justify-content: center; }
 }
