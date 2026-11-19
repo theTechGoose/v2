@@ -43,6 +43,7 @@ import {
   quoteDescription,
 } from "../../shared/quote-flow/quote-translations.ts";
 import {
+  depositDueDateOf,
   docHeadline,
   type LinkedChangeOrderLike,
   type LinkedInvoiceLike,
@@ -412,7 +413,14 @@ export function QuoteDoc(
   });
 
   const effective = quote.effectiveDate ?? quote.createdAt;
-  const milestones = computeMilestones(total, quote.terms, lang);
+  // REQ-954 (LOOP-007 q1-26): once signed, the deposit row names the
+  // deposit invoice's stored due date — the date the email and /i carry.
+  const milestones = computeMilestones(
+    total,
+    quote.terms,
+    lang,
+    depositDueDateOf(quote.invoices),
+  );
 
   // REQ-201/205: "Q-001 · Version 2 · Accepted and signed · Nov 6, 2026" —
   // the number is for life, the version advances on publish, the state and

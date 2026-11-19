@@ -17,6 +17,7 @@ import {
   recurringScheduleRow,
 } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { agreementClauses } from "#documents/warranty-clause.ts";
+import { shortDate } from "#documents/linked-view.ts"; // REQ-954
 import {
   CANCELLATION_STEP_ID,
   cancellationValueText,
@@ -63,6 +64,10 @@ export interface RenderQuotePdfInput {
   /** REQ-944: the business's IANA zone — a timestamp (createdAt, acceptedAt)
    *  prints as that zone's calendar day. Omit → UTC (the old behaviour). */
   timezone?: string;
+
+  /** REQ-954 (LOOP-007 q1-26): the deposit invoice's stored due date, once
+   *  the signature billed it — the schedule's deposit row names it. */
+  depositDueDate?: string;
 }
 
 /**
@@ -411,7 +416,12 @@ export class RenderQuotePdf {
     y -= 78;
 
     // Section: Payment schedule (derived from terms.payment_terms)
-    const milestones = computeMilestones(total, quote.terms, lang);
+    const milestones = computeMilestones(
+      total,
+      quote.terms,
+      lang,
+      input.depositDueDate, // REQ-954
+    );
     if (milestones.length > 0) {
       addPageIfNeeded(110);
       y = drawSectionHeader(
@@ -1098,6 +1108,8 @@ export function computeMilestones(
   total: number,
   terms: QuoteTerm[] | undefined,
   lang: "en" | "es" = "en",
+  /** REQ-954 (LOOP-007 q1-26): the deposit invoice's stored due date */
+  depositDueDate?: string,
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   // Localized milestone label/timing strings (PDF is the customer's copy →
@@ -1107,13 +1119,22 @@ export function computeMilestones(
     balance: t(lang, "renderQuotePdf.milestone.balance"),
     midpoint: t(lang, "renderQuotePdf.milestone.midpoint"),
     final: t(lang, "renderQuotePdf.milestone.final"),
-    beforeStart: t(lang, "renderQuotePdf.milestone.beforeStart"),
+    // REQ-954: the deposit's one deadline — the billed invoice's due date,
+    // else the rule that sets it (net-7 from signing), never "before work
+    // starts" (which no stored date backs). The rule is
+    // SIGNING_NET_DAYS (7) — worded "a week", so no "7 days" collides with
+    // the cancellation notice (REQ-783).
+    depositWhen: depositDueDate
+      ? t(lang, "renderQuotePdf.milestone.dueOn", {
+        date: shortDate(depositDueDate, lang, false),
+      })
+      : t(lang, "renderQuotePdf.milestone.weekAfterSigning"),
     onCompletion: t(lang, "renderQuotePdf.milestone.onCompletion"),
     atMidpoint: t(lang, "renderQuotePdf.milestone.atMidpoint"),
     onSigning: t(lang, "renderQuotePdf.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
-    deposit: { label: L.deposit, when: L.beforeStart },
+    deposit: { label: L.deposit, when: L.depositWhen },
     midpoint: { label: L.midpoint, when: L.atMidpoint },
     milestone: { label: L.midpoint, when: L.atMidpoint },
     completion: { label: L.balance, when: L.onCompletion },

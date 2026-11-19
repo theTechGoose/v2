@@ -46,6 +46,7 @@ import {
   installmentSchedule,
 } from "#documents/ledger.ts"; // REQ-679, REQ-950
 import { isInvoiceIssued } from "#documents/versions.ts";
+import { depositDueDateOf, shortDate } from "#documents/linked-view.ts"; // REQ-954
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import {
   businessAddressLine,
@@ -807,7 +808,16 @@ export class RenderInvoicePdf {
     }
 
     // Section: Payment schedule (derived from the agreement's payment terms).
-    const split = computeMilestones(agreementTotal, quote?.terms, lang);
+    const split = computeMilestones(
+      agreementTotal,
+      quote?.terms,
+      lang,
+      // REQ-954: the deposit row names the deposit invoice's own due date
+      depositDueDateOf([
+        ...installments.filter((row) => row.id !== invoice.id),
+        invoice,
+      ]),
+    );
     const scheduled = installmentSchedule(
       split.map((m) => m.amount),
       agreementTotal,
@@ -1236,6 +1246,8 @@ function computeMilestones(
   total: number,
   terms: QuoteTerm[] | undefined,
   lang: "en" | "es" = "en",
+  /** REQ-954 (LOOP-007 q1-26): the deposit invoice's stored due date */
+  depositDueDate?: string,
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   const L = {
@@ -1243,13 +1255,22 @@ function computeMilestones(
     balance: t(lang, "renderQuotePdf.milestone.balance"),
     midpoint: t(lang, "renderQuotePdf.milestone.midpoint"),
     final: t(lang, "renderQuotePdf.milestone.final"),
-    beforeStart: t(lang, "renderQuotePdf.milestone.beforeStart"),
+    // REQ-954: the deposit's one deadline — the billed invoice's due date,
+    // else the rule that sets it (net-7 from signing), never "before work
+    // starts" (which no stored date backs). The rule is
+    // SIGNING_NET_DAYS (7) — worded "a week", so no "7 days" collides with
+    // the cancellation notice (REQ-783).
+    depositWhen: depositDueDate
+      ? t(lang, "renderQuotePdf.milestone.dueOn", {
+        date: shortDate(depositDueDate, lang, false),
+      })
+      : t(lang, "renderQuotePdf.milestone.weekAfterSigning"),
     onCompletion: t(lang, "renderQuotePdf.milestone.onCompletion"),
     atMidpoint: t(lang, "renderQuotePdf.milestone.atMidpoint"),
     onSigning: t(lang, "renderQuotePdf.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
-    deposit: { label: L.deposit, when: L.beforeStart },
+    deposit: { label: L.deposit, when: L.depositWhen },
     midpoint: { label: L.midpoint, when: L.atMidpoint },
     milestone: { label: L.midpoint, when: L.atMidpoint },
     completion: { label: L.balance, when: L.onCompletion },

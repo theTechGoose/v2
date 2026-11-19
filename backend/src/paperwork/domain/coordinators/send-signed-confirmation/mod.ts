@@ -1,4 +1,5 @@
 import { isDueNowTermValue } from "#quote-flow/terms-i18n.ts";
+import { shortDate, SIGNING_NET_DAYS } from "#documents/linked-view.ts"; // REQ-954
 import { Injectable } from "#danet/core";
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -211,6 +212,12 @@ export class SendSignedConfirmation {
       );
     }
     let invoiceId: string | undefined;
+    // REQ-954 (LOOP-007 q1-26): the first (sent) invoice's stored due date —
+    // the one deadline the email, the PDF and /q all name.
+    let invoiceDueDate: string | undefined;
+    // REQ-954: "today" as the coordinator dated it, so a bill due on the
+    // signing day reads "due today".
+    let signedOnIso: string | undefined;
     // REQ-697 (demo-loop cycle 5, m22): the after-completion bill the
     // signature scheduled (nothing is sent) — the owner's signing line names it.
     let scheduledInvoiceId: string | undefined;
@@ -220,6 +227,7 @@ export class SendSignedConfirmation {
     if (milestoneAmounts.length > 0) {
       const today = new Date();
       const todayIso = today.toISOString().slice(0, 10);
+      signedOnIso = todayIso;
       const scheduledDates = computeScheduledDates(
         milestoneAmounts.length,
         quote.startDate,
@@ -249,7 +257,7 @@ export class SendSignedConfirmation {
       const completionSlot = afterCompletion
         ? completionScheduledFor(quote, today)
         : undefined;
-      const netDue = addDaysIso(today, 7);
+      const netDue = addDaysIso(today, SIGNING_NET_DAYS);
       const firstDue = dueNow
         ? todayIso
         : !paymentTermsValue && quote.estimatedCompletionDate &&
@@ -287,7 +295,10 @@ export class SendSignedConfirmation {
               : { status: "scheduled", scheduledFor: scheduledDates[i] }),
           });
           billed = true;
-          if (isFirst && !afterCompletion) invoiceId = invoice.id;
+          if (isFirst && !afterCompletion) {
+            invoiceId = invoice.id;
+            invoiceDueDate = invoice.dueDate ?? dueDate;
+          }
           if (isFirst && afterCompletion) scheduledInvoiceId = invoice.id;
         } catch (err) {
           console.error(
@@ -354,6 +365,9 @@ export class SendSignedConfirmation {
             state: (await this.addresses.get(quote.userId).catch(() => null))
               ?.state,
           }),
+
+          // REQ-954: the schedule's deposit row names the billed due date
+          ...(invoiceDueDate ? { depositDueDate: invoiceDueDate } : {}),
         });
       } catch (err) {
         console.error("[send-signed-confirmation] PDF render failed:", err);
@@ -371,6 +385,9 @@ export class SendSignedConfirmation {
         businessName,
         invoiceId,
         invoiceAmount: milestoneAmounts[0] ?? 0,
+        // REQ-954: the due line names the invoice's stored due date
+        ...(invoiceDueDate ? { invoiceDueDate } : {}),
+        ...(signedOnIso ? { todayIso: signedOnIso } : {}),
         // REQ-699: the customer is told what each period bills
         ...(subscriptionId && recurring ? { recurring } : {}),
         lang,
@@ -726,11 +743,33 @@ interface SignedHtmlOpts {
   businessName: string | undefined;
   invoiceId: string | undefined;
   invoiceAmount: number;
+  /** REQ-954 (LOOP-007 q1-26): the first invoice's stored due date */
+  invoiceDueDate?: string;
+  /** REQ-954: the signing day (YYYY-MM-DD) — a bill due then is "due today" */
+  todayIso?: string;
   /** REQ-699: the recurring charge a subscription now bills */
   recurring?: RecurringTerm;
   lang: Lang;
   /** REQ-628: the business's logo, or its name as a wordmark */
   logo?: EmailLogo;
+}
+
+/**
+ * REQ-954 (LOOP-007 q1-26): the email's due line states the first invoice's
+ * stored due date — "due Nov 26 · pay online", or "due today" for a bill due
+ * on the signing day — never a fixed "due in 7 days" that Due Now terms, a
+ * later completion date or the /q schedule contradict.
+ */
+function invoiceDueLine(opts: SignedHtmlOpts): string {
+  const { invoiceDueDate: due, todayIso, lang } = opts;
+  // the first invoice always carries one; never invent a deadline
+  if (!due) return "";
+  if (todayIso && due <= todayIso) {
+    return t(lang, "signedConfirm.email.invoiceDueToday");
+  }
+  return t(lang, "signedConfirm.email.invoiceDue", {
+    date: escapeHtml(shortDate(due, lang, false)),
+  });
 }
 
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
@@ -846,7 +885,7 @@ ${
         t(lang, "signedConfirm.email.invoiceEyebrow")
       }</div>
                     <div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
-        t(lang, "signedConfirm.email.invoiceDue")
+        invoiceDueLine(opts)
       }</div>
                   </td>
                   <td style="padding:22px 24px;text-align:right;vertical-align:middle">

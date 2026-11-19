@@ -46,6 +46,7 @@ import type { SquareConfig } from "../../../shared/payments/square.ts"; // REQ-8
 import PayByCard from "../../components/PayByCard.tsx"; // REQ-782
 import { cardPayWay } from "../../../shared/payments/pay-links.ts"; // REQ-782
 import {
+  depositDueDateOf,
   invoiceHeadline,
   shortDate,
   stateLabel,
@@ -219,6 +220,8 @@ interface InvoicePublic {
     paidMethods?: string[]; // REQ-928
     installmentIndex?: number;
     installmentTotal?: number;
+    /** REQ-954: its stored due date (the deposit row names installment 1's) */
+    dueDate?: string;
   }>;
   /** REQ-630: `method: "link"` rows carry the business's own payment link (id, name, https url) */
   acceptedMethods?: Array<
@@ -480,7 +483,16 @@ function InvoiceDoc(
   // installments — an approved change order lands on the invoice it revised
   // (8,150 deposit · 9,750 balance), never a re-split of the total.
   const split = agreementTotal
-    ? computeMilestones(agreementTotal, invoice.terms, lang)
+    ? computeMilestones(
+      agreementTotal,
+      invoice.terms,
+      lang,
+      // REQ-954: the deposit row names the deposit invoice's own due date
+      depositDueDateOf([
+        ...(invoice.siblings ?? []).filter((s) => s.id !== invoice.id),
+        invoice,
+      ]),
+    )
     : [];
   const scheduled = installmentSchedule(
     split.map((m) => m.amount),

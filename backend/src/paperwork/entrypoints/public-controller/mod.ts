@@ -1327,6 +1327,7 @@ export class PaperworkPublicController {
           paidMethods: row.paidMethods, // REQ-928
           installmentIndex: row.installmentIndex,
           installmentTotal: row.installmentTotal,
+          dueDate: row.dueDate, // REQ-954: the /i deposit row names it
         }));
       // REQ-523 (demo m16): the channel the payment receipt can arrive on.
       // ConfirmPayment emails the customer's CURRENT record and texts it only

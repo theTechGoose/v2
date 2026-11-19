@@ -34,6 +34,7 @@ import {
   recurringScheduleRow,
 } from "../../shared/quote-flow/recurring-billing.ts"; // REQ-699
 import { isNoWarrantyValue } from "../../shared/documents/warranty-clause.ts";
+import { shortDate } from "../../shared/documents/linked-view.ts"; // REQ-954
 
 /* ---------- palette ---------- */
 export const PINK = "#FF6B6B";
@@ -368,6 +369,9 @@ export function computeMilestones(
   total: number,
   terms: Term[] | undefined,
   lang: Lang = "en",
+  /** REQ-954 (LOOP-007 q1-26): the deposit invoice's stored due date, once
+   *  the signature billed it (depositDueDateOf) — the deposit row names it. */
+  depositDueDate?: string,
 ): { label: string; amount: number; when: string }[] {
   if (!total || total <= 0) return [];
   const L = {
@@ -375,13 +379,22 @@ export function computeMilestones(
     balance: tFor(lang, "quoteDoc.milestone.balance"),
     midpoint: tFor(lang, "quoteDoc.milestone.midpoint"),
     final: tFor(lang, "quoteDoc.milestone.final"),
-    beforeStart: tFor(lang, "quoteDoc.milestone.beforeStart"),
+    // REQ-954: the deposit's one deadline — the billed invoice's due date,
+    // else the rule that sets it (net-7 from signing), never "before work
+    // starts" (which no stored date backs). The rule is
+    // SIGNING_NET_DAYS (7) — worded "a week", so no "7 days" collides with
+    // the cancellation notice (REQ-783).
+    depositWhen: depositDueDate
+      ? tFor(lang, "quoteDoc.milestone.dueOn", {
+        date: shortDate(depositDueDate, lang, false),
+      })
+      : tFor(lang, "quoteDoc.milestone.weekAfterSigning"),
     onCompletion: tFor(lang, "quoteDoc.milestone.onCompletion"),
     atMidpoint: tFor(lang, "quoteDoc.milestone.atMidpoint"),
     onSigning: tFor(lang, "quoteDoc.milestone.onSigning"),
   };
   const roleLabel: Record<MilestoneRole, { label: string; when: string }> = {
-    deposit: { label: L.deposit, when: L.beforeStart },
+    deposit: { label: L.deposit, when: L.depositWhen },
     midpoint: { label: L.midpoint, when: L.atMidpoint },
     milestone: { label: L.midpoint, when: L.atMidpoint },
     completion: { label: L.balance, when: L.onCompletion },
