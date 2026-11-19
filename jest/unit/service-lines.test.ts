@@ -102,12 +102,15 @@ describe("REQ-921 the islands use the service dropdown", () => {
     expect(subs).not.toMatch(/data-cy="subs-type-q"/);
   });
 
-  it("REQ-921 ServiceSelect is the house search picker (SearchSelect) over the catalogue — no native <select>, no create row", () => {
+  it("REQ-921 ServiceSelect is the house search picker (SearchSelect) over the catalogue — no native <select>; REQ-979: its only create row is the owner's add-to-catalogue", () => {
     const c = read("front-end/components/ServiceSelect.tsx");
     expect(c).toMatch(/import SearchSelect from "\.\.\/islands\/SearchSelect\.tsx"/);
     expect(c).toMatch(/<SearchSelect/);
     expect(c).not.toMatch(/<select/);
-    expect(c).not.toMatch(/onCreate=/);
+    // REQ-979 (amends REQ-921): the create row only forwards the owner's
+    // onCreate, which adds a real catalogue service — never a free-text line
+    expect(c).toMatch(/onCreate=\{onCreate\}/);
+    expect(c).toMatch(/"serviceLines\.create"/);
     expect(c).toMatch(/serviceChoices\(catalog/);
     expect(c).toMatch(/"serviceLines\.pick"/);
   });

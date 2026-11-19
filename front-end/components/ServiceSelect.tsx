@@ -2,7 +2,10 @@
  * REQ-921 — the one way to say what a line bills: the house search picker
  * (SearchSelect, REQ-136) over the account's services (the /field/services
  * catalogue). Type to narrow, click or Enter to pick; nothing typed is ever
- * billed — there is no "create" row. A line saved before REQ-921 whose name
+ * billed as free text. REQ-979 (amends REQ-921): with `onCreate`, a name that
+ * matches no service offers `+ Add "<name>" as a service`; the owner creates
+ * it in the catalogue and picks it, so the line still bills a real service.
+ * A line saved before REQ-921 whose name
  * is not a service keeps that name as its own option, so opening an old
  * invoice never silently renames a line.
  */
@@ -44,7 +47,17 @@ export function serviceOptions(
 }
 
 export default function ServiceSelect(
-  { catalog, serviceId, name, lang, disabled, onPick, style, ...rest }: {
+  {
+    catalog,
+    serviceId,
+    name,
+    lang,
+    disabled,
+    onPick,
+    onCreate,
+    style,
+    ...rest
+  }: {
     catalog: readonly CatalogService[];
     serviceId: string;
     /** the row's current name (shown as its own option when it is no service) */
@@ -52,6 +65,9 @@ export default function ServiceSelect(
     lang: Lang;
     disabled?: boolean;
     onPick: (serviceId: string) => void;
+    /** REQ-979 — offer to add a typed name that is no service; the owner
+     *  creates it in the catalogue and picks it */
+    onCreate?: (name: string) => void;
     /** the wrapper's style (the picker fills it) */
     style?: string;
     "data-cy"?: string;
@@ -80,6 +96,8 @@ export default function ServiceSelect(
         onSelect={(o) => {
           if (o.id !== KEEP_NAME) onPick(o.id);
         }}
+        onCreate={onCreate}
+        createLabel={(n) => tFor(lang, "serviceLines.create", { name: n })}
       />
     </div>
   );

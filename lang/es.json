@@ -1985,6 +1985,7 @@
   "serviceLines.manage": "Agregar servicios",
   "serviceLines.err.pick": "Elige un servicio en cada línea.",
   "serviceLines.err.price": "Ponle a cada servicio un precio mayor a $0.",
+  "serviceLines.create": "+ Agregar \"{name}\" como servicio",
   "invoices.form.removeLine": "Quitar",
   "invoices.form.subtotal": "Subtotal",
   "invoices.form.discount": "Descuento (USD)",
