@@ -239,6 +239,7 @@
   "asstChat.customerStep.businessNameRequired": "Nombre del negocio",
   "asstChat.customerStep.businessNamePlaceholder": "Nombre del negocio (opcional)",
   "asstChat.customerStep.change": "Cambiar",
+  "asstChat.customerStep.confirmKnown": "¿Se lo enviamos a {name}?",
   "asstChat.customerStep.createAnyway": "Crear de todos modos",
   "asstChat.customerStep.createNamed": "Crear \"{name}\"",
   "asstChat.customerStep.emailIncomplete": "El correo de tu mensaje ({email}) parece incompleto — escribe la dirección completa, como nombre@ejemplo.com.",
