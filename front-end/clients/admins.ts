@@ -5,6 +5,7 @@
  * and me-controller/mod.ts (/me/accounts, /me/switch-account).
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import type { SmsFailureCode } from "../../shared/quote-flow/sms-failure.ts";
 
 export interface AccountAdmin {
   id: string;
@@ -22,6 +23,8 @@ export interface InvitedAdmin extends AccountAdmin {
   /** REQ-601 (cycle 4, M12): the sign-in address and the invite text, to share when it was not texted */
   signInUrl?: string;
   shareText?: string;
+  /** REQ-998 (LOOP-007 q1-85): why the text did not go ("fictional" for a reserved 555-01XX number, …) */
+  smsFailureCode?: SmsFailureCode;
 }
 
 export interface AccountEntry {

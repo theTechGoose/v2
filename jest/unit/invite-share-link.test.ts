@@ -89,3 +89,50 @@ describe("REQ-601 (demo cycle 4, M12) a failed invite text shows the link to sha
     }
   });
 });
+
+/**
+ * REQ-998 (LOOP-007 cycle 1, q1-85) — amends REQ-601. A worker added at
+ * 843-555-0142 (reserved 555-01XX, refused by design per REQ-523) got only
+ * "We couldn't text Luis Ortega — share the link and PIN yourself.", so the
+ * owner thought the worker's phone was broken. The add/invite now answers
+ * `smsFailureCode`; both pages keep it and word the reason per code, with the
+ * old line as the fallback for "other".
+ */
+describe("REQ-998 (LOOP-007 q1-85) a failed invite text says why", () => {
+  const CODES = ["fictional", "invalid", "notMobile", "optedOut", "missing"];
+
+  test("REQ-998 every per-code reason exists in en and es, worded differently", () => {
+    for (const base of ["field.wk.notTexted", "admins.notTexted"]) {
+      for (const c of CODES) {
+        const k = `${base}.${c}`;
+        expect({ k, en: typeof en[k] }).toEqual({ k, en: "string" });
+        expect({ k, es: typeof es[k] }).toEqual({ k, es: "string" });
+        expect(es[k]).not.toBe(en[k]);
+      }
+    }
+  });
+
+  test("REQ-998 the reserved-number reason names it and keeps the share advice", () => {
+    expect(en["field.wk.notTexted.fictional"]).toMatch(/reserved test number/);
+    expect(en["field.wk.notTexted.fictional"]).toMatch(/555-01XX/);
+    expect(en["admins.notTexted.fictional"]).toMatch(/reserved test number/);
+    expect(es["field.wk.notTexted.fictional"]).toMatch(
+      /número de prueba reservado/,
+    );
+    expect(es["admins.notTexted.fictional"]).toMatch(
+      /número de prueba reservado/,
+    );
+  });
+
+  test("REQ-998 /field/workers keeps smsFailureCode from the add and renders the per-code key", () => {
+    const src = read("front-end/islands/FieldWorkersPage.tsx");
+    expect(src).toMatch(/smsFailureCode/);
+    expect(src).toMatch(/field\.wk\.notTexted\.(\$\{|[\"'`]\s*\+|fictional)/);
+  });
+
+  test("REQ-998 /admins keeps smsFailureCode from the invite and renders the per-code key", () => {
+    const src = read("front-end/islands/AdminsPage.tsx");
+    expect(src).toMatch(/smsFailureCode/);
+    expect(src).toMatch(/admins\.notTexted\.(\$\{|[\"'`]\s*\+|fictional)/);
+  });
+});

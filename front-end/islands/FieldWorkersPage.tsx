@@ -35,6 +35,8 @@ import {
   copyShareText,
   type InviteShare,
   inviteShare,
+  type NotTextedReason,
+  notTextedReason,
 } from "../lib/invite-share.ts";
 import type { FieldWorkersSeed } from "../lib/field-ssr.ts";
 
@@ -149,6 +151,9 @@ export default function FieldWorkersPage(
       texted: boolean;
       pin: string;
       share: InviteShare | null;
+      /** REQ-998 — the cell as typed, and why the text did not go (null: the plain line) */
+      phone: string;
+      smsFailureCode: NotTextedReason | null;
     } | null
   >(null);
   /** REQ-601 — the Copy link + PIN outcome: null until pressed */
@@ -250,6 +255,10 @@ export default function FieldWorkersPage(
         texted: made.texted === true,
         pin: form.pin,
         share: inviteShare(made),
+        phone: fmtCell(made.phoneNumber),
+        smsFailureCode: made.texted === true
+          ? null
+          : notTextedReason(made.smsFailureCode),
       });
       setForm(BLANK);
       setTouched(new Set());
@@ -661,9 +670,14 @@ export default function FieldWorkersPage(
             data-cy="wk-texted"
             data-texted={added.texted ? "true" : "false"}
           >
-            {t(added.texted ? "field.wk.texted" : "field.wk.notTexted", {
-              name: added.name,
-            })}
+            {t(
+              added.texted
+                ? "field.wk.texted"
+                : added.smsFailureCode
+                ? `field.wk.notTexted.${added.smsFailureCode}` // REQ-998 — why: a reserved test number, a landline, …
+                : "field.wk.notTexted",
+              { name: added.name, phone: added.phone },
+            )}
           </p>
         )}
         {added && !added.texted && added.share && (

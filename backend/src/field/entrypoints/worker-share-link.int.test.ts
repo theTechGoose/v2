@@ -94,3 +94,59 @@ Deno.test("REQ-601 (cycle 4, M12) a worker add that could not be texted answers 
     await resetKv();
   }
 });
+
+/**
+ * REQ-998 (LOOP-007 cycle 1, q1-85) — amends REQ-601: the add that could not
+ * text the worker also says WHY. The SmsService knows (a 555-01XX number is
+ * refused with failureCode "fictional", REQ-523) but welcomeWorker dropped it,
+ * so the page could only say "We couldn't text {name}" and the owner thought
+ * the worker's phone was broken. The add now answers `smsFailureCode`.
+ */
+Deno.test("REQ-998 (LOOP-007 q1-85) a worker add to a reserved 555-01XX number answers smsFailureCode 'fictional'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  Deno.env.delete("POSTMARK_API_KEY");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const owner = "+15125552322";
+    await call("POST", "/auth/send-otp", { phoneNumber: owner });
+    const code = (await new OtpStore().get(owner))!.code;
+    const v = await call("POST", "/auth/verify-otp", {
+      phoneNumber: owner,
+      code,
+    });
+    const H = { "x-session-id": v.body.sessionId as string };
+    await call("PUT", "/me", { name: "Hank Miller", language: "en" }, H);
+
+    // the tester's number: 843-555-0142, reserved 555-01XX
+    const made = await call("POST", "/field/workers", {
+      name: "Luis Ortega",
+      phoneNumber: "8435550142",
+      pin: "4826",
+      language: "en",
+    }, H);
+    assertEquals(made.status, 201, JSON.stringify(made.body));
+    assertEquals(made.body.texted, false);
+    assertEquals(
+      made.body.smsFailureCode,
+      "fictional",
+      "the add says why the welcome text did not go (a reserved test number)",
+    );
+
+    // a number that WAS texted carries no failure code
+    const ok = await call("POST", "/field/workers", {
+      name: "Ana Ruiz",
+      phoneNumber: "5125557321",
+      pin: "1357",
+      language: "en",
+    }, H);
+    assertEquals(ok.status, 201, JSON.stringify(ok.body));
+    assertEquals(ok.body.texted, true);
+    assertEquals(ok.body.smsFailureCode, undefined);
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
