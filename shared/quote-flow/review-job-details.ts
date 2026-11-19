@@ -3,8 +3,9 @@
  *
  * The assistant's review/send card shows the scope of work under "Job
  * details". It is read from the quote's description in the preview
- * language, then the lock-quote card's copy, then the stored description;
- * when there is none (a chat-drafted quote), from the quote's line items.
+ * language, then the lock-quote card's copy, then the stored description,
+ * followed by the quote's line items with their amounts (REQ-1049) — for a
+ * chat-drafted quote with no description, the line items alone (REQ-237).
  *
  * Dependency-free: imported by the front-end island (with .ts) and the Jest
  * unit suite / backend int tests.
@@ -49,19 +50,34 @@ export function reviewJobDetails(
 ): ReviewJobDetailRow[] {
   const description = input.descriptionByLang?.[input.previewLang] ??
     input.lockedDescription ?? input.description;
-  const lines = splitDetailLines(description);
-  if (lines.length > 0) return lines.map((text) => ({ text }));
-  // A quote drafted in chat (create_quote) has no description — its scope
-  // IS its line items. Show them (with their amounts) rather than "Add the
-  // job details" next to a total that came from them.
-  const rows: ReviewJobDetailRow[] = [];
+  // The description's scope lines come first, without amounts.
+  const rows: ReviewJobDetailRow[] = splitDetailLines(description).map((
+    text,
+  ) => ({ text }));
+  // REQ-1049 (q2-34): the priced lines ALWAYS follow, each with its amount —
+  // the customer /q (quote-doc.tsx) lists quote.lineItems whether or not the
+  // quote has a job-details description, so the owner's preview must too.
+  // REQ-237: a chat-drafted quote (no description) is just its line items.
+  // A line that only repeats a description line is not listed twice: its
+  // amount goes onto that description row.
+  const byText = new Map<string, ReviewJobDetailRow>();
+  for (const r of rows) {
+    const key = r.text.toLowerCase();
+    if (!byText.has(key)) byText.set(key, r);
+  }
   for (const li of input.lineItems ?? []) {
     const text = (li.description ?? "").trim();
     if (!text) continue;
+    const priced = typeof li.amountCents === "number" &&
+      Number.isFinite(li.amountCents);
+    const dup = byText.get(text.toLowerCase());
+    if (dup && dup.amountCents === undefined) {
+      if (priced) dup.amountCents = li.amountCents as number;
+      byText.delete(text.toLowerCase());
+      continue;
+    }
     rows.push(
-      typeof li.amountCents === "number" && Number.isFinite(li.amountCents)
-        ? { text, amountCents: li.amountCents }
-        : { text },
+      priced ? { text, amountCents: li.amountCents as number } : { text },
     );
   }
   return rows;

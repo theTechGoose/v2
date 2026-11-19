@@ -41,6 +41,9 @@ describe("REQ-237 M17 review card job details", () => {
     ]);
   });
 
+  // REQ-1049 (q2-34) amended this case: the description still fills the
+  // scope text (preview language first), but the priced line now follows it
+  // with its amount, as on the customer /q.
   it("REQ-237: a description still wins (the 'I know my price' flow), in the preview language first", () => {
     const items = [{ description: "Line", amountCents: 100 }];
     expect(
@@ -50,7 +53,11 @@ describe("REQ-237 M17 review card job details", () => {
         description: "• Remove tile\n• Paint",
         lineItems: items,
       }),
-    ).toEqual([{ text: "Quitar azulejo" }, { text: "Pintar" }]);
+    ).toEqual([
+      { text: "Quitar azulejo" },
+      { text: "Pintar" },
+      { text: "Line", amountCents: 100 },
+    ]);
     expect(
       reviewJobDetails({
         previewLang: "en",
@@ -58,7 +65,7 @@ describe("REQ-237 M17 review card job details", () => {
         description: "Stored copy",
         lineItems: items,
       }),
-    ).toEqual([{ text: "Locked copy" }]);
+    ).toEqual([{ text: "Locked copy" }, { text: "Line", amountCents: 100 }]);
   });
 
   it("REQ-237: nothing at all is still empty (the card shows 'Add the job details')", () => {
@@ -73,5 +80,65 @@ describe("REQ-237 M17 review card job details", () => {
     );
     expect(src).toMatch(/reviewJobDetails\(\{[\s\S]{0,400}lineItems/);
     expect(src).toMatch(/data-cy="review-job-detail-amount"/);
+  });
+});
+
+/**
+ * REQ-1049 (LOOP-007 cycle 2, q2-34) — the owner's "Ready to send" preview of
+ * a quote that has BOTH a job-details description (the job-details pick) and
+ * three priced lines showed only the description; the customer /q shows the
+ * three priced lines ($4,200 / $900 / $1,350). The review card must list the
+ * priced lines too, with their amounts.
+ */
+describe("REQ-1049 q2-34 review card lists priced lines alongside the description", () => {
+  it("REQ-1049: a line that only repeats a description line is not listed twice — its amount lands on that row", () => {
+    expect(
+      reviewJobDetails({
+        previewLang: "en",
+        description: "Paint bathroom",
+        lineItems: [{ description: " paint bathroom ", amountCents: 45_000 }],
+      }),
+    ).toEqual([{ text: "Paint bathroom", amountCents: 45_000 }]);
+  });
+
+  const Q002_LINES = [
+    { description: "Mano de obra — pintura exterior", amountCents: 420_000 },
+    { description: "Pintar la cerca", amountCents: 90_000 },
+    { description: "Materiales", amountCents: 135_000 },
+  ];
+  const Q002_DESCRIPTION =
+    "• Pintar el exterior de la casa, dos capas\n• También incluye la cerca del patio";
+
+  it("REQ-1049: a description plus 3 priced lines gives rows carrying all 3 amounts (420000/90000/135000)", () => {
+    const rows = reviewJobDetails({
+      previewLang: "es",
+      descriptionByLang: { es: Q002_DESCRIPTION },
+      lockedDescription: Q002_DESCRIPTION,
+      description: Q002_DESCRIPTION,
+      lineItems: Q002_LINES,
+    });
+    const amounts = rows
+      .filter((r) => typeof r.amountCents === "number")
+      .map((r) => r.amountCents);
+    expect(amounts).toEqual([420_000, 90_000, 135_000]);
+    for (const li of Q002_LINES) {
+      expect(rows).toContainEqual({
+        text: li.description,
+        amountCents: li.amountCents,
+      });
+    }
+  });
+
+  it("REQ-1049: the description is still shown (its lines come first, without amounts)", () => {
+    const rows = reviewJobDetails({
+      previewLang: "es",
+      descriptionByLang: { es: Q002_DESCRIPTION },
+      lineItems: Q002_LINES,
+    });
+    expect(rows.slice(0, 2)).toEqual([
+      { text: "Pintar el exterior de la casa, dos capas" },
+      { text: "También incluye la cerca del patio" },
+    ]);
+    expect(rows.length).toBe(5);
   });
 });
