@@ -88,7 +88,10 @@ Deno.test("REQ-251: a signed quote's public payload yields a Pay now target — 
       number: after.invoices[0].number,
       url: `/i/${billed[0].id}`,
       balanceCents: 4_800_00,
+      // REQ-1048 (q2-32): the target carries the billed invoice's due date
+      dueDate: after.invoices[0].dueDate,
     });
+    assertEquals(typeof after.invoices[0].dueDate, "string");
   } finally {
     await server.stop();
     await resetKv();
