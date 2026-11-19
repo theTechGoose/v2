@@ -28,6 +28,7 @@ import { outboundSenderFirstName } from "#quote-flow/outbound-identity.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
 import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-715
 import type { PaymentMethod } from "@paperwork/dto/invoice.ts";
+import { balanceDue } from "@paperwork/domain/business/invoice-balance/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import {
   customerOnDocument,
@@ -147,6 +148,28 @@ export class SendPaymentReceipt {
         logo: await this.logos.run(userId),
       });
 
+      // A shortlink back to the public invoice page, opened in the receipt's
+      // language — minted once: the text links it, and (REQ-1071, q2-60) the
+      // email's "Pay the balance" button does too.
+      let invoiceUrl = "";
+      try {
+        const link = await this.shortlinks.findOrCreate(
+          userId,
+          "invoice",
+          invoice.id,
+        );
+        const appUrl = Deno.env.get("APP_URL") ?? SITE_ORIGIN;
+        // REQ-715 (REQ-342 parity): opens the invoice in the receipt's language
+        invoiceUrl = withSendLang(`${appUrl}/s/${link.code}`, lang);
+      } catch { /* fall through to no-url receipt */ }
+      // REQ-1071 (q2-60): what is still due after this payment. Callers run
+      // ComputeInvoiceBalance first, so the loaded invoice's paidCents
+      // already counts this payment — the same figure /i shows.
+      const totalCents = invoice.amount ?? 0;
+      const balanceCents = invoice.status === "paid"
+        ? 0
+        : balanceDue(invoice, invoice.paidCents ?? 0);
+
       if (customer?.email) {
         // REQ-204: "Receipt for INV-5000" — the receipt names the bill by number
         const subject = renderReceiptSubject(invoice, lang);
@@ -158,6 +181,10 @@ export class SendPaymentReceipt {
           intent: payment,
           amount: payment.amount,
           lang,
+          // REQ-1071 (q2-60): the balance still due and a link to pay it
+          totalCents,
+          balanceCents,
+          ...(invoiceUrl ? { payUrl: invoiceUrl } : {}),
           // REQ-628: headed by the business's own logo, or its name as a wordmark
           logoHtml: emailLogoHtml(emailLogo({
             appUrl: Deno.env.get("APP_URL") ?? SITE_ORIGIN,
@@ -247,20 +274,8 @@ export class SendPaymentReceipt {
         });
       }
       if (smsTo.ok) {
-        // Mint a shortlink back to the public invoice page so the SMS
-        // receipt is a single short line.
-        let shortUrl = "";
-        try {
-          const link = await this.shortlinks.findOrCreate(
-            userId,
-            "invoice",
-            invoice.id,
-          );
-          const appUrl = Deno.env.get("APP_URL") ??
-            SITE_ORIGIN;
-          // REQ-715 (REQ-342 parity): opens the invoice in the receipt's language
-          shortUrl = withSendLang(`${appUrl}/s/${link.code}`, lang);
-        } catch { /* fall through to no-url body */ }
+        // The SMS receipt is a single short line: the shortlink minted above.
+        const shortUrl = invoiceUrl;
         // REQ-204: greet the customer as snapshotted on the bill
         const shownCustomer = customerOnDocument(invoice, customer);
         const customerFirst =

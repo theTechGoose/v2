@@ -14,10 +14,11 @@ import {
  * from ConfirmPayment, which re-exports them.
  */
 
+/** REQ-1071 (q2-60): cents always print, like every invoice email ("$500.00"). */
 export function fmtUSD(cents: number): string {
   return `$${
     (cents / 100).toLocaleString("en-US", {
-      minimumFractionDigits: 0,
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })
   }`;
@@ -51,6 +52,13 @@ export function renderReceiptHtml(opts: {
   lang: Lang;
   /** REQ-628: the business's logo (or wordmark) heading the receipt */
   logoHtml?: string;
+  /** REQ-1071 (q2-60): the invoice total. INTEGER CENTS. */
+  totalCents?: number;
+  /** REQ-1071: what is still due after this payment. INTEGER CENTS. When
+   *  above 0 the receipt says so and links to `payUrl`. */
+  balanceCents?: number;
+  /** REQ-1071: where the customer pays the balance (the invoice shortlink). */
+  payUrl?: string;
 }): string {
   const { lang } = opts;
   const businessLabel = opts.businessName ?? opts.contractor?.name ??
@@ -69,6 +77,35 @@ export function renderReceiptHtml(opts: {
       reference: escapeHtml(opts.intent.reference),
     })
     : "";
+  // REQ-1071 (q2-60): a payment that leaves a balance says what is still due
+  // and links the customer to pay it.
+  const balance = opts.balanceCents ?? 0;
+  const balanceHtml = balance > 0
+    ? `
+    <p data-receipt-balance style="margin:14px 0 0;color:#1c2c30;font-size:15px;line-height:1.55">
+      ${
+      typeof opts.totalCents === "number" && opts.totalCents > 0
+        ? t(lang, "confirmPayment.email.balanceLine", {
+          balance: fmtUSD(balance),
+          total: fmtUSD(opts.totalCents),
+        })
+        : t(lang, "confirmPayment.email.balanceLineNoTotal", {
+          balance: fmtUSD(balance),
+        })
+    }
+    </p>${
+      opts.payUrl
+        ? `
+    <div style="margin-top:22px">
+      <a data-receipt-pay href="${
+          escapeHtml(opts.payUrl)
+        }" style="display:inline-block;background:#144852;color:#fff;text-decoration:none;font-weight:800;font-size:15px;padding:12px 22px;border-radius:12px">${
+          t(lang, "confirmPayment.email.payCta")
+        }</a>
+    </div>`
+        : ""
+    }`
+    : "";
   return `<!doctype html>
 <html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
@@ -86,7 +123,7 @@ export function renderReceiptHtml(opts: {
       ${
     t(lang, "confirmPayment.email.body", { amount: fmtUSD(opts.amount), ref })
   }
-    </p>
+    </p>${balanceHtml}
   </div>
 </body></html>`;
 }
