@@ -166,3 +166,34 @@ Deno.test("REQ-585 M4 describeQuoteRevision: the same lines with another change 
   assertEquals(text, "Updated the quote.");
   assert(!text.includes("Nothing on the quote changed"), text);
 });
+
+// REQ-931 (LOOP-007 cycle 1, q1-2): QA2 typed "these are 2 options, she picks
+// one, not both. also add the 30% deposit" on a two-line quote ($23,250). The
+// reply was "Updated the quote. The deposit isn't set in chat — …" over the
+// unchanged card: OPTION_RE has "two" but not the digit "2" in English, and
+// "pick one" is rejected when the verb is "picks".
+const QA2_ASK =
+  "these are 2 options, she picks one, not both. also add the 30% deposit";
+const QA2_LINES = [
+  { description: "Cabinet refacing", priceCents: 1_162_500 },
+  { description: "Full cabinet replacement", priceCents: 1_162_500 },
+];
+
+Deno.test("REQ-931 q1-2 asksForOption: QA2's '2 options, she picks one, not both' is an option ask", () => {
+  for (
+    const s of [
+      QA2_ASK,
+      "these are 2 options",
+      "she picks one",
+      "she picks one, not both",
+      "3 choices for him",
+    ]
+  ) assert(asksForOption(s), s);
+});
+
+Deno.test("REQ-931 q1-2 describeQuoteRevision: QA2's ask over the same two lines says a quote can't hold options and never 'Updated the quote.'", () => {
+  const text = describeQuoteRevision("en", QA2_LINES, QA2_LINES, QA2_ASK);
+  assert(!text.includes("Updated the quote"), text);
+  assertStringIncludes(text, "can't hold options");
+  assertStringIncludes(text, "payment step");
+});

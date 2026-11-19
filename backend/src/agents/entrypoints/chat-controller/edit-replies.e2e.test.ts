@@ -277,3 +277,82 @@ Deno.test("REQ-585 M4 e2e: pair 6's Spanish draft — create_quote + update_job_
     StubLLMClient.prototype.respond = original;
   });
 });
+
+// REQ-931 (LOOP-007 cycle 1, q1-2): QA2's "these are 2 options, she picks one,
+// not both. also add the 30% deposit" on a two-line $23,250 draft; the model
+// re-sent the same lines and job details, and the reply over HTTP was
+// "Updated the quote. The deposit isn't set in chat — …" over an unchanged card.
+Deno.test("REQ-931 q1-2 e2e: '2 options, she picks one, not both' over the same two lines is never 'Updated the quote.' and says a quote can't hold options", async () => {
+  const original = StubLLMClient.prototype.respond;
+  await withServer(async () => {
+    const me = await signIn("+15125550931");
+    const customer = await new CustomerStore().create(me.userId, {
+      name: "Carol Henderson",
+    });
+    const details = "Reface or replace the kitchen cabinets\n30 linear feet";
+    const quote = await new QuoteStore().create(me.userId, {
+      summary: "Kitchen cabinets — Carol Henderson",
+      jobName: "Kitchen cabinets",
+      descriptionByLang: { en: details },
+      lineItems: [
+        {
+          description: "Cabinet refacing",
+          quantity: 1,
+          unit: "ea",
+          price: 1_162_500,
+        },
+        {
+          description: "Full cabinet replacement",
+          quantity: 1,
+          unit: "ea",
+          price: 1_162_500,
+        },
+      ],
+      estimatedTotal: 2_325_000,
+      status: "draft",
+      customerId: customer.id,
+    });
+    const conv = await new AgentConversationStore().create({
+      userId: me.userId,
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    const redraft: LLMAction = {
+      type: "create_quote",
+      payload: {
+        summary: "Kitchen Cabinets — Carol Henderson",
+        descriptionByLang: { en: details },
+        lineItems: [
+          { description: "Cabinet refacing", amountCents: 1_162_500 },
+          { description: "Full cabinet replacement", amountCents: 1_162_500 },
+        ],
+      },
+    };
+    stubWith({ text: "", action: redraft, actions: [redraft] });
+    const res = await call<{ newMessages: Msg[] }>(
+      me.sid,
+      "POST",
+      "/agents/chat",
+      {
+        conversationId: conv.id,
+        content:
+          "these are 2 options, she picks one, not both. also add the 30% deposit",
+        kind: "text",
+      },
+    );
+    const texts = res.newMessages.filter((m) =>
+      m.role === "assistant" && m.kind === "text"
+    );
+    assertEquals(texts.length, 1, JSON.stringify(res.newMessages));
+    assert(!texts[0].content.includes("Updated the quote"), texts[0].content);
+    assertStringIncludes(texts[0].content, "can't hold options");
+    const stored = await call<{ estimatedTotal: number }>(
+      me.sid,
+      "GET",
+      `/quotes/${quote.id}`,
+    );
+    assertEquals(stored.estimatedTotal, 2_325_000);
+  }).finally(() => {
+    StubLLMClient.prototype.respond = original;
+  });
+});

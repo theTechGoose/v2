@@ -815,3 +815,80 @@ Deno.test("REQ-662 m19 pair 7: a turn that answers the active step puts its repl
   assertEquals([...times].sort(), times, "createdAt follows the shown order");
   await resetKv();
 });
+
+// ---------------------------------------------------------------------------
+// REQ-931 (LOOP-007 cycle 1, q1-2) — QA2 on a two-line draft ($23,250): "these
+// are 2 options, she picks one, not both. also add the 30% deposit". The model
+// re-sent the same two lines (a headline that differs only in case, the job
+// details it already had); `otherChange` read that as a change and the reply
+// was "Updated the quote. The deposit isn't set in chat — …" over the
+// unchanged card.
+// ---------------------------------------------------------------------------
+
+const QA2_ASK =
+  "these are 2 options, she picks one, not both. also add the 30% deposit";
+const QA2_DETAILS = "Reface or replace the kitchen cabinets\n30 linear feet";
+
+async function qa2Turn(payloadExtras: {
+  summary: string;
+  descriptionByLang?: Partial<Record<"en" | "es", string>>;
+}) {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { convId, quoteId } = await boundDraft(ctx, {
+    summary: "Kitchen cabinets — Carol Henderson",
+    descriptionByLang: { en: QA2_DETAILS },
+    lines: [
+      ["Cabinet refacing", 1_162_500],
+      ["Full cabinet replacement", 1_162_500],
+    ],
+  });
+  answer(ctx.llm, {
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        ...payloadExtras,
+        lineItems: [
+          { description: "Cabinet refacing", amountCents: 1_162_500 },
+          { description: "Full cabinet replacement", amountCents: 1_162_500 },
+        ],
+      },
+    },
+  });
+  const res = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: convId,
+    content: QA2_ASK,
+  });
+  const replies = textReplies(res.newMessages);
+  const quote = await ctx.quotes.getOwned(quoteId, "u-1");
+  await resetKv();
+  return { replies, quote, newMessages: res.newMessages };
+}
+
+Deno.test("REQ-931 q1-2: QA2's '2 options, she picks one' re-sent with the same lines and the same job details → never 'Updated the quote.', says a quote can't hold options", async () => {
+  const { replies, quote, newMessages } = await qa2Turn({
+    summary: "Kitchen cabinets — Carol Henderson",
+    descriptionByLang: { en: QA2_DETAILS },
+  });
+  assertEquals(replies.length, 1, JSON.stringify(newMessages));
+  const reply = replies[0].content;
+  assert(!reply.includes("Updated the quote"), reply);
+  assertStringIncludes(reply, "can't hold options");
+  assertStringIncludes(reply, "payment step");
+  assertEquals(quote.estimatedTotal, 2_325_000);
+  assertEquals(quote.lineItems.length, 2);
+});
+
+Deno.test("REQ-931 q1-2: the same lines under a headline that differs only in case → never 'Updated the quote.', says a quote can't hold options", async () => {
+  const { replies, quote, newMessages } = await qa2Turn({
+    summary: "Kitchen Cabinets — Carol Henderson",
+  });
+  assertEquals(replies.length, 1, JSON.stringify(newMessages));
+  const reply = replies[0].content;
+  assert(!reply.includes("Updated the quote"), reply);
+  assertStringIncludes(reply, "can't hold options");
+  assertEquals(quote.estimatedTotal, 2_325_000);
+});
