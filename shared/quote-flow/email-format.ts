@@ -17,6 +17,7 @@
  */
 
 import { jobNameCase, nameKey } from "./job-name.ts";
+import { isInvoiceOverdue } from "../documents/invoice-status.ts";
 
 function localeOf(lang: string): string {
   return lang === "es" ? "es" : "en-US";
@@ -188,11 +189,22 @@ export function invoiceStatusLabel(status: string, lang: string): string {
  * stored value ("pending" after ComputeInvoiceBalance).
  */
 export function invoiceEmailStatusKey(
-  i: { status?: string; paidAt?: string | null; paidCents?: number },
+  i: {
+    status?: string;
+    paidAt?: string | null;
+    paidCents?: number;
+    dueDate?: string;
+  },
+  /** REQ-1126 (q3-54): the clock the due date is read against. */
+  now: Date = new Date(),
 ): string | undefined {
   const s = i.status?.trim().toLowerCase();
   if (s === "void" || s === "paid" || i.paidAt) return s || "paid";
   if (s === "claimed" || s === "draft" || s === "scheduled") return s;
+  // REQ-1126 (LOOP-007 q3-54): "overdue" is never stored — an open bill whose
+  // due date has passed reads "Overdue" / "Vencida", the board's own rule
+  // (REQ-966 isInvoiceOverdue, which also outranks "partly paid").
+  if (i.dueDate && isInvoiceOverdue(i, now)) return "overdue";
   if ((i.paidCents ?? 0) > 0) return "partial";
   return s || undefined;
 }

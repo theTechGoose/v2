@@ -2414,6 +2414,8 @@
   "paperworkEmail.invoicePaid.preheader": "Invoice {docNumber} — {amount} paid {date}, thank you",
   "paperworkEmail.invoicePaid.intro": "Thanks — {business} has received your payment. Your invoice is marked paid below for your records.",
   "paperworkEmail.invoicePaid.cta": "View paid invoice",
+  "paperworkEmail.invoiceOverdue.preheader": "Invoice {docNumber} — {amount} past due since {dueDate}",
+  "paperworkEmail.invoiceOverdue.intro": "Thank you for trusting {business} with your property — here's your invoice. It was due {dueDate} and is now past due; tap below to review it and pay.",
   "paperworkEmail.pasteLink": "or paste this link into your browser:",
   "paperworkEmail.quote.allIn": "all in, no surprises",
   "paperworkEmail.quote.by": "by",
