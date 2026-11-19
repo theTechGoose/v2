@@ -11,3 +11,12 @@ export function appUrl(): string {
   }
   return explicit ?? "http://localhost:5280";
 }
+
+/**
+ * REQ-1061 — where the editor invite (and its REQ-601 share block) sends the invitee: the sign-in
+ * page in the owner's language, not the bare site root (a signed-out visitor to / gets the marketing
+ * page in whatever language the browser asks for). Mirrors workerSignInUrl (REQ-285).
+ */
+export function adminSignInUrl(base: string, lang: "en" | "es"): string {
+  return `${base.replace(/\/+$/, "")}/login?lang=${lang}`;
+}
