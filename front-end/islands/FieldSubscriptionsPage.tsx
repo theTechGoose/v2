@@ -557,6 +557,18 @@ export default function FieldSubscriptionsPage(
           overhead: f.overhead,
         });
       }
+      // REQ-1152 (REQ-340's rule): the server put the visit's address on a
+      // customer who had none — mirror it so the next form prefills it
+      const saved = f.address.trim();
+      if (saved) {
+        setCustomers((rows) =>
+          rows.map((c) =>
+            c.id === f.customerId && !c.address?.trim()
+              ? { ...c, address: saved }
+              : c
+          )
+        );
+      }
       close();
       const back = backTarget();
       if (back) {

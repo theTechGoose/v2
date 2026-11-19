@@ -1392,7 +1392,7 @@ export class FieldSubscriptionsController {
     const b = body(raw);
     const customerId = str(b.customerId);
     if (!customerId) throw new FieldError("customerId required");
-    await this.customers.getOwned(customerId, user.id); // 404 / 403 from the customer store itself
+    const customer = await this.customers.getOwned(customerId, user.id); // 404 / 403 from the customer store itself
     const address = str(b.address);
     if (!address) throw new FieldError("address required");
     if (address.length > CAP.text) throw new FieldError("address too long");
@@ -1439,6 +1439,11 @@ export class FieldSubscriptionsController {
       updatedAt: now,
     };
     await this.subs.put(s);
+    // REQ-1152 (REQ-340's rule): the visit's address lands on a customer who had none,
+    // whatever order the form was filled in. A customer with an address keeps it.
+    if (!customer.address?.trim()) {
+      await this.customers.update(customer.id, user.id, { address });
+    }
     const { subs } = await this.zones.regroup(user.id);
     const n = await this.views.names(user.id);
     return ctx.json(
@@ -1516,6 +1521,15 @@ export class FieldSubscriptionsController {
     }
     s.updatedAt = new Date().toISOString();
     await this.subs.put(s);
+    // REQ-1152: a visit's new address lands on its customer when they still have none
+    // (a deleted customer is left alone; the visit still saves)
+    if (address) {
+      const customer = await this.customers.getOwned(s.customerId, user.id)
+        .catch(() => undefined);
+      if (customer && !customer.address?.trim()) {
+        await this.customers.update(customer.id, user.id, { address });
+      }
+    }
     // REQ-170 — open future work follows the change: dropped here, re-derived on the next read
     await this.day.dropOpen(
       user.id,
