@@ -1596,6 +1596,31 @@ function invoiceEmailStatus(i: Invoice, lang: Lang): string {
     : t(lang, "paperworkEmail.invoice.statusFallback");
 }
 
+/** REQ-1126 (LOOP-007 q3-54): an open bill whose due date has passed — the
+ *  same rule as its Status row ("Overdue") and the /invoices board's aging,
+ *  so a backdated invoice (REQ-962) is never told "pay whenever you're ready". */
+function invoiceEmailPastDue(i: Invoice, paid: boolean): boolean {
+  return !paid && invoiceEmailStatusKey(i) === "overdue";
+}
+
+/** REQ-933 / REQ-1126: the intro line — paid thanks, past-due, or not yet due. */
+function invoiceEmailIntro(
+  i: Invoice,
+  lang: Lang,
+  paid: boolean,
+  business: string,
+  tz: string,
+): string {
+  if (paid) return t(lang, "paperworkEmail.invoicePaid.intro", { business });
+  if (invoiceEmailPastDue(i, paid)) {
+    return t(lang, "paperworkEmail.invoiceOverdue.intro", {
+      business,
+      dueDate: fmtDate(i.dueDate, lang, tz),
+    });
+  }
+  return t(lang, "paperworkEmail.invoice.intro", { business });
+}
+
 export function renderInvoiceHtml(
   i: Invoice,
   liveCustomer: RenderedCustomer | undefined,
@@ -1878,9 +1903,8 @@ export function renderInvoiceHtml(
           <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${COLOR_INK}">${greeting}</p>
           <p style="margin:0;font-size:15px;color:${COLOR_INK};line-height:1.55">${
     // REQ-933 (q1-6): paid → thanks for the payment, not "pay whenever you're ready"
-    escapeHtml(t(lang, paid ? "paperworkEmail.invoicePaid.intro" : "paperworkEmail.invoice.intro", {
-      business: bizLabel(senderBiz, sender, lang),
-    }))
+    // REQ-1126 (q3-54): past due → "It was due …", never "pay whenever"
+    escapeHtml(invoiceEmailIntro(i, lang, paid, bizLabel(senderBiz, sender, lang), tz))
   }</p>
         </td></tr>
 
@@ -2146,17 +2170,23 @@ export function renderInvoiceBasicHtml(
         amount: fmtUSD(amount),
         date: fmtDate(i.paidAt ?? new Date().toISOString(), lang, tz),
       })
-      : t(lang, "paperworkEmail.invoice.preheader", {
-        docNumber,
-        amount: fmtUSD(amount),
-        dueDate: fmtDate(i.dueDate, lang, tz),
-      }),
+      : t(
+        lang,
+        invoiceEmailPastDue(i, paid)
+          ? "paperworkEmail.invoiceOverdue.preheader" // REQ-1126
+          : "paperworkEmail.invoice.preheader",
+        {
+          docNumber,
+          amount: fmtUSD(amount),
+          dueDate: fmtDate(i.dueDate, lang, tz),
+        },
+      ),
     kindLabel: t(lang, "paperworkEmail.invoice.kindLabel"),
     docNumber,
     drafted: issued,
     dateLabel: t(lang, "paperworkEmail.invoice.issuedLabel"),
     greeting: customerGreeting(customer, lang),
-    intro: t(lang, paid ? "paperworkEmail.invoicePaid.intro" : "paperworkEmail.invoice.intro", { business }),
+    intro: invoiceEmailIntro(i, lang, paid, business, tz), // REQ-933, REQ-1126
     body,
     ctaLabel: t(lang, paid ? "paperworkEmail.invoicePaid.cta" : "paperworkEmail.invoice.cta"),
     ctaUrl: withSendLang(`${APP_URL}/i/${i.id}`, lang), // REQ-727
