@@ -236,6 +236,24 @@
 .table tr:last-child td {
   border-bottom: 0;
 }
+/* REQ-784 / REQ-991 — the Outbox table's desktop sizing (was inline). */
+.outbox-wrap {
+  overflow-x: auto;
+}
+.outbox-table__nowrap {
+  white-space: nowrap;
+}
+.outbox-table__message {
+  max-width: 320px;
+  color: var(--fg);
+}
+.outbox-table__status {
+  min-width: 150px;
+}
+.outbox-table__why {
+  margin-top: 4px;
+  max-width: 260px;
+}
 .table input {
   padding: 7px 9px;
   border: 1px solid var(--border);
@@ -805,6 +823,66 @@
   .task__meta {
     grid-column: 2;
     text-align: left;
+  }
+  /* REQ-991 (q1-73) — on a phone each Outbox message is a stacked card:
+     the header row is hidden and every cell prints its column label. */
+  .outbox-wrap {
+    overflow-x: visible;
+  }
+  .outbox-table,
+  .outbox-table tbody,
+  .outbox-table tr,
+  .outbox-table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .outbox-table thead {
+    display: none;
+  }
+  .outbox-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .outbox-table tr:last-child {
+    border-bottom: 0;
+  }
+  .outbox-table td {
+    display: grid;
+    grid-template-columns: minmax(84px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    padding: 4px 2px;
+    border-bottom: 0;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .outbox-table td::before {
+    content: attr(data-label);
+    font-family: var(--font-heading);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+  .outbox-table td > * {
+    min-width: 0;
+  }
+  .outbox-table__status .outbox-table__why {
+    grid-column: 2;
+    max-width: none;
+  }
+  .outbox-table td.outbox-table__open {
+    display: block;
+    padding-top: 8px;
+  }
+  .outbox-table td.outbox-table__open::before {
+    content: none;
+  }
+  .outbox-table__open .btn {
+    width: 100%;
   }
 }
 

@@ -34,8 +34,8 @@ export function OutboxTable(
 ) {
   const t = (key: string) => tFor(lang, key);
   return (
-    <div style="overflow-x:auto">
-      <table class="table" data-cy="outbox-table">
+    <div class="outbox-wrap">
+      <table class="table outbox-table" data-cy="outbox-table">
         <thead>
           <tr>
             <th>{t("outbox.col.when")}</th>
@@ -60,28 +60,51 @@ export function OutboxTable(
                 style="cursor:pointer"
                 onClick={() => onOpen(r.id)}
               >
-                <td data-cy="outbox-row-when" style="white-space:nowrap">
+                <td
+                  data-cy="outbox-row-when"
+                  data-label={t("outbox.col.when")}
+                  class="outbox-table__nowrap"
+                >
                   {outboxWhen(r.createdAt, lang)}
                 </td>
-                <td data-cy="outbox-row-customer" style="font-weight:700">
+                <td
+                  data-cy="outbox-row-customer"
+                  data-label={t("outbox.col.customer")}
+                  style="font-weight:700"
+                >
                   {r.customerName || "—"}
                 </td>
-                <td data-cy="outbox-row-channel">
+                <td
+                  data-cy="outbox-row-channel"
+                  data-label={t("outbox.col.channel")}
+                >
                   {outboxChannelLabel(r.channel, lang)}
                 </td>
-                <td data-cy="outbox-row-language">
+                <td
+                  data-cy="outbox-row-language"
+                  data-label={t("outbox.col.language")}
+                >
                   {outboxLanguageLabel(r.language, lang)}
                 </td>
-                <td data-cy="outbox-row-what" style="white-space:nowrap">
+                <td
+                  data-cy="outbox-row-what"
+                  data-label={t("outbox.col.what")}
+                  class="outbox-table__nowrap"
+                >
                   {outboxWhat(r, lang)}
                 </td>
                 <td
                   data-cy="outbox-row-message"
-                  style="max-width:320px;color:var(--fg)"
+                  data-label={t("outbox.col.message")}
+                  class="outbox-table__message"
                 >
                   {r.preview || "—"}
                 </td>
-                <td data-cy="outbox-row-status" style="min-width:150px">
+                <td
+                  data-cy="outbox-row-status"
+                  data-label={t("outbox.col.status")}
+                  class="outbox-table__status"
+                >
                   <span
                     class={r.status === "sent"
                       ? "chip chip--green"
@@ -91,15 +114,14 @@ export function OutboxTable(
                   </span>
                   {why && (
                     <div
-                      class="hint"
+                      class="hint outbox-table__why"
                       data-cy="outbox-row-why"
-                      style="margin-top:4px;max-width:260px"
                     >
                       {why}
                     </div>
                   )}
                 </td>
-                <td>
+                <td class="outbox-table__open">
                   <button
                     type="button"
                     class="btn btn--sm"
