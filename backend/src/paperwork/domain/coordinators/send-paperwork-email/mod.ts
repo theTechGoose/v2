@@ -680,7 +680,7 @@ function revisedBanner(kind: "invoice" | "quote", doc: { version?: number }, lan
  * when the work was done, the math (subtotal / discount / tax), the quote it
  * bills against, how to pay, and the payment state (partial / overpaid).
  */
-function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, tz?: string): string {
+function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, paid: boolean, tz?: string): string {
   const rows: Array<[string, string]> = [];
   if (i.serviceAddress?.trim()) rows.push([renderWord(lang, "serviceAddress"), i.serviceAddress.trim()]);
   // REQ-1064: one helper with /i/:id and the PDF — a one-day window is that one day
@@ -709,7 +709,9 @@ function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, tz?:
     : "";
   // REQ-710 (cycle 5, M4): the methods' labels in the email's language —
   // the form froze them in the owner's ("Zelle: … · Efectivo").
-  const instructions = i.paymentInstructions?.trim()
+  // REQ-1114 (q3-41): a PAID email never tells the customer how to pay —
+  // same rule as payWays and the REQ-933 intro/preheader/button.
+  const instructions = !paid && i.paymentInstructions?.trim()
     ? `<div style="margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
       escapeHtml(renderWord(lang, "paymentInstructions"))
     }</div><p data-payment-instructions style="margin:4px 0 0;font-size:14px;line-height:1.5;color:${COLOR_INK};white-space:pre-wrap">${
@@ -1776,7 +1778,7 @@ export function renderInvoiceHtml(
 
   const greeting = customerGreeting(customer, lang);
   // REQ-206 / REQ-202: the bill's facts and payment state
-  const facts = invoiceFactsHtml(i, quote, lang, tz);
+  const facts = invoiceFactsHtml(i, quote, lang, paid, tz);
   // REQ-020: a paid invoice has no "due on" line under its PAID card.
   const dueSub = i.dueDate && !paid
     ? `<div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
@@ -2048,6 +2050,8 @@ export function renderInvoiceBasicHtml(
   const issued = fmtDate(i.issuedDate ?? i.createdAt, lang, tz);
   // REQ-1028 (q2-9): the money card and preheader ask for the open balance
   const amount = invoiceEmailAmount(i, paid);
+  // REQ-206 / REQ-1114: the bill's facts, once — no payment instructions when paid
+  const facts = invoiceFactsHtml(i, undefined, lang, paid, tz);
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
   // REQ-710 (cycle 5, M4): in the e-mail's language while their copies
@@ -2134,7 +2138,7 @@ export function renderInvoiceBasicHtml(
         </td>
       </tr>
     </table>
-    ${invoiceFactsHtml(i, undefined, lang, tz) ? `<div style="margin-top:16px">${invoiceFactsHtml(i, undefined, lang, tz)}</div>` : ""}${payWays}`;
+    ${facts ? `<div style="margin-top:16px">${facts}</div>` : ""}${payWays}`;
 
   // REQ-933 (q1-6): the PAID email (REQ-020) gets the paid preheader, intro
   // and button — never the invoice-due "due <date>" / "pay whenever" / "View & pay".
