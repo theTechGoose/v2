@@ -4351,6 +4351,7 @@
   "worker.nextDay": "Día siguiente",
   "worker.preview": "Vista previa — podrás marcarlos ese día.",
   "worker.err.outside": "ese día ya no se puede editar",
+  "worker.err.future": "ese día aún no empieza",
   "worker.err.invoiced": "ya está facturado",
   "worker.err.conflict": "no se pudo",
   "worker.defer": "Mañana",

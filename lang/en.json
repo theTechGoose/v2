@@ -4352,6 +4352,7 @@
   "worker.nextDay": "Next day",
   "worker.preview": "Preview — you can check these off on the day.",
   "worker.err.outside": "that day can no longer be edited",
+  "worker.err.future": "that day hasn't started yet",
   "worker.err.invoiced": "already invoiced",
   "worker.err.conflict": "could not do that",
   "worker.defer": "Tomorrow",

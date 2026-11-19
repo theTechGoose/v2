@@ -135,8 +135,9 @@ function weekdayOf(iso: string): number {
   return Number.isNaN(d.getTime()) ? new Date().getDay() : d.getDay();
 }
 
-function blankForm(defaultNetDays = 30): Form {
-  const startDate = todayIso();
+/** REQ-940 — `today`: the business's day from the server; the browser's only until it answers */
+function blankForm(defaultNetDays = 30, today?: string | null): Form {
+  const startDate = today || todayIso();
   return {
     editId: null,
     customerId: "",
@@ -266,6 +267,12 @@ export default function FieldSubscriptionsPage(
     }
   }
 
+  // REQ-940 — a new subscription starts on the business's day, not the browser's
+  const [bizToday, setBizToday] = useState<string | null>(null);
+  useEffect(() => {
+    fieldClient.today().then((r) => setBizToday(r.date)).catch(() => {});
+  }, []);
+
   useEffect(() => {
     let alive = true;
     // REQ-730 — seeded on the server: the list is already here
@@ -328,7 +335,7 @@ export default function FieldSubscriptionsPage(
 
   function openNew() {
     setConfirmId(null);
-    setForm(blankForm(defaultNetDays));
+    setForm(blankForm(defaultNetDays, bizToday));
     refreshCatalog();
   }
 
@@ -359,7 +366,7 @@ export default function FieldSubscriptionsPage(
     const c = customers.find((x) => x.id === customerId);
     setConfirmId(null);
     setForm({
-      ...blankForm(defaultNetDays),
+      ...blankForm(defaultNetDays, bizToday),
       ...(c ? { customerId: c.id, address: c.address ?? "" } : {}),
     });
   }, [customers, subs]);

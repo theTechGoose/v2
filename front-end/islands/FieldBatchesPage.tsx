@@ -127,12 +127,18 @@ export default function FieldBatchesPage(
   );
   const [loading, setLoading] = useState(!seed);
 
-  // Default range: the last two weeks. Resolved in an effect — the browser's
-  // day, not the server's.
+  // Default range: the last two weeks, ending on the business's day (REQ-940) —
+  // the browser's day only while (or if) the server has not answered.
   useEffect(() => {
-    const today = todayIso();
-    setFrom(shiftIso(today, -14));
-    setTo(today);
+    const browser = todayIso();
+    setFrom(shiftIso(browser, -14));
+    setTo(browser);
+    // a range the person already changed is theirs: only the untouched default moves
+    fieldClient.today().then(({ date }) => {
+      if (date === browser) return;
+      setFrom((f) => f === shiftIso(browser, -14) ? shiftIso(date, -14) : f);
+      setTo((t) => t === browser ? date : t);
+    }).catch(() => {});
   }, []);
 
   async function load(keepId?: string): Promise<BatchView[]> {

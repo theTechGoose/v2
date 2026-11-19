@@ -170,6 +170,8 @@ Deno.test("REQ-138 workers — created without the PIN in the answer; a wrong PI
       name: "Pedro",
       role: "foreman",
       language: "en", // REQ-285 — the screen's language; REQ-774: none picked → the English owner's
+      today: fieldToday(), // REQ-940 — the business's day: no zone, no state → the server's fallback
+      timeZone: "America/New_York",
     });
     const W = { cookie: ok.headers.get("set-cookie")!.split(";")[0] };
     assertEquals(

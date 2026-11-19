@@ -48,6 +48,8 @@ export interface FieldBatchesSeed {
 }
 export interface FieldTasksSeed {
   date: string;
+  /** REQ-940 — the business's field day (the page's "Today") */
+  today?: string;
   tasks: TaskView[];
   skipped: GenerateResult["skipped"];
   workers: FieldWorker[] | null;
@@ -163,16 +165,26 @@ export async function loadFieldBatchesSeed(
 }
 
 /**
- * /field/tasks: the day's round for `date` (required) + the unstaffed list
+ * /field/tasks: the day's round for `date` (else the business's day) + the unstaffed list
  * ([] when unreadable) + the crew (null when unreadable: the island fetches it).
- * The seed carries its date — the island uses it only when the browser's day matches.
+ * The seed carries its date — REQ-940: with no date given it is the business's day, from the server.
  */
 export async function loadFieldTasksSeed(
   sessionId: string | undefined,
-  date: string,
+  date: string | undefined,
   get: AuthedGet = ssrBackendGetAuthed,
 ): Promise<FieldTasksSeed | null> {
   if (!sessionId) return null;
+  // REQ-940 — no day given: the business's day, from the server (GET /field/tasks/today)
+  let today: string | undefined;
+  if (!date) {
+    try {
+      const r = await get<{ date?: unknown }>("/field/tasks/today", sessionId);
+      if (r.ok && typeof r.data?.date === "string") today = r.data.date;
+    } catch { /* no seed */ }
+    if (!today) return null;
+    date = today;
+  }
   const q = `?date=${encodeURIComponent(date)}`;
   const [tasks, skipped, workers] = await Promise.all([
     readList<TaskView>(get, `/field/tasks${q}`, sessionId),
@@ -184,5 +196,11 @@ export async function loadFieldTasksSeed(
     readList<FieldWorker>(get, "/field/workers", sessionId),
   ]);
   if (!tasks) return null;
-  return { date, tasks, skipped: skipped ?? [], workers };
+  return {
+    date,
+    ...(today ? { today } : {}),
+    tasks,
+    skipped: skipped ?? [],
+    workers,
+  };
 }

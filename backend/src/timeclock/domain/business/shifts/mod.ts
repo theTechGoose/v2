@@ -199,5 +199,6 @@ export function weekBoundsIn(
   return { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
 }
 
+/** the server's fallback zone — an account's week uses `businessZoneOf(userId)` (REQ-940) */
 export const timeclockTz = () =>
   Deno.env.get("FIELD_TZ")?.trim() || "America/New_York";

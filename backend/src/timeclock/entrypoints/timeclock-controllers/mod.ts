@@ -33,9 +33,9 @@ import {
   lastStatus,
   type PunchLike,
   sumShifts,
-  timeclockTz,
   weekBoundsIn,
 } from "@timeclock/domain/business/shifts/mod.ts";
+import { businessZoneOf } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import {
   type Punch,
   type PunchType,
@@ -81,8 +81,8 @@ const like = (p: Punch): PunchLike => ({ id: p.id, type: p.type, at: p.at });
 /** the worker's week: the browser's own bounds when it sent them, the account's zone otherwise */
 function windowOf(
   q: { from?: unknown; to?: unknown; today?: unknown },
+  tz: string, // REQ-940: the business's zone
 ): { from: string; to: string; dayStart: string } {
-  const tz = timeclockTz();
   const sent = typeof q.from === "string" && q.from &&
     typeof q.to === "string" && q.to;
   const week = weekBoundsIn(tz);
@@ -147,10 +147,11 @@ async function ownWorker(
 }
 
 function officeWindow(
+  tz: string, // REQ-940: the business's zone
   fromQ?: string,
   toQ?: string,
 ): { from: string; to: string } {
-  const week = weekBoundsIn(timeclockTz());
+  const week = weekBoundsIn(tz);
   const from = fromQ ? parseIso(fromQ, "from") : week.from;
   const to = toQ ? parseIso(toQ, "to") : week.to;
   if (from >= to) {
@@ -176,7 +177,7 @@ export class TimeclockWorkerController {
     @Query("today") today?: string,
   ): Promise<StatusView> {
     const w = await needWorker(ctx, this.sessions, this.workers);
-    const win = windowOf({ from, to, today });
+    const win = windowOf({ from, to, today }, await businessZoneOf(w.userId));
     return statusOf(w, await this.punches.listByWorker(w.userId, w.id), win);
   }
 
@@ -222,7 +223,10 @@ export class TimeclockWorkerController {
         "another tap got there first — try again",
       );
     }
-    const win = windowOf({ from: b.from, to: b.to, today: b.today });
+    const win = windowOf(
+      { from: b.from, to: b.to, today: b.today },
+      await businessZoneOf(w.userId),
+    );
     return ctx.json({
       punch: p,
       status: statusOf(w, await this.punches.listByWorker(w.userId, w.id), win),
@@ -248,7 +252,11 @@ export class TimeclockController {
     @Query("workerId") workerId?: string,
   ): Promise<Report> {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const { from, to } = officeWindow(fromQ, toQ);
+    const { from, to } = officeWindow(
+      await businessZoneOf(user.id),
+      fromQ,
+      toQ,
+    );
     const asOf = nowIso();
     const workers = workerId
       ? [await ownWorker(this.workers, user.id, workerId)]
@@ -280,7 +288,11 @@ export class TimeclockController {
     @Query("workerId") workerId?: string,
   ): Promise<Punch[]> {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const { from, to } = officeWindow(fromQ, toQ);
+    const { from, to } = officeWindow(
+      await businessZoneOf(user.id),
+      fromQ,
+      toQ,
+    );
     if (workerId) await ownWorker(this.workers, user.id, workerId);
     return (await this.punches.listByUserRange(
       user.id,

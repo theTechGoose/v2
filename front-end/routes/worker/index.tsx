@@ -40,18 +40,27 @@ async function loadSsr(
   cookie: string | null,
   date: string | undefined,
 ): Promise<WorkerSsr | undefined> {
-  const day = date ?? fieldTodayIso();
-  const none: WorkerSsr = { me: null, tasks: [], types: [], date: day };
+  // REQ-940 — no worker yet: the server's fallback day; signed in: the business's day (/me's `today`)
+  const fallback = fieldTodayIso();
+  const none: WorkerSsr = {
+    me: null,
+    tasks: [],
+    types: [],
+    date: date ?? fallback,
+    today: fallback,
+  };
   if (!cookie || !/(?:^|[;,]\s*)pm_worker=/.test(cookie)) return none;
   try {
     const raw = await workerClient.me({ cookie });
     const me = raw && typeof raw === "object" ? raw : null;
     if (!me) return none;
+    const today = me.today ?? fallback;
+    const day = date ?? today;
     const [tasks, types] = await Promise.all([
       workerClient.tasks(day, me.role === "foreman", { cookie }),
       workerClient.taskTypes({ cookie }),
     ]);
-    return { me, tasks, types, date: day };
+    return { me, tasks, types, date: day, today };
   } catch {
     return undefined;
   }

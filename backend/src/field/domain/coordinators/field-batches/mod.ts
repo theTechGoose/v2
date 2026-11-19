@@ -15,7 +15,8 @@ import { SendPaperworkSms } from "@paperwork/domain/coordinators/send-paperwork-
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { BatchStore, FieldTaskStore, SubscriptionStore, TaskTypeStore } from "@field/domain/data/field-stores/mod.ts";
 import { batchTitle, lineItem, lineText, linesFor, summarize, taskLines, withoutLine } from "@field/domain/business/batch-lines/mod.ts";
-import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import { type Batch, FieldError, type FieldTask } from "@field/dto/field.ts";
 import type { UpdateInvoiceDto } from "@paperwork/dto/invoice.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
@@ -74,7 +75,7 @@ export class FieldBatches {
     const taskById = new Map(tasks.map((t) => [t.id, t]));
     const summary = summarize({ from, to, tasks, liveInvoiceIds: live });
     const groups = linesFor({ from, to, tasks, subscriptions, taskTypes, liveInvoiceIds: live, overhead });
-    const today = fieldToday();
+    const today = await fieldTodayFor(userId);
     const batch: Batch = { id: newId(), userId, from, to, invoiceIds: [], createdAt: new Date().toISOString() };
     const made: Invoice[] = [];
     for (const g of groups) {
@@ -126,7 +127,7 @@ export class FieldBatches {
     }
     const zero = chosen.filter((inv) => (inv.lineItems ?? []).some((l) => l.price === 0));
     if (zero.length && !allowZero) throw new FieldError("some drafts have $0 lines — price them, or send with allowZero", 409, { invoiceIds: zero.map((i) => i.id) });
-    const today = fieldToday();
+    const today = await fieldTodayFor(userId);
     const sent: string[] = [];
     // REQ-401 (demo M30): `code` is what the page translates; `reason` stays for logs and older clients
     const failed: { invoiceId: string; reason: string; code?: "noRecipient"; customerId?: string }[] = [];

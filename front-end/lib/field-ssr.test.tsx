@@ -216,6 +216,21 @@ Deno.test("REQ-730 (c2-p13-p) loadFieldTasksSeed reads the day's tasks + unstaff
   assertEquals(await loadFieldTasksSeed(undefined, d, fakeGet({})), null);
 });
 
+Deno.test("REQ-940 (q1-11) loadFieldTasksSeed with no date reads the business's day from /field/tasks/today", async () => {
+  const d = "2026-11-19";
+  const seed = await loadFieldTasksSeed(
+    "s",
+    undefined,
+    fakeGet({
+      "/field/tasks/today": ok({ date: d, timeZone: "Pacific/Kiritimati" }),
+      [`/field/tasks?date=${d}`]: ok([task(d)]),
+    }),
+  );
+  assertEquals([seed?.date, seed?.today], [d, d]);
+  assertEquals(seed?.tasks.map((t) => t.date), [d]);
+  assertEquals(await loadFieldTasksSeed("s", undefined, fakeGet({})), null);
+});
+
 Deno.test("REQ-730 (c2-p13-p) FieldWorkersPage seeded renders the worker row on its first render — no Loading… line", () => {
   const html = renderToString(
     <FieldWorkersPage seed={{ workers: [worker], regions: [region] }} />,
