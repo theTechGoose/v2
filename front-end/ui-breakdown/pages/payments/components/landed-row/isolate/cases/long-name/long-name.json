@@ -15,7 +15,7 @@
     "invoiceRef": "INV-77B0C1",
     "daysAgo": 9,
     "whenLabel": "9d ago",
-    "note": "Greenfield's auto-pay cleared cleanly. Already in the account.",
+    "note": "ACH payment from Greenfield.",
     "status": "landed"
   },
   "_note": ".qdone__title is overflow:hidden + text-overflow:ellipsis + white-space:nowrap → the long name truncates inside the minmax(0,1fr) middle track. Verifies the truncation behavior. amount 125000 → \"$1,250\"."

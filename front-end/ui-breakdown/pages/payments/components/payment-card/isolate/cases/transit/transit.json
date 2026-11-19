@@ -16,10 +16,10 @@
     "invoiceRef": "INV-77B0C1",
     "daysAgo": 1,
     "whenLabel": "Yesterday",
-    "note": "Greenfield's ACH transfer is in flight. Standard 2-day settlement.",
+    "note": "ACH payment from Greenfield.",
     "status": "transit",
     "etaDays": 1
   },
   "_signals": { "flipped": false },
-  "_note": "ACH 1d ago (<2d window) → status transit, etaDays 1. STATUS_MOOD.transit gradient (#C8DDE0→#56969E). mood.transit.label=\"In transit\", cta=\"View timeline\". Value cell flips to lbl \"Expected\" / num \"~1d\" (paymentsPage.card.eta). note uses transitAch. amount 310000 → \"$3,100\"."
+  "_note": "ACH 1d ago (<2d window) → status transit, etaDays 1. STATUS_MOOD.transit gradient (#C8DDE0→#56969E). mood.transit.label=\"In transit\", cta=\"View timeline\". Value cell flips to lbl \"Expected\" / num \"~1d\" (paymentsPage.card.eta). note uses note.ach (REQ-960 dropped the invented transitAch copy). amount 310000 → \"$3,100\"."
 }
