@@ -249,3 +249,19 @@ Deno.test("REQ-787 scheduleText — annual reads the month and day(s), both lang
   assertEquals(scheduleText(a([5, 20]), "en"), "Annual · March 5, 20");
   assertEquals(scheduleText(a([5, 20]), "es"), "Anual · 5, 20 de marzo");
 });
+
+// REQ-1004 (LOOP-007 q1, q1-90) — a repeat visit with an end date says so on its card:
+// "· until Mar 31" / "· hasta el 31 mar", after the cadence words; no end date, no suffix.
+Deno.test("REQ-1004 scheduleText — an end date appends '· until Mar 31' / '· hasta el 31 mar' in both languages", () => {
+  const weekly = sub({ startDate: "2026-10-05", days: [1], endDate: "2027-03-31" });
+  assertEquals(scheduleText(weekly, "en"), "Every week · Mon · until Mar 31");
+  assertEquals(scheduleText(weekly, "es"), "Cada semana · lun · hasta el 31 mar");
+  const monthly = sub({ cadence: "monthly", startDate: "2026-10-05", endDate: "2027-03-31" });
+  assertEquals(scheduleText(monthly, "en"), "Monthly · day 5 · until Mar 31");
+  assertEquals(scheduleText(monthly, "es"), "Mensual · día 5 · hasta el 31 mar");
+  assertEquals(
+    scheduleText(sub({ startDate: "2026-10-05", days: [1] }), "en"),
+    "Every week · Mon",
+    "no end date, no suffix",
+  );
+});

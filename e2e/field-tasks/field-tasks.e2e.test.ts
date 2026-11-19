@@ -2232,3 +2232,102 @@ Deno.test("REQ-927: Move to… moves Mowing's checklist onto Lawn cut and delete
     await page.locator("[data-cy='svc-move-to']", { hasText: "Edging" }).waitFor({ timeout: 20_000 });
     expect.eq(await checklistService(), "Edging", "the move went on to Edging");
   }));
+
+/** `YYYY-MM-DD` shifted by whole days */
+const shiftIso = (iso: string, days: number) =>
+  new Date(Date.parse(iso + "T00:00:00Z") + days * 86_400_000).toISOString()
+    .slice(0, 10);
+
+// REQ-1004 (LOOP-007 q1, q1-90) — a seasonal repeat visit: the New repeat visit form has an
+// optional "Ends on" date next to First visit, the saved card reads "· until Mon D", and the
+// visit is stored with that endDate.
+Deno.test("REQ-1004 (LOOP-007 q1, q1-90): a weekly repeat visit with Ends on set saves, the card reads '· until <date>' and the visit keeps its endDate", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Seasonal Sam",
+        address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+        email: "seasonal.sam@blackhole.postmarkapp.com",
+      }),
+    });
+    await r.body?.cancel();
+    const svc = await ensureService(http, auth, "Lawn cut");
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Seasonal Sam");
+    await page.locator("[data-cy='subs-start']").waitFor({ timeout: 15_000 });
+    const end = page.locator("[data-cy='subs-end']");
+    expect.eq(
+      await end.count(),
+      1,
+      "the form has an 'Ends on' date next to First visit",
+    );
+    const endIso = shiftIso(todayIso(), 60);
+    await end.fill(endIso);
+    await addVisitService(page, svc, "65");
+    await page.locator("[data-cy='subs-submit']").click();
+    const card = page.locator("[data-cy='subs-card']").first();
+    await card.waitFor({ timeout: 20_000 });
+    const label = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(endIso + "T00:00:00Z")); // "Jan 17"
+    await expect.see(`· until ${label}`);
+    const subs = await (await http("/api/field/subscriptions", {
+      headers: auth,
+    })).json();
+    expect.eq(subs[0]?.endDate, endIso, "the visit is stored with its end date");
+  }));
+
+// REQ-1004 (LOOP-007 q1, q1-90) — Pause asks first: clicking Pause on a repeat visit opens a
+// confirmation and nothing is paused until it is confirmed.
+Deno.test("REQ-1004 (LOOP-007 q1, q1-90): Pause on a repeat-visit card asks for confirmation first — the visit stays active until confirmed, then the card offers Resume", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const c = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Paula Pause",
+        email: "paula.pause@blackhole.postmarkapp.com",
+      }),
+    })).json();
+    const s = await http("/api/field/subscriptions", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: c.id,
+        address: "725 Frederick Rd, Rockingham, VA",
+        startDate: todayIso(),
+        items: [{ taskTypeName: "Lawn cut", priceCents: 6500 }],
+      }),
+    });
+    expect.eq(s.status, 201, "the visit is created");
+    await s.body?.cancel();
+    await page.goto("/field/subscriptions");
+    const card = page.locator("[data-cy='subs-card']").first();
+    await card.waitFor({ timeout: 15_000 });
+    await card.locator("[data-cy='subs-toggle']").click();
+    const confirm = card.locator("[data-cy='subs-pause-confirm']");
+    await confirm.waitFor({ timeout: 5_000 }).catch(() => {});
+    const activeNow = (await (await http("/api/field/subscriptions", {
+      headers: auth,
+    })).json())[0]?.active;
+    expect.eq(activeNow, true, "one click on Pause does not pause the visit");
+    expect.eq(
+      await confirm.count(),
+      1,
+      "Pause opens a confirmation on the card",
+    );
+    await confirm.click();
+    await card.locator("[data-cy='subs-toggle']").filter({ hasText: "Resume" })
+      .waitFor({ timeout: 15_000 });
+    const after = (await (await http("/api/field/subscriptions", {
+      headers: auth,
+    })).json())[0]?.active;
+    expect.eq(after, false, "confirmed, the visit is paused");
+  }));
