@@ -6,16 +6,18 @@
  * alone and titled with the worker's name only — never "Miguel Torres · —"
  * (demo cycle 1, issue p15-17).
  */
+import { zoneName } from "./field-zone-name.ts";
+
 export interface GroupableTask {
   workerName: string;
   regionId?: string;
   regionName?: string;
 }
 
-/** "Worker · Zone", or just "Worker" when the task has no zone */
-export function workerZoneLabel(x: GroupableTask): string {
+/** "Worker · Zone", or just "Worker" when the task has no zone; the zone in the account language (REQ-994) */
+export function workerZoneLabel(x: GroupableTask, lang: "en" | "es"): string {
   const zone = x.regionName?.trim();
-  return zone ? `${x.workerName} · ${zone}` : x.workerName;
+  return zone ? `${x.workerName} · ${zoneName(zone, lang)}` : x.workerName;
 }
 
 export interface TaskGroup<T> {
@@ -27,13 +29,14 @@ export interface TaskGroup<T> {
 /** group by worker + zone id, in first-seen order */
 export function groupTasks<T extends GroupableTask>(
   tasks: readonly T[],
+  lang: "en" | "es",
 ): TaskGroup<T>[] {
   const groups = new Map<string, TaskGroup<T>>();
   for (const x of tasks) {
     const key = `${x.workerName}|${x.regionId ?? ""}`;
     const g = groups.get(key);
     if (g) g.rows.push(x);
-    else groups.set(key, { key, title: workerZoneLabel(x), rows: [x] });
+    else groups.set(key, { key, title: workerZoneLabel(x, lang), rows: [x] });
   }
   return [...groups.values()];
 }

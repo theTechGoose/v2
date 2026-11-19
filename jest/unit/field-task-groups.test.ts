@@ -34,11 +34,11 @@ const oneOff = {
 
 describe("REQ-365 workerZoneLabel — a task with no zone shows the worker alone", () => {
   test("zoned task: 'Worker · Zone'", () => {
-    expect(workerZoneLabel(zoned)).toBe("Miguel Torres · Zone 1");
+    expect(workerZoneLabel(zoned, "en")).toBe("Miguel Torres · Zone 1");
   });
   test("one-off with no zone: just the worker, no dangling separator", () => {
-    expect(workerZoneLabel(oneOff)).toBe("Miguel Torres");
-    expect(workerZoneLabel({ workerName: "Miguel Torres" })).toBe(
+    expect(workerZoneLabel(oneOff, "en")).toBe("Miguel Torres");
+    expect(workerZoneLabel({ workerName: "Miguel Torres" }, "en")).toBe(
       "Miguel Torres",
     );
   });
@@ -46,7 +46,7 @@ describe("REQ-365 workerZoneLabel — a task with no zone shows the worker alone
 
 describe("REQ-365 groupTasks — grouped by worker + zone id", () => {
   test("a one-off and a zoned task of the same worker are two groups, first-seen order", () => {
-    const g = groupTasks([oneOff, zoned, { ...zoned, id: "c" }]);
+    const g = groupTasks([oneOff, zoned, { ...zoned, id: "c" }], "en");
     expect(g.map((x) => [x.title, x.rows.map((r) => r.id)])).toEqual([
       ["Miguel Torres", ["b"]],
       ["Miguel Torres · Zone 1", ["a", "c"]],
@@ -54,7 +54,7 @@ describe("REQ-365 groupTasks — grouped by worker + zone id", () => {
     expect(new Set(g.map((x) => x.key)).size).toBe(2);
   });
   test("no group title ends with a dash", () => {
-    for (const x of groupTasks([oneOff, zoned])) {
+    for (const x of groupTasks([oneOff, zoned], "en")) {
       expect(x.title).not.toMatch(/·\s*(—|-)?\s*$/);
     }
   });

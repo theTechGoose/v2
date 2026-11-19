@@ -27,6 +27,7 @@ import { assignmentsMapView, US_MAP_VIEW } from "../lib/field.ts";
 import { ApiError } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import { langSignal, t } from "../lib/i18n.ts";
+import { zoneName } from "../lib/field-zone-name.ts";
 import type { FieldAssignmentsSeed } from "../lib/field-ssr.ts";
 
 // ---- Leaflet, typed just as far as this page uses it ----
@@ -133,7 +134,7 @@ interface Drag {
 export default function FieldAssignmentsPage(
   { seed }: { seed?: FieldAssignmentsSeed | null } = {},
 ) {
-  const _lang = langSignal.value;
+  const lang = langSignal.value;
   const [regions, setRegions] = useState<RegionView[]>(seed?.regions ?? []);
   const [workers, setWorkers] = useState<FieldWorker[]>(seed?.workers ?? []);
   const [crews, setCrews] = useState<CrewView[]>(seed?.crews ?? []); // REQ-841
@@ -227,7 +228,11 @@ export default function FieldAssignmentsPage(
         popup.appendChild(document.createTextNode(s.address));
         popup.appendChild(document.createElement("br"));
         popup.appendChild(
-          el("span", r.name, `color:${r.color};font-weight:700`),
+          el(
+            "span",
+            zoneName(r.name, lang),
+            `color:${r.color};font-weight:700`,
+          ),
         );
         popup.appendChild(
           document.createTextNode(
@@ -257,7 +262,7 @@ export default function FieldAssignmentsPage(
         }).addTo(layer);
         const label = el(
           "div",
-          `${r.name}${r.worker ? ` · ${r.worker.name}` : ""}`,
+          `${zoneName(r.name, lang)}${r.worker ? ` · ${r.worker.name}` : ""}`,
           `transform:translate(-50%,-140%);white-space:nowrap;background:${r.color};color:#fff;font:800 11px var(--font-heading,Nunito,sans-serif);padding:3px 8px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.2)`,
         );
         L.marker([r.lat, r.lng], {
@@ -270,7 +275,7 @@ export default function FieldAssignmentsPage(
     const view = assignmentsMapView(pts, center);
     if ("fit" in view) map.fitBounds(view.fit, { padding: [30, 30] });
     else map.setView(view.center, view.zoom, { animate: false });
-  }, [regions, mapReady, center]);
+  }, [regions, mapReady, center, lang]);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -385,7 +390,7 @@ export default function FieldAssignmentsPage(
         >
           <option value="">{t("field.asg.moveTo")}</option>
           {regions.filter((x) => x.id !== r.id).map((x) => (
-            <option key={x.id} value={x.id}>{x.name}</option>
+            <option key={x.id} value={x.id}>{zoneName(x.name, lang)}</option>
           ))}
         </select>
       </div>
@@ -518,10 +523,10 @@ export default function FieldAssignmentsPage(
             >
               <div class="region__head">
                 <span class="dot" style={`background:${r.color}`} />
-                <span class="region__name">{r.name}</span>
+                <span class="region__name">{zoneName(r.name, lang)}</span>
                 <select
                   data-cy="asg-region-worker"
-                  aria-label={r.name}
+                  aria-label={zoneName(r.name, lang)}
                   disabled={busy}
                   value={r.workerId ?? ""}
                   onChange={(e) =>
