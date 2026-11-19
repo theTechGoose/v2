@@ -5,6 +5,8 @@
  * Pure: quotes + jobs + invoices in, buckets out. Every amount is INTEGER CENTS.
  */
 
+import { isQuoteOut } from "../quote-flow/pipeline-stats.ts";
+
 export const MONEY_BUCKET_KEYS = [
   "estimates",
   "unbilled",
@@ -148,9 +150,9 @@ export function buildMoneyBar(
     (i.customerId && customerNames.get(i.customerId)) ||
     i.billTo?.name || i.billTo?.businessName || "—";
 
-  // estimates: sent quotes
+  // estimates: quotes out for response — sent or viewed (REQ-956), the /quotes "awaiting" class
   const estimates: MoneyBarItem[] = quotes
-    .filter((q) => q.status === "sent" && q.isSample !== true)
+    .filter((q) => isQuoteOut(q) && q.isSample !== true)
     .map((q) => ({
       id: q.id,
       kind: "quote" as const,

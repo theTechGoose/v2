@@ -27,7 +27,10 @@ import { I, ICN, type IconName } from "../lib/dash-icons.tsx";
 import { MoneyBar } from "../components/MoneyBar.tsx"; // REQ-798
 import { buildMoneyBar } from "../../shared/receivables/money-bar.ts";
 import { fmtMoney } from "../lib/format.ts";
-import { dueDateLine } from "../../shared/quote-flow/pipeline-stats.ts";
+import {
+  dueDateLine,
+  isQuoteOut,
+} from "../../shared/quote-flow/pipeline-stats.ts";
 import { readCached, refreshDash } from "../lib/dash-cache.ts";
 import { holdHashTarget } from "../lib/dash-anchor.ts";
 import { pickKpis } from "../lib/dashboard-kpis.ts";
@@ -521,8 +524,9 @@ export default function DashboardPage(_props: { lang?: Lang } = {}) {
       // P-15: the onboarding sample is not a quote awaiting response — it
       // never renders (or sums) in this panel.
       if (q.isSample === true) return false;
-      // REQ-798: the list is every quote now; this panel is the sent ones
-      if (q.status !== "sent") return false;
+      // REQ-798: the list is every quote now; this panel is the ones out
+      // for response — REQ-956: sent OR viewed, the /quotes "awaiting" class
+      if (!isQuoteOut(q)) return false;
       if (!q.id || seenQuoteIds.has(q.id)) return false;
       seenQuoteIds.add(q.id);
       return true;
