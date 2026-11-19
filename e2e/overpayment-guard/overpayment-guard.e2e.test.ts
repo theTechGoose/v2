@@ -7,8 +7,11 @@
  *       owed. Record it anyway?" and sends nothing; "Record anyway" records
  *       it, and /payments counts $65 with the $35 overpaid on its own line
  *   (b) $1,000 on a $65 invoice (over 10x) is refused and sends nothing
+ *   (c) REQ-1137 (LOOP-007 q3, q3-67): the dashboard money bar's paid bucket
+ *       counts that overpaid invoice as $65.00 (min(paid, amount)), not $100
  */
 import { story, type StoryTools } from "#shots";
+import { answerQuestions } from "../_shared/onboarding-answers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
@@ -174,4 +177,57 @@ Deno.test("REQ-551 (b): over 10x the invoice is refused and nothing is sent", (t
     );
     await page.waitForTimeout(500);
     expect.eq(posts.n, 0, "no POST /payments left the page");
+  }));
+
+Deno.test("REQ-1137 (LOOP-007 q3, q3-67) / REQ-551 (c): the dashboard money bar's paid bucket counts an overpaid $65 invoice as $65.00, not the $100 received", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await answerQuestions(http, auth, { name: "Overpay Story" });
+    const inv = await sentInvoice(http, auth);
+    const r = await http("/api/payments", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        invoiceId: inv.id,
+        amount: 10000,
+        method: "zelle",
+        override: true,
+        receivedAt: new Date().toISOString(),
+      }),
+    });
+    const pay = await r.json();
+    if (!r.ok) throw new Error(`POST /api/payments → ${r.status} ${JSON.stringify(pay)}`);
+    const inv2 = await (await http(`/api/invoices/${inv.id}`, {
+      headers: auth,
+    })).json();
+    expect.eq(inv2.status, "paid", "the invoice is paid");
+    expect.eq(inv2.overpaidCents, 3500, "the invoice flags $35 overpaid");
+
+    await page.goto("/dashboard");
+    const col = "[data-cy='money-col'][data-bucket='paid']";
+    const seg = "[data-cy='money-seg'][data-bucket='paid']";
+    const rows = "[data-cy='money-row']";
+    await page.locator(col).waitFor({ timeout: 20_000 });
+    const text = async (sel: string) =>
+      (await page.locator(sel).first().innerText()).replace(/\s+/g, " ")
+        .trim();
+    // the island may still be hydrating: click until the paid list shows
+    for (let i = 0; i < 25; i++) {
+      const on = await page.locator(seg).getAttribute("aria-pressed");
+      if (on === "true" && (await page.locator(rows).count()) === 1) break;
+      await page.locator(seg).click({ timeout: 2_000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+    const row = await text(rows);
+    expect(
+      row.includes(inv.number),
+      `the paid row is the overpaid invoice (${row})`,
+    );
+    const amt = await text(`${rows} .moneybar__row-amt`);
+    expect.eq(amt, "$65.00", `the paid row counts what was owed (${row})`);
+    const total = await text(col);
+    expect(
+      total.startsWith("$65 "),
+      `the 30-day paid total leaves out the $35 overpaid (${total})`,
+    );
   }));
