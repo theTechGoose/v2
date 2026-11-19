@@ -7,6 +7,7 @@
  * Pure; shared by the backend store (which composes on every write) and the
  * front-end customer form (which splits a legacy address to prefill an edit).
  */
+import { stateCode } from "./rules.ts"; // REQ-1047
 
 export interface AddressParts {
   street?: string;
@@ -69,4 +70,90 @@ export function splitAddress(address: string | undefined | null): AddressParts {
 /** Did this payload carry any address part (even an empty one = a clear)? */
 export function touchesParts(p: Record<string, unknown>): boolean {
   return ADDRESS_PART_KEYS.some((k) => p[k] !== undefined);
+}
+
+/** Street-type words written after the street's name ("Oak Hollow Dr"). */
+const STREET_TYPE_WORDS = new Set(
+  (
+    "st street ave av avenue rd road dr drive blvd boulevard ln lane ct " +
+    "court way pl place pkwy parkway cir circle ter terrace trl trail hwy " +
+    "highway cv cove sq square loop"
+  ).split(" "),
+);
+/** Street types written BEFORE the name ("4410 Avenue F", "5100 Highway 71"). */
+const STREET_TYPE_FIRST_WORDS = new Set(
+  "avenue ave highway hwy route rte fm cr".split(" "),
+);
+/** Small words kept lower case inside a name ("Calle del Sol"). */
+const LOWER_CONNECTORS = new Set("de del of the y in en at".split(" "));
+/** Words written all upper case ("NE 5th St", "PO Box 12"). */
+const UPPER_WORDS = new Set("ne nw se sw po".split(" "));
+const ZIP_TOKEN = /^\d{5}(?:-\d{4})?$/;
+const LOWER_WORD = /^\p{Ll}[\p{Ll}'’-]*$/u;
+
+/**
+ * REQ-1047 (LOOP-007 cycle 2, q2-33) — a quote's service address, tidy
+ * whichever source supplied it (the typed text or the model's value):
+ *   "1418 oak hollow dr austin tx 78745" → "1418 Oak Hollow Dr, Austin, TX 78745"
+ *   "905 calle del sol san antonio tx 78207" → "905 Calle del Sol San Antonio, TX 78207"
+ * Lower-case words are title-cased (connectors such as "del" stay lower
+ * inside a name), a 2-letter state before the ZIP (or after a final comma) is
+ * upper-cased, and — only for an all-lower-case, comma-less address — ", " goes
+ * before the city and the state where they can be read. Words already in
+ * mixed or upper case, numbers and anything it cannot read are never changed,
+ * so an already-formatted address comes back exactly as it was. Pure.
+ */
+export function tidyServiceAddress(raw: string): string {
+  const s = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+  if (!s) return s;
+  const reformat = !/\p{Lu}/u.test(s) && !s.includes(",");
+  const toks = s.split(" ").map((t) => {
+    const m = /^(.*?)([,;.]*)$/.exec(t)!;
+    return { core: m[1], punct: m[2] };
+  });
+  const n = toks.length;
+  const lowerCore = (i: number) => toks[i].core.toLowerCase();
+
+  // where the state sits: right before the ZIP, or last after a comma
+  let stateIdx = -1;
+  if (n >= 2 && ZIP_TOKEN.test(toks[n - 1].core)) stateIdx = n - 2;
+  else if (n >= 2 && toks[n - 2].punct.includes(",")) stateIdx = n - 1;
+  if (
+    stateIdx >= 1 && !(/^\p{L}{2}$/u.test(toks[stateIdx].core) &&
+      stateCode(toks[stateIdx].core))
+  ) stateIdx = -1;
+
+  const out = toks.map((t, i) => {
+    if (i === stateIdx) return { ...t, core: t.core.toUpperCase() };
+    if (!LOWER_WORD.test(t.core)) return t;
+    const w = t.core;
+    if (UPPER_WORDS.has(w)) return { ...t, core: w.toUpperCase() };
+    const segStart = i === 0 || toks[i - 1].punct.includes(",") ||
+      /^\d/.test(toks[i - 1].core);
+    if (LOWER_CONNECTORS.has(w) && !segStart && i < n - 1) return t;
+    return { ...t, core: w[0].toUpperCase() + w.slice(1) };
+  });
+
+  if (reformat && stateIdx >= 1) {
+    // ", " before the state …
+    out[stateIdx - 1] = { ...out[stateIdx - 1], punct: "," };
+  }
+  if (reformat && stateIdx >= 2 && /^\d/.test(toks[0].core)) {
+    // … and before the city, when the street's end can be read
+    let streetEnd = -1;
+    if (STREET_TYPE_FIRST_WORDS.has(lowerCore(1)) && stateIdx > 3) {
+      streetEnd = 2; // "4410 avenue f austin tx …"
+    } else {
+      for (let i = stateIdx - 2; i >= 2; i--) {
+        if (STREET_TYPE_WORDS.has(lowerCore(i))) {
+          streetEnd = i;
+          break;
+        }
+      }
+    }
+    if (streetEnd > 0 && streetEnd < stateIdx - 1) {
+      out[streetEnd] = { ...out[streetEnd], punct: "," };
+    }
+  }
+  return out.map((t) => t.core + t.punct).join(" ");
 }

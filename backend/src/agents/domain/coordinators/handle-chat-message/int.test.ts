@@ -3091,6 +3091,43 @@ Deno.test("REQ-418 handle-chat-message integration: the typed address wins over 
   assertEquals(stored.serviceAddress, "412 Oak St Austin");
 });
 
+// REQ-1047 (LOOP-007 cycle 2, q2-33): "Q-002 service address kept raw
+// lowercase on the customer /q page". The tester typed both addresses in
+// lowercase; the extractor reads neither, so the model's value is stored —
+// tidied on Q-001 (the model reworded it), raw on Q-002 (the model copied it).
+// Whatever the model returns, the stored quote.serviceAddress is tidy.
+const Q233_Q002 =
+  "cotizacion para jorge ramirez tel 843 555 2290, 905 calle del sol san antonio tx 78207. pintar la casa por fuera, mano de obra 4200 materiales 1350. 50% de anticipo. y tambien arreglar la cerca de madera 18 pies lineales $900";
+const Q233_Q001 =
+  "quote for maria gonzalez 843-555-0142 maria.g@example.com, 1418 oak hollow dr austin tx 78745. master bath redo, tear out old tub put in walk in shower w/ tile surround about 60 sqft wall tile + 35 sqft floor, new 48in vanity, 2 options: basic porcelain tile $8,400 or upgrade with niche + glass door $11,200. 30% deposit";
+
+Deno.test("REQ-1047 q2-33 handle-chat-message integration: the model's raw lowercase Spanish address (Q-002) is stored tidy", async () => {
+  const stored = await runWithModelAddress(
+    Q233_Q002,
+    "905 calle del sol san antonio tx 78207",
+  );
+  assert(
+    /^905 Calle del Sol,? San Antonio,? TX 78207$/.test(stored.serviceAddress ?? ""),
+    `stored serviceAddress: ${JSON.stringify(stored.serviceAddress)}`,
+  );
+});
+
+Deno.test("REQ-1047 q2-33 handle-chat-message integration: the model's raw lowercase English address (Q-001) is stored tidy", async () => {
+  const stored = await runWithModelAddress(
+    Q233_Q001,
+    "1418 oak hollow dr austin tx 78745",
+  );
+  assertEquals(stored.serviceAddress, "1418 Oak Hollow Dr, Austin, TX 78745");
+});
+
+Deno.test("REQ-1047 q2-33 handle-chat-message integration: a model address already formatted is stored unchanged", async () => {
+  const stored = await runWithModelAddress(
+    Q233_Q001,
+    "1418 Oak Hollow Dr, Austin, TX 78745",
+  );
+  assertEquals(stored.serviceAddress, "1418 Oak Hollow Dr, Austin, TX 78745");
+});
+
 // ── REQ-439 (demo-loop cycle 3, M9): a first draft has a line for every item
 // the contractor typed. Pair 7's all-Spanish master bath named a shower bench
 // and possible mold; the first create_quote had neither, and nothing checked.

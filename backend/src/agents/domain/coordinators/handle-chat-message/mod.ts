@@ -178,6 +178,7 @@ import {
   acceptModelServiceAddress,
   extractServiceAddress,
 } from "#quote-flow/quick-quote-prefill.ts";
+import { tidyServiceAddress } from "#customer-address/mod.ts"; // REQ-1047
 import { extractQuoteFacts } from "#quote-flow/quote-facts.ts"; // REQ-331
 import {
   findCustomerNamedInSummary, // REQ-576
@@ -3757,7 +3758,10 @@ export class HandleChatMessage {
         // REQ-653 (demo-loop cycle 5, M7): "same address" is the customer's
         // last job address, else the one on their record — Q-002 for Dana
         // "same address" had no job address.
-        const serviceAddress = [...userTexts].reverse()
+        // REQ-1047 (LOOP-007 q2-33): whichever source wins, the stored
+        // address is tidied — "905 calle del sol san antonio tx 78207" (the
+        // model copied it raw) → "905 Calle del Sol San Antonio, TX 78207".
+        const rawServiceAddress = [...userTexts].reverse()
           .map((text) => extractServiceAddress(text))
           .find((a): a is string => !!a) ||
           acceptModelServiceAddress(action.payload.serviceAddress, userTexts) ||
@@ -3765,6 +3769,9 @@ export class HandleChatMessage {
             ? await this.customersAddress(input.userId, customerId)
             : undefined) ||
           undefined;
+        const serviceAddress = rawServiceAddress
+          ? tidyServiceAddress(rawServiceAddress)
+          : undefined;
 
         // N7 — update-in-place when the conversation already has a draft
         // quote bound. Previously each create_quote re-issue created a new
