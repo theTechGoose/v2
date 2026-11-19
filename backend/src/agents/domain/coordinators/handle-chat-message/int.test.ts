@@ -3468,3 +3468,62 @@ Deno.test("REQ-576 m26: a summary naming two saved customers of that name, or no
   assertEquals((await customers.listByUser("u-1")).length, 2);
   await resetKv();
 });
+
+// REQ-1060 (LOOP-007 cycle 2, q2-46) — amends REQ-267. A revision of the
+// bound draft whose message states "30% deposit" is picked up for the payment
+// step (REQ-258 termsPrefill; REQ-936 "From your message: Deposit 30% +
+// balance"). The server-written reply must say so — never "The deposit isn't
+// set in chat".
+Deno.test("REQ-1060 q2-46 handle-chat-message integration: a no-prose revision of the bound draft typed with '30% deposit' confirms the 30% deposit, never 'isn't set in chat', and the payment prefill is stored", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, llm, quotes, flow } = fresh();
+  await seedOnboarded("u-1");
+  const draft = await quotes.create("u-1", {
+    summary: "Master bath redo",
+    lineItems: [{
+      description: "Basic porcelain tile",
+      quantity: 1,
+      unit: "ea",
+      price: 840_000,
+    }],
+    estimatedTotal: 840_000,
+    status: "draft",
+  });
+  const conv = await conversations.create({ userId: "u-1", quoteId: draft.id });
+  llm.setScript([{
+    text: "",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Master bath redo",
+        lineItems: [
+          { description: "Basic porcelain tile", amountCents: 840_000 },
+        ],
+        paymentTerms: "deposit_bal",
+      },
+    },
+  }]);
+  const result = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "master bath redo, basic porcelain tile $8,400. 30% deposit",
+  });
+  const texts = result.newMessages.filter((m) =>
+    m.role === "assistant" && m.kind === "text"
+  );
+  assertEquals(texts.length, 1, JSON.stringify(result.newMessages));
+  const reply = texts[0].content;
+  // The deposit IS taken from chat: the payment step is pre-selected.
+  assertEquals(
+    (await conversations.get(conv.id)).termsPrefill?.payment_terms,
+    "deposit_bal",
+  );
+  assert(
+    !reply.includes("isn't set in chat"),
+    `the reply contradicts the payment step's prefill: ${reply}`,
+  );
+  assert(reply.includes("30%"), `the reply names the typed 30%: ${reply}`);
+  assert(reply.toLowerCase().includes("deposit"), reply);
+  await resetKv();
+});
