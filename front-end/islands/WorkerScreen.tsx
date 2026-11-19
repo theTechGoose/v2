@@ -917,7 +917,17 @@ export default function WorkerScreen(
             </button>
           </form>
         )}
-        {locked && note && <div class="hint">💬 {note}</div>}
+        {locked && note && (
+          <div class="hint">
+            <span
+              aria-hidden="true"
+              style="display:inline-block;vertical-align:-2px;margin-right:4px"
+            >
+              <I d={ICN.msg} size={13} />
+            </span>
+            {note}
+          </div>
+        )}
         {!locked && panel === "note" && (
           <>
             <form

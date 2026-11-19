@@ -776,7 +776,13 @@ export default function FieldTasksPage(
           )}
           {showNote && (
             <div class="task__note">
-              💬 <b>{t("field.tk.note")}:</b> {x.note}
+              <span
+                aria-hidden="true"
+                style="display:inline-block;vertical-align:-2px;margin-right:4px"
+              >
+                <I d={ICN.msg} size={13} />
+              </span>
+              <b>{t("field.tk.note")}:</b> {x.note}
             </div>
           )}
           <div

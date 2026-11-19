@@ -224,6 +224,11 @@ const EMOJI_ICON_SURFACES = [
   "components/CustomersNav.tsx",
   "islands/FieldTasksPage.tsx",
   "islands/WorkerScreen.tsx",
+  // the fixer's sweep of the other emoji-as-icon spots: the zone pin (📌), the
+  // invoices page's at-risk ⚠ and paid-lock 🔒
+  "islands/FieldAssignmentsPage.tsx",
+  "islands/FieldSubscriptionsPage.tsx",
+  "islands/InvoicesPage.tsx",
 ];
 
 Deno.test("REQ-1147 (LOOP-007 q3-78): the customer workspace, customers sidebar, field tasks and worker screen draw no emoji as an icon (U+1F300–1FAFF, U+2600–26FF)", async () => {

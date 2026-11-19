@@ -57,6 +57,7 @@ export const CUSTOMERS_NAV_CSS = `.nav-item--cust{padding:7px 12px}
 .cnav__av{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-family:var(--font-heading);font-weight:800;font-size:9px;color:#fff;background:rgba(255,255,255,.18);box-shadow:0 0 0 1.5px rgba(255,255,255,.35)}
 .nav-item--active .cnav__av{background:rgba(255,255,255,.28)}
 .cnav__label{display:flex;justify-content:space-between}
+.cnav__ic{display:inline-block;vertical-align:-1px;margin-right:4px}
 .cnav__note{padding:8px 12px;font-size:12px;color:rgba(255,255,255,.6)}`;
 
 function statusLine(r: CustomerNavRow, lang: Lang): string {
@@ -70,7 +71,8 @@ function statusLine(r: CustomerNavRow, lang: Lang): string {
       amount: shortMoney(r.amountCents),
     });
   }
-  if (r.tone === "rec" && r.schedule) return `🔁 ${r.schedule[lang]}`;
+  // REQ-1147: the repeat icon is drawn as an SVG beside the line, not an emoji in it
+  if (r.tone === "rec" && r.schedule) return r.schedule[lang];
   // REQ-990: the board's zero-balance word — "Settled", or "Nothing billed yet" when never billed
   return tFor(lang, zeroBalanceKey(r.billed ?? false));
 }
@@ -207,6 +209,11 @@ export default function CustomersNav(
                   }`}
                   data-cy="nav-customer-line"
                 >
+                  {r.tone === "rec" && r.schedule && (
+                    <span class="cnav__ic" aria-hidden="true">
+                      <I d={ICN.repeat} size={11} />
+                    </span>
+                  )}
                   {line}
                 </span>
               </span>

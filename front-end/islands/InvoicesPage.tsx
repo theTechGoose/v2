@@ -1802,7 +1802,13 @@ function InvoicesHero(
               style="color:#a83b3b"
               data-cy="forecast-at-risk"
             >
-              ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
+              <span
+                aria-hidden="true"
+                style="display:inline-block;vertical-align:-2px;margin-right:4px"
+              >
+                <I d={ICN.alert} size={13} />
+              </span>
+              <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
               {tFor(lang, "invoicesPage.atRisk.across")} {forecast!.atRisk
                 .length} {tFor(lang, "invoicesPage.atRisk.overdue")} {tFor(
                   lang,
@@ -2633,7 +2639,13 @@ function InvoiceDetail(
               data-cy="invoice-locked"
               style="margin-top:4px;font-size:12px;color:var(--fg-muted,#6b7560)"
             >
-              🔒 {tFor(lang, "invoices.lockedPaid")} ·{" "}
+              <span
+                aria-hidden="true"
+                style="display:inline-block;vertical-align:-2px;margin-right:4px"
+              >
+                <I d={ICN.lock} size={12} />
+              </span>
+              {tFor(lang, "invoices.lockedPaid")} ·{" "}
               {tFor(lang, "invoicesPage.remove.lockedExplain")}
             </div>
           )}

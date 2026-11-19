@@ -87,7 +87,7 @@ Deno.test("REQ-1147 (q3-78): the customer page's More menu, header address, acti
       emoji: (el.textContent ?? "").match(new RegExp(picto, "gu")) ?? [],
       items: [...el.children].map((c) => ({ text: c.textContent ?? "", svg: c.querySelectorAll("svg").length })),
     }), PICTO);
-    expect.eq(contact.emoji, [], `no emoji in the header contact line (${JSON.stringify(contact.text)})`);
+    expect.eq(contact.emoji.join(""), "", `no emoji in the header contact line (${JSON.stringify(contact.text)})`);
     const addr = contact.items.find((i) => i.text.includes("Dick Pond"));
     expect(!!addr, `the address is in the header (${JSON.stringify(contact.items)})`);
     expect.eq(addr?.svg ?? 0, 1, `the address draws an SVG pin like phone / mail (${JSON.stringify(addr)})`);
@@ -105,7 +105,7 @@ Deno.test("REQ-1147 (q3-78): the customer page's More menu, header address, acti
         svg: i.querySelectorAll("svg").length,
       })),
     }), PICTO);
-    expect.eq(m.emoji, [], `no emoji in the More menu (${JSON.stringify(m.text)})`);
+    expect.eq(m.emoji.join(""), "", `no emoji in the More menu (${JSON.stringify(m.text)})`);
     for (const it of m.items.filter((i) => /Send a text|recurring service|Edit/i.test(i.text))) {
       expect.eq(it.svg, 1, `"${it.text}" draws one SVG icon like Edit's pencil`);
     }
@@ -120,7 +120,7 @@ Deno.test("REQ-1147 (q3-78): the customer page's More menu, header address, acti
       dots: [...el.querySelectorAll(".cws-dot")].map((d) => ({ html: d.innerHTML, svg: d.querySelectorAll("svg").length })),
     }), PICTO);
     expect(f.dots.length > 0, "the feed has items");
-    expect.eq(f.emoji, [], `no emoji in the activity feed (${JSON.stringify(f.text)})`);
+    expect.eq(f.emoji.join(""), "", `no emoji in the activity feed (${JSON.stringify(f.text)})`);
     for (const d of f.dots) expect.eq(d.svg, 1, `the activity dot is an SVG (${d.html})`);
 
     // (4) the service card's subline: SVG pin, no emoji
@@ -132,12 +132,12 @@ Deno.test("REQ-1147 (q3-78): the customer page's More menu, header address, acti
       emoji: (el.textContent ?? "").match(new RegExp(picto, "gu")) ?? [],
       svg: el.querySelectorAll("svg").length,
     }), PICTO);
-    expect.eq(s.emoji, [], `no emoji in the service subline (${JSON.stringify(s.text)})`);
+    expect.eq(s.emoji.join(""), "", `no emoji in the service subline (${JSON.stringify(s.text)})`);
     expect(s.svg >= 1, `the service subline's address draws an SVG pin (${JSON.stringify(s.text)})`);
 
     // (5) her sidebar row's schedule line: no emoji
     const line = page.locator(`[data-cy='nav-customer-row'][data-id='${ana.id}'] [data-cy='nav-customer-line']`);
     await line.waitFor({ timeout: 20_000 });
     const navText = (await line.textContent()) ?? "";
-    expect.eq(navText.match(new RegExp(PICTO, "gu")) ?? [], [], `no emoji in her sidebar line (${JSON.stringify(navText)})`);
+    expect.eq((navText.match(new RegExp(PICTO, "gu")) ?? []).join(""), "", `no emoji in her sidebar line (${JSON.stringify(navText)})`);
   }));

@@ -372,7 +372,7 @@ export default function FieldAssignmentsPage(
               unpin(s.id);
             }}
           >
-            📌
+            <I d={ICN.pushpin} size={14} />
           </button>
         )}
         <select
