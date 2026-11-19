@@ -2792,6 +2792,7 @@
   "publicInvoice.status.scheduledSends": "Scheduled · sends {date}",
   "publicInvoice.viewSignedAgreement": "View signed agreement",
   "publicInvoiceClaim.howToPay": "How would you like to pay?",
+  "publicInvoiceClaim.balanceLabel": "Balance:",
   "publicInvoiceClaim.iSentIt": "I sent it",
   "publicInvoiceClaim.instructions.ach": "Ask your contractor for ACH routing + account details, then submit the transfer from your bank.",
   "publicInvoiceClaim.instructions.card": "Your contractor will share a secure way to pay by card.",
