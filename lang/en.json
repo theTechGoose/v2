@@ -4052,7 +4052,7 @@
   "field.svc.descriptionPh": "E.g. Mow, edge the walks, blow off the drive",
   "field.svc.nameRequired": "Give the service a name.",
   "field.svc.empty": "No services yet — create the first one, or type one into a repeat visit and it lands here.",
-  "field.svc.usedBy": "Used by {subs} repeat visits · {ckls} checklists",
+  "field.svc.usedByLine": "Used by {list}",
   "field.svc.archive": "Archive",
   "field.svc.restore": "Restore",
   "field.svc.archived": "Archived",

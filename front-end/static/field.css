@@ -288,6 +288,11 @@
   background: var(--mint-200);
   color: var(--brand-teal);
 }
+/* REQ-1040: a sentence ("Used by 1 repeat visit · 1 checklist") in chip styling, not an uppercase tag */
+.chip--plain {
+  text-transform: none;
+  letter-spacing: normal;
+}
 .chip--green {
   background: var(--green-50);
   color: var(--green-700);
