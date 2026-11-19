@@ -15,7 +15,8 @@ describe("REQ-194 yesterday | today | tomorrow on the worker's Tasks tab", () =>
     expect(screen).toMatch(/\(\[-1, 0, 1\] as const\)\.map/);
     expect(screen).toMatch(/data-cy=\{`w-day-\$\{id\}`\}/);
     expect(screen).toMatch(/aria-selected=\{date === iso\}/);
-    expect(screen).toMatch(/fmtDay\(iso, lang\)/);
+    // REQ-1065: the tab writes its short date via fmtDayLabel (fmtDay, capitalised like the header)
+    expect(screen).toMatch(/fmtDayLabel\(iso, lang\)/);
   });
   test("the pick switches in place and rewrites the URL, no reload", () => {
     expect(screen).toMatch(/function pickDay\(iso: string\)/);

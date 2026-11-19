@@ -27,6 +27,7 @@ import { formatPhoneInput } from "../../shared/quote-flow/format-helpers.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
 import {
   fmtDay,
+  fmtDayLabel,
   rememberWorkerLangPick,
   shiftIso,
   WORKER_OFFICE_FALLBACK,
@@ -639,11 +640,7 @@ export default function WorkerScreen(
   };
   const preview = !!nav?.preview;
 
-  const dayLine = () => {
-    if (!date) return "";
-    const s = fmtDay(date, lang);
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  };
+  const dayLine = () => (date ? fmtDayLabel(date, lang) : "");
 
   /** REQ-1010 — a work order the office assigned to this worker for the day: what, where, its
    *  number. Read-only here (the office runs the work order), so no check, note or defer. */
@@ -1355,7 +1352,7 @@ export default function WorkerScreen(
                       onClick={() => pickDay(iso)}
                     >
                       <b>{t(key)}</b>
-                      <small>{fmtDay(iso, lang)}</small>
+                      <small>{fmtDayLabel(iso, lang)}</small>
                     </button>
                   );
                 })}
@@ -1365,7 +1362,7 @@ export default function WorkerScreen(
             {nav && (
               <div class="day">
                 <label class="pick" data-cy="w-day-label">
-                  {t("worker.viewing")} <b>{fmtDay(date, lang)}</b>
+                  {t("worker.viewing")} <b>{fmtDayLabel(date, lang)}</b>
                   <input
                     type="date"
                     data-cy="w-day-pick"

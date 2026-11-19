@@ -158,6 +158,16 @@ export function fmtDay(iso: string, lang: Lang): string {
 }
 
 /**
+ * REQ-1065 (LOOP-007 q2-54) — a day shown as a standalone label (header, day-strip tab, "Viendo"
+ * line): fmtDay with its first letter capitalised, so Spanish reads "Jue 19 de nov" everywhere on
+ * one screen. English is already capitalised. Mid-sentence uses keep the plain fmtDay.
+ */
+export function fmtDayLabel(iso: string, lang: Lang): string {
+  const s = fmtDay(iso, lang);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
  * REQ-1014 (LOOP-007 q1-99) — an absence's from/to (YYYY-MM-DD from GET /field/absences) as the
  * Away row shows it: one day "Thu, Nov 26", a range "Thu, Nov 26 → Fri, Nov 27", localized via fmtDay.
  */
