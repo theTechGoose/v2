@@ -1803,14 +1803,11 @@ function InvoicesHero(
               data-cy="forecast-at-risk"
             >
               ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
-              {tFor(lang, "invoicesPage.atRisk.across")} {forecast!.atRisk
-                .length} {tFor(lang, "invoicesPage.atRisk.overdue")} {tFor(
-                  lang,
-                  forecast!.atRisk.length === 1
-                    ? "invoicesPage.unitInvoice.one"
-                    : "invoicesPage.unitInvoice.other",
-                  { n: forecast!.atRisk.length },
-                )}.
+              {tnFor(
+                lang,
+                "invoicesPage.atRisk.line",
+                forecast!.atRisk.length,
+              )}.
             </p>
           )
           : null}
