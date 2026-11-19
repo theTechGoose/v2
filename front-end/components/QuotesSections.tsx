@@ -569,8 +569,31 @@ export function QSideRate({ won, lost, lang = "en" }: QSideRateProps) {
   );
 }
 
+/** REQ-1107 (LOOP-007 q3-31): the tip body is built HERE, in the page
+ *  language, from the insight's `kind` (+ `avg`) — never the backend's
+ *  finished sentence, which may be in the account's other language. The
+ *  heading and body then always share one language. `text` is used only for
+ *  a kind this page has no sentence for. */
+export function insightTipText(
+  lang: Lang,
+  insight: { text?: string; kind?: string; avg?: string },
+): string {
+  if (insight.kind === "static_fallback") {
+    return tFor(lang, "quotesInsight.staticFallback");
+  }
+  if (insight.kind === "open_count" && insight.avg) {
+    return tFor(lang, "quotesInsight.openCount", { avg: insight.avg });
+  }
+  return insight.text ?? tFor(lang, "quotesTip.default");
+}
+
 export function QSideTip(
-  { text, lang = "en" }: { text?: string; lang?: Lang } = {},
+  { text, kind, avg, lang = "en" }: {
+    text?: string;
+    kind?: string;
+    avg?: string;
+    lang?: Lang;
+  } = {},
 ) {
   return (
     <div
@@ -581,7 +604,7 @@ export function QSideTip(
         {tFor(lang, "quotesTip.title")}
       </div>
       <p style="font:400 13.5px/1.5 var(--font-body);color:rgba(255,255,255,0.85);margin:0;text-wrap:pretty">
-        {text ?? tFor(lang, "quotesTip.default")}
+        {insightTipText(lang, { text, kind, avg })}
       </p>
     </div>
   );

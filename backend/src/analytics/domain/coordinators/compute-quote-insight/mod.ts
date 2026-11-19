@@ -45,8 +45,10 @@ export class ComputeQuoteInsight {
       );
       totalOpens += before.length;
     }
-    const avg = totalOpens / accepted.length;
-    const text = t(lang, "quotesInsight.openCount", { avg: avg.toFixed(1) });
-    return { text, kind: "open_count" };
+    // REQ-1107 (LOOP-007 q3-31): `avg` rides along so the page can render
+    // the sentence in the page language instead of trusting `text`'s.
+    const avg = (totalOpens / accepted.length).toFixed(1);
+    const text = t(lang, "quotesInsight.openCount", { avg });
+    return { text, kind: "open_count", avg };
   }
 }

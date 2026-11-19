@@ -113,6 +113,8 @@ export interface Insight {
     | "median_days_to_decide"
     | "best_day_of_week"
     | "static_fallback";
+  /** REQ-1107 (LOOP-007 q3-31): open_count's figure ("2.4"). */
+  avg?: string;
 }
 
 /** REQ-701 (demo-loop cycle 5, M21): a question a client sent from the
@@ -158,8 +160,13 @@ export const quotesClient = {
       ...opts,
       query: { days },
     }),
-  insight: (opts: ApiOptions = {}) =>
-    api.get<Insight>("/analytics/quotes/insight", opts),
+  /** REQ-1107 (LOOP-007 q3-31): `lang` = the page language, so `text`
+   *  matches the tip heading even on an account in the other language. */
+  insight: (lang?: "en" | "es", opts: ApiOptions = {}) =>
+    api.get<Insight>("/analytics/quotes/insight", {
+      ...opts,
+      query: { ...opts.query, lang },
+    }),
   /** REQ-778 (cycle dv1, d8): may another quote be made this month?
    *  `{ ok:true }` or `{ ok:false, reason:"quote_limit", limit, used }`. */
   allowance: (opts: ApiOptions = {}) =>

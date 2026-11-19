@@ -29,6 +29,9 @@ type AuthedGet = <T>(
 export async function loadQuotesSeed(
   sessionId: string | undefined,
   get: AuthedGet = ssrBackendGetAuthed,
+  /** REQ-1107 (LOOP-007 q3-31): the page language — the insight's `text`
+   *  is built in it, not in the account's. */
+  lang?: "en" | "es",
 ): Promise<QuotesSeed | null> {
   if (!sessionId) return null;
   const read = <T>(path: string) =>
@@ -36,7 +39,11 @@ export async function loadQuotesSeed(
   const [list, winRate, insight, allowance] = await Promise.all([
     read<QuoteCard[]>("/quotes"),
     read<WinRate>("/analytics/quotes/win-rate?days=90"),
-    read<Insight>("/analytics/quotes/insight"),
+    read<Insight>(
+      lang
+        ? `/analytics/quotes/insight?lang=${lang}`
+        : "/analytics/quotes/insight",
+    ),
     read<unknown>("/quotes/allowance"), // REQ-778
   ]);
   if (!list.ok || !("data" in list) || !Array.isArray(list.data)) return null;

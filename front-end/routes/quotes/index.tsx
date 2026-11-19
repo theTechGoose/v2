@@ -16,10 +16,11 @@ export default define.page(async function QuotesRoute(ctx) {
   const user = ctx.state.user;
   // REQ-471 (demo-loop c3, p8-pair2-d): read the pipeline here so the first
   // HTML carries the quote cards; null → the island fetches on hydration.
-  const seed = await loadQuotesSeed(getSessionId(ctx.req));
   // REQ-709 (demo-loop c5, m4): the islands' language (?lang= > account >
   // pm_lang), so the tab title and footer match the page they sit on.
   const lang: Lang = resolveSsrLang(ctx) ?? "es";
+  // REQ-1107 (LOOP-007 q3-31): the seeded insight is built in that language.
+  const seed = await loadQuotesSeed(getSessionId(ctx.req), undefined, lang);
   // The greeting date is computed reactively inside DashTopbar now; here we
   // only supply the name, with a localized "there" fallback.
   const greetingName = greetingFirstName(user);
