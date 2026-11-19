@@ -18,6 +18,8 @@ import {
   type Invoice,
 } from "../clients/dashboard.ts";
 import { type QuoteCard, quotesClient } from "../clients/quotes.ts";
+import { fieldClient, type SubscriptionView } from "../clients/field.ts";
+import { knownServiceAddress } from "../lib/field.ts";
 import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { langSignal, t } from "../lib/i18n.ts";
@@ -60,6 +62,8 @@ interface Lists {
   customers: Customer[];
   quotes: QuoteCard[];
   invoices: Invoice[];
+  /** REQ-1007 — the repeat visits, for the customer's known service address */
+  subscriptions: SubscriptionView[];
 }
 
 export default function WorkOrdersPage() {
@@ -69,6 +73,7 @@ export default function WorkOrdersPage() {
     customers: [],
     quotes: [],
     invoices: [],
+    subscriptions: [],
   });
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | WorkOrderStatus>("all");
@@ -78,17 +83,20 @@ export default function WorkOrdersPage() {
   });
 
   async function reload() {
-    const [wos, customers, quotes, invoices] = await Promise.all([
-      workOrdersClient.list(),
-      dashboardClient.customers().catch(() => [] as Customer[]),
-      quotesClient.list().catch(() => [] as QuoteCard[]),
-      dashboardClient.invoices().catch(() => [] as Invoice[]),
-    ]);
+    const [wos, customers, quotes, invoices, subscriptions] = await Promise
+      .all([
+        workOrdersClient.list(),
+        dashboardClient.customers().catch(() => [] as Customer[]),
+        quotesClient.list().catch(() => [] as QuoteCard[]),
+        dashboardClient.invoices().catch(() => [] as Invoice[]),
+        fieldClient.subscriptions().catch(() => [] as SubscriptionView[]),
+      ]);
     setRows(Array.isArray(wos) ? wos : []);
     setLists({
       customers: Array.isArray(customers) ? customers : [],
       quotes: Array.isArray(quotes) ? quotes : [],
       invoices: Array.isArray(invoices) ? invoices : [],
+      subscriptions: Array.isArray(subscriptions) ? subscriptions : [],
     });
     setLoadErr(null);
   }
@@ -334,7 +342,10 @@ function NewWorkOrderModal(
     setQuoteId("");
     setInvoiceId("");
     const c = lists.customers.find((x) => x.id === id);
-    if (c?.address && !serviceAddress.trim()) setServiceAddress(c.address);
+    // REQ-1007 — the known service address: a city-only record gives way to
+    // the street address on the customer's active repeat visit
+    const known = c ? knownServiceAddress(c, lists.subscriptions) : "";
+    if (known && !serviceAddress.trim()) setServiceAddress(known);
   }
 
   async function submit(e: Event) {
