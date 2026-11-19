@@ -2626,9 +2626,31 @@ export class HandleChatMessage {
     // REQ-942 (LOOP-007 q1-1): "two options: option A … $9,800, option B …
     // $13,450" — the alternatives the customer picks one of. The draft is the
     // first option alone; the reply says the other needs its own quote.
-    const alternatives = !changeOrderAsk
+    const typedNow = !changeOrderAsk
       ? typedAlternatives(dropSelfCorrections(asked) || asked)
       : undefined;
+    // REQ-1019 (LOOP-007 q2-2): the options typed in an EARLIER message still
+    // hold while the quote is a draft — "total should not be 16,800" re-sent
+    // the two-option lines and nothing read them as options. Carried options
+    // only narrow a draft that mixes them; they never suppress a stated total
+    // or steer the model.
+    const carriedAlternatives = !typedNow && !changeOrderAsk &&
+        (!boundQuote || boundQuote.status === "draft")
+      ? earlierMessages
+        .filter((m) =>
+          m.role === "user" && m.kind === "text" &&
+          typeof m.content === "string"
+        )
+        .slice(-6)
+        .reverse()
+        .map((m) =>
+          typedAlternatives(
+            dropSelfCorrections(m.content as string) || m.content as string,
+          )
+        )
+        .find((a) => !!a)
+      : undefined;
+    const alternatives = typedNow ?? carriedAlternatives;
     let alternativesSaid: string | undefined;
     const pricingAsk = !llmResponse && !changeOrderAsk && asked
       ? parsePricingQuestion(asked)
@@ -2820,7 +2842,7 @@ export class HandleChatMessage {
         ? boundQuote
         : undefined;
       const statedCents = tools.includes("create_quote") && !changeOrderAsk &&
-          !alternatives // REQ-942: an option's price is not the job's total
+          !typedNow // REQ-942: an option's price is not the job's total
         ? statedTotalCents(dropSelfCorrections(asked) || asked, {
           currentTotalCents: draftOnFile
             ? draftTotalCents(draftOnFile)
@@ -2831,8 +2853,8 @@ export class HandleChatMessage {
         businessContext = [businessContext, statedTotalNote(statedCents)]
           .filter(Boolean).join("\n\n");
       }
-      if (alternatives && tools.includes("create_quote")) {
-        businessContext = [businessContext, alternativesNote(alternatives)]
+      if (typedNow && tools.includes("create_quote")) {
+        businessContext = [businessContext, alternativesNote(typedNow)]
           .filter(Boolean).join("\n\n");
       }
       const request = {
@@ -2967,9 +2989,11 @@ export class HandleChatMessage {
         const narrowed = firstAlternativeLines(
           drafted.payload.lineItems,
           alternatives,
+          { carried: !typedNow },
         );
         const lineItems = narrowed ?? drafted.payload.lineItems;
         if (
+          (typedNow || narrowed) &&
           lineItems.reduce((n, l) => n + l.amountCents, 0) ===
             alternatives[0].cents
         ) {
