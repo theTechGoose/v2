@@ -157,6 +157,16 @@ export function fmtDay(iso: string, lang: Lang): string {
 }
 
 /**
+ * REQ-1014 (LOOP-007 q1-99) — an absence's from/to (YYYY-MM-DD from GET /field/absences) as the
+ * Away row shows it: one day "Thu, Nov 26", a range "Thu, Nov 26 → Fri, Nov 27", localized via fmtDay.
+ */
+export function fmtDayRange(from: string, to: string, lang: Lang): string {
+  return from === to
+    ? fmtDay(from, lang)
+    : `${fmtDay(from, lang)} → ${fmtDay(to, lang)}`;
+}
+
+/**
  * REQ-526 (demo m50, cycle 3) — what Save on "Add task" does once the task is made: a task on
  * the day being viewed stays put with "Task added"; one on another day moves the list there
  * (`goTo`) and the flash names that day, so the new task is never out of sight.

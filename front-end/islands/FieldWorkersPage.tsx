@@ -21,7 +21,7 @@ import {
 import FieldHead from "../components/FieldHead.tsx";
 import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import { fmtCell, fmtDayRange, PHONE_PLACEHOLDER } from "../lib/field.ts";
 import { timesheetHref } from "../lib/timesheet-filter.ts";
 import {
   type AddFormField,
@@ -902,7 +902,7 @@ export default function FieldWorkersPage(
                 >
                   <strong data-cy="away-row-name">{a.name}</strong>
                   <span class="hint" data-cy="away-row-dates">
-                    {a.from === a.to ? a.from : `${a.from} → ${a.to}`}
+                    {fmtDayRange(a.from, a.to, lang)}
                   </span>
                   <span class="chip" data-cy="away-row-disposition">
                     {a.disposition === "cover"
