@@ -112,3 +112,49 @@ Deno.test("REQ-924 GET /customers/:id/workspace — summary, documents, payments
     await anon.body?.cancel();
   });
 });
+
+// REQ-1063 (LOOP-007 q2, q2-52) — the workspace's RECURRING figure honours the repeat visit's end date
+// (REQ-1004): a running weekly $85 visit with 6 visits left reports its end date and the $510 left;
+// one whose end date is past counts as neither active nor recurring though it is still active=true.
+Deno.test("REQ-1063 (LOOP-007 q2, q2-52) GET /customers/:id/workspace — a repeat visit's end date: summary.recurringEndsOn and services[0].remainingCents ($510 left) while it runs", async () => {
+  await withServer(async (base) => {
+    const H = await login(base, "+15125551063");
+    const c = await fetch(`${base}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name: "Seasonal Sam" }) }).then((r) => r.json());
+    const uid: string = c.userId;
+    const today = fieldToday();
+    const type = { id: crypto.randomUUID(), userId: uid, name: "Lawn cut", createdAt: today, updatedAt: today };
+    await new TaskTypeStore().put(type as never);
+    const tomorrow = shiftDate(today, 1);
+    const weekday = new Date(tomorrow + "T00:00:00Z").getUTCDay();
+    // visits tomorrow, +8, +15, +22, +29, +36 → 6 left; the next one (+43) is past the end (+41)
+    const endDate = shiftDate(today, 41);
+    const base_ = { userId: uid, customerId: c.id, address: "1 Ocean Dr", lat: 0, lng: 0, items: [{ taskTypeId: type.id, priceCents: 8500 }], cadence: "weekly", days: [weekday], startDate: shiftDate(today, -27), active: true, createdAt: today, updatedAt: today };
+    const running = { ...base_, id: crypto.randomUUID(), endDate } as Subscription;
+    await new SubscriptionStore().put(running);
+
+    const ws = await fetch(`${base}/customers/${c.id}/workspace`, { headers: H }).then((r) => r.json());
+    assertEquals(ws.summary.activeServices, 1);
+    assertEquals(ws.summary.recurringMonthlyCents, Math.round(8500 * 52 / 12), "the /mo rate stays (REQ-924)");
+    assertEquals(ws.summary.recurringEndsOn, endDate, "the summary says when the recurring income ends");
+    assertEquals(ws.services[0].endDate, endDate);
+    assertEquals(ws.services[0].remainingCents, 6 * 8500, "6 visits left × $85 = $510");
+  });
+});
+
+Deno.test("REQ-1063 (LOOP-007 q2, q2-52) GET /customers/:id/workspace — a repeat visit whose end date has passed (still active=true) is not active and adds $0/mo", async () => {
+  await withServer(async (base) => {
+    const H = await login(base, "+15125551064");
+    const c = await fetch(`${base}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name: "Seasonal Sue" }) }).then((r) => r.json());
+    const uid: string = c.userId;
+    const today = fieldToday();
+    const type = { id: crypto.randomUUID(), userId: uid, name: "Lawn cut", createdAt: today, updatedAt: today };
+    await new TaskTypeStore().put(type as never);
+    // ran weekly for six weeks, ended yesterday — nobody paused it
+    const ended = { id: crypto.randomUUID(), userId: uid, customerId: c.id, address: "1 Ocean Dr", lat: 0, lng: 0, items: [{ taskTypeId: type.id, priceCents: 8500 }], cadence: "weekly", days: [new Date(today + "T00:00:00Z").getUTCDay()], startDate: shiftDate(today, -42), endDate: shiftDate(today, -1), active: true, createdAt: today, updatedAt: today } as Subscription;
+    await new SubscriptionStore().put(ended);
+    const ws = await fetch(`${base}/customers/${c.id}/workspace`, { headers: H }).then((r) => r.json());
+    assertEquals(ws.summary.activeServices, 0, "an ended repeat visit is not an active one");
+    assertEquals(ws.summary.recurringMonthlyCents, 0, "an ended repeat visit adds nothing per month");
+    assertEquals(ws.summary.recurringEndsOn, undefined);
+  });
+});
