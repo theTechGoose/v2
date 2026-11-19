@@ -37,6 +37,7 @@ import type { Customer } from "@crm/dto/customer.ts";
 import type { CustomerSnapshot } from "@core/data/numbered-store/mod.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts"; // REQ-715
+import { withSendLang } from "#quote-flow/share-link.ts"; // REQ-1050
 import {
   accountNetDays,
   completionFromTerms,
@@ -486,7 +487,8 @@ export class SendSignedConfirmation {
         const body = buildSignedConfirmSms({
           customerFirstName: first,
           jobName: smsJobName(quote ?? {}, lang),
-          url: `${APP_URL}/q/${quote.id}`,
+          // REQ-1050 (REQ-342): the link opens in the language it was sent in
+          url: withSendLang(`${APP_URL}/q/${quote.id}`, lang),
           businessName,
           lang,
         });
@@ -796,8 +798,12 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
     );
   // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice
   const docNumber = docRefWithVersion(quote, lang);
-  const invoiceUrl = invoiceId ? `${APP_URL}/i/${invoiceId}` : undefined;
-  const agreementUrl = `${APP_URL}/q/${quote.id}`;
+  // REQ-1050 (REQ-342): every customer link carries the send language, so a
+  // visitor's pm_lang cookie never flips an English job's pages to Spanish
+  const invoiceUrl = invoiceId
+    ? withSendLang(`${APP_URL}/i/${invoiceId}`, lang)
+    : undefined;
+  const agreementUrl = withSendLang(`${APP_URL}/q/${quote.id}`, lang);
   const greeting = customerFirst
     ? t(lang, "signedConfirm.email.greeting", {
       name: escapeHtml(customerFirst),
