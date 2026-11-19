@@ -22,6 +22,7 @@ import {
 import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
 import { inboundDomain, replyAddress } from "@paperwork/domain/business/inbound-reply/mod.ts";
 import {
+  type EmailAttachment,
   EmailService,
   type SendEmailResult,
 } from "@communication/domain/data/email-service/mod.ts";
@@ -55,8 +56,14 @@ import {
 } from "#quote-flow/format-helpers.ts";
 import { isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { warrantyClauseKind } from "#documents/warranty-clause.ts";
-import { localizeTermValue } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
+import {
+  computeMilestones as quotePaymentSchedule, // REQ-945
+  localizeTermValue,
+  RenderQuotePdf, // REQ-945
+} from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.ts";
+import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts"; // REQ-945
+import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-945
 
 /** REQ-719: a US phone reads "+1 (512) 555-0100" in the email; anything else is shown as stored. */
 function displayPhone(raw: string): string {
@@ -159,7 +166,43 @@ export class SendPaperworkEmail {
     private stripeSettings?: StripeSettingsStore,
     /** REQ-803 — or on its own Square (the card is a way to pay all the same) */
     private squareSettings?: SquareSettingsStore,
+    /** REQ-945 (LOOP-007 q1-20): the quote PDF the quote email attaches */
+    private renderPdf: RenderQuotePdf = new RenderQuotePdf(),
+    /** REQ-945: the business's logo heads that PDF (REQ-628) */
+    private logos: LoadBusinessLogo = new LoadBusinessLogo(),
   ) {}
+
+  /** REQ-945 (LOOP-007 q1-20): the quote PDF — the customer's copy, in the
+   *  send language — for the quote email. Best-effort: a render failure
+   *  sends the email without it. */
+  private async quotePdfAttachment(
+    userId: string,
+    quote: Quote,
+    customer: Customer | undefined,
+    sender: User | undefined,
+    biz: BusinessIdentity,
+  ): Promise<EmailAttachment[]> {
+    try {
+      const businessName = biz.businessName?.trim() || biz.legalName?.trim();
+      const content = await this.renderPdf.run({
+        quote,
+        customer,
+        contractor: sender,
+        ...(businessName ? { businessName } : {}),
+        commsLanguage: biz.commsLanguage === "es" ? "es" : "en",
+        invoiceNetDays: accountNetDays(biz.invoiceNetDays),
+        logo: await this.logos.run(userId),
+      });
+      return [{
+        name: quoteFileName(quote),
+        content,
+        contentType: "application/pdf",
+      }];
+    } catch (err) {
+      console.error("[send-paperwork-email] quote PDF render failed:", err);
+      return [];
+    }
+  }
 
   /** REQ-630 / REQ-803 — the business takes cards on its own Stripe or its own Square */
   private async takesCard(userId: string): Promise<boolean> {
@@ -241,6 +284,10 @@ export class SendPaperworkEmail {
     let recipient: string | undefined = input.to;
 
     let quoteForStamp: Quote | undefined;
+    /** REQ-945: what the quote's PDF attachment is rendered from */
+    let quotePdfFrom:
+      | { quote: Quote; customer?: Customer; biz: BusinessIdentity }
+      | undefined;
     let invoiceToIssue = false;
     let customerIdForLog: string | undefined;
     let customerNameForEvent: string | undefined;
@@ -267,6 +314,7 @@ export class SendPaperworkEmail {
         textable: quoteSendTexts(input.channel, customer, quote),
       });
       quoteForStamp = quote;
+      quotePdfFrom = { quote, customer, biz: senderBiz };
       outboxFacts = {
         docRef: docRef(quote),
         customerName: customerLabel(customerOnDocument(quote, customer)),
@@ -408,6 +456,17 @@ export class SendPaperworkEmail {
       ? replyAddress(await this.replyTokens.forCustomer(userId, customerIdForLog), inboundDomain())
       : undefined;
 
+    // REQ-945 (LOOP-007 q1-20): the quote email carries the quote PDF, as
+    // the signed confirmation carries the agreement's.
+    const attachments = quotePdfFrom
+      ? await this.quotePdfAttachment(
+        userId,
+        quotePdfFrom.quote,
+        quotePdfFrom.customer,
+        safeSender,
+        quotePdfFrom.biz,
+      )
+      : [];
     const result = await this.email.send({
       to: recipient,
       subject,
@@ -415,6 +474,7 @@ export class SendPaperworkEmail {
       from,
       cc,
       replyTo,
+      ...(attachments.length ? { attachments } : {}),
     });
     await toOutbox(result.ok, {
       to: recipient,
@@ -944,6 +1004,12 @@ export function quoteEmailSteps(
  * All inline styles, table-based layout for Gmail/Outlook safety, no
  * remote images that mail clients block.
  */
+/** REQ-945: "Quote-Q-001.pdf" — the attachment is named by the quote's number
+ *  (as the signed copy is "Agreement-Q-001.pdf", REQ-204). */
+export function quoteFileName(quote: { id: string; number?: string }): string {
+  return `Quote-${docRef(quote).replace(/^#/, "")}.pdf`;
+}
+
 export function renderQuoteHtml(
   quote: Quote,
   liveCustomer: RenderedCustomer | undefined,
@@ -987,7 +1053,42 @@ export function renderQuoteHtml(
     questions: t(lang, "paperworkEmail.quote.questions"),
     yourContractor: t(lang, "paperworkEmail.quote.yourContractor"),
     steps: quoteEmailSteps(q, lang, { textable: opts.textable === true }),
+    paymentSchedule: t(lang, "paperworkEmail.quote.paymentSchedule"),
   };
+  // REQ-945 (LOOP-007 q1-20): a deposit / split plan states its rows in the
+  // email — the same builder the quote PDF's Payment schedule uses. A single
+  // payment (due now / on completion) or a recurring term just repeats the
+  // total, so it shows nothing extra.
+  const schedule = quotePaymentSchedule(total, q.terms, lang);
+  const scheduleBlock = schedule.length > 1
+    ? `
+        <!-- payment schedule (REQ-945) -->
+        <tr><td style="padding:18px 36px 0">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:${COLOR_MUTED}">${
+      escapeHtml(L.paymentSchedule)
+    }</div>
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:6px;border-collapse:collapse">
+            <tbody>${
+      schedule.map((m) =>
+        `<tr>
+              <td style="padding:10px 0;border-bottom:1px solid ${COLOR_LINE}">
+                <div style="color:${COLOR_INK};font-weight:700;font-size:14px">${
+          escapeHtml(m.label)
+        }</div>
+                <div style="margin-top:2px;color:${COLOR_MUTED};font-size:12px">${
+          escapeHtml(m.when)
+        }</div>
+              </td>
+              <td style="padding:10px 0;border-bottom:1px solid ${COLOR_LINE};text-align:right;vertical-align:middle;color:${COLOR_TEAL};font-weight:800;font-size:15px;font-variant-numeric:tabular-nums">${
+          fmtUSD(m.amount)
+        }</td>
+            </tr>`
+      ).join("")
+    }</tbody>
+          </table>
+        </td></tr>
+        `
+    : "";
   // CTA lands on the /q page — the one Quote + Agreement document the
   // customer reviews, accepts, and signs in a single ceremony.
   // REQ-342 (M13): the link carries the send language, so a cookie-less
@@ -1236,7 +1337,7 @@ export function renderQuoteHtml(
             </tr>
           </table>
         </td></tr>
-
+${scheduleBlock}
         <!-- big CTA -->
         <tr><td style="padding:28px 36px 0;text-align:center">
           <a href="${
