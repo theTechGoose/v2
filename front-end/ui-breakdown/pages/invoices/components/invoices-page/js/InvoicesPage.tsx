@@ -218,7 +218,7 @@ const STAGE_MOOD: Record<
     from: "#FFD9D9",
     to: "#FF6B6B",
     shadow: "rgba(255,107,107,0.30)",
-    statusFg: "#fff",
+    statusFg: "#B23030",
     labelKey: "status.overdue",
   },
   out: {
