@@ -261,12 +261,33 @@ function assertAddressParts(dto: { state?: string; zip?: string }): void {
   }
 }
 
+/**
+ * REQ-1080 (LOOP-007 cycle 2, q2-69): REQ-352's "a customer name is required"
+ * is enforced at the API too, not only in the New customer form — a name is
+ * kept trimmed, and a blank or whitespace-only one is refused with the form's
+ * own key. `required` is false for an edit, where an absent name is "unchanged".
+ * businessName is trimmed the same way.
+ */
+function assertName(
+  dto: { name?: string; businessName?: string },
+  required: boolean,
+): void {
+  if (typeof dto.name === "string") dto.name = dto.name.trim();
+  if ((required || dto.name !== undefined) && !dto.name) {
+    throw new CustomerInputError("customer.nameRequired");
+  }
+  if (typeof dto.businessName === "string") {
+    dto.businessName = dto.businessName.trim();
+  }
+}
+
 export function parseCreateCustomer(input: unknown): CreateCustomerDto {
   const dto = plainToInstance(CreateCustomerDto, input);
   const errors = validateSync(dto);
   if (errors.length) {
     throw new CustomerInputError(`invalid customer: ${JSON.stringify(errors)}`);
   }
+  assertName(dto, true); // REQ-1080
   assertContact(dto);
   assertAddressParts(dto);
   // REQ-715: "Not set" is no language at all, never a stored ""
@@ -282,6 +303,7 @@ export function parseUpdateCustomer(input: unknown): UpdateCustomerDto {
       `invalid customer patch: ${JSON.stringify(errors)}`,
     );
   }
+  assertName(dto, false); // REQ-1080
   assertContact(dto);
   assertAddressParts(dto);
   return dto;

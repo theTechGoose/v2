@@ -4,9 +4,9 @@
  * create_new path, the assistant's "Who is this for?" form and the
  * /customers "Add client" modal all ask this module.
  *
- * The phone rule is the same one the SMS send path dials with
- * (send-paperwork-sms `normalizeE164`), so a number that is accepted here is a
- * number the send path can text — "123", "555-12" and "512-555-01" are not.
+ * The phone rule is the same one the SMS send path dials with (customer-sms
+ * `normalizeE164` delegates to `customerPhoneE164`, REQ-1080), so a number
+ * that is accepted here is a number the send path can text — "123", "555-12" and "512-555-01" are not.
  * The email rule is REQ-050's address shape (normalize-email.ts), so
  * "davis@@gmail", "carl@" and "carl@x" are not addresses.
  *
@@ -16,14 +16,27 @@
 import { normalizeEmail } from "./normalize-email.ts";
 import { phoneKey } from "./customer-dedupe.ts";
 
-/** E.164 form of a typed customer phone, or null when it cannot be dialled. */
+/**
+ * E.164 form of a typed customer phone, or null when it cannot be dialled.
+ *
+ * REQ-1080 (LOOP-007 cycle 2, q2-69): this is the ONE phone rule — the SMS
+ * send path's `normalizeE164` (backend customer-sms) delegates here, so the
+ * save rule and the send rule can never disagree again. A number carrying an
+ * extension ("ext 9", "x9") — any letter at all — is refused instead of having
+ * its extension digits glued on, and a "+1" (NANP) number must be exactly
+ * 11 digits ("+1 843 555 01249" is not a number).
+ */
 export function customerPhoneE164(raw: string): string | null {
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return null;
-  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
+  if (/\p{L}/u.test(trimmed)) return null; // REQ-1080: "ext 9", "x9"
+  const plus = trimmed.startsWith("+");
   const digits = trimmed.replace(/\D/g, "");
-  if (trimmed.startsWith("+")) {
-    return /^[1-9]\d{6,14}$/.test(digits) ? `+${digits}` : null;
+  if (plus) {
+    if (!/^[1-9]\d{6,14}$/.test(digits)) return null;
+    // REQ-1080: a "+1" number is NANP — country code + 10 digits, no more
+    if (digits.startsWith("1") && digits.length !== 11) return null;
+    return `+${digits}`;
   }
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
