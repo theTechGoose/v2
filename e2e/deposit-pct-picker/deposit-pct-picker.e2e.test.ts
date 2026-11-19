@@ -174,8 +174,9 @@ Deno.test("REQ-678 (demo-loop cycle 5, c3-m60): 'Deposit + balance' asks how muc
         `a ${pct}% chip`,
       );
     }
+    // REQ-1082 rewords the timing; this story only pins the dollars
     expect(
-      text.includes("$4,350 now · $10,150 when done"),
+      /\$4,350\b[^$]*\$10,150\b/.test(text),
       `the 30% chip names its dollars: "${text}"`,
     );
     expect.eq(
@@ -217,4 +218,37 @@ Deno.test("REQ-678 (demo-loop cycle 5, c3-m60): 'Deposit + balance' asks how muc
       "435000 + 1015000",
       "the deposit invoice is the 30% picked, not a silent 20%",
     );
+  }));
+
+Deno.test("REQ-1082 (LOOP-007 q3-8): the 'How big a deposit?' chips say the deposit is due a week after signing, like the step before — never 'now'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const { convId } = await lockedMidWizard(http, auth);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/assistant/${convId}`);
+    const deposit = ".wiz__opts .wiz-opt:has-text('Deposit + balance')";
+    await page.locator(deposit).first().waitFor({ timeout: 20_000 });
+    // the step before: the "Deposit + balance" option's own sub-line
+    const optText = (await page.locator(deposit).first().innerText())
+      .replace(/\s+/g, " ");
+    expect(
+      /a week after signing/i.test(optText),
+      `the payment step's deposit option says "a week after signing": "${optText}"`,
+    );
+    const picker = page.locator("[data-testid='deposit-pick']");
+    await clickUntil(page, deposit, async () => (await picker.count()) > 0);
+
+    for (const pct of [10, 20, 30, 50]) {
+      const chip = (await page.locator(`[data-testid='deposit-pick-${pct}']`)
+        .innerText()).replace(/\s+/g, " ");
+      expect(
+        !/\bnow\b/i.test(chip),
+        `the ${pct}% chip does not say the deposit is due "now": "${chip}"`,
+      );
+      expect(
+        /a week after signing/i.test(chip),
+        `the ${pct}% chip says the deposit is due "a week after signing": "${chip}"`,
+      );
+    }
   }));

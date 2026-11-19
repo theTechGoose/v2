@@ -531,7 +531,7 @@
   "asstChat.terms.payment.depositBalanceSub": "{pct}% de anticipo a una semana de firmar, el resto al terminar",
   "asstChat.terms.payment.depositBalanceSubAmounts": "{pct}% de anticipo a una semana de firmar, el resto al terminar · {deposit} / {balance}",
   "asstChat.depositPick.question": "¿De cuánto es el anticipo?",
-  "asstChat.depositPick.chipSub": "{deposit} ahora · {balance} al terminar",
+  "asstChat.depositPick.chipSub": "{deposit} a una semana de firmar · {balance} al terminar",
   "asstChat.depositPick.custom": "Otro monto $",
   "asstChat.depositPick.customPlaceholder": "Depósito en dólares",
   "asstChat.depositPick.use": "Usar este depósito",

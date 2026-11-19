@@ -531,7 +531,7 @@
   "asstChat.terms.payment.depositBalanceSub": "{pct}% deposit due a week after signing, rest when done",
   "asstChat.terms.payment.depositBalanceSubAmounts": "{pct}% deposit due a week after signing, rest when done · {deposit} / {balance}",
   "asstChat.depositPick.question": "How big a deposit?",
-  "asstChat.depositPick.chipSub": "{deposit} now · {balance} when done",
+  "asstChat.depositPick.chipSub": "{deposit} due a week after signing · {balance} when done",
   "asstChat.depositPick.custom": "Custom $",
   "asstChat.depositPick.customPlaceholder": "Deposit in dollars",
   "asstChat.depositPick.use": "Use this deposit",
