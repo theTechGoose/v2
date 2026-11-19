@@ -1,6 +1,7 @@
 import { Injectable } from "#danet/core";
 import { paidHow } from "#documents/paid-how.ts"; // REQ-928
 import { invoiceTitle } from "#documents/linked-view.ts"; // REQ-984
+import { invoiceBalance } from "#documents/versions.ts"; // REQ-1028
 import { EventBus } from "@core/business/events/mod.ts";
 import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
@@ -35,6 +36,7 @@ import { businessFrom } from "@communication/domain/business/sender/mod.ts";
 import { senderInitials as senderInitialsOf } from "#identity/initials.ts";
 import {
   fmtPaperworkDate,
+  invoiceEmailStatusKey,
   invoiceStatusLabel,
   titleCaseJobName,
   unitLabel,
@@ -1547,6 +1549,8 @@ export function renderInvoicePaidSubject(
 /** REQ-020: the money-card label — "Amount due" on a bill, "PAID <date>"
  *  on the invoice stamped paid. */
 function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean, tz?: string): string {
+  // REQ-1028 (q2-9): once part is paid the card asks for the balance and says so
+  if (!paid && isPartPaid(i, paid)) return t(lang, "public.doc.balanceDue");
   if (!paid) return t(lang, "paperworkEmail.invoice.amountDueLabel");
   const label = t(lang, "paperworkEmail.invoice.paidLabel", {
     date: fmtDate(i.paidAt ?? new Date().toISOString(), lang, tz),
@@ -1554,6 +1558,32 @@ function invoiceAmountLabel(i: Invoice, lang: Lang, paid: boolean, tz?: string):
   // REQ-928: and how — "PAID Apr 20, 2026 · Electronic (Credit card)"
   const how = paidHow((k, v) => t(lang, k, v), i.paidMethods);
   return how ? `${label} · ${how}` : label;
+}
+
+/** REQ-1028: money is on the bill and it is still open. */
+function isPartPaid(i: Invoice, paid: boolean): boolean {
+  return !paid && i.status !== "paid" && !i.paidAt && (i.paidCents ?? 0) > 0;
+}
+
+/**
+ * REQ-1028 (LOOP-007 q2-9): what an invoice email asks for — the open
+ * balance (amount − paidCents), the figure /i and the PDF headline; a paid
+ * receipt still shows the bill's total. The total stays in the facts line
+ * ("Paid $500.00 · Balance $690.75").
+ */
+export function invoiceEmailAmount(i: Invoice, paid: boolean): number {
+  return isPartPaid(i, paid)
+    ? invoiceBalance(i.amount, i.paidCents).balanceCents
+    : (i.amount ?? 0);
+}
+
+/** REQ-1028 (q2-9, q2-20): the Estado row — the invoice family's word for
+ *  the state a person reads, never the stored enum ("pending"). */
+function invoiceEmailStatus(i: Invoice, lang: Lang): string {
+  const key = invoiceEmailStatusKey(i);
+  return key
+    ? invoiceStatusLabel(key, lang)
+    : t(lang, "paperworkEmail.invoice.statusFallback");
 }
 
 export function renderInvoiceHtml(
@@ -1601,10 +1631,11 @@ export function renderInvoiceHtml(
   const docNumber = docRefWithVersion(i, lang);
   const tz = zoneOf(senderBiz); // REQ-944
   const issued = fmtDate(i.issuedDate ?? i.createdAt, lang, tz);
-  const amount = i.amount;
+  // REQ-1028 (q2-9): the money card and preheader ask for the open balance
+  const amount = invoiceEmailAmount(i, paid);
   const isMilestone = (i.installmentTotal ?? 1) > 1;
   const showAgreementContext = agreementTotal != null &&
-    (isMilestone || agreementTotal !== amount);
+    (isMilestone || agreementTotal !== i.amount);
 
   const L = {
     docLang: lang,
@@ -2005,7 +2036,8 @@ export function renderInvoiceBasicHtml(
   const tz = zoneOf(senderBiz); // REQ-944
   // REQ-980: the header date is the issue date, labelled "Issued" like the itemized invoice email
   const issued = fmtDate(i.issuedDate ?? i.createdAt, lang, tz);
-  const amount = i.amount;
+  // REQ-1028 (q2-9): the money card and preheader ask for the open balance
+  const amount = invoiceEmailAmount(i, paid);
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
   // REQ-710 (cycle 5, M4): in the e-mail's language while their copies
@@ -2074,12 +2106,9 @@ export function renderInvoiceBasicHtml(
       <tr><td style="padding:6px 0;color:${COLOR_MUTED};font-size:13px;">${
     escapeHtml(t(lang, "paperworkEmail.invoice.statusLabel"))
   }</td><td style="padding:6px 0;text-align:right;color:${COLOR_INK};font-weight:700;font-size:14px;text-transform:capitalize;">${
-    // P-29: localized status label ("Enviado"), never the raw enum ("Sent").
-    escapeHtml(
-      i.status
-        ? invoiceStatusLabel(i.status, lang)
-        : t(lang, "paperworkEmail.invoice.statusFallback"),
-    )}</td></tr>
+    // P-29 / REQ-1028: the invoice's word as /i reads it ("Enviada",
+    // "Pago parcial"), never the stored enum ("pending") or the quote's "Enviado".
+    escapeHtml(invoiceEmailStatus(i, lang))}</td></tr>
     </table>
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:18px;background:linear-gradient(135deg,rgba(81,152,67,0.10),rgba(72,158,95,0.04));border:1px solid rgba(72,158,95,0.20);border-radius:14px;">
       <tr>

@@ -174,19 +174,30 @@ describe("P-28 fmtPaperworkDate — locale + timezone aware document dates", () 
 });
 
 describe("P-29 invoiceStatusLabel — localized status, never the raw enum", () => {
-  it('P-29 maps "sent" to the es dict status label (status.sent = "Enviado")', () => {
-    expect(invoiceStatusLabel("sent", "es")).toBe(esDict["status.sent"]);
+  // REQ-1028 (LOOP-007 q2-20): an invoice's Estado uses the invoice (feminine)
+  // family — /i's public.doc.state.* / invoices.state.* — not the quote's
+  // "status.*" ("Enviado"), which these cases used to lock in.
+  it('P-29 maps "sent" to the es invoice word (invoices.state.sent = "Enviada")', () => {
+    expect(invoiceStatusLabel("sent", "es")).toBe(
+      esDict["invoices.state.sent"],
+    );
     expect(invoiceStatusLabel("sent", "es").toLowerCase()).not.toBe("sent");
   });
 
   it("P-29 localizes the other lifecycle statuses from the es dict", () => {
-    expect(invoiceStatusLabel("paid", "es")).toBe(esDict["status.paid"]);
+    expect(invoiceStatusLabel("paid", "es")).toBe(
+      esDict["invoices.state.paid"],
+    );
     expect(invoiceStatusLabel("overdue", "es")).toBe(esDict["status.overdue"]);
-    expect(invoiceStatusLabel("draft", "es")).toBe(esDict["status.draft"]);
+    expect(invoiceStatusLabel("draft", "es")).toBe(
+      esDict["invoices.state.draft"],
+    );
   });
 
-  it('P-29 keeps English labels for en (status.sent = "Sent")', () => {
-    expect(invoiceStatusLabel("sent", "en")).toBe(enDict["status.sent"]);
+  it('P-29 keeps English labels for en (invoices.state.sent = "Sent")', () => {
+    expect(invoiceStatusLabel("sent", "en")).toBe(
+      enDict["invoices.state.sent"],
+    );
   });
 
   it("P-29 still yields a non-empty label for an unknown status", () => {

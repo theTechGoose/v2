@@ -100,27 +100,46 @@ export function fmtPaperworkDate(
   }).format(d);
 }
 
-/** Keep in sync with lang/en.json + lang/es.json "status.*" family. */
+/**
+ * REQ-1028 (LOOP-007 q2-20, q2-9): the INVOICE family — a factura is feminine,
+ * so the words are /i's and the invoice list's (lang/*.json
+ * `public.doc.state.*` / `invoices.state.*`: "Enviada", "Pagada", "Vista",
+ * "Anulada"), never the quote's "status.*" ("Enviado", "Pagado", "Visto";
+ * REQ-712 fixed the same mistake on the chat chip). Every status an invoice
+ * can store is here — "pending" is what ComputeInvoiceBalance stores after a
+ * part payment — so none falls through to its raw English enum.
+ * `partial` is the derived part-paid state (customerWs.state.partly).
+ */
 const STATUS_LABELS: Record<string, Record<string, string>> = {
   en: {
     accepted: "Accepted",
+    claimed: "Payment reported",
     declined: "Declined",
     draft: "Draft",
     overdue: "Overdue",
     paid: "Paid",
+    partial: "Partly paid",
+    pending: "Pending",
+    scheduled: "Scheduled",
     sent: "Sent",
     signed: "Signed",
     viewed: "Viewed",
+    void: "Void",
   },
   es: {
     accepted: "Aceptada",
+    claimed: "Pago reportado",
     declined: "Rechazada",
     draft: "Borrador",
     overdue: "Vencida",
-    paid: "Pagado",
-    sent: "Enviado",
-    signed: "Firmado",
-    viewed: "Visto",
+    paid: "Pagada",
+    partial: "Pago parcial",
+    pending: "Pendiente",
+    scheduled: "Programada",
+    sent: "Enviada",
+    signed: "Firmada",
+    viewed: "Vista",
+    void: "Anulada",
   },
 };
 
@@ -135,6 +154,22 @@ export function invoiceStatusLabel(status: string, lang: string): string {
   if (hit) return hit;
   const raw = status.trim() || "—";
   return raw.charAt(0).toLocaleUpperCase(localeOf(lang)) + raw.slice(1);
+}
+
+/**
+ * REQ-1028 (q2-9): the status an invoice email shows. The stored enum is not
+ * what a person reads — a bill with money on it that is still open is
+ * "Partly paid" / "Pago parcial" (the customer page's word), whatever the
+ * stored value ("pending" after ComputeInvoiceBalance).
+ */
+export function invoiceEmailStatusKey(
+  i: { status?: string; paidAt?: string | null; paidCents?: number },
+): string | undefined {
+  const s = i.status?.trim().toLowerCase();
+  if (s === "void" || s === "paid" || i.paidAt) return s || "paid";
+  if (s === "claimed" || s === "draft" || s === "scheduled") return s;
+  if ((i.paidCents ?? 0) > 0) return "partial";
+  return s || undefined;
 }
 
 /** Keep in sync with lang/en.json + lang/es.json "quoteDoc.unitEach". */
