@@ -228,6 +228,8 @@ export class PaymentController {
    * REQ-795 (Reports): every recorded payment as CSV — received day, invoice,
    * customer, method, amount, reference — optionally only those received in
    * `?from`…`?to` (inclusive ISO days). Declared before `:id`.
+   * REQ-1129: every payment the /payments page lists (listByUserAll), a
+   * charged-back one kept and marked in the Status column.
    */
   @Get("export.csv")
   async exportCsv(
@@ -244,7 +246,7 @@ export class PaymentController {
       );
     }
     const [payments, invoices, customers] = await Promise.all([
-      this.store.listByUser(user.id),
+      this.store.listByUserAll(user.id),
       this.invoices.listByUser(user.id),
       this.customers.listByUser(user.id),
     ]);

@@ -133,7 +133,8 @@ describe("REQ-795 quote and payment CSVs", () => {
     const lines = csv.replace(/^﻿/, "").split("\r\n");
     expect(lines[0]).toBe(PAYMENT_EXPORT_HEADER.join(","));
     expect(lines[1]).toBe(
-      "2026-04-02,INV-003,C-001,Zelda Ortiz,zelle,25.00,ZL-1",
+      // REQ-1129: Status / Charged back / Chargeback fee trail the row
+      "2026-04-02,INV-003,C-001,Zelda Ortiz,zelle,25.00,ZL-1,received,,",
     );
   });
 });
