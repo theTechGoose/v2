@@ -402,8 +402,11 @@ export function buildBalanceSub(
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
     const next = pending[0];
     if (next) {
+      // calendar days from today to the due date — never the hours left,
+      // which rounded "due in 30 days" down to 29 after noon UTC
       const dueDays = Math.round(
-        (new Date(next.dueDate).getTime() - now.getTime()) / MS_PER_DAY,
+        (Date.parse(next.dueDate.slice(0, 10)) - Date.parse(today)) /
+          MS_PER_DAY,
       );
       // REQ-204: the invoice's own number ("INV-5000"), never an id slice
       const ref = docNumberOf(next);
