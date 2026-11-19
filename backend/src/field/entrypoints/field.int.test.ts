@@ -1168,6 +1168,44 @@ Deno.test("REQ-340 a one-off task's address becomes the customer's when they had
   });
 });
 
+// REQ-1152 (LOOP-007 cycle 3, q3-84 / q3-85) — REQ-340's rule carried to repeat visits
+Deno.test("REQ-1152 (LOOP-007 q3, q3-84) a repeat visit's address becomes the customer's when they had none; a customer with one keeps it", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551652");
+    // the natural order on New repeat visit: '+ Add "Grace Whitfield" as a customer'
+    // is clicked before the Address box is typed, so she is created with no address
+    const grace =
+      (await call("POST", "/customers", { name: "Grace Whitfield" }, H)).body;
+    assertEquals(grace.address ?? undefined, undefined);
+    const made = await call("POST", "/field/subscriptions", {
+      customerId: grace.id,
+      address: "2101 Kinney Ave, Austin, TX 78704",
+      cadence: "weekly",
+      items: [{ taskTypeName: "Lawn cut", priceCents: 4500 }],
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals(made.body.address, "2101 Kinney Ave, Austin, TX 78704");
+    const after =
+      (await call("GET", `/customers/${grace.id}`, undefined, H)).body;
+    assertEquals(
+      after.address,
+      "2101 Kinney Ave, Austin, TX 78704",
+      "the customer now has the repeat visit's address on file (the card must not say 'No address on file')",
+    );
+    // a customer who already has an address keeps it: a second visit's is that visit's only
+    const other = await call("POST", "/field/subscriptions", {
+      customerId: grace.id,
+      address: "1 Rental Unit Ln, Austin, TX",
+      cadence: "weekly",
+      items: [{ taskTypeName: "Lawn cut", priceCents: 4500 }],
+    }, H);
+    assertEquals(other.status, 201);
+    const kept =
+      (await call("GET", `/customers/${grace.id}`, undefined, H)).body;
+    assertEquals(kept.address, "2101 Kinney Ave, Austin, TX 78704");
+  });
+});
+
 // REQ-164 — "when in tasks i need a button to manually add a task as a one off"
 Deno.test("REQ-164 the office posts a one-off task; it lists on the day, survives generation, needs a worker, and pulls into a batch", async () => {
   await withServer(async (call) => {
