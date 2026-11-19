@@ -418,4 +418,95 @@ Deno.test('REQ-1016 (LOOP-007 q1, q1-102): the Spanish paid email of an amount-o
       "iframe[data-cy='outbox-email-frame']",
     ).locator("html").getAttribute("lang");
     expect.eq(docLang, "es", "the opened email's <html lang>");
+
+ * REQ-991 (LOOP-007 cycle 1, q1-73): "Outbox table shows only 3 of 8
+ * columns at 390px" — on a phone every column, the status chip and the
+ * row's Open button are on screen, with no hidden sideways scroller.
+ */
+Deno.test("REQ-991 q1-73: at 390x844 the Outbox shows every column of a row — status chip and Open on screen, nothing hidden in a sideways scroller", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const maria = await post(http, auth, "/api/customers", {
+      name: "María López",
+      email: "maria@blackhole.postmarkapp.com",
+      phoneNumber: "(512) 555-0188",
+      language: "es",
+    });
+    const quote = await post(http, auth, "/api/quotes", {
+      customerId: maria.id,
+      summary: "Fence repair and gate",
+      jobName: "Fence Repair",
+      lineItems: [{
+        description: "Fence repair and gate",
+        quantity: 1,
+        unit: "job",
+        price: 45000,
+      }],
+      estimatedTotal: 45000,
+      status: "draft",
+    });
+    const conv = await post(http, auth, "/api/agents/conversations", {
+      quoteId: quote.id,
+      customerId: maria.id,
+    });
+    await post(http, auth, `/api/agents/conversations/${conv.id}/send-quote`, {
+      quoteId: quote.id,
+      channel: "both",
+    });
+
+    await page.goto("/messages");
+    await page.locator("[data-cy='outbox-row']").first().waitFor({
+      timeout: 20_000,
+    });
+    const m = await page.evaluate(() => {
+      const vw = globalThis.innerWidth;
+      const table = document.querySelector(
+        "[data-cy='outbox-table']",
+      ) as HTMLElement;
+      const wrap = table.parentElement as HTMLElement;
+      const row = document.querySelector("[data-cy='outbox-row']")!;
+      const right = (sel: string) => {
+        const el = row.querySelector(sel) as HTMLElement | null;
+        return el ? Math.round(el.getBoundingClientRect().right) : -1;
+      };
+      const cells = [
+        "outbox-row-when",
+        "outbox-row-customer",
+        "outbox-row-channel",
+        "outbox-row-language",
+        "outbox-row-what",
+        "outbox-row-message",
+        "outbox-row-status",
+      ].map((cy) => [cy, right(`[data-cy='${cy}']`)]);
+      return {
+        vw,
+        cells,
+        chip: right("[data-cy='outbox-row-status'] .chip"),
+        open: right("[data-cy='outbox-open']"),
+        wrapScroll: wrap.scrollWidth,
+        wrapClient: wrap.clientWidth,
+      };
+    });
+    const off = m.cells.filter(([, r]) => (r as number) > m.vw).map(([cy]) =>
+      cy
+    );
+    expect(
+      off.length === 0,
+      `REQ-991 every column is on screen at ${m.vw}px — off-screen: ${
+        off.join(", ")
+      } (${JSON.stringify(m.cells)})`,
+    );
+    expect(
+      m.chip > 0 && m.chip <= m.vw,
+      `REQ-991 the status chip is on screen (right ${m.chip} > ${m.vw})`,
+    );
+    expect(
+      m.open > 0 && m.open <= m.vw,
+      `REQ-991 the row's Open button is on screen (right ${m.open} > ${m.vw})`,
+    );
+    expect(
+      m.wrapScroll <= m.wrapClient,
+      `REQ-991 nothing hides in the table's sideways scroller (scrollWidth ${m.wrapScroll} > clientWidth ${m.wrapClient})`,
+    );
   }));
