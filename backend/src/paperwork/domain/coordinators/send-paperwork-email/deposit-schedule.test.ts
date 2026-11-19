@@ -55,7 +55,9 @@ Deno.test("REQ-945 q1-20: a 'Deposit 50% + balance' quote email for $2,400 state
   const body = text(renderQuoteHtml(quote("Deposit 50% + balance"), undefined, carl, bizEn));
   assertStringIncludes(body, "$1,200.00", "the deposit amount is in the email");
   assertStringIncludes(body, "Deposit", "the deposit row is labelled");
-  assertStringIncludes(body, "Before work starts", "the deposit says when it is due");
+  // REQ-954 (q1-26): before signing the deposit row states the rule that sets
+  // its date — "Due a week after signing" — not "Before work starts".
+  assertStringIncludes(body, "Due a week after signing", "the deposit says when it is due");
   assertStringIncludes(body, "Balance", "the balance row follows the deposit");
 });
 
@@ -63,18 +65,18 @@ Deno.test("REQ-945 q1-20: the same deposit quote sent in Spanish states the $1,2
   const body = text(renderQuoteHtml(quote("Deposit 50% + balance"), undefined, carl, bizEs));
   assertStringIncludes(body, "$1,200.00", "the deposit amount is in the Spanish email");
   assertStringIncludes(body, "Depósito", "the deposit row is labelled in Spanish");
-  assertStringIncludes(body, "Antes de empezar", "when it is due, in Spanish");
+  assertStringIncludes(body, "Vence una semana tras firmar", "when it is due, in Spanish (REQ-954)");
   assertStringIncludes(body, "Saldo", "the balance row, in Spanish");
 });
 
 Deno.test("REQ-945 q1-20: a fixed-dollar deposit ('Deposit $500 + balance') shows $500.00 before work starts", () => {
   const body = text(renderQuoteHtml(quote("Deposit $500 + balance"), undefined, carl, bizEn));
   assertStringIncludes(body, "$500.00");
-  assertStringIncludes(body, "Before work starts");
+  assertStringIncludes(body, "Due a week after signing"); // REQ-954
 });
 
 Deno.test("REQ-945 q1-20: a quote due in full ('Due Now') has no deposit schedule block", () => {
   const body = text(renderQuoteHtml(quote("Due Now"), undefined, carl, bizEn));
-  assert(!body.includes("Before work starts"), "no deposit row on a due-now quote");
+  assert(!body.includes("Due a week after signing"), "no deposit row on a due-now quote"); // REQ-954 wording
   assert(!body.includes("$1,200.00"), "no half-payment amount on a due-now quote");
 });

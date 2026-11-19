@@ -992,7 +992,8 @@ Deno.test("REQ-945 q1-20 send-paperwork-email: a deposit quote's email attaches 
     "the attachment is a real PDF",
   );
   assertStringIncludes(sent[0].htmlBody, "$1,200.00", "the deposit amount is in the body");
-  assertStringIncludes(sent[0].htmlBody, "Before work starts");
+  // REQ-954 (q1-26): the unsigned deposit row reads "Due a week after signing"
+  assertStringIncludes(sent[0].htmlBody, "Due a week after signing");
 
   await resetKv();
 });
