@@ -523,6 +523,28 @@ function extractSplitSchedule(raw: string): CustomPaymentSchedule | null {
   return null;
 }
 
+/**
+ * REQ-953 (LOOP-007 q1-28; cites REQ-265): a "half … and half / the other
+ * half / the rest …" pair tied to a start/finish word is a 50/50 schedule —
+ * "mitad al empezar y mitad al terminar", "half now, the rest when done".
+ * No deposit word or % sign needed. The start/finish word keeps a lone
+ * "half bath" or "la mitad del piso" (or "mitad del piso y mitad del techo")
+ * from reading as payment terms.
+ */
+const HALF_PAIR_RE = (() => {
+  const first = "(?:50\\s*%|\\bhalf\\b|\\bmitad\\b)";
+  const second =
+    "(?:50\\s*%|(?:the\\s+)?(?:other\\s+)?half\\b|(?:la\\s+)?(?:otra\\s+)?mitad\\b|(?:the\\s+)?rest\\b|(?:el\\s+)?resto\\b|(?:the\\s+)?balance\\b)";
+  const join = "(?:,|\\band\\b|\\by\\b|\\bthen\\b|\\bluego\\b)";
+  const when =
+    "(?:empez\\w*|empiez\\w*|inici\\w*|comenz\\w*|comienz\\w*|start\\w*|begin\\w*|now|ahora|today|hoy|termin\\w*|final\\w*|acab\\w*|complet\\w*|finish\\w*|done|end|entrega\\w*)";
+  return new RegExp(
+    `${first}[^.;\\n]{0,40}?\\b${when}\\b[^.;\\n]{0,10}?${join}\\s*(?:(?:then|luego)\\s+)?${second}` +
+      `|${first}[^.;\\n]{0,40}?${join}\\s*(?:(?:then|luego)\\s+)?${second}[^.;\\n]{0,25}?\\b${when}\\b`,
+    "u",
+  );
+})();
+
 /** The payment schedule the text states, mapped onto the wizard's options —
  *  a preset when it is one, else (REQ-387) the stated custom schedule. */
 export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
@@ -548,6 +570,7 @@ export function extractPaymentTerms(raw: string): PrefillPaymentTerms | null {
   ) {
     return "50_50";
   }
+  if (HALF_PAIR_RE.test(s)) return "50_50";
   if (
     new RegExp(
       `(?:\\d{1,2}\\s*%|\\$\\s*[\\d,]+)[^.;\\n]{0,12}?${depositWord}`,
