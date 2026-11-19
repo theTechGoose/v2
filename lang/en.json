@@ -6135,6 +6135,8 @@
   "customerWs.msg.getLine": "Get a phone line",
   "customerWs.msg.noLine": "Text customers from here once your business has a phone line.",
   "customerWs.msg.none": "No messages yet.",
+  "customerWs.msg.addPhone": "Add phone",
+  "customerWs.msg.email": "Send an email",
   "customerWs.msg.noPhone": "This customer has no phone number on file.",
   "customerWs.msg.placeholder": "Write a text…",
   "customerWs.msg.send": "Send",

@@ -977,7 +977,13 @@ export default function CustomerWorkspace(
         )}
 
         {tab === "messages" && (
-          <Messages customerId={c.id} phone={c.phoneNumber} lang={lang} />
+          <Messages
+            customerId={c.id}
+            phone={c.phoneNumber}
+            email={c.email}
+            lang={lang}
+            onAddPhone={() => setModal({ kind: "edit" })}
+          />
         )}
       </div>
 
@@ -1503,12 +1509,17 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
  * on file; then the phone thread with her (REQ-906 Phone page's API) when the
  * business has a line. With no line (or no phone) only the compose box gives
  * way — to the get-a-line link / the no-phone note — never the history.
+ * REQ-1076 (q2-64): the no-phone note is not a dead end — it offers Add phone
+ * (the workspace's edit dialog, like the board card's "+ Add phone") and, when
+ * she has an email, an Email action.
  */
 function Messages(
-  { customerId, phone, lang }: {
+  { customerId, phone, email, lang, onAddPhone }: {
     customerId: string;
     phone?: string;
+    email?: string;
     lang: Lang;
+    onAddPhone: () => void;
   },
 ) {
   const peer = phone ? toE164(phone) : null;
@@ -1622,6 +1633,23 @@ function Messages(
     thread = (
       <div class="cws-card cws-none" data-cy="cws-msg-nophone">
         {tFor(lang, "customerWs.msg.noPhone")}
+        <button
+          type="button"
+          class="cws-btn cws-btn--outline cws-btn--sm"
+          data-cy="cws-msg-addphone"
+          onClick={() => onAddPhone()}
+        >
+          + {tFor(lang, "customerWs.msg.addPhone")}
+        </button>
+        {email && (
+          <a
+            class="cws-btn cws-btn--ghost cws-btn--sm"
+            data-cy="cws-msg-email"
+            href={`mailto:${email}`}
+          >
+            ✉️ {tFor(lang, "customerWs.msg.email")}
+          </a>
+        )}
       </div>
     );
   } else if (state === "loading") {
