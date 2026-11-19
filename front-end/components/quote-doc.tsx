@@ -650,9 +650,24 @@ export function QuoteDoc(
                     href={withLang(payNow.url, lang)}
                     style={`color:${PINK_DARK};font-weight:800;text-decoration:none`}
                   >
-                    {tFor(lang, "quoteDoc.signedBanner.next", {
-                      amount: fmtMoneyExact(payNow.balanceCents),
-                    })}
+                    {
+                      // REQ-1048: name the invoice's stored due date — the
+                      // same one the schedule row prints (REQ-954) — so the
+                      // banner never reads as "pay right now".
+                      payNow.dueDate
+                        ? payNow.dueDate.slice(0, 10) ===
+                            new Date().toISOString().slice(0, 10)
+                          ? tFor(lang, "quoteDoc.signedBanner.nextDueToday", {
+                            amount: fmtMoneyExact(payNow.balanceCents),
+                          })
+                          : tFor(lang, "quoteDoc.signedBanner.nextDue", {
+                            amount: fmtMoneyExact(payNow.balanceCents),
+                            date: shortDate(payNow.dueDate, lang, false),
+                          })
+                        : tFor(lang, "quoteDoc.signedBanner.next", {
+                          amount: fmtMoneyExact(payNow.balanceCents),
+                        })
+                    }
                   </a>
                 )
                 : tFor(lang, "quoteDoc.signedBanner.nextNoInvoice")}

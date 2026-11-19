@@ -1,7 +1,7 @@
 /**
  * REQ-678 — demo-loop cycle 5, issue c3-m60: "'Deposit + balance' never asks
  * the amount; silently 20%". On the payment step the contractor taps
- * "Deposit + balance", is asked "How much upfront?" (10 / 20 / 30 / 50 % or a
+ * "Deposit + balance", is asked "How big a deposit?" (REQ-1048; was "How much upfront?") (10 / 20 / 30 / 50 % or a
  * custom $), picks 30%, and that deposit is what the quote stores and the
  * signature bills.
  */
@@ -165,7 +165,8 @@ Deno.test("REQ-678 (demo-loop cycle 5, c3-m60): 'Deposit + balance' asks how muc
     await clickUntil(page, deposit, async () => (await picker.count()) > 0);
 
     const text = await picker.innerText();
-    expect(/how much upfront/i.test(text), `the picker asks: "${text}"`);
+    // REQ-1048: asks the deposit size without the "upfront" timing word
+    expect(/how big a deposit/i.test(text), `the picker asks: "${text}"`);
     for (const pct of [10, 20, 30, 50]) {
       expect.eq(
         await page.locator(`[data-testid='deposit-pick-${pct}']`).count(),

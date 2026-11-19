@@ -1452,7 +1452,7 @@ Deno.test("REQ-491 m60 handle-wizard-answer: the payment step's 'Deposit + balan
   assertEquals([dep.amountCents, bal.amountCents], [9_000, 36_000]);
   assertEquals(
     p.options?.find((o) => o.id === "deposit_bal")?.sub,
-    "20% upfront, rest when done · $90 / $360",
+    "20% deposit due a week after signing, rest when done · $90 / $360",
   );
 });
 

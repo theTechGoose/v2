@@ -189,15 +189,15 @@ Deno.test("REQ-491 m60 localizeOptions: 'Deposit + balance' sub-line names the 2
     localizeOptions(payment.options, lang, { n: 30, totalCents }).find((o) =>
       o.id === "deposit_bal"
     )!.sub;
-  assertEquals(dep("en"), "20% upfront, rest when done");
-  assertEquals(dep("es"), "20% por adelantado, el resto al terminar");
-  assertEquals(dep("en", 45_000), "20% upfront, rest when done · $90 / $360");
+  assertEquals(dep("en"), "20% deposit due a week after signing, rest when done");
+  assertEquals(dep("es"), "20% de anticipo a una semana de firmar, el resto al terminar");
+  assertEquals(dep("en", 45_000), "20% deposit due a week after signing, rest when done · $90 / $360");
   assertEquals(
     dep("es", 45_000),
-    "20% por adelantado, el resto al terminar · $90 / $360",
+    "20% de anticipo a una semana de firmar, el resto al terminar · $90 / $360",
   );
   // No total yet (or a zero one) → the percentage alone, never "$0 / $0".
-  assertEquals(dep("en", 0), "20% upfront, rest when done");
+  assertEquals(dep("en", 0), "20% deposit due a week after signing, rest when done");
   // The other options' sub-lines are untouched (net 15 still takes {n}).
   const net = localizeOptions(payment.options, "en", { n: 21, totalCents: 45_000 })
     .find((o) => o.id === "net_15")!.sub!;

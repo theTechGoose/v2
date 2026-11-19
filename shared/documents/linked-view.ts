@@ -524,6 +524,9 @@ export interface PayNowTarget {
   number: string;
   url: string;
   balanceCents: number;
+  /** REQ-1048: the invoice's stored due date (REQ-954's one deadline), so
+   * the signed banner names the same date as the deposit schedule row. */
+  dueDate?: string;
 }
 
 /** Invoice statuses the customer can still pay from its public page. */
@@ -556,6 +559,7 @@ export function payNowTarget(
       number: i.number,
       url: i.url ?? `/i/${i.id}`,
       balanceCents,
+      ...(i.dueDate ? { dueDate: i.dueDate } : {}),
     };
   }
   return undefined;
