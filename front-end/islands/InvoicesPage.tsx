@@ -62,7 +62,7 @@ import {
   PageHeaderSkeleton,
   ShimmerStyle,
 } from "../components/Skeletons.tsx";
-import { fmtMoney, fmtMoneyExact, fmtMoneyTotal } from "../lib/format.ts";
+import { fmtMoneyExact, fmtMoneyTotal } from "../lib/format.ts";
 import { type Lang, langSignal, tFor, tnFor } from "../lib/i18n.ts";
 import QuoteTrack from "./QuoteTrack.tsx";
 import SearchSelect from "./SearchSelect.tsx"; // REQ-801
@@ -1699,7 +1699,7 @@ function InvoicesHero(
             : mode === "thisWeek"
             ? (
               <>
-                <em>{fmtMoney(forecast!.thisWeekCents)}</em>{" "}
+                <em>{fmtMoneyTotal(forecast!.thisWeekCents)}</em>{" "}
                 {tFor(lang, "invoicesPage.hero.expectedThisWeek")}
                 <br />
                 {tFor(lang, "invoicesPage.hero.across")} {forecast!.thisWeek
@@ -1716,7 +1716,7 @@ function InvoicesHero(
             ? (
               <>
                 {tFor(lang, "invoicesPage.hero.quietPre")}{" "}
-                <em>{fmtMoney(forecast!.nextWeekCents)}</em>{" "}
+                <em>{fmtMoneyTotal(forecast!.nextWeekCents)}</em>{" "}
                 {tFor(lang, "invoicesPage.hero.comingNextWeek")}
               </>
             )
@@ -1802,7 +1802,7 @@ function InvoicesHero(
               style="color:#a83b3b"
               data-cy="forecast-at-risk"
             >
-              ⚠ <strong>{fmtMoney(forecast!.atRiskCents)}</strong>{" "}
+              ⚠ <strong>{fmtMoneyTotal(forecast!.atRiskCents)}</strong>{" "}
               {tFor(lang, "invoicesPage.atRisk.across")} {forecast!.atRisk
                 .length} {tFor(lang, "invoicesPage.atRisk.overdue")} {tFor(
                   lang,
