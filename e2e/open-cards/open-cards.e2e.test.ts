@@ -307,3 +307,55 @@ Deno.test("REQ-626: payment card → its buttons go to the invoice and the clien
       timeout: 20_000,
     });
   }));
+
+Deno.test("REQ-1045 (LOOP-007 q2-29): a draft quote's card (ES) says 'Aún sin enviar' and its back offers no Reenviar", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "es" }),
+    })).body?.cancel();
+    const hosts = new Set([
+      new URL(baseUrl).hostname,
+      "localhost",
+      "127.0.0.1",
+    ]);
+    await page.context().addCookies(
+      [...hosts].map((domain) => ({
+        name: "pm_lang",
+        value: "es",
+        domain,
+        path: "/",
+      })),
+    );
+    await seed(http, auth); // a quote never sent from the app: a draft
+    await page.goto("/quotes?lang=es");
+    const card = page.locator(".qcard", { hasText: "Spring cleanup" });
+    await card.waitFor({ timeout: 20_000 });
+    await clickUntil(
+      page,
+      '.qcard:has-text("Spring cleanup") .qcard__title',
+      async () => (await page.locator(".qcard--flipped").count()) > 0,
+    );
+    const back = page.locator(".qcard--flipped");
+    const read = await back.locator(".qcard__read").innerText();
+    expect(
+      read.includes("Aún sin enviar"),
+      `the card says it was never sent (reading "${read}")`,
+    );
+    const actions = await back.locator(".qcard__back-foot").innerText();
+    expect.eq(
+      await back.locator("[data-cy='qcard-resend']").count(),
+      0,
+      `a never-sent draft offers no Resend (actions: ${
+        actions.replace(/\s+/g, " ")
+      })`,
+    );
+    expect(
+      !/Reenviar/.test(actions),
+      `no "Reenviar" on the draft's back (actions: ${
+        actions.replace(/\s+/g, " ")
+      })`,
+    );
+  }));
