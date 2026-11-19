@@ -194,7 +194,12 @@ Deno.test("REQ-704: reminders can go out before the due date, the detail splits 
       text.startsWith("Hi Ana, friendly reminder"),
       `the preview is the customer's text (${text})`,
     );
-    expect(text.includes("is due soon"), `before-due copy (${text})`);
+    // REQ-1115: due in 14 days is not "due soon" — the early nudge names
+    // the due date ("is due on <date>"); "due soon" is for three days out.
+    expect(
+      text.includes("is due on") && !text.includes("due soon"),
+      `before-due copy names the due date (${text})`,
+    );
     await expect.see("What Ana Ruiz will get:");
 
     const sent = page.waitForResponse(
