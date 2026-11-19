@@ -580,6 +580,18 @@ export class HandleChatMessage {
       : undefined;
   }
 
+  /** REQ-939: the job's invoices are all paid (and it has some) — nothing
+   *  is left to bill on it. */
+  private async jobPaidInFull(
+    userId: string,
+    quoteId: string,
+  ): Promise<boolean> {
+    const live = (await new InvoiceStore().listByUser(userId).catch(() => []))
+      .filter((i) => i.quoteId === quoteId && (i.status ?? "") !== "void");
+    return live.length > 0 &&
+      live.every((i) => i.status === "paid" || !!i.paidAt);
+  }
+
   /** REQ-438 (M7): the answer to "delete invoice INV-001" — where to delete
    *  it (Invoices › the invoice › Delete invoice), or that a paid one stays. */
   private async invoiceRemovalReply(
@@ -2326,7 +2338,15 @@ export class HandleChatMessage {
       !llmResponse && !conv.quoteId && typeof input.content === "string" &&
       (isInvoiceRequest(input.content) || jobDoneAsk)
     ) {
-      const jobId = await this.namedCustomersJob(input.userId, input.content);
+      const named = await this.namedCustomersJob(input.userId, input.content);
+      // REQ-939 (LOOP-007 q1-15): "Job done for Dana…, invoice her the
+      // balance" when Dana's only job is billed and paid in full — that job
+      // has nothing left to bill, so the finished work is a new job: the
+      // invoice flow below, never "Dana is paid up".
+      const jobId = named && jobDoneAsk &&
+          await this.jobPaidInFull(input.userId, named.quoteId)
+        ? undefined
+        : named;
       if (jobId) {
         // REQ-768: AnswerBilling binds the job with its answer — except the
         // invoice flow's (a finished job on a never-signed quote).
@@ -2364,8 +2384,15 @@ export class HandleChatMessage {
         ...(jobDoneAsk.customerEmail
           ? { customerEmail: jobDoneAsk.customerEmail }
           : {}),
+        // REQ-939: "a $200 deposit she already paid" — credited
+        ...(jobDoneAsk.amountCents && jobDoneAsk.depositPaidCents
+          ? { depositPaidCents: jobDoneAsk.depositPaidCents }
+          : {}),
       };
-      const key = offer.customerName && offer.amountCents
+      const key = offer.customerName && offer.amountCents &&
+          offer.depositPaidCents
+        ? "startDeposit"
+        : offer.customerName && offer.amountCents
         ? "start"
         : offer.customerName
         ? "startName"
@@ -2379,6 +2406,12 @@ export class HandleChatMessage {
         content: t(replyLang, `chatCoordinator.jobDoneInvoice.${key}`, {
           name: offer.customerName ?? "",
           amount: offer.amountCents ? offerAmount(offer.amountCents) : "",
+          deposit: offer.depositPaidCents
+            ? offerAmount(offer.depositPaidCents)
+            : "",
+          balance: offer.amountCents && offer.depositPaidCents
+            ? offerAmount(offer.amountCents - offer.depositPaidCents)
+            : "",
         }),
         payload: { invoiceFlow: offer },
       });

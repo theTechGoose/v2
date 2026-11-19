@@ -741,6 +741,7 @@
   "chatCoordinator.jobDoneInvoice.startName": "Job done — let's bill it. I've started the invoice for {name}: add the amount, check the details and send it.",
   "chatCoordinator.jobDoneInvoice.startAmount": "Job done — let's bill it. I've started the invoice for {amount}: pick the customer, check the details and send it.",
   "chatCoordinator.jobDoneInvoice.startPlain": "Job done — let's bill it. I've started the invoice: add the amount and the customer, then send it.",
+  "chatCoordinator.jobDoneInvoice.startDeposit": "Job done — let's bill it. I've started the invoice for {name}: {amount} less the {deposit} already paid, so {balance} is due. Check the details and send it.",
   "chatCoordinator.billing.jobDoneSendNow": "Job's done — {number} for {amount} to {name} is ready to go. Tap Send now to bill it today; otherwise it goes out {date}.",
   "chatCoordinator.billing.jobDoneSendNowNoDate": "Job's done — {number} for {amount} to {name} is ready to go. Tap Send now to bill it today.",
   "chatCoordinator.payment.recorded": "Recorded the {amount} payment {via} from {name} on {number} — it's paid in full.",

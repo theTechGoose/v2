@@ -154,9 +154,11 @@ Deno.test("REQ-939 q1-15: in a new chat, 'Job done for Dana Whitfield … $850 t
     await page.goto("/assistant");
     await say(page, SAID);
 
-    // wait for the assistant's answer to land in the thread
-    const answered = page.locator(".msg:not(.msg--user)").last();
-    await answered.waitFor({ state: "visible", timeout: 30_000 });
+    // wait for the assistant's answer: its bubble in the thread, or the
+    // invoice flow it opened (the price pad covers the thread, so no bubble
+    // is visible then)
+    await page.locator(".msg:not(.msg--user), .chat__price-capture").last()
+      .waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForFunction(
       () =>
         !!document.querySelector(".chat__price-capture") ||

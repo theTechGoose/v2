@@ -19,6 +19,9 @@ export interface InvoiceFlowOffer {
   amountCents?: number;
   customerName?: string;
   customerEmail?: string;
+  /** REQ-939: INTEGER CENTS already paid (a deposit taken) — credited
+   *  against `amountCents`; the invoice bills what is left. */
+  depositPaidCents?: number;
 }
 
 /** The offer on a message payload, if it carries a usable one. */
@@ -28,7 +31,13 @@ export function invoiceFlowOfferOf(
   if (!payload || typeof payload !== "object") return undefined;
   const raw = (payload as { invoiceFlow?: unknown }).invoiceFlow;
   if (!raw || typeof raw !== "object") return undefined;
-  const { details, amountCents, customerName, customerEmail } = raw as Record<
+  const {
+    details,
+    amountCents,
+    customerName,
+    customerEmail,
+    depositPaidCents,
+  } = raw as Record<
     string,
     unknown
   >;
@@ -45,6 +54,13 @@ export function invoiceFlowOfferOf(
   }
   if (typeof customerEmail === "string" && customerEmail.trim()) {
     out.customerEmail = customerEmail.trim();
+  }
+  if (
+    typeof depositPaidCents === "number" &&
+    Number.isFinite(depositPaidCents) && depositPaidCents > 0 &&
+    (out.amountCents === undefined || depositPaidCents < out.amountCents)
+  ) {
+    out.depositPaidCents = Math.round(depositPaidCents);
   }
   return out;
 }
