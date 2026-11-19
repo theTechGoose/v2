@@ -804,13 +804,23 @@ export default function CustomerWorkspace(
                   <tbody>
                     {ws.payments.map((p) => (
                       <tr key={p.id}>
-                        <td>{day(p.receivedAt, lang)}</td>
-                        <td class="cws-doc">
+                        <td data-label={tFor(lang, "customerWs.col.date")}>
+                          {day(p.receivedAt, lang)}
+                        </td>
+                        <td
+                          class="cws-doc"
+                          data-label={tFor(lang, "customerWs.col.for")}
+                        >
                           <a href={`/i/${p.invoiceId}`}>{p.invoiceNumber}</a>
                           {p.reference && <small>{p.reference}</small>}
                         </td>
-                        <td>{tFor(lang, `customerWs.method.${p.method}`)}</td>
-                        <td class="num">
+                        <td data-label={tFor(lang, "customerWs.col.method")}>
+                          {tFor(lang, `customerWs.method.${p.method}`)}
+                        </td>
+                        <td
+                          class="num"
+                          data-label={tFor(lang, "customerWs.col.amount")}
+                        >
                           <b>{money(p.amountCents, lang)}</b>
                         </td>
                       </tr>
@@ -899,15 +909,29 @@ export default function CustomerWorkspace(
                           };
                         return (
                           <tr key={v.id}>
-                            <td>{day(v.date, lang)}</td>
-                            <td class="cws-doc">{v.taskTypeName}</td>
-                            <td>{v.workerName || "—"}</td>
-                            <td>
+                            <td data-label={tFor(lang, "customerWs.col.date")}>
+                              {day(v.date, lang)}
+                            </td>
+                            <td
+                              class="cws-doc"
+                              data-label={tFor(lang, "customerWs.col.service")}
+                            >
+                              {v.taskTypeName}
+                            </td>
+                            <td data-label={tFor(lang, "customerWs.col.crew")}>
+                              {v.workerName || "—"}
+                            </td>
+                            <td
+                              data-label={tFor(lang, "customerWs.col.status")}
+                            >
                               <span class={`cws-pill cws-pill--${pill.cls}`}>
                                 {pill.text}
                               </span>
                             </td>
-                            <td class="num">
+                            <td
+                              class="num"
+                              data-label={tFor(lang, "customerWs.col.price")}
+                            >
                               {v.status === "skipped"
                                 ? "—"
                                 : money(v.priceCents, lang)}
@@ -951,12 +975,17 @@ export default function CustomerWorkspace(
                   <tbody>
                     {ws.workOrders.map((w) => (
                       <tr key={w.id}>
-                        <td class="cws-doc">
+                        <td
+                          class="cws-doc"
+                          data-label={tFor(lang, "customerWs.col.workOrder")}
+                        >
                           <a href={w.url}>{w.number}</a>
                           <small>{w.description}</small>
                         </td>
-                        <td>{day(w.scheduledFor ?? w.updatedAt, lang)}</td>
-                        <td>
+                        <td data-label={tFor(lang, "customerWs.col.date")}>
+                          {day(w.scheduledFor ?? w.updatedAt, lang)}
+                        </td>
+                        <td data-label={tFor(lang, "customerWs.col.status")}>
                           <span class="cws-pill cws-pill--sent">
                             {w.status}
                           </span>
@@ -1149,22 +1178,33 @@ function InvoiceTable(
           const pill = invoicePill(i, lang);
           return (
             <tr key={i.id} data-cy="cws-invoice-row" data-id={i.id}>
-              <td class="cws-doc">
+              <td
+                class="cws-doc"
+                data-label={tFor(lang, "customerWs.col.invoice")}
+              >
                 <a href={i.url}>{i.number}</a>
                 {i.title && <small>{i.title}</small>}
               </td>
-              {!compact && <td>{day(i.issuedDate, lang)}</td>}
-              <td>{day(i.dueDate, lang)}</td>
-              <td>
+              {!compact && (
+                <td data-label={tFor(lang, "customerWs.col.sent")}>
+                  {day(i.issuedDate, lang)}
+                </td>
+              )}
+              <td data-label={tFor(lang, "customerWs.col.due")}>
+                {day(i.dueDate, lang)}
+              </td>
+              <td data-label={tFor(lang, "customerWs.col.status")}>
                 <span class={`cws-pill cws-pill--${pill.cls}`}>
                   {pill.text}
                 </span>
               </td>
-              <td class="num">{money(i.amountCents, lang)}</td>
-              <td class="num">
+              <td class="num" data-label={tFor(lang, "customerWs.col.total")}>
+                {money(i.amountCents, lang)}
+              </td>
+              <td class="num" data-label={tFor(lang, "customerWs.col.balance")}>
                 <b>{i.balanceCents ? money(i.balanceCents, lang) : "—"}</b>
               </td>
-              <td>
+              <td class="cws-actcell">
                 <div class="cws-rowact">
                   {i.balanceCents > 0
                     ? (
@@ -1242,18 +1282,25 @@ function QuoteTable(
           const pill = quotePill(q.state, lang);
           return (
             <tr key={q.id}>
-              <td class="cws-doc">
+              <td
+                class="cws-doc"
+                data-label={tFor(lang, "customerWs.col.quote")}
+              >
                 <a href={q.url}>{q.number}</a>
                 {q.title && <small>{q.title}</small>}
               </td>
-              <td>{day(q.updatedAt, lang)}</td>
-              <td>
+              <td data-label={tFor(lang, "customerWs.col.date")}>
+                {day(q.updatedAt, lang)}
+              </td>
+              <td data-label={tFor(lang, "customerWs.col.status")}>
                 <span class={`cws-pill cws-pill--${pill.cls}`}>
                   {pill.text}
                 </span>
               </td>
-              <td class="num">{money(q.amountCents, lang)}</td>
-              <td>
+              <td class="num" data-label={tFor(lang, "customerWs.col.total")}>
+                {money(q.amountCents, lang)}
+              </td>
+              <td class="cws-actcell">
                 <div class="cws-rowact">
                   <a class="cws-btn cws-btn--outline cws-btn--sm" href={q.url}>
                     {tFor(lang, "customerWs.act.open")}
