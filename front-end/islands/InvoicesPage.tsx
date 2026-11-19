@@ -2829,16 +2829,10 @@ function InvoiceDetail(
             {tFor(lang, "invoicesPage.detail.paymentReceivedBtn")}
           </button>
         )}
-        {/* REQ-626: what the customer sees stays one click away */}
-        <a
-          data-cy="invoice-detail-view-as-customer"
-          href={invoiceLinkPath(inv.id, inv.lang)} // REQ-586
-          target="_blank"
-          rel="noopener"
-          style={`${secondaryBtn};text-decoration:none;display:inline-flex;align-items:center`}
-        >
-          {tFor(lang, "invoicesPage.back.viewAsCustomer")}
-        </a>
+        {
+          /* REQ-626 / REQ-1052: "View as customer" lives once, in the
+            dispatch row (InvoiceStageActions, invoice-detail-open). */
+        }
       </div>
 
       {voidOpen && (

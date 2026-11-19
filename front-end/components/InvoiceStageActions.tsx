@@ -45,7 +45,8 @@ export function InvoiceStageActions(
     /** the card keeps its own stage CTA; the panel renders this one. */
     showStageCta: boolean;
     /** REQ-985: the card back has its own "View as customer" (REQ-626), so
-     *  it turns this one off; the detail panel keeps it. */
+     *  it turns this one off; the detail panel keeps it, and (REQ-1052) it is
+     *  the panel's only one. */
     showViewLink?: boolean;
     onStageAction?: (kind: StageActionKind, e: Event) => unknown;
     primaryStyle?: string;
