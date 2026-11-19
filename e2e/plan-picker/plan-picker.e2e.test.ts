@@ -171,7 +171,7 @@ Deno.test("REQ-058: a sign-up is a CRM customer at once — the phone and this a
     expect(customer.customerPhone === phone && customer.customerId === customerId, "phone kept, same record");
   }));
 
-Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link builder's page, and comes back with the plan active", (t) =>
+Deno.test("REQ-054 + REQ-970: in onboarding the person picks a paid plan, pays on the link builder's page, and comes back with the plan active", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     // the person starts on the site's front page, where the same plans are priced
     await page.goto("/");
@@ -197,6 +197,21 @@ Deno.test("REQ-054: in onboarding the person picks a paid plan, pays on the link
     expect.eq(await page.locator("[data-cy='welcome-continue']").count(), 0, "no dead Continue under the cards");
     await page.locator("[data-cy='plan-billing-how'] summary").click();
     await expect.see(wizardBillingHowToday());
+    // REQ-970 (LOOP-007 c1, q1-51) — the card and the disclosure agree on the next 1st: when that
+    // bill is the prorated catch-up, the card never promises the full $99 for it — it names the
+    // catch-up amount or the date the full price starts
+    {
+      const s = anchoredSchedule(new Date().toISOString(), 9900);
+      if (s.firstAmountCents !== 9900) {
+        const card = (await page.locator("[data-cy='plan-note-monster']").innerText()).trim();
+        const how = (await page.locator("[data-cy='plan-billing-how']").innerText()).trim();
+        const prorated = `$${(s.firstAmountCents / 100).toFixed(2)}`;
+        const fb = new Date(s.firstBillAt);
+        const steady = new Date(Date.UTC(fb.getUTCFullYear(), fb.getUTCMonth() + 1, 1)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+        expect(how.includes(`we bill ${prorated}`), `REQ-970: the disclosure bills ${prorated} on the next 1st ("${how}")`);
+        expect(card.includes(prorated) || card.includes(steady), `REQ-970: the Monster card must not promise $99 on the 1st the disclosure bills ${prorated} for — name ${prorated} or that $99 starts ${steady}; it says "${card}"`);
+      }
+    }
     // the paid pick GOES to the pay page — the link builder's link — in this tab (REQ-055/059)
     const payPage = await pickGoesToPayPage(page, "plan-pick-monster");
     expect(payPage.searchParams.get("return")?.includes("/plan/return?due="), `the link carries the way back (${payPage.searchParams.get("return")})`);
