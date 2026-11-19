@@ -1061,3 +1061,71 @@ Deno.test("REQ-1079 q2-68 send-paperwork-email: a Spanish quote send attaches 'C
 
   await resetKv();
 });
+
+// REQ-1102 (LOOP-007 cycle 3, q3-26) — "Quote PDF emailed to the customer is
+// stamped 'DRAFT' (in English even on a Spanish quote)": the attachment was
+// rendered from the pre-send quote (status still "draft"), and the stamp was
+// the raw stored status uppercased. The customer's copy says it was sent, in
+// the send language (renderQuotePdf.status.sent), never "DRAFT".
+async function pdfDrawnText(bytes: Uint8Array): Promise<string> {
+  const { decodePDFRawStream, PDFDocument, PDFRawStream } = await import("#pdf-lib");
+  const doc = await PDFDocument.load(bytes);
+  let out = "";
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue;
+    let s: string;
+    try {
+      s = new TextDecoder("latin1").decode(decodePDFRawStream(obj).decode());
+    } catch {
+      continue;
+    }
+    for (const m of s.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) {
+      let line = "";
+      for (let i = 0; i + 1 < m[1].length; i += 2) {
+        line += String.fromCharCode(parseInt(m[1].slice(i, i + 2), 16));
+      }
+      out += line + "\n";
+    }
+    for (const m of s.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*Tj/g)) out += m[1] + "\n";
+  }
+  return out;
+}
+
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-1102 q3-26 send-paperwork-email: the quote PDF attached to a first ${lang} send is stamped sent in ${lang}, never "DRAFT"`, async () => {
+    const { t } = await import("@core/i18n/mod.ts");
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const { flow, customers, quotes, sent } = fresh();
+    await seedContractor("u-1");
+    const customer = await customers.create("u-1", {
+      name: "Juan Pérez",
+      email: "juan@acme.test",
+    });
+    const quote = await quotes.create("u-1", {
+      customerId: customer.id,
+      summary: "Pintura de dormitorios",
+      lineItems: [{ description: "Pintura", quantity: 1, unit: "job", price: 50000 }],
+      estimatedTotal: 50000,
+    });
+    assertEquals(quote.status ?? "draft", "draft", "a fresh quote is a draft");
+
+    const res = await flow.run("u-1", { kind: "quote", resourceId: quote.id, language: lang });
+    assertEquals(res.ok, true);
+    assertEquals(sent.length, 1, "one email went");
+    const pdf = (sent[0].attachments ?? []).find((a) => a.contentType === "application/pdf");
+    assert(pdf, "the quote email carries the quote PDF");
+    const text = await pdfDrawnText(pdf.content);
+
+    assert(!/\bDRAFT\b/.test(text), `the ${lang} PDF emailed to the customer is stamped DRAFT:\n${text}`);
+    const key = "renderQuotePdf.status.sent";
+    const word = t(lang, key);
+    assert(word !== key, `lang/${lang}.json has no "${key}"`);
+    assertStringIncludes(text, word, `the ${lang} PDF carries the localized sent stamp`);
+    if (lang === "es") {
+      assert(!/\bSENT\b/.test(text), `the Spanish PDF carries raw English SENT:\n${text}`);
+    }
+
+    await resetKv();
+  });
+}

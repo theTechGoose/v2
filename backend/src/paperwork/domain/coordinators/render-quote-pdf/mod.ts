@@ -91,6 +91,28 @@ export interface RenderQuotePdfInput {
  * Returns the PDF as Uint8Array bytes — caller is responsible for
  * choosing what to do with them (attach to email, store, etc.).
  */
+/**
+ * REQ-1102 (LOOP-007 q3-26): the top-right status stamp is a localized word
+ * (`renderQuotePdf.status.<status>`), never the raw stored enum uppercased —
+ * a Spanish PDF never says "SENT" / "DRAFT". An unknown status draws nothing.
+ */
+const STAMPED_STATUSES = new Set([
+  "draft",
+  "sent",
+  "viewed",
+  "accepted",
+  "declined",
+  "expired",
+  "lost",
+]);
+function quoteStatusStamp(
+  lang: "en" | "es",
+  status: string | undefined,
+): string {
+  const s = status ?? "draft";
+  return STAMPED_STATUSES.has(s) ? t(lang, `renderQuotePdf.status.${s}`) : "";
+}
+
 @Injectable()
 export class RenderQuotePdf {
   async run(raw: RenderQuotePdfInput): Promise<Uint8Array> {
@@ -175,7 +197,7 @@ export class RenderQuotePdf {
       ? `${renderWord(lang, "acceptedSigned")} · ${
         fmtDate(quote.acceptedAt, tz)
       }`
-      : (quote.status ?? "DRAFT").toUpperCase();
+      : quoteStatusStamp(lang, quote.status);
     const statusW = bold.widthOfTextAtSize(statusText, 8.5);
     page.drawText(statusText, {
       x: W - M - statusW,
