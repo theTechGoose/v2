@@ -51,6 +51,7 @@ import {
   customerOptions,
   deletedNotice,
   fmtDay,
+  fmtDayLabel,
   fmtMoneyExact,
   knownServiceAddress,
   serviceHint,
@@ -1386,13 +1387,13 @@ export default function FieldTasksPage(
 
       <div class="workload" data-cy="tk-summary" style="align-items:center">
         <span class="hint" style="font-weight:700">
-          {date ? fmtDay(date, lang) : ""}
+          {date ? fmtDayLabel(date, lang) : ""}
         </span>
-        <span class="chip chip--green">{t("field.tk.done")} {done}</span>
-        <span class="chip">{t("field.tk.toDo")} {toDo}</span>
+        <span class="chip chip--green">{t("field.tk.doneCount")} {done}</span>
+        <span class="chip">{t("field.tk.toDoCount")} {toDo}</span>
         {notDone > 0 && (
           <span class="chip chip--muted">
-            {t("field.tk.skipped")} {notDone}
+            {t("field.tk.skippedCount")} {notDone}
           </span>
         )}
       </div>

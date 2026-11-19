@@ -51,8 +51,9 @@ describe("REQ-284 the summary chip says 'To do', not the status 'Assigned'", () 
   const summary = island.slice(island.indexOf('data-cy="tk-summary"'));
   const chips = summary.slice(0, summary.indexOf("</div>"));
 
-  test("the summary row uses field.tk.toDo and never field.tk.assigned", () => {
-    expect(chips).toContain('t("field.tk.toDo")');
+  // REQ-1167 renamed the summary's counter key field.tk.toDo → field.tk.toDoCount (one count key per chip)
+  test("the summary row uses field.tk.toDoCount and never field.tk.assigned", () => {
+    expect(chips).toContain('t("field.tk.toDoCount")');
     expect(chips).not.toContain("field.tk.assigned");
   });
 
@@ -64,8 +65,8 @@ describe("REQ-284 the summary chip says 'To do', not the status 'Assigned'", () 
   });
 
   test("both languages carry the counter label; the status label stays", () => {
-    expect(en["field.tk.toDo"]).toBe("To do");
-    expect(es["field.tk.toDo"]).toBe("Pendientes");
+    expect(en["field.tk.toDoCount"]).toBe("To do");
+    expect(es["field.tk.toDoCount"]).toBe("Pendientes");
     expect(en["field.tk.assigned"]).toBe("Assigned");
     expect(es["field.tk.assigned"]).toBe("Asignada");
   });
