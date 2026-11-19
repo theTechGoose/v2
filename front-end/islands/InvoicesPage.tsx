@@ -5874,6 +5874,7 @@ export function NewInvoiceModal(
               options={clientChoices}
               value={clientSel}
               placeholder={tFor(lang, "invoicesPage.new.clientSearch")}
+              lang={lang}
               disabled={busy}
               onSelect={(o) => pickCustomer(o.id)}
               onQuery={(q) => {

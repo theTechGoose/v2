@@ -1145,6 +1145,7 @@ export default function FieldTasksPage(
                   options={customerOptions(customers)}
                   value={add.customerId}
                   placeholder={t("field.tk.pickCustomer")}
+                  lang={lang}
                   invalid={addBad === "customer"}
                   onCreate={createCustomer}
                   createLabel={(n) => t("field.tk.addCustomer", { name: n })}
