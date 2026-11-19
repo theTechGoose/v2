@@ -17,6 +17,11 @@ import {
   emailLogoHtml,
 } from "@paperwork/domain/business/email-logo/mod.ts";
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
+import { ReplyTokenStore } from "@paperwork/domain/data/reply-token-store/mod.ts";
+import {
+  inboundDomain,
+  replyAddress,
+} from "@paperwork/domain/business/inbound-reply/mod.ts";
 import { RenderReceiptPdf } from "@paperwork/domain/coordinators/render-receipt-pdf/mod.ts";
 import { MarkInvoicePaid } from "@paperwork/domain/coordinators/mark-invoice-paid/mod.ts";
 import { ComputeInvoiceBalance } from "@paperwork/domain/coordinators/compute-invoice-balance/mod.ts";
@@ -56,6 +61,10 @@ import {
  */
 @Injectable()
 export class ConfirmPayment {
+  // REQ-1017 / REQ-175: the same per-(contractor, customer) reply token the
+  // invoice emails use (send-paperwork-email holds it the same way).
+  private replyTokens = new ReplyTokenStore();
+
   constructor(
     private invoices: InvoiceStore,
     private payments: PaymentStore,
@@ -181,6 +190,16 @@ export class ConfirmPayment {
           // REQ-628: under the business's name, never DocuMonster
           from: businessFrom({ alias: biz?.emailAlias, name: businessName }),
           ...(contractor?.email ? { cc: [contractor.email] } : {}),
+          // REQ-1017 / REQ-175: a reply to the receipt lands in this
+          // customer's Messages thread, like a reply to the invoice email.
+          ...(invoice.customerId
+            ? {
+              replyTo: replyAddress(
+                await this.replyTokens.forCustomer(userId, invoice.customerId),
+                inboundDomain(),
+              ),
+            }
+            : {}),
           attachments: [{
             name: t(lang, "confirmPayment.email.attachmentName", {
               id: docRef(updated).replace(/^#/, ""),
