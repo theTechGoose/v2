@@ -28,6 +28,10 @@ export const SAMPLE_TRADES = [
   "hvac",
   "cleaning",
   "landscaping",
+  // REQ-1069 (LOOP-007 q2-58): lawn care and pool service are their own
+  // service-visit samples; the paver patio is landscaping's (hardscape) alone.
+  "lawncare",
+  "pool",
   "junk",
   "moving",
   "pest",
@@ -90,6 +94,9 @@ const KEYWORDS: ReadonlyArray<readonly [SampleTrade, readonly string[]]> = [
     "acarreo",
   ]],
   ["moving", ["moving", "movers", "mudanza", "relocat"]],
+  // REQ-1069: pool before cleaning, so "Alberca Limpia" / "Pool Cleaning
+  // Co" get the pool visit, not a house cleaning.
+  ["pool", ["pool", "piscina", "alberca"]],
   ["cleaning", ["clean", "limpi", "maid", "janitor", "pressure wash"]],
   ["fencing", ["fence", "fencing", "cercas", "cercad", "vallas", "vallad"]],
   ["concrete", [
@@ -101,19 +108,27 @@ const KEYWORDS: ReadonlyArray<readonly [SampleTrade, readonly string[]]> = [
     "albañil",
     "driveway",
   ]],
-  ["landscaping", [
-    "landscap",
+  // REQ-1069 (LOOP-007 q2-58): lawn care used to share landscaping's stems,
+  // so "Ruiz Lawn & Pool Care" got the paver patio. Lawn care (a mowing
+  // visit) comes before the hardscape trade, so a "Lawn & Landscaping" name
+  // gets the visit, not a $3,700 build.
+  ["lawncare", [
     "lawn",
-    "paver",
-    "patio",
-    "hardscap",
+    "mow",
+    "grass",
     "garden",
     "jardin",
     "jardín",
     "yard",
-    "tree",
+    "tree service",
+    "tree care",
+    "tree trim",
+    "trees",
     "pasto",
+    "cesped",
+    "césped",
   ]],
+  ["landscaping", ["landscap", "paver", "patio", "hardscap"]],
   ["handyman", [
     "handyman",
     "handy man",
@@ -147,6 +162,8 @@ export const SAMPLE_PRICES: Record<SampleTrade, readonly [number, number]> = {
   hvac: [3_200_00, 1_600_00],
   cleaning: [60_00, 240_00],
   landscaping: [2_200_00, 1_500_00],
+  lawncare: [15_00, 65_00],
+  pool: [45_00, 95_00],
   junk: [150_00, 350_00],
   moving: [120_00, 780_00],
   pest: [90_00, 160_00],

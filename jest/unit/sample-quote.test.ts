@@ -34,7 +34,8 @@ describe("REQ-256 the sample quote fits the business, in both languages", () => 
     expect(inferSampleTrade("Pinturas del Valle")).toBe("painting");
     expect(inferSampleTrade("Cool Breeze HVAC")).toBe("hvac");
     expect(inferSampleTrade("Sparkle Cleaning")).toBe("cleaning");
-    expect(inferSampleTrade("Green Lawn Landscaping")).toBe("landscaping");
+    // REQ-1069 (q2-58): a lawn name is lawn care now; hardscape keeps landscaping
+    expect(inferSampleTrade("Stone Path Landscaping")).toBe("landscaping");
     expect(inferSampleTrade("Acme Holdings")).toBe("general");
     expect(inferSampleTrade("")).toBe("general");
     expect(inferSampleTrade(undefined)).toBe("general");
