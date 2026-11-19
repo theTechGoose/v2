@@ -220,7 +220,8 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
     const signUrl =
       (await page.locator("[data-cy='hr-sign-url']").textContent())
         ?.trim() ?? "";
-    const token = signUrl.split("/sign/")[1];
+    // the link carries ?lang= (REQ-1157); the token is the path segment alone
+    const token = signUrl.split("/sign/")[1]?.split("?")[0];
     if (!token) throw new Error(`no token in the signing link: ${signUrl}`);
     expect.eq(
       await page.locator("[data-cy='hr-packet-row']").count(),

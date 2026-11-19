@@ -18,7 +18,7 @@ import {
 } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { decodeBase64 } from "#std/encoding/base64";
-import { t } from "@core/i18n/mod.ts";
+import { type Lang, t } from "@core/i18n/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
 import { requireUser } from "@users/domain/coordinators/require-user/mod.ts";
@@ -37,7 +37,10 @@ import {
   ProofStore,
   SYSTEM_CATALOG,
 } from "@hr/domain/data/hr-stores/mod.ts";
-import { HrNotices } from "@hr/domain/coordinators/hr-notices/mod.ts";
+import {
+  HrNotices,
+  ownerLang,
+} from "@hr/domain/coordinators/hr-notices/mod.ts";
 import { Provisioner } from "@hr/domain/coordinators/provisioner/mod.ts";
 import {
   allDone,
@@ -45,6 +48,7 @@ import {
   dashboardStats,
   expiresAt,
   fullName,
+  isBuiltin,
   isExpired,
   mintPacket,
   packetProgress,
@@ -53,7 +57,6 @@ import {
   type SortDir,
   sortHires,
   type SortKey,
-  isBuiltin,
 } from "@hr/domain/business/onboarding/mod.ts";
 import {
   type Department,
@@ -132,13 +135,14 @@ interface Deps {
   notices: HrNotices;
 }
 
-function view(d: Deps, h: Hire): HireView {
+/** `lang` is the owner's (REQ-1157): the Copy/Open link and the SMS preview match what was sent */
+function view(d: Deps, h: Hire, lang: Lang): HireView {
   return {
     ...h,
     name: fullName(h),
     progress: packetProgress(h.packet),
     pipeline: pipeline(h),
-    signUrl: d.notices.signUrl(h.token),
+    signUrl: d.notices.signUrl(h.token, lang),
   };
 }
 
@@ -422,8 +426,14 @@ export class HrController {
     const sys = await ownSystem(this, user.id, id);
     const b = body(raw);
     // REQ-913 — a built-in arm runs in DocuMonster itself; it takes no webhook
-    if (b.webhookUrl !== undefined && b.webhookUrl !== null && isBuiltin(sys.key)) {
-      throw new HrError("builtin_no_webhook", 400, "a built-in system takes no webhook");
+    if (
+      b.webhookUrl !== undefined && b.webhookUrl !== null && isBuiltin(sys.key)
+    ) {
+      throw new HrError(
+        "builtin_no_webhook",
+        400,
+        "a built-in system takes no webhook",
+      );
     }
     const next = { ...sys, updatedAt: nowIso() };
     if (b.status !== undefined) {
@@ -741,7 +751,10 @@ export class HrController {
       hires.push(await settled(this, h));
     }
     const s = dashboardStats(hires, nowIso());
-    return { ...s, recent: s.recent.map((h) => view(this, h)) };
+    return {
+      ...s,
+      recent: s.recent.map((h) => view(this, h, ownerLang(user))),
+    };
   }
 
   /** REQ-884c — the roster, unfinished first; every read runs the reminder sweep (REQ-889b) */
@@ -764,7 +777,7 @@ export class HrController {
         ? sort as SortKey
         : "status";
     const d: SortDir = dir === "desc" ? "desc" : "asc";
-    return sortHires(hires, key, d).map((h) => view(this, h));
+    return sortHires(hires, key, d).map((h) => view(this, h, ownerLang(user)));
   }
 
   /** REQ-884a — the packet is minted from the department now and frozen */
@@ -827,13 +840,13 @@ export class HrController {
     await this.hires.put(hire);
     let out = hire;
     if (settings.autoSend) out = await sendTo(this, hire);
-    return ctx.json(view(this, out), 201);
+    return ctx.json(view(this, out, ownerLang(user)), 201);
   }
 
   @Get("hires/:id")
   async getHire(@Context() ctx: ExecutionContext, @Param("id") id: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return view(this, await ownHire(this, user.id, id));
+    return view(this, await ownHire(this, user.id, id), ownerLang(user));
   }
 
   /** REQ-884b — resend, or re-issue an expired link with a rotated token */
@@ -844,7 +857,7 @@ export class HrController {
     if (h.status === "offboarded") {
       throw new HrError("offboarded", 409, "this person was offboarded");
     }
-    return view(this, await sendTo(this, h));
+    return view(this, await sendTo(this, h), ownerLang(user));
   }
 
   /** REQ-888c — every arm, or one again */
@@ -860,7 +873,7 @@ export class HrController {
       throw new HrError("not_signed", 409, "the packet is not complete yet");
     }
     const only = str(body(raw).systemId, 80) || undefined;
-    return view(this, await this.provisioner.run(h, only));
+    return view(this, await this.provisioner.run(h, only), ownerLang(user));
   }
 
   @Post("hires/:id/provision/:systemId/done")
@@ -875,7 +888,7 @@ export class HrController {
     if (!next) {
       throw new HrError("arm_not_found", 404, "that system is not in the plan");
     }
-    return view(this, next);
+    return view(this, next, ownerLang(user));
   }
 
   /** REQ-888d */
@@ -886,7 +899,7 @@ export class HrController {
     if (h.status === "offboarded") {
       throw new HrError("offboarded", 409, "already offboarded");
     }
-    return view(this, await this.provisioner.offboard(h));
+    return view(this, await this.provisioner.offboard(h), ownerLang(user));
   }
 
   /** REQ-885d — the proof behind a packet row */
