@@ -14,6 +14,8 @@ import {
   timeclockWorker,
 } from "../../clients/timeclock.ts";
 import { ApiError } from "../../lib/api.ts";
+// REQ-1161 — the Day cell reads like every other day label on the worker screen (REQ-1065)
+import { fmtPunchDayLabel } from "../../lib/field.ts";
 import { type Lang, langSignal, t } from "../../lib/i18n.ts";
 import { Icon } from "../ui/Icon.tsx"; // REQ-366
 
@@ -25,12 +27,6 @@ const fmtTime = (iso: string, lang: Lang, timeZone?: string) =>
   new Date(iso).toLocaleTimeString(locale(lang), {
     hour: "numeric",
     minute: "2-digit",
-    timeZone,
-  });
-const fmtDayOf = (iso: string, lang: Lang, timeZone?: string) =>
-  new Date(iso).toLocaleDateString(locale(lang), {
-    weekday: "short",
-    day: "numeric",
     timeZone,
   });
 
@@ -224,7 +220,7 @@ export default function WorkerClock(
                     data-cy="clock-shift"
                     data-open={s.open ? "1" : "0"}
                   >
-                    <td>{fmtDayOf(s.start, lang, timeZone)}</td>
+                    <td>{fmtPunchDayLabel(s.start, lang, timeZone)}</td>
                     <td>{fmtTime(s.start, lang, timeZone)}</td>
                     <td>
                       {s.end

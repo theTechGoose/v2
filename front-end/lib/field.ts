@@ -168,6 +168,25 @@ export function fmtDayLabel(iso: string, lang: Lang): string {
 }
 
 /**
+ * REQ-1161 (amends REQ-1065, keeps REQ-1038) — a punch's day as the worker clock table shows it:
+ * the instant's day on the business's wall clock (`timeZone`; the device's when absent), as the
+ * same standalone label as the header and day tabs ("Jue 19 de nov" / "Thu, Nov 19").
+ */
+export function fmtPunchDayLabel(
+  iso: string,
+  lang: Lang,
+  timeZone?: string,
+): string {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+  return fmtDayLabel(day, lang);
+}
+
+/**
  * REQ-1014 (LOOP-007 q1-99) — an absence's from/to (YYYY-MM-DD from GET /field/absences) as the
  * Away row shows it: one day "Thu, Nov 26", a range "Thu, Nov 26 → Fri, Nov 27", localized via fmtDay.
  */
