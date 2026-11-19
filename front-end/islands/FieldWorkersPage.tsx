@@ -421,6 +421,28 @@ export default function FieldWorkersPage(
     }
   }
 
+  /**
+   * REQ-1015 — Remove access. The row already knows the zones this worker covers, so a
+   * worker who still covers any is refused here, in the server's own words, instead of
+   * after a "Remove {name}'s access?" confirm and DELETE's 409 (which stays the backstop).
+   */
+  function askRemove(w: FieldWorker, mine: RegionView[]) {
+    if (mine.length) {
+      setConfirmId(null);
+      setRowErr({
+        id: w.id,
+        err: {
+          key: "field.wk.err.coversZones",
+          field: null,
+          vars: { zones: mine.map((r) => zoneName(r.name, lang)).join(", ") },
+        },
+      });
+      return;
+    }
+    setConfirmId(w.id);
+    setRowErr(null);
+  }
+
   async function remove(w: FieldWorker) {
     setBusyId(w.id);
     setRowErr(null);
@@ -1115,10 +1137,7 @@ export default function FieldWorkersPage(
                             class="btn btn--danger btn--sm"
                             data-cy="wk-delete"
                             disabled={busy}
-                            onClick={() => {
-                              setRowErr(null);
-                              setConfirmId(w.id);
-                            }}
+                            onClick={() => askRemove(w, mine)}
                           >
                             <I d={ICN.trash} size={12} /> {t("field.wk.delete")}
                           </button>
