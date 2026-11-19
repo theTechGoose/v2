@@ -817,12 +817,24 @@ Deno.test("REQ-883..889 the HR module end to end over HTTP", async () => {
       assertEquals(zedRun.body.status, "provisioning");
 
       // ---- REQ-884c lazy expiry and re-issue with a rotated token
+      // REQ-932: an empty packet is never sent, so IDS gets a document before Marcus is hired
+      assertEquals(
+        (await call("PUT", `/hr/departments/${ids.body.id}`, {
+          docIds: [welcome.body.id],
+        }, H)).status,
+        200,
+      );
       const marcus = await call("POST", "/hr/hires", {
         firstName: "Marcus",
         phone: "7025551100",
         departmentId: ids.body.id,
       }, H);
-      assertEquals(marcus.body.packet, [], "IDS has no documents yet");
+      assertEquals(marcus.status, 201, marcus.text);
+      assertEquals(
+        marcus.body.packet.map((p: { docId: string }) => p.docId),
+        [welcome.body.id],
+        "Marcus's packet is IDS's one document",
+      );
       const store = new HireStore();
       const rec = await store.get(marcus.body.id);
       await store.put({ ...rec, tokenExpiresAt: "2020-01-01T00:00:00.000Z" });

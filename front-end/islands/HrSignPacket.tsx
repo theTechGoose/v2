@@ -157,13 +157,24 @@ export default function HrSignPacket({ token, initialLang }: Props) {
               <h1 class="hrs__title" data-cy="hrs-hi">
                 {t("hr.sign.hi", { first: p.firstName })}
               </h1>
-              <p class="hrs__p">{t("hr.sign.intro")}</p>
-              <p class="hrs__p">
-                <strong>
-                  {t("hr.sign.dept", { department: p.departmentName })}
-                </strong>{" "}
-                · {t("hr.sign.docsCount", { n: total })}
-              </p>
+              {total === 0
+                ? (
+                  // REQ-932 — a packet with nothing in it: say so, no promise and no dead button
+                  <p class="hrs__p" data-cy="hrs-empty">
+                    {t("hr.sign.empty", { company: company || "the team" })}
+                  </p>
+                )
+                : (
+                  <>
+                    <p class="hrs__p">{t("hr.sign.intro")}</p>
+                    <p class="hrs__p">
+                      <strong>
+                        {t("hr.sign.dept", { department: p.departmentName })}
+                      </strong>{" "}
+                      · {t("hr.sign.docsCount", { n: total })}
+                    </p>
+                  </>
+                )}
               <ul class="hrs__list" data-cy="hrs-intro-list">
                 {docs.map((d) => (
                   <li key={d.docId}>
@@ -179,17 +190,18 @@ export default function HrSignPacket({ token, initialLang }: Props) {
                 ))}
               </ul>
             </div>
-            <div class="hrs__foot">
-              <button
-                type="button"
-                class="btn btn--pink"
-                data-cy="hrs-start"
-                disabled={total === 0}
-                onClick={() => setScreen("doc")}
-              >
-                {t("hr.sign.start")}
-              </button>
-            </div>
+            {total > 0 && (
+              <div class="hrs__foot">
+                <button
+                  type="button"
+                  class="btn btn--pink"
+                  data-cy="hrs-start"
+                  onClick={() => setScreen("doc")}
+                >
+                  {t("hr.sign.start")}
+                </button>
+              </div>
+            )}
           </>
         )}
 
