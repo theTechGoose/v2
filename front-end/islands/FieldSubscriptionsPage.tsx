@@ -38,6 +38,7 @@ import {
 } from "../../shared/field/overhead.ts";
 import { langSignal, t } from "../lib/i18n.ts";
 import { zoneName } from "../lib/field-zone-name.ts";
+import { endDateError } from "../lib/field-subs-end-date.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import type { FieldSubscriptionsSeed } from "../lib/field-ssr.ts";
 import SearchSelect from "./SearchSelect.tsx";
@@ -242,6 +243,8 @@ export default function FieldSubscriptionsPage(
   /** REQ-152 — the customer last picked in the open form (its address may sit in the box) */
   const lastPick = useRef<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
+  // REQ-1145: the Ends on inline error, re-derived whenever either date changes
+  const endErr = form ? endDateError(form.startDate, form.endDate) : null;
   // REQ-174: the account's default days to pay, from Settings
   const [defaultNetDays, setDefaultNetDays] = useState(30);
   // REQ-788: the account's overhead per visit, from Settings — flat cents or a percent of the services
@@ -476,6 +479,15 @@ export default function FieldSubscriptionsPage(
       setForm({ ...f, addressErr: t("field.subs.addressRequired") });
       return;
     }
+    // REQ-1004 / REQ-1145: the last visit day can't come before the first. It is
+    // checked before the services/days checks, so its inline error under Ends on
+    // is the one a bad date answers with, and the field gets focus.
+    if (endDateError(f.startDate, f.endDate)) {
+      setForm(f);
+      document.querySelector<HTMLInputElement>("[data-cy='subs-end']")
+        ?.focus();
+      return;
+    }
     if (!f.items.length && !f.checklistId) { // REQ-811: a checklist stands in for the rows
       setForm({ ...f, err: t("field.subs.noItemsOrChecklist") });
       return;
@@ -484,11 +496,6 @@ export default function FieldSubscriptionsPage(
     const monthly = f.cadence === "monthly";
     if (monthly || annual ? !f.daysOfMonth.length : !f.days.length) {
       setForm({ ...f, err: t("field.subs.daysHint") });
-      return;
-    }
-    // REQ-1004: the last visit day can't come before the first
-    if (f.endDate && f.endDate < f.startDate) {
-      setForm({ ...f, err: t("field.subs.endBeforeStart") });
       return;
     }
     // REQ-174: a whole number of days, 0–365
@@ -1091,16 +1098,36 @@ export default function FieldSubscriptionsPage(
                   data-cy="subs-end"
                   value={form.endDate}
                   min={form.startDate || undefined}
+                  aria-invalid={endErr ? "true" : undefined}
+                  aria-describedby={endErr ? "subs-end-error" : undefined}
                   onChange={(e) =>
                     patch({
                       endDate: (e.currentTarget as HTMLInputElement).value,
                     })}
                 />
-                <span class="hint" data-cy="subs-end-text">
-                  {form.endDate
-                    ? formatLongDate(form.endDate, lang)
-                    : t("field.subs.endNone")}
-                </span>
+                {
+                  /* REQ-1145: derived from both dates on every render, so a
+                    typed end before First visit — or First visit moved past
+                    the end — shows here at once, like the address error. */
+                }
+                {endErr
+                  ? (
+                    <span
+                      class="field-error"
+                      role="alert"
+                      id="subs-end-error"
+                      data-cy="subs-end-error"
+                    >
+                      {t(endErr)}
+                    </span>
+                  )
+                  : (
+                    <span class="hint" data-cy="subs-end-text">
+                      {form.endDate
+                        ? formatLongDate(form.endDate, lang)
+                        : t("field.subs.endNone")}
+                    </span>
+                  )}
               </label>
             </div>
 
