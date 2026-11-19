@@ -6330,6 +6330,8 @@
   "invoicesPage.kpi.paidSubFull.one": "{n} paid in full",
   "invoicesPage.kpi.paidSubFull.other": "{n} paid in full",
   "invoicesPage.empty.paidUnlisted": "{amount} received this month, on invoices no longer listed here.",
+  "paperworkEmail.quote.attachmentName": "Quote-{id}.pdf",
+  "signedConfirm.email.attachmentName": "Agreement-{id}.pdf",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",

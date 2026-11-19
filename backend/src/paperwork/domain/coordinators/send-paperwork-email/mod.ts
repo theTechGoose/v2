@@ -194,6 +194,8 @@ export class SendPaperworkEmail {
     customer: Customer | undefined,
     sender: User | undefined,
     biz: BusinessIdentity,
+    /** REQ-1079: the send language — names the file and renders the body */
+    lang: Lang,
   ): Promise<EmailAttachment[]> {
     try {
       const businessName = biz.businessName?.trim() || biz.legalName?.trim();
@@ -202,12 +204,12 @@ export class SendPaperworkEmail {
         customer,
         contractor: sender,
         ...(businessName ? { businessName } : {}),
-        commsLanguage: biz.commsLanguage === "es" ? "es" : "en",
+        commsLanguage: lang,
         invoiceNetDays: accountNetDays(biz.invoiceNetDays),
         logo: await this.logos.run(userId),
       });
       return [{
-        name: quoteFileName(quote),
+        name: quoteFileName(quote, lang),
         content,
         contentType: "application/pdf",
       }];
@@ -494,6 +496,8 @@ export class SendPaperworkEmail {
           quotePdfFrom.customer,
           safeSender,
           quotePdfFrom.biz,
+          // REQ-1079: the language the subject and body were rendered in
+          outboxFacts.language,
         )
         : []),
       ...(input.attachments ?? []),
@@ -1048,9 +1052,15 @@ export function quoteEmailSteps(
  * remote images that mail clients block.
  */
 /** REQ-945: "Quote-Q-001.pdf" — the attachment is named by the quote's number
- *  (as the signed copy is "Agreement-Q-001.pdf", REQ-204). */
-export function quoteFileName(quote: { id: string; number?: string }): string {
-  return `Quote-${docRef(quote).replace(/^#/, "")}.pdf`;
+ *  (as the signed copy is "Agreement-Q-001.pdf", REQ-204). REQ-1079: in the
+ *  send language — "Cotizacion-Q-001.pdf" on a Spanish email. */
+export function quoteFileName(
+  quote: { id: string; number?: string },
+  lang: Lang,
+): string {
+  return t(lang, "paperworkEmail.quote.attachmentName", {
+    id: docRef(quote).replace(/^#/, ""),
+  });
 }
 
 export function renderQuoteHtml(

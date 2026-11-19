@@ -997,3 +997,60 @@ Deno.test("REQ-945 q1-20 send-paperwork-email: a deposit quote's email attaches 
 
   await resetKv();
 });
+
+// REQ-1079 (LOOP-007 cycle 2, q2-68) — "Quote PDF attached to a Spanish email
+// is named in English": the Spanish "Cotización Q-001" email carried
+// "Quote-Q-001.pdf". The attachment is named in the send language.
+Deno.test("REQ-1079 q2-68 send-paperwork-email: a Spanish quote send attaches 'Cotizacion-<n>.pdf', an English one 'Quote-<n>.pdf'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Juan",
+    email: "juan@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Pintura de dormitorios",
+    lineItems: [{
+      description: "Pintura",
+      quantity: 1,
+      unit: "job",
+      price: 50000,
+    }],
+    estimatedTotal: 50000,
+  });
+
+  const es = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "es",
+  });
+  assertEquals(es.ok, true);
+  const en = await flow.run("u-1", {
+    kind: "quote",
+    resourceId: quote.id,
+    language: "en",
+  });
+  assertEquals(en.ok, true);
+  assertEquals(sent.length, 2, "two emails went");
+  assertStringIncludes(
+    sent[0].subject,
+    "Cotización",
+    "the first send is Spanish",
+  );
+
+  const esName = sent[0].attachments?.[0]?.name ?? "";
+  const enName = sent[1].attachments?.[0]?.name ?? "";
+  assert(
+    /^Cotizacion-.+\.pdf$/.test(esName),
+    `the Spanish email's quote PDF is named 'Cotizacion-…pdf' (got "${esName}")`,
+  );
+  assert(
+    /^Quote-.+\.pdf$/.test(enName),
+    `the English email's quote PDF is named 'Quote-…pdf' (got "${enName}")`,
+  );
+
+  await resetKv();
+});
