@@ -336,6 +336,36 @@ export interface LinkedInvoiceLike {
   paidAt?: string;
   /** REQ-928: how it was paid */
   paidMethods?: string[];
+  /** REQ-954: which milestone of the agreement this bill is (1 = deposit) */
+  installmentIndex?: number;
+}
+
+// ---------- REQ-954: the deposit's one deadline ----------
+
+/** Days after signing the first (deposit) invoice is due — the net the
+ *  signed-confirmation coordinator stores on it (REQ-240). */
+export const SIGNING_NET_DAYS = 7;
+
+/**
+ * REQ-954 (LOOP-007 q1-26): the stored due date of an agreement's deposit
+ * invoice — installment 1 of the bills the signature issued (or, on rows
+ * that predate installment numbers, the first in number order). A void bill
+ * never counts. Undefined when there is no such invoice yet (an unsigned
+ * quote), so the schedule falls back to the rule's own wording.
+ */
+export function depositDueDateOf(
+  rows:
+    | readonly {
+      status?: string;
+      dueDate?: string;
+      installmentIndex?: number;
+    }[]
+    | undefined,
+): string | undefined {
+  const live = (rows ?? []).filter((r) => r.status !== "void" && r.dueDate);
+  const numbered = live.some((r) => r.installmentIndex != null);
+  const first = numbered ? live.find((r) => r.installmentIndex === 1) : live[0];
+  return first?.dueDate;
 }
 
 export interface LinkedChangeOrderLike {
