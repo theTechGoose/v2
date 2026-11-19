@@ -111,6 +111,10 @@ export class FieldWorkerController {
     if (w && await this.sessions.locked(w.id)) throw new FieldError("too many attempts — wait a minute", 429);
     if (!w || w.pin !== pin) {
       if (w) await this.sessions.miss(w.id);
+      // REQ-1165: a removed worker with the PIN they had is told so; any other PIN stays a plain 401
+      if (!w && phone && await this.workers.wasRemoved(phone, pin)) {
+        throw new FieldError("worker access removed", 403, undefined, "worker_removed");
+      }
       throw new FieldError("wrong cell or PIN", 401);
     }
     await this.sessions.clearMisses(w.id);

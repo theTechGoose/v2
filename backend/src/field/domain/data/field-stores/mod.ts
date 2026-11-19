@@ -99,6 +99,47 @@ export class FieldWorkerStore extends OwnedStore<FieldWorker> {
     const id = (await kv.get<string>(["field_worker_by_phone", digits])).value;
     return id ? await this.find(id) : null;
   }
+
+  /**
+   * REQ-1165: Remove access hard-deletes the worker, so sign-in could not tell a
+   * removed worker from a typo. Before the delete, leave a tombstone on the cell
+   * — ["field_worker_removed_by_phone", phone] → { userId, pinHash, removedAt } —
+   * owned by the account (the wipe drops it), holding only a hash of the PIN.
+   */
+  async remove(w: FieldWorker): Promise<void> {
+    const kv = await getKv();
+    const tomb: RemovedWorker = {
+      userId: w.userId,
+      pinHash: await pinHash(w.phoneNumber, w.pin),
+      removedAt: new Date().toISOString(),
+    };
+    await kv.set(["field_worker_removed_by_phone", w.phoneNumber], tomb);
+    await this.delete(w);
+  }
+
+  /** REQ-1165: true only when this cell's worker was removed AND the PIN is the one they had */
+  async wasRemoved(digits: string, pin: string): Promise<boolean> {
+    const kv = await getKv();
+    const tomb = (await kv.get<RemovedWorker>(["field_worker_removed_by_phone", digits])).value;
+    return !!tomb && tomb.pinHash === await pinHash(digits, pin);
+  }
+
+  /** REQ-1165: the cell is given to a worker again — the old removal no longer applies */
+  async clearRemoved(digits: string): Promise<void> {
+    const kv = await getKv();
+    await kv.delete(["field_worker_removed_by_phone", digits]);
+  }
+}
+
+interface RemovedWorker {
+  userId: string;
+  pinHash: string;
+  removedAt: string;
+}
+
+async function pinHash(phone: string, pin: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`field_worker_removed:${phone}:${pin}`));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 @Injectable()

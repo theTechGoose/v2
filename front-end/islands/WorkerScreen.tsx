@@ -538,6 +538,11 @@ export default function WorkerScreen(
     }).catch((err) => {
       if (err instanceof ApiError && err.status === 429) {
         setBad(t("worker.locked"));
+      } else if (
+        err instanceof ApiError && err.status === 403 &&
+        (err.body as { code?: unknown } | null)?.code === "worker_removed"
+      ) {
+        setBad(t("worker.removed")); // REQ-1165 — the owner removed this worker's access
       } else if (err instanceof ApiError && err.status === 401) {
         setBad(t("worker.bad"));
       } else setBad(friendly(err));
