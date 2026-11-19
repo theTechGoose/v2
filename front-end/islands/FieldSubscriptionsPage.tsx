@@ -80,6 +80,10 @@ interface Form {
   daysOfMonth: number[];
   /** REQ-787 — annual: the month, 1–12 */
   month: number;
+  /** REQ-1166 — the weekday chips were picked by hand (or saved): a typed First visit keeps them */
+  daysTouched?: boolean;
+  /** REQ-1166 — the day-of-month chips / annual month were picked by hand (or saved) */
+  domTouched?: boolean;
   /** REQ-811 — the checklist referenced ("" = none); its rows are included on every visit */
   checklistId: string;
   /** the visit's OWN rows (REQ-811: extras beside the checklist, or everything when there is none) */
@@ -176,6 +180,9 @@ function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
       ? s.daysOfMonth
       : [monthDayOf(startDate)],
     month: s.month ?? monthOf(startDate),
+    // REQ-1166: a saved visit's picks are the owner's — a new First visit keeps them
+    daysTouched: !!s.days?.length,
+    domTouched: !!s.daysOfMonth?.length || s.month != null,
     checklistId: s.checklistId ?? "",
     // REQ-811: the checklist's rows stay the checklist's — only the visit's own are edited here
     items: ownItems(s).map((i) => ({
@@ -404,7 +411,7 @@ export default function FieldSubscriptionsPage(
       const days = f.days.includes(d)
         ? f.days.filter((x) => x !== d)
         : [...f.days, d].sort((a, b) => a - b);
-      return { ...f, days };
+      return { ...f, days, daysTouched: true }; // REQ-1166
     });
   }
 
@@ -415,7 +422,7 @@ export default function FieldSubscriptionsPage(
       const daysOfMonth = f.daysOfMonth.includes(d)
         ? f.daysOfMonth.filter((x) => x !== d)
         : [...f.daysOfMonth, d].sort((a, b) => a - b);
-      return { ...f, daysOfMonth };
+      return { ...f, daysOfMonth, domTouched: true }; // REQ-1166
     });
   }
 
@@ -425,7 +432,12 @@ export default function FieldSubscriptionsPage(
       if (!f) return f;
       const last = daysIn(annualYear(f.startDate, month), month);
       const kept = f.daysOfMonth.filter((d) => d <= last);
-      return { ...f, month, daysOfMonth: kept.length ? kept : [last] };
+      return {
+        ...f,
+        month,
+        daysOfMonth: kept.length ? kept : [last],
+        domTouched: true, // REQ-1166
+      };
     });
   }
 

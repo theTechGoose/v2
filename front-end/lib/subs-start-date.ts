@@ -31,24 +31,41 @@ export interface StartDatePicks {
   days: number[];
   daysOfMonth: number[];
   month: number;
+  /** REQ-1166 — the weekday chips were picked by hand (or saved on the visit) */
+  daysTouched?: boolean;
+  /** REQ-1166 — the day-of-month chips / annual month were picked by hand (or saved) */
+  domTouched?: boolean;
 }
 
-/** a blank form's picks, seeded from its First visit date */
+/** a blank form's picks, seeded from its First visit date — nothing touched yet */
 export function seedPicks(startDate: string): StartDatePicks {
   return {
     startDate,
     days: [weekdayOf(startDate)],
     daysOfMonth: [monthDayOf(startDate)],
     month: monthOf(startDate),
+    daysTouched: false,
+    domTouched: false,
   };
 }
 
-/** the form after the First visit date is typed */
+/**
+ * REQ-1166 (amends REQ-157 / REQ-139 / REQ-787) — the form after the First
+ * visit date is typed. Picks the user never touched were only seeded from the
+ * date the form opened on, so they follow the typed date (weekday, day of the
+ * month and, for annual, the month). Picks the user chose survive; an emptied
+ * list is refilled from the typed date.
+ */
 export function withStartDate<F extends StartDatePicks>(f: F, v: string): F {
+  const days = !f.daysTouched || !f.days.length ? [weekdayOf(v)] : f.days;
+  const followDom = !f.domTouched;
   return {
     ...f,
     startDate: v,
-    days: f.days.length ? f.days : [weekdayOf(v)],
-    daysOfMonth: f.daysOfMonth.length ? f.daysOfMonth : [monthDayOf(v)],
+    days,
+    daysOfMonth: followDom || !f.daysOfMonth.length
+      ? [monthDayOf(v)]
+      : f.daysOfMonth,
+    month: followDom ? monthOf(v) : f.month,
   };
 }
