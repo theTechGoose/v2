@@ -14,16 +14,16 @@ import {
   smsFailureCodeForReasonKey,
 } from "#quote-flow/sms-failure.ts";
 import type { QuoteDelivery } from "#quote-flow/delivery.ts";
+import { customerPhoneE164 } from "#quote-flow/customer-contact.ts"; // REQ-1080
 
-/** Normalize a raw phone to E.164 (US-default); undefined when it can't be. */
+/**
+ * Normalize a raw phone to E.164 (US-default); undefined when it can't be.
+ * REQ-1080 (LOOP-007 cycle 2, q2-69): the send rule IS the save rule
+ * (`customerPhoneE164`), so a number the customer form accepts is a number
+ * this path dials — REQ-278's promise, no second copy to drift.
+ */
 export function normalizeE164(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) return undefined;
-  if (/^\+[1-9]\d{6,14}$/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return undefined;
+  return customerPhoneE164(raw ?? "") ?? undefined;
 }
 
 export type CustomerSmsTarget =

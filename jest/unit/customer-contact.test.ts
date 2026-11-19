@@ -105,3 +105,21 @@ describe("REQ-278 M16: both customer forms use the shared rule", () => {
     expect(check).toBeLessThan(post);
   });
 });
+
+// REQ-1080 (LOOP-007 cycle 2, q2-69): a phone typed with an extension is not
+// a number the SMS send path can text, so the save rule (and the New customer
+// modal that asks it) refuses it instead of gluing the extension digit on.
+describe("REQ-1080 q2-69: a phone with an extension is refused", () => {
+  test.each([
+    "+1 (843) 555-0124 ext 9",
+    "+1 843 555 0124 x9",
+    "(843) 555-0124 ext 9",
+    "+1 843 555 01249",
+  ])("REQ-1080 rejects %s", (raw) => {
+    expect(customerPhoneE164(raw)).toBeNull();
+    expect(isValidCustomerPhone(raw)).toBe(false);
+    expect(customerContactError({ phoneNumber: raw })).toBe(
+      "customer.invalidPhone",
+    );
+  });
+});

@@ -265,3 +265,58 @@ Deno.test("REQ-599 m30 customer e2e: POST /customers keeps the New customer moda
     assertEquals(fetched.address, "1600 Congress Ave, Austin, TX 78701");
   });
 });
+
+// REQ-1080 (LOOP-007 cycle 2, q2-69): the API keeps the same rules the New
+// customer form does — a blank / spaces-only name is refused (REQ-352
+// "customer.nameRequired"), and a phone with an extension that the SMS send
+// path cannot dial is refused (REQ-278). Nothing is saved or changed.
+for (
+  const [label, body, key] of [
+    ["name of only spaces", { name: "   " }, "customer.nameRequired"],
+    ["empty name", { name: "" }, "customer.nameRequired"],
+    [
+      "phone '+1 (843) 555-0124 ext 9'",
+      { name: "Ext Customer", phoneNumber: "+1 (843) 555-0124 ext 9" },
+      "customer.invalidPhone",
+    ],
+  ] as const
+) {
+  Deno.test(`REQ-1080 q2-69 customer e2e: POST /customers with ${label} answers 400 ${key}, nothing saved`, async () => {
+    await withServer(async (port) => {
+      const sid = await login(port);
+      const headers = { "content-type": "application/json", "x-session-id": sid };
+      const post = await fetch(`http://localhost:${port}/customers`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const postBody = await post.text();
+      assertEquals(post.status, 400, postBody);
+      assertEquals(postBody.includes(key), true, postBody);
+      const list = await fetch(`http://localhost:${port}/customers`, { headers }).then((r) => r.json());
+      assertEquals(list.length, 0, JSON.stringify(list));
+    });
+  });
+}
+
+Deno.test("REQ-1080 q2-69 customer e2e: PUT /customers/:id cannot blank the name (400 customer.nameRequired, name unchanged)", async () => {
+  await withServer(async (port) => {
+    const sid = await login(port);
+    const headers = { "content-type": "application/json", "x-session-id": sid };
+    const ok = await fetch(`http://localhost:${port}/customers`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "Davis" }),
+    }).then((r) => r.json());
+    const put = await fetch(`http://localhost:${port}/customers/${ok.id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ name: "  " }),
+    });
+    const putBody = await put.text();
+    assertEquals(put.status, 400, putBody);
+    assertEquals(putBody.includes("customer.nameRequired"), true, putBody);
+    const fetched = await fetch(`http://localhost:${port}/customers/${ok.id}`, { headers }).then((r) => r.json());
+    assertEquals(fetched.name, "Davis");
+  });
+});
