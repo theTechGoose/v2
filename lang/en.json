@@ -3348,6 +3348,8 @@
   "settings.wipeConfirmLabel": "Type \"DELETE\" to confirm",
   "settings.wipeFailed": "wipe failed",
   "settings.wipeIntro": "This deletes your account and 100% of your data — quotes, invoices, clients, payments, and files. This cannot be undone.",
+  "settings.wipeTitle": "Delete account",
+  "settings.typeToConfirm": "Type the word above",
   "settings.wiping": "Wiping…",
   "settings.yourBusiness": "Your business",
   "settings.yourHandle": "Your handle",

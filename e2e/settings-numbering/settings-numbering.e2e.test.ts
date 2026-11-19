@@ -192,9 +192,12 @@ Deno.test("REQ-199: Settings shows the account number and the next numbers; a st
           .catch(() => false),
     );
     await expect.see("Reset test data");
-    const keyword =
-      (await page.locator("[data-cy='settings-reset-confirm-input']")
-        .getAttribute("placeholder")) ?? "RESET";
+    // REQ-975: the placeholder is a hint now, not the keyword — read the quoted
+    // word from the field's label ('Type "RESET" to confirm').
+    const label = await page.locator(
+      "label:has([data-cy='settings-reset-confirm-input'])",
+    ).innerText();
+    const keyword = label.match(/"([^"]+)"/)?.[1] ?? "RESET";
     await page.locator("[data-cy='settings-reset-confirm-input']").fill(
       keyword,
     );

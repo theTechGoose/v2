@@ -289,6 +289,9 @@ function tr(es: boolean) {
     // Danger zone
     dangerZone: tFor(lang, "settings.dangerZone"),
     wipeIntro: tFor(lang, "settings.wipeIntro"),
+    // REQ-975 — the wipe sub-block's own heading + a confirm hint that is not the keyword
+    wipeTitle: tFor(lang, "settings.wipeTitle"),
+    typeToConfirm: tFor(lang, "settings.typeToConfirm"),
     wipeConfirmLabel: tFor(lang, "settings.wipeConfirmLabel"),
     wipeButton: tFor(lang, "settings.wipeButton"),
     wiping: tFor(lang, "settings.wiping"),
@@ -3556,7 +3559,7 @@ function DangerZoneCard(
                   style={inputStyle}
                   value={resetConfirm}
                   disabled={resetBusy}
-                  placeholder={resetKeyword}
+                  placeholder={t.typeToConfirm}
                   autoComplete="off"
                   onInput={(e) =>
                     setResetConfirm((e.target as HTMLInputElement).value)}
@@ -3600,42 +3603,50 @@ function DangerZoneCard(
           </Backdrop>
         )
         : null}
-      <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
-        {t.wipeIntro}
-      </p>
-      <label style="display:block;max-width:320px">
-        <span style={labelStyle}>{t.wipeConfirmLabel}</span>
-        <input
-          type="text"
-          style={inputStyle}
-          value={confirm}
-          disabled={busy}
-          placeholder={keyword}
-          aria-label={t.ariaWipeConfirm}
-          onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
-        />
-      </label>
-      <div style="margin-top:16px">
-        <button
-          type="button"
-          disabled={!armed || busy}
-          onClick={wipe}
-          style={`padding:9px 16px;border-radius:8px;border:0;background:${
-            armed ? "#a83b3b" : "#d8b4b4"
-          };color:#fff;cursor:${
-            armed && !busy ? "pointer" : "not-allowed"
-          };font:inherit;font-weight:700`}
-        >
-          {busy ? t.wiping : t.wipeButton}
-        </button>
+      {/* REQ-975 — delete the account: its own titled sub-block, like Reset above */}
+      <div data-cy="settings-wipe">
+        <div style="font-weight:700;font-size:13.5px;color:var(--fg);margin-bottom:4px">
+          {t.wipeTitle}
+        </div>
+        <p style="margin:0 0 14px;font-size:13px;color:var(--fg-muted,#6b7560)">
+          {t.wipeIntro}
+        </p>
+        <label style="display:block;max-width:320px">
+          <span style={labelStyle}>{t.wipeConfirmLabel}</span>
+          <input
+            type="text"
+            data-cy="settings-wipe-confirm-input"
+            style={inputStyle}
+            value={confirm}
+            disabled={busy}
+            placeholder={t.typeToConfirm}
+            autoComplete="off"
+            aria-label={t.ariaWipeConfirm}
+            onInput={(e) => setConfirm((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <div style="margin-top:16px">
+          <button
+            type="button"
+            disabled={!armed || busy}
+            onClick={wipe}
+            style={`padding:9px 16px;border-radius:8px;border:0;background:${
+              armed ? "#a83b3b" : "#d8b4b4"
+            };color:#fff;cursor:${
+              armed && !busy ? "pointer" : "not-allowed"
+            };font:inherit;font-weight:700`}
+          >
+            {busy ? t.wiping : t.wipeButton}
+          </button>
+        </div>
+        {err
+          ? (
+            <div style="margin-top:10px;color:#a83b3b;font-size:12.5px">
+              {err}
+            </div>
+          )
+          : null}
       </div>
-      {err
-        ? (
-          <div style="margin-top:10px;color:#a83b3b;font-size:12.5px">
-            {err}
-          </div>
-        )
-        : null}
     </div>
   );
 }

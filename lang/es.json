@@ -3347,6 +3347,8 @@
   "settings.wipeConfirmLabel": "Escribe \"ELIMINAR\" para confirmar",
   "settings.wipeFailed": "no se pudo borrar",
   "settings.wipeIntro": "Esto borra tu cuenta y el 100% de tus datos — cotizaciones, facturas, clientes, pagos y archivos. No se puede deshacer.",
+  "settings.wipeTitle": "Eliminar cuenta",
+  "settings.typeToConfirm": "Escribe la palabra de arriba",
   "settings.wiping": "Borrando…",
   "settings.yourBusiness": "Tu negocio",
   "settings.yourHandle": "Tu usuario",
