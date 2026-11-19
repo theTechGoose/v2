@@ -401,7 +401,7 @@ Deno.test("REQ-980 (q1-61) the amount-only invoice email: header date labelled I
 // (paymentInstructionsFromMethods → "Zelle: (512) 555-0700"), and the Spanish invoice email sent
 // through the real coordinator printed "Instrucciones de pago Zelle: (512) 555-0700" over
 // "Formas de pago Zelle: envía a 5125550700".
-Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one way — '(512) 555-0700' in Payment instructions and in Ways to pay, never '5125550700'", async () => {
+Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one way — '(512) 555-0700' in Ways to pay (printed once, REQ-1117), never '5125550700'", async () => {
   await withServer(async (sid, userId) => {
     const methods = { zelle: { enabled: true, handle: "5125550700" } };
     const put = await putIdentity(sid, {
@@ -455,13 +455,17 @@ Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one 
     const r = await emailer.run(userId, { kind: "invoice", resourceId: inv.id });
     assertEquals(r.ok, true, JSON.stringify(r));
     const html = sent[0].htmlBody ?? "";
-    const instr = html.match(/<p data-payment-instructions[^>]*>([^<]*)<\/p>/)?.[1] ?? "";
     const zelleRow = html.match(/<div data-pay-way="zelle"[^>]*>([^<]*)<\/div>/)?.[1] ?? "";
-    assertStringIncludes(instr, "Zelle: (512) 555-0700", "Payment instructions line");
+    // REQ-1117 (q3-42) amends the doubled line REQ-1032 kept: instructions that only repeat the
+    // methods are no longer printed beside Ways to pay, so the phone is shown once, formatted.
+    assert(
+      !html.includes("data-payment-instructions"),
+      "Payment instructions repeat the Ways-to-pay Zelle row (REQ-1117)",
+    );
     assertEquals(
-      { instructions: instr, waysToPay: zelleRow },
-      { instructions: instr, waysToPay: "Zelle: envía a (512) 555-0700" },
-      "the Ways-to-pay Zelle row prints the phone differently from Payment instructions",
+      zelleRow,
+      "Zelle: envía a (512) 555-0700",
+      "the Ways-to-pay Zelle row prints the phone as the invoice form shows it",
     );
     assert(!html.includes("5125550700"), "the email prints the raw digits 5125550700");
   });

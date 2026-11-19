@@ -151,9 +151,10 @@ Deno.test("REQ-1117 (q3-42): a sent invoice email for a Zelle business names the
     const instructionsBlocks = await email.locator(
       "[data-payment-instructions]",
     ).count();
+    // shots' expect.eq compares with !== — compare the facts as one JSON string
     expect.eq(
-      { handleCount, instructionsBlocks },
-      { handleCount: 1, instructionsBlocks: 0 },
+      JSON.stringify({ handleCount, instructionsBlocks }),
+      JSON.stringify({ handleCount: 1, instructionsBlocks: 0 }),
       `the invoice email lists Zelle twice (Payment instructions + Ways to pay): ${
         JSON.stringify(text)
       }`,

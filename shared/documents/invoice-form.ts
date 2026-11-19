@@ -314,6 +314,54 @@ export function localizePaymentInstructions(
   ).join("\n");
 }
 
+/**
+ * REQ-1117 (LOOP-007 q3, q3-42) — what Payment instructions say beyond the
+ * methods another block already lists. The text is split the way
+ * localizePaymentInstructions reads it (lines, then " · " parts); a part is
+ * dropped when `covered(method, part, detail)` says so — `method` is the
+ * method key a "<label>" / "<label>: <detail>" part names (undefined for any
+ * other text). Lines left empty go; what the owner wrote otherwise stays as
+ * typed (blank lines too). "" when nothing is left.
+ */
+export function paymentInstructionsBeyond(
+  text: string | null | undefined,
+  covered: (
+    method: string | undefined,
+    part: string,
+    detail: string,
+  ) => boolean,
+): string {
+  const s = text ?? "";
+  if (!s.trim()) return "";
+  const keys = Object.keys(METHOD_LABELS.en);
+  const labelKey = (label: string) => {
+    const l = label.trim().toLowerCase();
+    return keys.find((k) =>
+      METHOD_LABELS.en[k].toLowerCase() === l ||
+      METHOD_LABELS.es[k].toLowerCase() === l
+    );
+  };
+  const keep = (part: string) => {
+    const p = part.trim();
+    if (!p) return false;
+    const whole = labelKey(p);
+    if (whole) return !covered(whole, p, "");
+    const colon = p.indexOf(":");
+    const key = colon > 0 ? labelKey(p.slice(0, colon)) : undefined;
+    return !covered(key, p, key ? p.slice(colon + 1).trim() : "");
+  };
+  const out: string[] = [];
+  for (const line of s.split("\n")) {
+    if (!line.trim()) {
+      out.push(line); // the owner's own blank line between paragraphs
+      continue;
+    }
+    const left = line.split(" · ").filter(keep);
+    if (left.length) out.push(left.join(" · "));
+  }
+  return out.join("\n").trim();
+}
+
 /** REQ-483 (M40): what "Payment instructions" starts with — Settings' own
  *  text first, else what was last typed on this device, else the accepted
  *  methods (so onboarding's Zelle is never a blank field). */
