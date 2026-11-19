@@ -2859,3 +2859,69 @@ Deno.test("REQ-1004 subscriptions — an endDate is kept on create, refused befo
     assertEquals(cleared.body.endDate, undefined, "null clears the end date");
   });
 });
+
+// REQ-1162 (LOOP-007 q3, q3-94) — amends REQ-421/REQ-1015: removing a worker must not strand
+// their upcoming tasks under Worker "—" with status ASSIGNED. The server refuses with 409
+// worker_has_tasks (like worker_covers_zones) and says how many / which.
+Deno.test("REQ-1162 (q3-94) DELETE /field/workers/:id refuses 409 worker_has_tasks while the worker has an upcoming assigned task; the task is never left as Worker '—' + assigned", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551694");
+    const grace = (await call("POST", "/customers", {
+      name: "Grace Whitfield",
+      address: "12 Elm St, Myrtle Beach, SC",
+    }, H)).body;
+    const maya = (await call("POST", "/field/workers", {
+      name: "Maya Chen",
+      phoneNumber: "843-555-0694",
+      pin: "1234",
+    }, H)).body;
+    const tomorrow = shiftDate(fieldToday(), 1);
+    const made = await call("POST", "/field/tasks", {
+      customerId: grace.id,
+      date: tomorrow,
+      taskTypeName: "Leaf cleanup",
+      priceCents: 9000,
+      workerId: maya.id,
+    }, H);
+    assertEquals(made.status, 201);
+    assertEquals(made.body.status, "assigned");
+
+    const gone = await call("DELETE", `/field/workers/${maya.id}`, undefined, H);
+    const day = (await call("GET", `/field/tasks?date=${tomorrow}`, undefined, H))
+      .body as Array<{ id: string; workerName: string; status: string }>;
+    const orphans = day.filter((t) =>
+      t.workerName === "—" && t.status === "assigned"
+    );
+    assertEquals(
+      orphans.map((t) => t.id),
+      [],
+      `no task on ${tomorrow} shows Worker "—" with status assigned (DELETE answered ${gone.status})`,
+    );
+    assertEquals(
+      [gone.status, gone.body?.code],
+      [409, "worker_has_tasks"],
+      "removing a worker with an upcoming task is refused, like worker_covers_zones",
+    );
+    assertEquals(gone.body?.detail?.count, 1, "the refusal says how many tasks");
+    const still = day.find((t) => t.id === made.body.id);
+    assertEquals(still?.workerName, "Maya Chen", "the task is still Maya's");
+    assertEquals(
+      (await call("GET", "/field/workers", undefined, H)).body.some((
+        w: { id: string },
+      ) => w.id === maya.id),
+      true,
+      "Maya is not removed",
+    );
+
+    // with the task gone the worker can be removed
+    assertEquals(
+      (await call("DELETE", `/field/tasks/${made.body.id}`, undefined, H))
+        .status,
+      200,
+    );
+    assertEquals(
+      (await call("DELETE", `/field/workers/${maya.id}`, undefined, H)).status,
+      200,
+    );
+  });
+});

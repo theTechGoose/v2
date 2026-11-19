@@ -329,3 +329,87 @@ Deno.test("REQ-1062 (LOOP-007 q2-51): the 'still covers Zone A' refusal is gone 
       `no wk-row-error on the worker's card after marking a worker out (still shows: ${left})`,
     );
   }));
+
+/**
+ * REQ-1162 (LOOP-007 q3, q3-94) — amends REQ-421/REQ-1015. Remove access on a worker who has an
+ * upcoming task: the row says so (names the task) before anything is removed, and afterwards the
+ * day never shows that task under Worker "—" with status ASSIGNED.
+ */
+Deno.test("REQ-1162 (LOOP-007 q3-94): Remove access on a worker with an upcoming task names the task on the row, and the task is never left as Worker '—' + ASSIGNED", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const mr = await http("/api/field/workers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Maya Chen",
+        phoneNumber: `843${digits()}`,
+        pin: "1234",
+      }),
+    });
+    expect(mr.status === 201, `Maya created (${mr.status})`);
+    const maya = (await mr.json()) as { id: string };
+    const grace = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Grace Whitfield",
+        address: "12 Elm St, Myrtle Beach, SC",
+      }),
+    })).json();
+    // one day ahead in UTC is today or later in any US account's own day — "upcoming" either way
+    const day = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const tr = await http("/api/field/tasks", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: grace.id,
+        date: day,
+        taskTypeName: "Leaf cleanup",
+        priceCents: 9000,
+        workerId: maya.id,
+      }),
+    });
+    expect(tr.status === 201, `Maya's task on ${day} created (${tr.status})`);
+    await tr.body?.cancel();
+
+    await page.goto("/field/workers");
+    const row = page.locator(`[data-cy='wk-row'][data-id='${maya.id}']`);
+    await row.waitFor({ timeout: 20_000 });
+    await row.locator("[data-cy='wk-delete']").click();
+    await row.locator("[data-cy='wk-delete-confirm'], [data-cy='wk-row-error']")
+      .first().waitFor({ timeout: 5_000 }).catch(() => {});
+    const seen = await row.evaluate((el) => ({
+      confirm: !!el.querySelector("[data-cy='wk-delete-confirm']"),
+      text: el.textContent ?? "",
+    }));
+    // the owner is told about the task before access goes
+    const warned = /task|Grace Whitfield/i.test(seen.text);
+
+    // go through with whatever the page offers, then read the day
+    if (seen.confirm) {
+      const del = page.waitForResponse(
+        (r) => r.request().method() === "DELETE" && r.url().includes(maya.id),
+        { timeout: 10_000 },
+      ).catch(() => null);
+      await row.locator("[data-cy='wk-delete-confirm']").click();
+      await del;
+    }
+    const dr = await http(`/api/field/tasks?date=${day}`, { headers: auth });
+    const tasks = (await dr.json()) as Array<
+      { customerName: string; workerName: string; status: string }
+    >;
+    const orphans = tasks.filter((x) =>
+      x.workerName === "—" && x.status === "assigned"
+    );
+
+    expect(
+      warned,
+      `the row names Maya's upcoming task before removing her (row: ${seen.text})`,
+    );
+    expect.eq(
+      orphans.map((x) => x.customerName),
+      [],
+      `no task on ${day} is left under Worker "—" with status assigned`,
+    );
+  }));
