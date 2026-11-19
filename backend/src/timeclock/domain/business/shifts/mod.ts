@@ -117,87 +117,11 @@ export function sumShifts(shifts: Shift[]): number {
 
 // ---------------------------------------------------------------- weeks in a time zone
 
-/** the zone's offset from UTC, in ms, at an instant */
-function offsetAt(tz: string, instant: number): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(new Date(instant));
-  const get = (t: string) =>
-    Number(parts.find((p) => p.type === t)?.value ?? 0);
-  const asUtc = Date.UTC(
-    get("year"),
-    get("month") - 1,
-    get("day"),
-    get("hour"),
-    get("minute"),
-    get("second"),
-  );
-  return asUtc - Math.floor(instant / 1000) * 1000;
-}
-
-/** the instant at which the civil date `y-m-d` starts in the zone */
-function zonedMidnight(tz: string, y: number, m: number, d: number): number {
-  const guess = Date.UTC(y, m - 1, d);
-  let t = guess - offsetAt(tz, guess);
-  t = guess - offsetAt(tz, t); // once more for an offset that changed between the guess and the answer
-  return t;
-}
-
-/** the zone's civil date of an instant, as [y, m, d] and the weekday (0 = Sunday) */
-function civil(
-  tz: string,
-  now: Date,
-): { y: number; m: number; d: number; wd: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  }).formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
-    get("weekday"),
-  );
-  return {
-    y: Number(get("year")),
-    m: Number(get("month")),
-    d: Number(get("day")),
-    wd,
-  };
-}
-
-/** the start of the zone's day holding `now` */
-export function dayStartIn(tz: string, now: Date = new Date()): string {
-  const c = civil(tz, now);
-  return new Date(zonedMidnight(tz, c.y, c.m, c.d)).toISOString();
-}
-
-/** Monday 00:00 to the next Monday 00:00 in the zone, around `now` */
-export function weekBoundsIn(
-  tz: string,
-  now: Date = new Date(),
-): { from: string; to: string } {
-  const c = civil(tz, now);
-  const back = (c.wd + 6) % 7; // days since Monday
-  const from = zonedMidnight(tz, c.y, c.m, c.d - back);
-  // the next Monday by civil arithmetic: Date.UTC normalises the overflow
-  const n = new Date(Date.UTC(c.y, c.m - 1, c.d - back + 7));
-  const to = zonedMidnight(
-    tz,
-    n.getUTCFullYear(),
-    n.getUTCMonth() + 1,
-    n.getUTCDate(),
-  );
-  return { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
-}
+// REQ-1038 — one copy, shared with the browser's timeclock (clients/timeclock.ts)
+export {
+  dayStartIn,
+  weekBoundsIn,
+} from "../../../../../../shared/field/zoned-time.ts";
 
 /** the server's fallback zone — an account's week uses `businessZoneOf(userId)` (REQ-940) */
 export const timeclockTz = () =>

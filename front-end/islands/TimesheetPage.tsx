@@ -18,37 +18,50 @@ import FieldHead from "../components/FieldHead.tsx";
 import { ApiError } from "../lib/api.ts";
 import { type Lang, langSignal, t } from "../lib/i18n.ts";
 import { onlyWorker, workerFromSearch } from "../lib/timesheet-filter.ts";
+import { fromZonedInput, toZonedInput } from "../../shared/field/zoned-time.ts"; // REQ-1038
 
 type AddType = PunchType | "shift";
 
 const locale = (lang: Lang) => lang === "es" ? "es-MX" : "en-US";
-const fmtTime = (iso: string, lang: Lang) =>
+// REQ-1038 (amends REQ-944) — every instant reads on the business's wall clock (`timeZone`),
+// not the device's; undefined only when the account has no zone (the device's, as before)
+const fmtTime = (iso: string, lang: Lang, timeZone?: string) =>
   new Date(iso).toLocaleTimeString(locale(lang), {
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   });
-const fmtDayOf = (iso: string, lang: Lang) =>
+const fmtDayOf = (iso: string, lang: Lang, timeZone?: string) =>
   new Date(iso).toLocaleDateString(locale(lang), {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone,
   });
-const fmtWhen = (iso: string, lang: Lang) =>
-  `${fmtDayOf(iso, lang)} ${fmtTime(iso, lang)}`;
-const fmtRange = (from: string, to: string, lang: Lang) => {
+const fmtWhen = (iso: string, lang: Lang, timeZone?: string) =>
+  `${fmtDayOf(iso, lang, timeZone)} ${fmtTime(iso, lang, timeZone)}`;
+const fmtRange = (from: string, to: string, lang: Lang, timeZone?: string) => {
   const last = new Date(new Date(to).getTime() - 1);
-  const o: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  const o: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    timeZone,
+  };
   return `${new Date(from).toLocaleDateString(locale(lang), o)} – ${
     last.toLocaleDateString(locale(lang), o)
   }`;
 };
-/** a datetime-local value for an instant, in the browser's zone */
-const toLocalInput = (d: Date) => {
+/** a datetime-local value for an instant: the business's wall clock (REQ-1038), else the browser's */
+const toLocalInput = (d: Date, timeZone?: string) => {
+  if (timeZone) return toZonedInput(d, timeZone);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${
     p(d.getHours())
   }:${p(d.getMinutes())}`;
 };
+/** the instant a datetime-local value names, on the same wall clock toLocalInput wrote */
+const fromLocalInput = (v: string, timeZone?: string): Date =>
+  timeZone ? fromZonedInput(v, timeZone) ?? new Date(NaN) : new Date(v);
 
 function friendly(e: unknown): string {
   if (e instanceof ApiError) {
@@ -71,7 +84,12 @@ function friendly(e: unknown): string {
   return t("field.common.offline");
 }
 
-export default function TimesheetPage() {
+export default function TimesheetPage(
+  { timeZone }: {
+    /** REQ-1038 — the business's zone: its week, its wall clock (ctx.state.user.businessTimezone) */
+    timeZone?: string;
+  } = {},
+) {
   const lang = langSignal.value;
   const [weeks, setWeeks] = useState(0);
   const [report, setReport] = useState<Report | null>(null);
@@ -88,11 +106,11 @@ export default function TimesheetPage() {
   const [add, setAdd] = useState({
     workerId: "",
     type: "shift" as AddType,
-    at: toLocalInput(new Date()),
-    end: toLocalInput(new Date()),
+    at: toLocalInput(new Date(), timeZone),
+    end: toLocalInput(new Date(), timeZone),
     reason: "",
   });
-  const win = localWeek(new Date(), weeks);
+  const win = localWeek(new Date(), weeks, timeZone);
   // REQ-786 (demo dv1) — ?worker=<id> (a worker row's Hours link) narrows the week to them
   const [only, setOnly] = useState<string | null>(null);
   useEffect(() => {
@@ -149,7 +167,8 @@ export default function TimesheetPage() {
 
   async function submitAdd(e: Event) {
     e.preventDefault();
-    const at = new Date(add.at), end = new Date(add.end);
+    const at = fromLocalInput(add.at, timeZone),
+      end = fromLocalInput(add.end, timeZone);
     if (
       Number.isNaN(at.getTime()) ||
       (add.type === "shift" && Number.isNaN(end.getTime()))
@@ -181,7 +200,9 @@ export default function TimesheetPage() {
   return (
     <div data-cy="ts-page">
       <FieldHead
-        eyebrow={t("ts.eyebrow", { range: fmtRange(win.from, win.to, lang) })}
+        eyebrow={t("ts.eyebrow", {
+          range: fmtRange(win.from, win.to, lang, timeZone),
+        })}
         title={t("ts.title")}
         sub={t("ts.sub")}
       >
@@ -259,9 +280,9 @@ export default function TimesheetPage() {
                 class="chip chip--amber"
                 key={a.punchId}
                 data-cy="ts-anomaly"
-                title={fmtWhen(a.at, lang)}
+                title={fmtWhen(a.at, lang, timeZone)}
               >
-                {t(`ts.anomaly.${a.kind}`)} · {fmtWhen(a.at, lang)}
+                {t(`ts.anomaly.${a.kind}`)} · {fmtWhen(a.at, lang, timeZone)}
               </span>
             ))}
           </h3>
@@ -288,11 +309,11 @@ export default function TimesheetPage() {
                       data-cy="ts-shift"
                       data-open={s.open ? "1" : "0"}
                     >
-                      <td>{fmtDayOf(s.start, lang)}</td>
-                      <td>{fmtTime(s.start, lang)}</td>
+                      <td>{fmtDayOf(s.start, lang, timeZone)}</td>
+                      <td>{fmtTime(s.start, lang, timeZone)}</td>
                       <td>
                         {s.end
-                          ? fmtTime(s.end, lang)
+                          ? fmtTime(s.end, lang, timeZone)
                           : s.open
                           ? t("clock.open")
                           : (
@@ -454,7 +475,7 @@ export default function TimesheetPage() {
                     <td data-cy="ts-punch-type">
                       {p.type === "in" ? t("ts.in") : t("ts.out")}
                     </td>
-                    <td>{fmtWhen(p.at, lang)}</td>
+                    <td>{fmtWhen(p.at, lang, timeZone)}</td>
                     <td style="font-size:12.5px">
                       {p.source === "manual" && (
                         <span class="chip chip--teal" data-cy="ts-punch-manual">

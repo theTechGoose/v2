@@ -4,6 +4,7 @@
  * their pm_worker cookie, the office's timesheet behind the owner's session.
  */
 import { api, type ApiOptions } from "../lib/api.ts";
+import { dayStartIn, weekBoundsIn } from "../../shared/field/zoned-time.ts"; // REQ-1038
 
 export type PunchType = "in" | "out";
 
@@ -59,17 +60,31 @@ export interface Report {
   }>;
 }
 
-/** the browser's own week: Monday 00:00 local to the next Monday, and today's start */
+/** a week's window: Monday 00:00 to the next Monday, and today's start */
 export interface Window {
   from: string;
   to: string;
   today: string;
 }
 
+/**
+ * The week `weeks` away from `now`'s. REQ-1038 (REQ-940): with the business's `timeZone` the
+ * bounds are that zone's Monday 00:00 and day start, whatever zone the device is in; without one
+ * (not known yet) they fall back to the browser's own week.
+ */
 export function localWeek(
   now = new Date(),
   weeks = 0,
+  timeZone?: string,
 ): Window & { monday: Date } {
+  if (timeZone) {
+    const w = weekBoundsIn(timeZone, now, weeks);
+    return {
+      ...w,
+      today: dayStartIn(timeZone, now),
+      monday: new Date(w.from),
+    };
+  }
   const back = (now.getDay() + 6) % 7;
   const monday = new Date(
     now.getFullYear(),
@@ -91,10 +106,11 @@ export function localWeek(
 }
 
 export const timeclockWorker = {
-  status: (w: Window) =>
+  /** no window: the server's week in the business's zone (REQ-940) */
+  status: (w: Partial<Window> = {}) =>
     api.get<StatusView>("/timeclock/worker/status", { query: { ...w } }),
   /** no type: flip the state; a type that would not flip it is refused (409) */
-  punch: (w: Window, type?: PunchType) =>
+  punch: (w: Partial<Window> = {}, type?: PunchType) =>
     api.post<{ punch: Punch; status: StatusView }>("/timeclock/worker/punch", {
       ...w,
       type,
