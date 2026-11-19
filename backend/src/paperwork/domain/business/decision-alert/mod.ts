@@ -189,6 +189,11 @@ export function buildChangeOrderReceipt(o: {
   /** REQ-1055: the invoice's number as the customer knows it ("INV-002"),
    *  only for an issued invoice */
   invoiceLabel?: string;
+  /** REQ-1100: the change hangs on an invoice the customer never received
+   *  (a draft or scheduled balance). The receipt then speaks of the JOB —
+   *  no invoice total, no "your invoice" — and `url` is the change order's
+   *  own page, not the unsent bill. */
+  invoiceUnsent?: boolean;
   approvedName?: string;
   approvedAt?: string;
   url: string;
@@ -196,6 +201,7 @@ export function buildChangeOrderReceipt(o: {
   logoHtml?: string;
 }): AlertCopy {
   const { lang } = o;
+  if (o.invoiceUnsent) return changeOrderReceiptUnbilled(o);
   const delta = fmtDeltaUsd(o.deltaCents);
   const total = fmtUsd(o.newTotalCents);
   const date = fmtDecisionDate(o.approvedAt, lang);
@@ -256,6 +262,66 @@ export function buildChangeOrderReceipt(o: {
   return { subject, html, sms };
 }
 
+/** REQ-1100: the receipt for a change on a job whose invoice has not been
+ *  billed yet — names the job total only and links to the change order. */
+function changeOrderReceiptUnbilled(o: {
+  lang: Lang;
+  businessName: string;
+  ref: string;
+  description: string;
+  deltaCents: number;
+  newTotalCents: number;
+  jobTotalCents?: number;
+  approvedName?: string;
+  approvedAt?: string;
+  url: string;
+  logoHtml?: string;
+}): AlertCopy {
+  const { lang } = o;
+  const delta = fmtDeltaUsd(o.deltaCents);
+  const date = fmtDecisionDate(o.approvedAt, lang);
+  const who = o.approvedName?.trim();
+  const approvedLine = who
+    ? t(lang, "decisionAlert.coReceipt.approvedBy", { name: who, date })
+    : t(lang, "decisionAlert.coReceipt.approvedOn", { date });
+  // With no quote on file the invoice IS the whole job, so its total stands
+  // in for the job total.
+  const jobTotal = fmtUsd(
+    typeof o.jobTotalCents === "number" ? o.jobTotalCents : o.newTotalCents,
+  );
+  const subject = `${
+    t(lang, "decisionAlert.coReceipt.subject", { business: o.businessName })
+  } — ${o.ref}`;
+  const sms = `${o.ref}: ${
+    t(lang, "decisionAlert.coReceipt.smsUnbilled", {
+      business: o.businessName,
+      what: o.description.trim(),
+      delta,
+      jobTotal,
+      url: o.url,
+    })
+  }`;
+  const html = shell({
+    lang,
+    ref: o.ref,
+    headline: t(lang, "decisionAlert.coReceipt.headline"),
+    paragraphs: [
+      o.description,
+      delta,
+      approvedLine,
+      t(lang, "decisionAlert.coReceipt.jobTotal", { total: jobTotal }),
+      t(lang, "decisionAlert.coReceipt.notBilledYet"),
+    ],
+    body: t(lang, "decisionAlert.coReceipt.body", {
+      business: o.businessName,
+    }),
+    cta: t(lang, "decisionAlert.coReceipt.ctaChange"),
+    url: o.url,
+    ...(o.logoHtml ? { logoHtml: o.logoHtml } : {}),
+  });
+  return { subject, html, sms };
+}
+
 // ── shared email shell ───────────────────────────────────────────────────
 
 function shell(o: {
@@ -277,7 +343,9 @@ function shell(o: {
       escapeHtml(p)
     }</p>`
   ).join("\n    ");
-  return `${emailRoot(o.lang)}<body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
+  return `${
+    emailRoot(o.lang)
+  }<body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     ${top}
     <div data-doc-ref style="margin-top:10px;font-size:12px;font-weight:800;color:#6b7a7e">${

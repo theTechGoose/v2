@@ -38,11 +38,17 @@ export interface CustomerBearingDoc {
   customerSnapshot?: RenderedCustomer;
 }
 
-/** A document is issued once it is (or was) in front of the customer. */
+/** A document is issued once it is (or was) in front of the customer.
+ *  REQ-1100: a SCHEDULED invoice is never issued, even with `publishedAt` —
+ *  a change-order approval revises it through `applyRevision`, which stamps
+ *  publishedAt + a new version but sends nothing; the customer still never
+ *  received it. Same for a draft that was revised but never sent. */
 export function isIssued(doc: CustomerBearingDoc): boolean {
-  if (doc.sentAt || doc.publishedAt || doc.acceptedAt) return true;
-  return doc.status !== undefined && doc.status !== "draft" &&
-    doc.status !== "scheduled";
+  if (doc.sentAt || doc.acceptedAt) return true;
+  if (doc.status === "scheduled") return false;
+  if (doc.status === "draft") return false;
+  if (doc.publishedAt) return true;
+  return doc.status !== undefined;
 }
 
 function pick(c: RenderedCustomer | undefined): RenderedCustomer | undefined {

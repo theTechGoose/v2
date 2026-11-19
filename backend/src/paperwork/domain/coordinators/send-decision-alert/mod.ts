@@ -20,6 +20,7 @@ import {
   emailLogoHtml,
 } from "@paperwork/domain/business/email-logo/mod.ts";
 import {
+  changeOrderOwnerRef,
   changeOrderRef,
   customerOnDocument,
   docRef,
@@ -34,6 +35,7 @@ import {
   channelsOnFile,
 } from "@paperwork/domain/business/decision-alert/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { isInvoiceIssued } from "#documents/versions.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { resolveCommsLanguage } from "#quote-flow/comms-language.ts";
 import { changeOrderJobTotals } from "#quote-flow/change-order-view.ts";
@@ -191,7 +193,8 @@ export class SendDecisionAlert {
         lang: cxLang,
         decision,
         customerName,
-        ref: changeOrderRef(co, invoice, cxLang),
+        // the owner sees their own scheduled invoices (REQ-949)
+        ref: changeOrderOwnerRef(co, invoice, cxLang),
         description: co.description,
         deltaCents: co.deltaAmountCents,
         ...(typeof total === "number" ? { invoiceTotalCents: total } : {}),
@@ -210,7 +213,20 @@ export class SendDecisionAlert {
       const businessName = ident?.businessName?.trim() ||
         ident?.legalName?.trim() || contractor.name?.trim() ||
         t(coLang, "changeOrderPublic.contractorFallback");
-      const ref = changeOrderRef(co, invoice, coLang);
+      // REQ-1100: a change on a draft/scheduled balance invoice was approved
+      // — that invoice never reached her (the approval's revision stamps
+      // publishedAt but sends nothing), so the receipt names the job
+      // ("CO-001 on Q-001", as REQ-949's request did) and links to the
+      // change order, never to the unsent bill.
+      const invoiceSent = !!invoice && isInvoiceIssued(invoice) &&
+        isIssued(invoice);
+      const quoteId = co.quoteId ?? invoice?.quoteId;
+      const job = !invoiceSent && quoteId
+        ? await this.quotes.getOwned(quoteId, co.userId).catch(() => undefined)
+        : undefined;
+      const ref = invoiceSent
+        ? changeOrderRef(co, invoice, coLang)
+        : changeOrderRef(co, undefined, coLang, job);
       const jobTotalCents = await this.jobTotalAfter(co, invoice?.quoteId);
       const copy = buildChangeOrderReceipt({
         lang: coLang,
@@ -220,12 +236,14 @@ export class SendDecisionAlert {
         deltaCents: co.deltaAmountCents,
         newTotalCents: total,
         ...(typeof jobTotalCents === "number" ? { jobTotalCents } : {}),
-        ...(invoice && isIssued(invoice)
+        ...(invoiceSent && invoice
           ? { invoiceLabel: docRef(invoice) }
-          : {}),
+          : { invoiceUnsent: true }),
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         ...(co.decidedAt ? { approvedAt: co.decidedAt } : {}),
-        url: `${APP_URL}/i/${encodeURIComponent(co.invoiceId)}?lang=${coLang}`,
+        url: invoiceSent
+          ? `${APP_URL}/i/${encodeURIComponent(co.invoiceId)}?lang=${coLang}`
+          : `${APP_URL}/co/${encodeURIComponent(co.id)}?lang=${coLang}`,
         logoHtml: emailLogoHtml(emailLogo({
           appUrl: APP_URL,
           kind: "invoice",
