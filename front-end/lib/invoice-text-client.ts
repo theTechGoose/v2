@@ -27,9 +27,22 @@ export function invoiceTextPhone(
     phoneOf(inv.customerSnapshot as WithPhone);
 }
 
+/**
+ * REQ-982 (LOOP-007 q1-65; AMENDMENT to REQ-691): why "Text client" is or
+ * isn't offered — no phone, a malformed one, or one that can't receive texts
+ * (the fictional 555 block) each get their own fallback on the card.
+ */
+export type TextClientState = "ok" | "missing" | "invalid" | "cantText";
+
+export function textClientState(
+  phone: string | null | undefined,
+): TextClientState {
+  if (!phone?.trim()) return "missing";
+  if (!customerPhoneE164(phone)) return "invalid";
+  return phoneCantReceiveTexts(phone) ? "cantText" : "ok";
+}
+
 /** a phone is present, well-formed and able to take a text */
 export function canTextClient(phone: string | null | undefined): boolean {
-  if (!phone?.trim()) return false;
-  if (!customerPhoneE164(phone)) return false;
-  return !phoneCantReceiveTexts(phone);
+  return textClientState(phone) === "ok";
 }

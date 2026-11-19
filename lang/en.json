@@ -1736,6 +1736,8 @@
   "invoicesPage.back.rejectYes": "Mark not received",
   "invoicesPage.back.textClient": "Text client",
   "invoicesPage.back.addPhone": "Add a phone",
+  "invoicesPage.back.cantText": "Can't receive texts",
+  "invoicesPage.back.fixPhone": "Fix the phone",
   "invoicesPage.cta.claimed": "Okay, I got it",
   "invoicesPage.cta.drafting": "Finish + send",
   "invoicesPage.cta.out": "View invoice",

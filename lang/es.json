@@ -1736,6 +1736,8 @@
   "invoicesPage.back.rejectYes": "Marcar no recibido",
   "invoicesPage.back.textClient": "Enviar SMS al cliente",
   "invoicesPage.back.addPhone": "Agregar teléfono",
+  "invoicesPage.back.cantText": "No puede recibir textos",
+  "invoicesPage.back.fixPhone": "Corregir teléfono",
   "invoicesPage.cta.claimed": "Listo, lo recibí",
   "invoicesPage.cta.drafting": "Terminar + enviar",
   "invoicesPage.cta.out": "Ver factura",
