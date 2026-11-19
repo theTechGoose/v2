@@ -196,3 +196,60 @@ describe("REQ-565 (m33) copy", () => {
     expect(en["quotes.ledger.coSendBody"]).toMatch(/\{url\}/);
   });
 });
+
+/**
+ * REQ-1021 (LOOP-007 cycle 2, q2-13): the CO row's Email opened a bare
+ * `mailto:?subject=…` though Maria's email was on file — the row read the
+ * address only from the quote's customerSnapshot, which a quote linked to
+ * its customer after create never had. `changeOrderRecipient(quote, customer)`
+ * in shared/documents/change-order-actions.ts builds the row's recipient:
+ * the snapshot first, the live customer record second.
+ */
+describe("REQ-1021 (q2-13) changeOrderRecipient — the CO row's To address", () => {
+  const maria = {
+    id: "c-1",
+    name: "Maria Garcia",
+    email: "maria.g@example.com",
+    phoneNumber: "(512) 555-0142",
+  };
+
+  it("REQ-1021 a quote with no customerSnapshot falls back to the live customer — the Email goes to her address", () => {
+    const { changeOrderRecipient, changeOrderShareLinks } = actions();
+    expect(typeof changeOrderRecipient).toBe("function");
+    const quote = { customerId: "c-1", customerName: "Maria Garcia" };
+    const who = changeOrderRecipient(quote, maria);
+    expect(who.email).toBe("maria.g@example.com");
+    expect(who.phone).toBe("(512) 555-0142");
+    const links = changeOrderShareLinks({
+      origin: "https://documonster.com",
+      path: "/co/co-1",
+      phone: who.phone,
+      email: who.email,
+      subject: "Change order CO-001",
+      text: "Hi Maria, change order CO-001: https://documonster.com/co/co-1",
+    });
+    expect(links.email.startsWith("mailto:maria.g@example.com?")).toBe(true);
+  });
+
+  it("REQ-1021 the snapshot wins over the live record (REQ-204 — the customer as filed on the quote)", () => {
+    const { changeOrderRecipient } = actions();
+    expect(typeof changeOrderRecipient).toBe("function");
+    const quote = {
+      customerId: "c-1",
+      customerName: "Maria Garcia",
+      customerSnapshot: { email: "filed@example.com", phoneNumber: "512-000-1111" },
+    };
+    const who = changeOrderRecipient(quote, maria);
+    expect(who.email).toBe("filed@example.com");
+    expect(who.phone).toBe("512-000-1111");
+    expect(who.name).toBe("Maria Garcia");
+  });
+
+  it("REQ-1021 QuotesPage builds the CO row's recipient with changeOrderRecipient and the loaded customer, not the snapshot alone", () => {
+    const src = read("front-end/islands/QuotesPage.tsx");
+    expect(src).toMatch(/changeOrderRecipient\(/);
+    expect(src).not.toMatch(
+      /typeof snapshot\?\.email === "string"\s*\?\s*\{ email: snapshot\.email \}/,
+    );
+  });
+});
