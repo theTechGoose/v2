@@ -332,3 +332,90 @@ Deno.test("REQ-784 d12: a quote by email + text, an invoice and a change order t
       "the skipped text, in Spanish",
     );
   }));
+
+/**
+ * REQ-1016 (LOOP-007 cycle 1, q1-102): "Spanish Paid email is marked
+ * <html lang="en">". Every customer email's `<html lang>` is the language it
+ * is written in. QA5's path: an amount-only invoice (no quote behind it) to
+ * a Spanish-speaking customer, a payment recorded that closes it, and the
+ * paid email opened from the Outbox. The email reads Spanish and its
+ * document says so.
+ */
+Deno.test('REQ-1016 (LOOP-007 q1, q1-102): the Spanish paid email of an amount-only invoice opens in the Outbox as <html lang="es">', (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    // QA5's account writes to its customers in Spanish (the business's comms language)
+    const idRes = await http("/api/profile/identity", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        businessName: "Ortega Handyman Services",
+        commsLanguage: "es",
+        commsLanguages: ["es"],
+      }),
+    });
+    const idBody = await idRes.text();
+    expect(idRes.ok, `the account writes in Spanish: ${idRes.status} ${idBody}`);
+    const maria = await post(http, auth, "/api/customers", {
+      name: "María López",
+      email: "maria@blackhole.postmarkapp.com",
+      language: "es",
+    });
+    const invoice = await post(http, auth, "/api/invoices", {
+      customerId: maria.id,
+      jobName: "Reparación de cerca",
+      amount: 45000,
+      status: "sent",
+      dueDate: "2026-12-30",
+    });
+    await post(http, auth, "/api/payments", {
+      invoiceId: invoice.id,
+      amount: 45000,
+      method: "zelle",
+      receivedAt: new Date().toISOString(),
+    });
+
+    // the paid email is dispatched with the payment; poll the outbox for it
+    let paid: (Row & { docId?: string; preview?: string }) | undefined;
+    let seen = "";
+    for (let i = 0; i < 40 && !paid; i++) {
+      const listed = await (await http("/api/outbox", { headers: auth }))
+        .json() as (Row & { docId?: string; preview?: string })[];
+      paid = listed.find((r) =>
+        r.kind === "invoicePaid" && r.channel === "email" &&
+        r.docId === invoice.id
+      );
+      seen = JSON.stringify(listed);
+      if (!paid) await page.waitForTimeout(250);
+    }
+    expect(!!paid, `the paid email is in the Outbox: ${seen}`);
+    expect.eq(paid!.language, "es", `recorded as Spanish: ${seen}`);
+    const opened = await (await http(`/api/outbox/${paid!.id}`, {
+      headers: auth,
+    })).json() as { body: string };
+    expect(
+      opened.body.includes("<title>Factura"),
+      "the paid email is written in Spanish",
+    );
+    expect.eq(
+      opened.body.slice(0, opened.body.indexOf(">", 16) + 1),
+      '<!doctype html>\n<html lang="es">',
+      "the stored HtmlBody opens with a Spanish root element",
+    );
+
+    // what the owner sees: the Outbox row opens the email; its document is Spanish
+    await page.goto("/messages");
+    const frame = page.locator("iframe[data-cy='outbox-email-frame']");
+    await page.locator(`[data-cy='outbox-row'][data-id='${paid!.id}']`)
+      .waitFor({ timeout: 20_000 });
+    await clickUntil(
+      page,
+      `[data-cy='outbox-row'][data-id='${paid!.id}'] [data-cy='outbox-open']`,
+      async () => (await frame.count()) > 0,
+    );
+    const docLang = await page.frameLocator(
+      "iframe[data-cy='outbox-email-frame']",
+    ).locator("html").getAttribute("lang");
+    expect.eq(docLang, "es", "the opened email's <html lang>");
+  }));
