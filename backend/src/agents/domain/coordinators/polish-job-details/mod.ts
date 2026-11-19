@@ -147,6 +147,11 @@ function tryParseJson(
  *  never blanket Title Case — the shared lang-aware derivation owns that. */
 function clampJobName(s: string, lang: "en" | "es"): string {
   if (lang === "es") return summarizeJobName(s, "es");
+  // REQ-1092 (LOOP-007 q3-2): a job naming two areas keeps its joiner and
+  // both areas ("Exterior Painting and Fence") — the 3-word slice below cut
+  // it to "Exterior Painting".
+  const areas = summarizeJobName(s, "en");
+  if (/ and /.test(areas)) return areas;
   const cleaned = s.trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(
     /\s+/g,
     " ",

@@ -77,7 +77,10 @@ Deno.test("REQ-261 M26 polish drops a sentence that names a private cost", async
     }),
   }));
   const coord = new PolishJobDetails(llm);
-  const res = await coord.run({ userId: "u1", raw: "Ray the plumber is $2800 for the rough-in" });
+  const res = await coord.run({
+    userId: "u1",
+    raw: "Ray the plumber is $2800 for the rough-in",
+  });
   assertEquals(res.degraded, false);
   assertEquals(
     res.description,
@@ -97,6 +100,12 @@ Deno.test("REQ-434 M10 polish: a model jobName clamped to three words never ends
     }),
   }));
   const coord = new PolishJobDetails(llm);
-  const res = await coord.run({ userId: "u1", raw: "renovate the kitchen and clean up" });
-  assertEquals(res.jobName, "Kitchen Renovation");
+  const res = await coord.run({
+    userId: "u1",
+    raw: "renovate the kitchen and clean up",
+  });
+  // REQ-1092 (LOOP-007 q3-2, amends REQ-434 via REQ-1051): a two-area name
+  // inside the budget keeps its joiner and both areas — the 3-word slice's
+  // "Kitchen Renovation" dropped the cleanup. Still never ends on "and".
+  assertEquals(res.jobName, "Kitchen Renovation and Cleanup");
 });
