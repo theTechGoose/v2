@@ -98,7 +98,8 @@ import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
-import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import { localizePaymentInstructions, paymentInstructionsBeyond } from "#documents/invoice-form.ts"; // REQ-710, REQ-1117
+import { projectPayMethods } from "#payments/pay-links.ts"; // REQ-1117
 import { invoiceTextByLang } from "#documents/invoice-lang.ts"; // REQ-710
 
 export type PaperworkKind = "quote" | "invoice";
@@ -689,7 +690,36 @@ function revisedBanner(kind: "invoice" | "quote", doc: { version?: number }, lan
  * when the work was done, the math (subtotal / discount / tax), the quote it
  * bills against, how to pay, and the payment state (partial / overpaid).
  */
-function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, paid: boolean, tz?: string): string {
+/**
+ * REQ-1117 (LOOP-007 q3, q3-42) — the Payment instructions left to print beside a "Ways to pay"
+ * block. The invoice form freezes the instructions from the same accepted methods the block lists
+ * ("Zelle: dana@…" over "Zelle: send to dana@…"), so with a block every method part whose way has
+ * a row there goes, and so does the business's own "other" text when its row shows it. A card
+ * part keeps its detail unless the block prints it (the card row only says "Pay by card"). What the
+ * owner wrote beyond the methods stays; with no block (REQ-630, check only) nothing changes.
+ */
+function instructionsBesidePayWays(text: string | undefined, payWays: string, apm: unknown): string {
+  if (!payWays) return text ?? "";
+  const rows = new Set([...payWays.matchAll(/data-pay-way="([^"]+)"/g)].map((m) => m[1]));
+  const other = projectPayMethods(apm).find((m) => m.method === "other")?.handle?.trim();
+  return paymentInstructionsBeyond(text, (method, part, detail) => {
+    if (!method) return rows.has("other") && !!other && part === other;
+    if (!rows.has(method)) return false;
+    return method !== "card" || !detail || payWays.includes(escapeHtml(detail));
+  });
+}
+
+function invoiceFactsHtml(
+  i: Invoice,
+  quote: Quote | undefined,
+  lang: Lang,
+  /** REQ-1114 (q3-41): a paid email never tells the customer how to pay */
+  paid: boolean,
+  tz?: string,
+  /** REQ-1117 — the "Ways to pay" block printed after the facts, and the methods it came from */
+  payWays = "",
+  apm?: unknown,
+): string {
   const rows: Array<[string, string]> = [];
   if (i.serviceAddress?.trim()) rows.push([renderWord(lang, "serviceAddress"), i.serviceAddress.trim()]);
   // REQ-1064: one helper with /i/:id and the PDF — a one-day window is that one day
@@ -720,12 +750,13 @@ function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, paid
   // the form froze them in the owner's ("Zelle: … · Efectivo").
   // REQ-1114 (q3-41): a PAID email never tells the customer how to pay —
   // same rule as payWays and the REQ-933 intro/preheader/button.
-  const instructions = !paid && i.paymentInstructions?.trim()
+  const instructionText = paid ? "" : instructionsBesidePayWays(i.paymentInstructions, payWays, apm); // REQ-1117
+  const instructions = instructionText.trim()
     ? `<div style="margin-top:12px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${COLOR_MUTED}">${
       escapeHtml(renderWord(lang, "paymentInstructions"))
     }</div><p data-payment-instructions style="margin:4px 0 0;font-size:14px;line-height:1.5;color:${COLOR_INK};white-space:pre-wrap">${
       escapeHtml(
-        localizePaymentInstructions(i.paymentInstructions, lang).trim(),
+        localizePaymentInstructions(instructionText, lang).trim(),
       )
     }</p>`
     : "";
@@ -1827,7 +1858,7 @@ export function renderInvoiceHtml(
 
   const greeting = customerGreeting(customer, lang);
   // REQ-206 / REQ-202: the bill's facts and payment state
-  const facts = invoiceFactsHtml(i, quote, lang, paid, tz);
+  const facts = invoiceFactsHtml(i, quote, lang, paid, tz, payWays, senderBiz?.acceptedPaymentMethods); // REQ-1117
   // REQ-020: a paid invoice has no "due on" line under its PAID card.
   const dueSub = i.dueDate && !paid
     ? `<div style="margin-top:4px;color:${COLOR_MUTED};font-size:12px">${
@@ -2100,7 +2131,7 @@ export function renderInvoiceBasicHtml(
   // REQ-1028 (q2-9): the money card and preheader ask for the open balance
   const amount = invoiceEmailAmount(i, paid);
   // REQ-206 / REQ-1114: the bill's facts, once — no payment instructions when paid
-  const facts = invoiceFactsHtml(i, undefined, lang, paid, tz);
+  const facts = invoiceFactsHtml(i, undefined, lang, paid, tz, payWays, senderBiz?.acceptedPaymentMethods); // REQ-1117
   // Standalone invoices carry their own job title + note (no quote behind
   // them). Surface them so a quote-less invoice email isn't just a bare figure.
   // REQ-710 (cycle 5, M4): in the e-mail's language while their copies

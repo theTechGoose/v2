@@ -401,7 +401,7 @@ Deno.test("REQ-980 (q1-61) the amount-only invoice email: header date labelled I
 // (paymentInstructionsFromMethods → "Zelle: (512) 555-0700"), and the Spanish invoice email sent
 // through the real coordinator printed "Instrucciones de pago Zelle: (512) 555-0700" over
 // "Formas de pago Zelle: envía a 5125550700".
-Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one way — '(512) 555-0700' in Payment instructions and in Ways to pay, never '5125550700'", async () => {
+Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one way — '(512) 555-0700' in Ways to pay (printed once, REQ-1117), never '5125550700'", async () => {
   await withServer(async (sid, userId) => {
     const methods = { zelle: { enabled: true, handle: "5125550700" } };
     const put = await putIdentity(sid, {
@@ -455,14 +455,90 @@ Deno.test("REQ-1032 (q2-15) the Spanish invoice email shows the Zelle phone one 
     const r = await emailer.run(userId, { kind: "invoice", resourceId: inv.id });
     assertEquals(r.ok, true, JSON.stringify(r));
     const html = sent[0].htmlBody ?? "";
-    const instr = html.match(/<p data-payment-instructions[^>]*>([^<]*)<\/p>/)?.[1] ?? "";
     const zelleRow = html.match(/<div data-pay-way="zelle"[^>]*>([^<]*)<\/div>/)?.[1] ?? "";
-    assertStringIncludes(instr, "Zelle: (512) 555-0700", "Payment instructions line");
+    // REQ-1117 (q3-42) amends the doubled line REQ-1032 kept: instructions that only repeat the
+    // methods are no longer printed beside Ways to pay, so the phone is shown once, formatted.
+    assert(
+      !html.includes("data-payment-instructions"),
+      "Payment instructions repeat the Ways-to-pay Zelle row (REQ-1117)",
+    );
     assertEquals(
-      { instructions: instr, waysToPay: zelleRow },
-      { instructions: instr, waysToPay: "Zelle: envía a (512) 555-0700" },
-      "the Ways-to-pay Zelle row prints the phone differently from Payment instructions",
+      zelleRow,
+      "Zelle: envía a (512) 555-0700",
+      "the Ways-to-pay Zelle row prints the phone as the invoice form shows it",
     );
     assert(!html.includes("5125550700"), "the email prints the raw digits 5125550700");
   });
 });
+
+// REQ-1117 (LOOP-007 q3, q3-42) — each payment way appears once in the invoice email. QA3 002 read
+// "Payment instructions: Zelle: dana@whitfieldfence.com" and then "Ways to pay: Zelle: send to
+// dana@whitfieldfence.com": the invoice form froze the instructions from the same methods the
+// Ways-to-pay block lists. Through the real coordinator, the sent email names the handle once.
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-1117 (q3-42) the ${lang} invoice email sent through the coordinator names the Zelle handle once — no Payment instructions repeating Ways to pay`, async () => {
+    await withServer(async (sid, userId) => {
+      const handle = "dana@whitfieldfence.com";
+      const methods = { zelle: { enabled: true, handle } };
+      const put = await putIdentity(sid, {
+        businessName: "Whitfield Fence Co",
+        acceptedPaymentMethods: methods,
+      });
+      assertEquals(put.status, 200, await put.text());
+      await new BusinessIdentityStore().upsert(userId, { commsLanguage: lang });
+      const customer = await fetch(url("/customers"), {
+        method: "POST",
+        headers: H(sid),
+        body: JSON.stringify({
+          name: "Ana Torres",
+          email: "ana@blackhole.postmarkapp.com",
+          phoneNumber: "+15127771234",
+        }),
+      }).then((r) => r.json());
+      const inv = await fetch(url("/invoices"), {
+        method: "POST",
+        headers: H(sid),
+        body: JSON.stringify({
+          customerId: customer.id,
+          status: "sent",
+          jobName: "Fence repair",
+          amount: 6500,
+          issuedDate: "2026-11-19",
+          dueDate: "2026-11-30",
+          paymentInstructions: paymentInstructionsFromMethods(methods, lang),
+        }),
+      }).then((r) => r.json());
+
+      const email = new EmailService();
+      const sent: SendEmailInput[] = [];
+      email.send = (input: SendEmailInput) => {
+        sent.push(input);
+        return Promise.resolve({ ok: true, reason: "test_capture" });
+      };
+      const emailer = new SendPaperworkEmail(
+        new QuoteStore(),
+        new InvoiceStore(),
+        new CustomerStore(),
+        new UserStore(),
+        new BusinessIdentityStore(),
+        email,
+        new LogPaperworkMessage(new ConversationStore(), new MessageStore()),
+        undefined,
+        undefined,
+        new StripeSettingsStore(),
+      );
+      const r = await emailer.run(userId, { kind: "invoice", resourceId: inv.id });
+      assertEquals(r.ok, true, JSON.stringify(r));
+      const html = sent[0].htmlBody ?? "";
+      assertStringIncludes(html, `data-pay-way="zelle"`);
+      assertEquals(
+        {
+          handleCount: html.split(handle).length - 1,
+          paymentInstructionsBlock: html.includes("data-payment-instructions"),
+        },
+        { handleCount: 1, paymentInstructionsBlock: false },
+        `the ${lang} invoice email lists Zelle twice (Payment instructions + Ways to pay)`,
+      );
+    });
+  });
+}
