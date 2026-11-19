@@ -29,7 +29,9 @@ const STATE_LABELS: Record<Lang, Record<DocState, string>> = {
     declined: "Declined",
     claimed: "Payment reported",
     paid: "Paid",
-    void: "Void",
+    // REQ-1131: the customer-facing word for a void invoice, as the pill
+    // (publicInvoice.cancelled.pill), the void dialog and the owner list say it
+    void: "Cancelled",
     approved: "Approved",
     pending: "Pending",
   },
@@ -42,7 +44,7 @@ const STATE_LABELS: Record<Lang, Record<DocState, string>> = {
     declined: "Rechazada",
     claimed: "Pago reportado",
     paid: "Pagada",
-    void: "Anulada",
+    void: "Cancelada", // REQ-1131
     approved: "Aprobada",
     pending: "Pendiente",
   },
