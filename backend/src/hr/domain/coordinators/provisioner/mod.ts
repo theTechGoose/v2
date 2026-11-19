@@ -27,7 +27,7 @@ import { A2pUnregisteredError, SendText } from "@communications/domain/coordinat
 import { LineContext, NoLineError } from "@communications/domain/coordinators/line-context/mod.ts";
 import { DepartmentStore, HireStore, HrSettingsStore, HrSystemStore } from "@hr/domain/data/hr-stores/mod.ts";
 import { aggregateProvisioning, armMode, type BuiltinKey, fullName, newHireSender, provisionPlan } from "@hr/domain/business/onboarding/mod.ts";
-import { escapeHtml } from "@hr/domain/coordinators/hr-notices/mod.ts";
+import { renderHrEmail } from "@hr/domain/business/hr-email/mod.ts";
 import type { Hire, HrSystem, ProvisionResult } from "@hr/dto/hr.ts";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -59,7 +59,7 @@ const randomPin = () => String(Math.floor(Math.random() * 10_000)).padStart(4, "
 /** REQ-913 — the welcome copy, in the owner's language */
 export function welcomeCopy(
   lang: "en" | "es",
-  v: { first: string; company: string; portalUrl: string; username: string; password: string; startDate: string },
+  v: { first: string; company: string; portalUrl: string; username: string; password: string; startDate: string; wordmark?: string },
 ): { subject: string; html: string; text: string } {
   const creds = v.username || v.password;
   if (lang === "es") {
@@ -68,14 +68,21 @@ export function welcomeCopy(
       v.startDate ? `Tu primer día es el ${v.startDate}.` : "",
       creds ? `Tu acceso al portal: ${v.portalUrl} — usuario ${v.username}, contraseña ${v.password}.` : "",
     ].filter(Boolean);
-    return { subject: `Bienvenido/a a ${v.company}`, html: lines.map((l) => `<p>${escapeHtml(l)}</p>`).join(""), text: lines.join(" ") };
+    const subject = `Bienvenido/a a ${v.company}`;
+    return { subject, html: welcomeHtml(lang, v.wordmark ?? v.company, subject, lines), text: lines.join(" ") };
   }
   const lines = [
     `Hi ${v.first}, welcome to ${v.company}!`,
     v.startDate ? `Your first day is ${v.startDate}.` : "",
     creds ? `Your portal login: ${v.portalUrl} — username ${v.username}, password ${v.password}.` : "",
   ].filter(Boolean);
-  return { subject: `Welcome to ${v.company}`, html: lines.map((l) => `<p>${escapeHtml(l)}</p>`).join(""), text: lines.join(" ") };
+  const subject = `Welcome to ${v.company}`;
+  return { subject, html: welcomeHtml(lang, v.wordmark ?? v.company, subject, lines), text: lines.join(" ") };
+}
+
+/** REQ-1169 — the welcome note in the house email layout, headed by the business's wordmark */
+function welcomeHtml(lang: "en" | "es", wordmark: string, headline: string, lines: string[]): string {
+  return renderHrEmail({ lang, company: wordmark, headline, paragraphs: lines });
 }
 
 @Injectable()
@@ -248,6 +255,8 @@ export class Provisioner {
       username: stored?.credsUsername ?? "",
       password: stored?.credsPassword ?? "",
       startDate: hire.startDate,
+      // the wordmark names the business only when it has a name — never the "the team" stand-in
+      wordmark: named,
     });
     return { ...copy, sender };
   }

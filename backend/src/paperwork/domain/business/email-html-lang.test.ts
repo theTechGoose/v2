@@ -23,6 +23,8 @@ import {
   buildQuoteDeclinedAlert,
 } from "@paperwork/domain/business/decision-alert/mod.ts";
 import { composeReminderCopy } from "@paperwork/domain/coordinators/send-payment-reminder/mod.ts";
+import { renderHrEmail } from "@hr/domain/business/hr-email/mod.ts"; // REQ-1169
+import { welcomeCopy } from "@hr/domain/coordinators/provisioner/mod.ts"; // REQ-1169
 
 /** The root element's lang, read off the document's first two lines. */
 const rootLang = (html: string) =>
@@ -92,6 +94,25 @@ const builders: Record<string, (lang: Lang) => string> = {
       invoice,
       lang: lang === "es" ? "es" : "en",
     }).emailHtml("http://x/i/1"),
+  // REQ-1169 (LOOP-007 q3, q3-103): the HR emails had no <html> root at all, which the
+  // guard below cannot see — so their builders are swept here too
+  "HR invite / reminder / packet-complete (renderHrEmail)": (lang) =>
+    renderHrEmail({
+      lang,
+      company: "Reyes Lawn & Landscape",
+      headline: "Welcome",
+      paragraphs: ["Sign your paperwork."],
+      cta: { label: "Open", url: "http://x/sign/tok" },
+    }),
+  "HR dm-email welcome note (welcomeCopy)": (lang) =>
+    welcomeCopy(lang === "es" ? "es" : "en", {
+      first: "Jose",
+      company: "Reyes Lawn & Landscape",
+      portalUrl: "http://x",
+      username: "",
+      password: "",
+      startDate: "",
+    }).html,
 };
 
 for (const [name, build] of Object.entries(builders)) {

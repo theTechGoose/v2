@@ -19,21 +19,12 @@ import {
 } from "@hr/domain/data/hr-stores/mod.ts";
 import { fullName, newHireSender, reminderDue } from "@hr/domain/business/onboarding/mod.ts";
 import type { Hire, HrSettings } from "@hr/dto/hr.ts";
+import { renderHrEmail } from "@hr/domain/business/hr-email/mod.ts";
 
 const EVERY_MINUTE_MS = 60_000;
 type Timer = (fn: () => void, ms: number) => number;
 type Unref = (id: number) => void;
 const log = (line: string) => console.log(`[hr/notices] ${line}`);
-
-export function escapeHtml(s: string): string {
-  return s.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
-}
 
 @Injectable()
 export class HrNotices {
@@ -157,23 +148,18 @@ export class HrNotices {
     const email = await this.mail(
       hire.email,
       t(lang, subjectKey, v),
-      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-<h2 style="margin:0 0 8px">${escapeHtml(t(lang, headlineKey, v))}</h2>
-<p>${escapeHtml(t(lang, bodyKey, v))}</p>
-<p><a href="${
-        escapeHtml(v.url)
-      }" style="display:inline-block;background:#1a8e40;color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">${
-        escapeHtml(t(lang, "hr.email.inviteCta"))
-      }</a></p>
-<p style="color:#666;font-size:12px">${escapeHtml(v.url)}</p>
-${
-        s.hrEmail
-          ? `<p style="color:#666;font-size:12px">${
-            escapeHtml(t(lang, "hr.email.hrContact", { email: s.hrEmail }))
-          }</p>`
-          : ""
-      }
-</div>`,
+      // REQ-1169: the house email layout, headed by the business's wordmark (REQ-628)
+      renderHrEmail({
+        lang,
+        company: s.companyName,
+        headline: t(lang, headlineKey, v),
+        paragraphs: [t(lang, bodyKey, v)],
+        cta: { label: t(lang, "hr.email.inviteCta"), url: v.url },
+        notes: [
+          v.url,
+          s.hrEmail ? t(lang, "hr.email.hrContact", { email: s.hrEmail }) : "",
+        ],
+      }),
       `${kind} ${hire.id}`,
       // a reply from the hire reaches HR, not the house inbox
       { from, replyTo: s.hrEmail },
@@ -196,15 +182,13 @@ ${
     return await this.mail(
       s.hrEmail,
       t(lang, "hr.email.completeSubject", v),
-      `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-<h2 style="margin:0 0 8px">${
-        escapeHtml(t(lang, "hr.email.completeHeadline", v))
-      }</h2>
-<p>${escapeHtml(t(lang, "hr.email.completeBody", v))}</p>
-<p><a href="${escapeHtml(v.url)}">${
-        escapeHtml(t(lang, "hr.email.completeCta"))
-      }</a></p>
-</div>`,
+      renderHrEmail({
+        lang,
+        company: s.companyName,
+        headline: t(lang, "hr.email.completeHeadline", v),
+        paragraphs: [t(lang, "hr.email.completeBody", v)],
+        cta: { label: t(lang, "hr.email.completeCta"), url: v.url },
+      }),
       `complete ${hire.id}`,
       { from: await this.fromFor(hire.userId, s.companyName) },
     );
