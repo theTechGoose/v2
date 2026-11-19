@@ -104,7 +104,12 @@ Deno.test("REQ-1002: Add department asks only for the name — no Inbound/Outbou
       0,
       "the Add department form has only the name field",
     );
-    expect.eq(modal.options, [], "no Inbound/Outbound options");
+    // expect.eq is ===, so arrays are compared as JSON (REQ-1002 test fix)
+    expect.eq(
+      JSON.stringify(modal.options),
+      "[]",
+      "no Inbound/Outbound options",
+    );
     expect.eq(
       /Division|Inbound|Outbound/.test(modal.text),
       false,
@@ -128,8 +133,8 @@ Deno.test("REQ-1002: Add department asks only for the name — no Inbound/Outbou
       };
     });
     expect.eq(
-      cfg.divisionOptions,
-      [],
+      JSON.stringify(cfg.divisionOptions),
+      "[]",
       "no inbound/outbound select on the configure page",
     );
     expect.eq(

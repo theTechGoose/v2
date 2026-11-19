@@ -4,6 +4,7 @@
  * per-document audit record of a signature or an acknowledgment; a provisioning result is one
  * system's arm (REQ-888).
  */
+/** Legacy (REQ-887 → amended by REQ-1002): the call-centre prototype's Inbound/Outbound. */
 export type Division = "inbound" | "outbound";
 export type DocKind = "ack" | "sign";
 export type DocType = "text" | "pdf";
@@ -50,7 +51,9 @@ export interface Department {
   id: string;
   userId: string;
   name: string;
-  division: Division;
+  /** REQ-1002: no longer asked for or written — only departments created before it carry
+   * one; nothing reads it (the packet is docIds, provisioning is systemIds). */
+  division?: Division;
   /** what a hire SIGNS */
   docIds: string[];
   /** what we BUILD */

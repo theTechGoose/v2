@@ -138,8 +138,6 @@ describe("REQ-883 the HR module", () => {
         "hr.depts.docTitle",
         "hr.depts.title",
         "hr.depts.add",
-        "hr.depts.inbound",
-        "hr.depts.outbound",
         "hr.systems.docTitle",
         "hr.systems.title",
         "hr.systems.connect",

@@ -5,7 +5,6 @@
  */
 import { api, type ApiOptions } from "../lib/api.ts";
 
-export type Division = "inbound" | "outbound";
 export type DocKind = "ack" | "sign";
 export type DocType = "text" | "pdf";
 export type FieldType =
@@ -44,7 +43,8 @@ export interface Department {
   id: string;
   userId: string;
   name: string;
-  division: Division;
+  /** REQ-1002: legacy, only on departments made before it; never shown or sent */
+  division?: "inbound" | "outbound";
   docIds: string[];
   systemIds: string[];
   createdAt: string;
@@ -264,7 +264,7 @@ export const hrClient = {
     api.get<Department[]>("/hr/departments", opts),
   department: (id: string) =>
     api.get<Department>(`/hr/departments/${encodeURIComponent(id)}`),
-  createDepartment: (body: { name: string; division: Division }) =>
+  createDepartment: (body: { name: string }) =>
     api.post<Department>("/hr/departments", body),
   saveDepartment: (id: string, body: Partial<Department>) =>
     api.put<Department>(`/hr/departments/${encodeURIComponent(id)}`, body),
