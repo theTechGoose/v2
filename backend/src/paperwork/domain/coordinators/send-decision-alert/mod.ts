@@ -20,6 +20,7 @@ import {
   emailLogoHtml,
 } from "@paperwork/domain/business/email-logo/mod.ts";
 import {
+  changeOrderOwnerRef,
   changeOrderRef,
   customerOnDocument,
   docRef,
@@ -191,7 +192,9 @@ export class SendDecisionAlert {
         lang: cxLang,
         decision,
         customerName,
-        ref: changeOrderRef(co, invoice, cxLang),
+        // REQ-949 / REQ-1099: the owner's name for the order always cites
+        // the invoice it hangs on — they can open their own scheduled one.
+        ref: changeOrderOwnerRef(co, invoice, cxLang),
         description: co.description,
         deltaCents: co.deltaAmountCents,
         ...(typeof total === "number" ? { invoiceTotalCents: total } : {}),
@@ -210,8 +213,19 @@ export class SendDecisionAlert {
       const businessName = ident?.businessName?.trim() ||
         ident?.legalName?.trim() || contractor.name?.trim() ||
         t(coLang, "changeOrderPublic.contractorFallback");
-      const ref = changeOrderRef(co, invoice, coLang);
-      const jobTotalCents = await this.jobTotalAfter(co, invoice?.quoteId);
+      // REQ-1099 (LOOP-007 q3-24): an invoice that never reached the
+      // customer (a scheduled balance — the approval's revision stamp does
+      // not send it) is never named or linked; the receipt names the job,
+      // as the request did (REQ-949), and links the /co page.
+      const invoiceIssued = !!invoice && isIssued(invoice);
+      const quoteId = co.quoteId ?? invoice?.quoteId;
+      const job = !invoiceIssued && quoteId
+        ? await this.quotes.get(quoteId).then(
+          (q) => q.userId === co.userId ? q : undefined,
+        ).catch(() => undefined)
+        : undefined;
+      const ref = changeOrderRef(co, invoice, coLang, job);
+      const jobTotalCents = await this.jobTotalAfter(co, quoteId);
       const copy = buildChangeOrderReceipt({
         lang: coLang,
         businessName,
@@ -220,12 +234,12 @@ export class SendDecisionAlert {
         deltaCents: co.deltaAmountCents,
         newTotalCents: total,
         ...(typeof jobTotalCents === "number" ? { jobTotalCents } : {}),
-        ...(invoice && isIssued(invoice)
-          ? { invoiceLabel: docRef(invoice) }
-          : {}),
+        ...(invoice && invoiceIssued ? { invoiceLabel: docRef(invoice) } : {}),
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         ...(co.decidedAt ? { approvedAt: co.decidedAt } : {}),
-        url: `${APP_URL}/i/${encodeURIComponent(co.invoiceId)}?lang=${coLang}`,
+        url: invoiceIssued
+          ? `${APP_URL}/i/${encodeURIComponent(co.invoiceId)}?lang=${coLang}`
+          : `${APP_URL}/co/${encodeURIComponent(co.id)}?lang=${coLang}`,
         logoHtml: emailLogoHtml(emailLogo({
           appUrl: APP_URL,
           kind: "invoice",

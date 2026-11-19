@@ -66,10 +66,14 @@ async function seed(http: StoryTools["http"]) {
     }],
     estimatedTotal: 1_920_000,
   });
+  // REQ-1099: the story's "Added to INV-…" line is about an invoice the
+  // customer HAS — so the invoice is issued (sent). An unsent (status-less
+  // = draft, REQ-550) invoice is never named on /co (REQ-949 / REQ-1099).
   const invoice = await call("/api/invoices", {
     customerId: customer.id,
     quoteId: quote.id,
     jobName: "Kitchen remodel",
+    status: "sent",
     lineItems: [{
       description: "Balance",
       quantity: 1,

@@ -155,6 +155,10 @@ export function changeOrderIntro(
     decidedAt?: string;
     jobNewAmount?: number;
     newAmount?: number;
+    /** REQ-1099 (LOOP-007 q3-24): the order's invoice never reached the
+     *  customer (draft / scheduled, unsent) — speak of the job, never of
+     *  "your invoice". */
+    onJob?: boolean;
   },
   lang: "en" | "es",
   money: (cents: number) => string,
@@ -162,7 +166,11 @@ export function changeOrderIntro(
   if (co.status === "declined") {
     return { key: "changeOrderPublic.introDeclined" };
   }
-  if (co.status !== "approved") return { key: "changeOrderPublic.intro" };
+  if (co.status !== "approved") {
+    return {
+      key: co.onJob ? "changeOrderPublic.introJob" : "changeOrderPublic.intro",
+    };
+  }
   const date = shortDate(co.decidedAt, lang);
   // REQ-1055 (LOOP-007 q2-39): the sentence names WHICH total it shows —
   // the job's when the page has the job totals, the invoice's otherwise —
@@ -170,7 +178,8 @@ export function changeOrderIntro(
   // receipt's invoice total.
   const isJob = co.jobNewAmount != null;
   const totalCents = co.jobNewAmount ?? co.newAmount;
-  if (!date || totalCents == null) {
+  // REQ-1099: no "your invoice total" for an invoice she never received
+  if (!date || totalCents == null || (!isJob && co.onJob)) {
     return { key: "changeOrderPublic.introApprovedPlain" };
   }
   return {

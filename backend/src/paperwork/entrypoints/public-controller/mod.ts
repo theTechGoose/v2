@@ -16,6 +16,7 @@ import { endsWithState } from "@core/business/address-parse/mod.ts";
 import { NotFoundError } from "@core/data/repository/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { signedConfirmChannel } from "@paperwork/domain/business/customer-sms/mod.ts";
+import { isIssued } from "@paperwork/domain/business/doc-render/mod.ts"; // REQ-1099
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
 import { SendDecisionAlert } from "@paperwork/domain/coordinators/send-decision-alert/mod.ts"; // REQ-948
 import { QuoteSignedPort } from "@paperwork/domain/coordinators/quote-signed-port/mod.ts"; // REQ-563
@@ -481,12 +482,17 @@ export class PaperworkPublicController {
       // REQ-925: the contractor's send-in set — /co renders only in it
       let sendLanguages: CommsLang[] | undefined;
       // REQ-205: the documents this order belongs to, as clickable links
+      // REQ-1099 (LOOP-007 q3-24): an invoice that never reached the
+      // customer (draft / scheduled, unsent) keeps only its id (the page's
+      // logo + live-refresh) and status — no number, no /i/ link — and the
+      // order is `onJob`: /co speaks of the job, never "your invoice".
       let invoiceLink: {
         id: string;
-        number: string;
-        url: string;
+        number?: string;
+        url?: string;
         status?: string;
       } | undefined;
+      let onJob = false;
       let quoteLink: {
         id: string;
         number: string;
@@ -496,7 +502,8 @@ export class PaperworkPublicController {
       try {
         const inv = await this.invoices.get(co.invoiceId);
         invoiceAmount = inv.amount ?? 0;
-        invoiceLink = {
+        onJob = !isIssued(inv);
+        invoiceLink = onJob ? { id: inv.id, status: inv.status } : {
           id: inv.id,
           number: docNumberOf(inv),
           url: `/i/${inv.id}`,
@@ -552,6 +559,7 @@ export class PaperworkPublicController {
         number: docNumberOf(co),
         version: versionOf(co),
         ...(invoiceLink ? { invoice: invoiceLink } : {}),
+        ...(onJob ? { onJob: true } : {}),
         ...(quoteLink ? { quote: quoteLink } : {}),
         ...(co.approvedName ? { approvedName: co.approvedName } : {}),
         description: co.description,

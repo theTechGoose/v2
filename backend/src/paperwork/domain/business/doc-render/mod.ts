@@ -38,9 +38,16 @@ export interface CustomerBearingDoc {
   customerSnapshot?: RenderedCustomer;
 }
 
-/** A document is issued once it is (or was) in front of the customer. */
+/** A document is issued once it is (or was) in front of the customer.
+ *
+ *  REQ-1099 (LOOP-007 q3-24): only a send (or an acceptance) or an issued
+ *  status puts it there. `publishedAt` alone does not count: approving a
+ *  change order publishes a REVISION of its invoice (`applyRevision` stamps
+ *  `publishedAt`) while a scheduled balance — or a draft, whose status may
+ *  be omitted (REQ-550) — stays unsent. On a real send `publishedAt` is
+ *  `sentAt`, so nothing issued is lost. */
 export function isIssued(doc: CustomerBearingDoc): boolean {
-  if (doc.sentAt || doc.publishedAt || doc.acceptedAt) return true;
+  if (doc.sentAt || doc.acceptedAt) return true;
   return doc.status !== undefined && doc.status !== "draft" &&
     doc.status !== "scheduled";
 }
