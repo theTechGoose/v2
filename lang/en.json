@@ -4321,7 +4321,7 @@
   "field.wk.docTitle": "Workers · DocuMonster",
   "field.wk.eyebrow": "Workers · {n} with access",
   "field.wk.title": "Your <em>crew</em>, each with their own login.",
-  "field.wk.sub": "Each worker signs in with their own PIN from their phone, sees only today's tasks, and never sees prices or invoices.",
+  "field.wk.sub": "Each worker signs in with their own PIN from their phone, sees their own tasks day by day (yesterday, today, tomorrow or any date), and never sees prices or invoices.",
   "field.wk.new": "New worker",
   "field.wk.pin": "PIN (4 digits)",
   "field.wk.covers": "Covers",
