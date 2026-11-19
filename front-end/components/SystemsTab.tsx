@@ -168,13 +168,13 @@ export default function SystemsTab() {
                   <I d={ICN.plug} size={14} />
                 </span>
                 <div>
-                  <div class="hr-sys__name">{c.name}</div>
+                  <div class="hr-sys__name">{sysText(c, "name")}</div>
                   <div class="hr-sys__kind">
                     {t(`hr.systems.kind.${c.kind}`)}
                   </div>
                 </div>
               </div>
-              <div class="hr-sys__desc">{c.desc}</div>
+              <div class="hr-sys__desc">{sysText(c, "desc")}</div>
               <div class="hr-sys__foot">
                 <span class="chip chip--muted">
                   {t("settings.systems.builtin")}
@@ -302,6 +302,19 @@ function SummaryCard({ cy, name, kind, desc, on, onLabel, action, a2p }: {
   );
 }
 
+/**
+ * REQ-1034 — a built-in (dm-*) system's name/desc follow the UI language by key; the backend
+ * catalog's English text (and the English copy an attach stores) is only the API default.
+ * Custom systems keep the name/desc their owner typed.
+ */
+function sysText(
+  s: { key: string; name: string; desc?: string },
+  field: "name" | "desc",
+): string {
+  if (isBuiltin(s.key)) return t(`hr.systems.cat.${s.key}.${field}`);
+  return (field === "name" ? s.name : s.desc) ?? "";
+}
+
 function SystemCard(
   { s, busy, run }: {
     s: HrSystem;
@@ -324,11 +337,15 @@ function SystemCard(
           <I d={ICN.plug} size={14} />
         </span>
         <div>
-          <div class="hr-sys__name" data-cy="hr-sys-name">{s.name}</div>
+          <div class="hr-sys__name" data-cy="hr-sys-name">
+            {sysText(s, "name")}
+          </div>
           <div class="hr-sys__kind">{t(`hr.systems.kind.${s.kind}`)}</div>
         </div>
       </div>
-      {s.desc && <div class="hr-sys__desc">{s.desc}</div>}
+      {sysText(s, "desc") && (
+        <div class="hr-sys__desc">{sysText(s, "desc")}</div>
+      )}
       {builtin
         ? (
           <span class="hint" data-cy="hr-sys-builtin">
