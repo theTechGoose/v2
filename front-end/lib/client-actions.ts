@@ -10,8 +10,13 @@
  *    the label so the label and the action can never disagree);
  *  - `nudgeActionFor` — a message verb opens that text; "Open card", or a
  *    message verb with nowhere to send it, opens the card's panel.
+ *
+ * REQ-1029 (LOOP-007 q2-10): a phone REQ-569's `phoneCantReceiveTexts` flags
+ * is never texted — the email, else nothing; and "Send a kind reminder"
+ * runs the app's own invoice reminder (`reminderInvoiceFor` picks which).
  */
 import { telHref } from "../../shared/quote-flow/format-helpers.ts";
+import { phoneCantReceiveTexts } from "../../shared/quote-flow/sms-number.ts";
 
 /** the slice of a CustomerCard the actions read */
 export interface ClientActionInput {
@@ -34,7 +39,9 @@ export type NudgeAction =
 
 export function messageHrefFor(c: ClientActionInput): string | null {
   const phone = c.phoneNumber?.trim();
-  if (phone) return telHref(phone).replace(/^tel:/, "sms:");
+  if (phone && !phoneCantReceiveTexts(phone)) {
+    return telHref(phone).replace(/^tel:/, "sms:");
+  }
   const email = c.email?.trim();
   if (email) return `mailto:${email}`;
   return null;
@@ -52,4 +59,28 @@ export function nudgeActionFor(c: ClientActionInput): NudgeAction {
   if (ctaKindFor(c) === "openCard") return { kind: "open" };
   const href = messageHrefFor(c);
   return href ? { kind: "message", href } : { kind: "open" };
+}
+
+/** the slice of a CustomerCard document the reminder reads */
+export interface ReminderDocInput {
+  kind: string;
+  id: string;
+  number: string;
+  state: string;
+}
+
+/**
+ * REQ-1029: the invoice the board's "Send a kind reminder" is about — the
+ * oldest one still out (issued, not paid, not void; one the customer says
+ * they paid comes last). `documents` is newest first. Undefined when there
+ * is none: the card opens instead.
+ */
+export function reminderInvoiceFor(
+  documents: ReminderDocInput[] | null | undefined,
+): ReminderDocInput | undefined {
+  const out = (documents ?? []).filter((d) =>
+    d.kind === "invoice" &&
+    !["draft", "void", "paid"].includes(d.state)
+  ).reverse();
+  return out.find((d) => d.state !== "claimed") ?? out[0];
 }

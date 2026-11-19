@@ -31,7 +31,15 @@ import {
   sinceBadge,
   storyLineFor,
 } from "../lib/clients-display.ts";
-import { messageHrefFor, nudgeActionFor } from "../lib/client-actions.ts";
+import {
+  messageHrefFor,
+  nudgeActionFor,
+  type ReminderDocInput,
+  reminderInvoiceFor,
+} from "../lib/client-actions.ts";
+import InvoiceSendDialog from "../components/InvoiceSendDialog.tsx";
+import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
+import { dispatchFailureCopy, dispatchInvoice } from "./InvoicesPage.tsx";
 import { isChromeClick } from "../lib/backdrop-dismiss.ts";
 import {
   repeatVisitsPanelShown,
@@ -118,6 +126,8 @@ interface CardProps {
   onClose: () => void;
   /** REQ-626 — the client's sheet (Open card, the "Open card" CTA) */
   onOpenCard: (id: string) => void;
+  /** REQ-1029 — "Send a kind reminder": the invoice send sheet for this one */
+  onRemind: (c: CustomerCard, invoice: ReminderDocInput) => void;
   /** REQ-625 — the edit form (an address or a contact still to add) */
   onEdit: (c: CustomerCard) => void;
   lang: "en" | "es";
@@ -408,6 +418,7 @@ function ClientCard(
     onOpen,
     onClose,
     onOpenCard,
+    onRemind,
     onEdit,
     lang,
     disambig,
@@ -458,10 +469,19 @@ function ClientCard(
 
   /** REQ-626: the CTA does what it says — a pre-filled message to the
    *  client, or (its "Open card" label) the client's sheet. REQ-277: with
-   *  nowhere to send (nudgeActionFor says "open") it opens the sheet. */
+   *  nowhere to send (nudgeActionFor says "open") it opens the sheet.
+   *  REQ-1029 (LOOP-007 q2-10): "Send a kind reminder" is the app's own
+   *  invoice reminder — the send sheet for the oldest open invoice (email
+   *  recommended for a phone that can't take texts), sent via
+   *  dispatchInvoice into the Outbox — never an OS hand-off; with no open
+   *  invoice it opens the sheet. */
   function onCta(e: Event) {
     e.stopPropagation();
     const kind = clientCtaMessageKind(c);
+    if (kind === "reminder") {
+      const inv = reminderInvoiceFor(c.documents);
+      return inv ? onRemind(c, inv) : onOpenCard(c.id);
+    }
     if (clientCtaAction(c) === "open" || !kind || nudge.kind === "open") {
       return onOpenCard(c.id);
     }
@@ -966,6 +986,18 @@ export default function ClientsBoard(
     document.querySelector(`[data-customer-id="${CSS.escape(linkedId!)}"]`)
       ?.scrollIntoView({ block: "center" });
   }, [linkedOnPage]);
+  // REQ-1029: the board card's "Send a kind reminder" — the invoice send sheet
+  const [remind, setRemind] = useState<
+    { c: CustomerCard; invoice: ReminderDocInput } | null
+  >(null);
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
   // REQ-626: the sort button sorts — the API's A–Z, or warmest first (this page)
   const [sortBy, setSortBy] = useState<"name" | "warmth">("name");
 
@@ -1061,6 +1093,10 @@ export default function ClientsBoard(
                   setOpenId(null);
                   onOpenCard(id);
                 }}
+                onRemind={(x, invoice) => {
+                  setOpenId(null);
+                  setRemind({ c: x, invoice });
+                }}
                 onEdit={(x) => {
                   setOpenId(null);
                   onEdit(x);
@@ -1119,6 +1155,47 @@ export default function ClientsBoard(
           {children}
         </div>
       </div>
+      {remind && (
+        /* REQ-1029: the same reminder as the customer page's Remind */
+        <InvoiceSendDialog
+          lang={lang}
+          invoice={{ id: remind.invoice.id, number: remind.invoice.number }}
+          customer={invoiceSendContact({ customerId: remind.c.id }, remind.c)}
+          onCancel={() => setRemind(null)}
+          onSend={async (pick) => {
+            const inv = remind.invoice;
+            const d = await dispatchInvoice(inv.id, {
+              ...pick,
+              hasCustomer: true,
+            });
+            setRemind(null);
+            if (d.delivered) {
+              setToast({
+                text: tFor(lang, "customerWs.remind.sent", {
+                  number: inv.number,
+                }),
+              });
+              onCustomerSaved?.();
+            } else {
+              setToast({
+                text: dispatchFailureCopy(lang, d, { number: inv.number }),
+                err: true,
+              });
+            }
+          }}
+        />
+      )}
+      {toast && (
+        <div
+          role="status"
+          data-cy="clients-toast"
+          style={`position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:1100;max-width:min(92vw,560px);padding:11px 18px;border-radius:12px;font-weight:600;color:#fff;box-shadow:0 10px 30px rgba(20,72,82,0.25);background:${
+            toast.err ? "#a83b3b" : "var(--brand-teal, #1a535c)"
+          }`}
+        >
+          {toast.text}
+        </div>
+      )}
     </>
   );
 }
