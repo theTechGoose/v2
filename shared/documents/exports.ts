@@ -14,6 +14,7 @@
  */
 import { docNumberOf } from "./numbering.ts";
 import { invoiceBalance, versionOf } from "./versions.ts";
+import { invoiceDisplayStatus } from "./invoice-status.ts"; // REQ-966
 
 /** Excel reads a UTF-8 file as such only when it starts with the BOM. */
 export const CSV_BOM = "﻿";
@@ -132,6 +133,8 @@ export interface InvoiceRowContext {
   changeOrders: ReadonlyArray<{ id: string; number?: string }>;
   /** the customer-facing link ("https://documonster.com/i/<id>") */
   link: string;
+  /** REQ-966: the clock the Status column's "overdue" is read against */
+  now?: Date;
 }
 
 /** What the invoice was paid: the stored sum, else its amount when it is marked paid. */
@@ -169,7 +172,9 @@ export function invoiceExportRow(
   return [
     docNumberOf(i),
     String(versionOf(i)),
-    i.status ?? "draft",
+    // REQ-966 (q1-64, AMENDMENT to REQ-208): the status the app shows —
+    // "overdue" / "partly paid" are derived, never the stored "pending"
+    invoiceDisplayStatus(i, ctx.now ?? new Date()),
     customerNumber,
     party.name ?? "",
     party.businessName ?? "",
@@ -205,6 +210,7 @@ export interface InvoiceExportLookups<I extends ExportInvoice> {
 export function invoiceExportCsv<I extends ExportInvoice>(
   invoices: readonly I[],
   lookups: InvoiceExportLookups<I>,
+  now: Date = new Date(),
 ): string {
   return toCsv([
     [...INVOICE_EXPORT_HEADER],
@@ -214,6 +220,7 @@ export function invoiceExportCsv<I extends ExportInvoice>(
         quote: lookups.quoteOf(i),
         changeOrders: lookups.changeOrdersOf(i),
         link: lookups.linkOf(i),
+        now,
       })
     ),
   ]);

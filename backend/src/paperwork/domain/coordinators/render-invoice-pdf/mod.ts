@@ -24,6 +24,10 @@ import {
 } from "#documents/invoice-lang.ts"; // REQ-710
 import { lineItemDescription } from "#quote-flow/quote-translations.ts"; // REQ-710
 import {
+  invoicePillFlags,
+  invoiceStatusPill,
+} from "#documents/invoice-status.ts"; // REQ-966
+import {
   customerLines,
   customerOnDocument,
   docRef,
@@ -199,18 +203,34 @@ export class RenderInvoicePdf {
     // REQ-204 / REQ-201: "INVOICE · INV-5000 · Version 2"
     const docNum = `${docTag} · ${docRefWithVersion(invoice, lang)}`;
     page.drawText(docNum, { x: M, y, size: 8.5, font: bold, color: PINK_DARK });
+    // REQ-966 (q1-41): the stamp is the /i pill — void, paid, claimed, past
+    // due, open — translated; never the stored enum ("pending" is a part
+    // payment's internal value and "overdue" is never stored). The business
+    // downloads the PDF, so a draft / scheduled one says so, as its /i does.
+    const flags = invoicePillFlags(invoice, new Date());
     const paid = invoice.status === "paid" || !!invoice.paidAt;
     const payState = paymentStateLines(invoice, lang);
-    const statusText = paid
-      ? t(lang, "status.paid").toUpperCase()
-      : (invoice.status ?? "due").toUpperCase();
+    const pill = invoiceStatusPill(
+      {
+        ...flags,
+        status: invoice.status,
+        internal: true,
+        scheduledFor: invoice.scheduledFor,
+      },
+      lang,
+    );
+    const statusText = t(lang, pill.key, pill.vars).toUpperCase();
     const statusW = bold.widthOfTextAtSize(statusText, 8.5);
     page.drawText(statusText, {
       x: W - M - statusW,
       y,
       size: 8.5,
       font: bold,
-      color: paid ? GREEN : PINK_DARK,
+      color: pill.tone === "good"
+        ? GREEN
+        : pill.tone === "neutral"
+        ? MUTED
+        : PINK_DARK,
     });
     // REQ-201: a revision says so — "Revised invoice — replaces previous version"
     const revised = revisedNote("invoice", invoice, lang);
@@ -232,7 +252,9 @@ export class RenderInvoicePdf {
     const own = invoiceTextByLang(invoice);
     const heroTitle = (quote?.summaryByLang?.[lang] ?? quote?.summary ??
       own.jobNameByLang?.[lang] ?? invoice.jobName ??
-      t(lang, "renderQuotePdf.heroFallback"))
+      // REQ-966 (q1-41): an invoice's own fallback, as /i — never the quote
+      // PDF's "Service Agreement"
+      t(lang, "publicInvoice.jobNameFallback"))
       .replace(/^\s*quote\s*:\s*/i, "")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });

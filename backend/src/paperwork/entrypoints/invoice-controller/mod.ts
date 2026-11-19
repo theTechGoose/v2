@@ -737,7 +737,7 @@ export class InvoiceController {
       quoteOf: (i) => (i.quoteId ? quoteById.get(i.quoteId) : undefined),
       changeOrdersOf: (i) => (cosByInvoice.get(i.id) ?? []).slice().sort(bySeq),
       linkOf: (i) => `${base}/i/${i.id}`,
-    });
+    }, new Date()); // REQ-966: the Status column's "overdue" is read now
     return new Response(csv, {
       headers: {
         "content-type": "text/csv; charset=utf-8",

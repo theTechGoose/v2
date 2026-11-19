@@ -198,7 +198,9 @@ Deno.test("REQ-208 GET /invoices/export.csv?status=all|paid|unpaid and GET /cust
     assertEquals(cells(sentRow).slice(0, 24), [
       "INV-001",
       "1",
-      "sent",
+      // REQ-966 (AMENDMENT): due 2026-11-13, unpaid — past due now, so the
+      // Status column says what GET /invoices says
+      "overdue",
       "C-001",
       "Zelda Ortiz",
       "Ortiz, Inc.",

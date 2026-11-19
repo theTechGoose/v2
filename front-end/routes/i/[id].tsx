@@ -34,6 +34,7 @@ import {
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
 import {
+  invoicePillFlags,
   type InvoicePillTone,
   invoiceStatusPill,
 } from "../../lib/invoice-status-pill.ts";
@@ -385,10 +386,8 @@ function InvoiceDoc(
 ) {
   // REQ-627: a voided invoice says so and cannot be paid
   const voided = invoice.status === "void";
-  const paid = !voided && (invoice.status === "paid" || !!invoice.paidAt);
-  const claimed = !voided && invoice.status === "claimed" &&
-    !!invoice.paymentIntent;
-  const pastDue = !voided && !paid && !claimed && isPastDue(invoice.dueDate);
+  // REQ-966: the same flags stamp the invoice PDF (shared/documents/invoice-status.ts)
+  const { paid, claimed, pastDue } = invoicePillFlags(invoice, new Date());
   const es = lang === "es";
   const contractorFirst = invoice.contractor?.name?.split(/\s+/)[0];
   // REQ-628: the business, else the contractor — never DocuMonster
@@ -1587,10 +1586,4 @@ function methodFriendly(method: string, lang: "en" | "es"): string {
     default:
       return method;
   }
-}
-
-function isPastDue(dueDate: string | undefined): boolean {
-  if (!dueDate) return false;
-  const due = new Date(`${dueDate}T23:59:59Z`);
-  return Number.isFinite(due.getTime()) && due.getTime() < Date.now();
 }

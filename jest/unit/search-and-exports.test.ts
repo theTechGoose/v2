@@ -431,7 +431,9 @@ describe("REQ-208 invoice export — the columns and one row", () => {
     expect(row).toEqual([
       "INV-001",
       "2",
-      "sent",
+      // REQ-966 (AMENDMENT): $400 of $1,100 paid, not yet due — the display
+      // status "partly paid", not the stored "sent"
+      "partly paid",
       "C-001",
       "Zelda Ortiz",
       "Ortiz & Co",
