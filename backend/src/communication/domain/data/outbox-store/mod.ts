@@ -76,21 +76,61 @@ export class OutboxStore {
     return entry;
   }
 
-  /** The account's entries, newest first, without bodies. */
+  /**
+   * The account's entries, newest first, without bodies. `customerId`
+   * (REQ-989, q1-72: a customer's Messages tab) keeps only the entries sent
+   * to that customer — the account's index is scanned page by page until
+   * `limit` of hers are found, so an older entry is not lost behind newer
+   * ones to other customers.
+   */
   async listByUser(
     userId: string,
-    options: { limit?: number } = {},
+    options: { limit?: number; customerId?: string } = {},
   ): Promise<OutboxEntry[]> {
     const kv = await getKv();
     const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 200), 1000));
-    const ids: string[] = [];
+    const customerId = options.customerId;
+    if (!customerId) {
+      const ids: string[] = [];
+      const iter = kv.list<string>({ prefix: [INDEX_PREFIX, userId] }, {
+        reverse: true,
+        limit,
+      });
+      for await (const e of iter) ids.push(e.value);
+      const recs = await readMany<OutboxEntry>(
+        kv,
+        ids.map((id) => [PREFIX, id]),
+      );
+      return recs.filter((r): r is OutboxEntry => !!r && r.userId === userId);
+    }
+    const out: OutboxEntry[] = [];
+    let batch: string[] = [];
+    const flush = async () => {
+      const recs = await readMany<OutboxEntry>(
+        kv,
+        batch.map((id) => [PREFIX, id]),
+      );
+      batch = [];
+      for (const r of recs) {
+        if (r && r.userId === userId && r.customerId === customerId) {
+          out.push(r);
+          if (out.length >= limit) break;
+        }
+      }
+    };
     const iter = kv.list<string>({ prefix: [INDEX_PREFIX, userId] }, {
       reverse: true,
-      limit,
+      batchSize: 200,
     });
-    for await (const e of iter) ids.push(e.value);
-    const recs = await readMany<OutboxEntry>(kv, ids.map((id) => [PREFIX, id]));
-    return recs.filter((r): r is OutboxEntry => !!r && r.userId === userId);
+    for await (const e of iter) {
+      batch.push(e.value);
+      if (batch.length >= 200) {
+        await flush();
+        if (out.length >= limit) return out;
+      }
+    }
+    if (batch.length) await flush();
+    return out;
   }
 
   /** One entry with its content as sent; another account's is refused. */

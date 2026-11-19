@@ -120,6 +120,18 @@
 .cws-msg--out { align-self: flex-end; background: var(--brand-teal, #1a535c); color: #fff; }
 .cws-msg--out .cws-muted { color: rgba(255, 255, 255, 0.7); }
 .cws-compose { display: flex; gap: 8px; }
+/* REQ-989 (q1-72): what was sent to her (her outbox entries) */
+.cws-outbox { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.cws-outbox li + li { border-top: 1px solid var(--cws-line); }
+.cws-outbox__row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px; color: var(--fg); text-decoration: none; border-radius: 8px; }
+.cws-outbox__row:hover, .cws-outbox__row:focus-visible { background: var(--mint-200, #ecf6ec); }
+.cws-outbox__icon { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--green-50, #ecf5e9); font-size: 14px; }
+.cws-outbox__main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.cws-outbox__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cws-coffee); }
+.cws-outbox__main .cws-muted { font-size: 12px; }
+.cws-outbox__status { flex: none; max-width: 40%; text-align: right; font-size: 12px; font-weight: 700; color: var(--green-600, #427a37); display: flex; flex-direction: column; gap: 2px; }
+.cws-outbox__status small { font-weight: 400; color: var(--cws-coffee); }
+.cws-outbox__status--no { color: var(--cws-amber); }
 .cws-compose input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--cws-line2); border-radius: 10px; font: inherit; color: var(--fg); }
 
 /* the payment sheet (the payment form inside) */
