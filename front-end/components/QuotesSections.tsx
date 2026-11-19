@@ -13,6 +13,7 @@ import {
 } from "../lib/quote-limit.ts";
 import DeleteQuoteButton from "../islands/DeleteQuoteButton.tsx";
 import {
+  coWaitingSubKey,
   heroCoUnsent,
   heroCoWaiting,
   quotesHeroMode,
@@ -224,20 +225,37 @@ export function QuotesHero(
           : settled
           ? (
             <>
+              {
+                /* REQ-1106 (LOOP-007 q3-32): title and sub come as a pair.
+                  settledSub ("Every quote you have sent is decided") was
+                  written under settledTitle; under a waiting change order
+                  (REQ-481) it read as "nothing is waiting". */
+              }
               {coWaiting
                 ? (
-                  <h1 class="qph__title" data-cy="quotes-hero-co-waiting">
-                    <em>{tFor(lang, coWaiting.key, coWaiting.vars)}</em>
-                  </h1>
+                  <>
+                    <h1 class="qph__title" data-cy="quotes-hero-co-waiting">
+                      <em>{tFor(lang, coWaiting.key, coWaiting.vars)}</em>
+                    </h1>
+                    <p class="qph__sub" data-cy="quotes-hero-co-waiting-sub">
+                      {tFor(
+                        lang,
+                        coWaitingSubKey(coWaiting.key),
+                        coWaiting.vars,
+                      )}
+                    </p>
+                  </>
                 )
                 : (
-                  <h1 class="qph__title">
-                    <em>{tFor(lang, "quotesHero.settledTitle")}</em>
-                  </h1>
+                  <>
+                    <h1 class="qph__title">
+                      <em>{tFor(lang, "quotesHero.settledTitle")}</em>
+                    </h1>
+                    <p class="qph__sub">
+                      {tFor(lang, "quotesHero.settledSub")}
+                    </p>
+                  </>
                 )}
-              <p class="qph__sub">
-                {tFor(lang, "quotesHero.settledSub")}
-              </p>
               {coUnsentLine}
               {draftingNote}
               {undeliveredNote}

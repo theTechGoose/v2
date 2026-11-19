@@ -495,6 +495,18 @@ export function heroCoWaiting(
   };
 }
 
+/** REQ-1106 (LOOP-007 q3-32): the settled hero's sub under a waiting change
+ *  order. settledSub ("Every quote you have sent is decided…") belongs under
+ *  settledTitle only; under "CO-002 is waiting on Maria Lopez." it reads as
+ *  "nothing is waiting". The sub follows the title's plural. */
+export function coWaitingSubKey(
+  titleKey: "quotesHero.coWaiting.one" | "quotesHero.coWaiting.other",
+): "quotesHero.coWaitingSub.one" | "quotesHero.coWaitingSub.other" {
+  return titleKey === "quotesHero.coWaiting.one"
+    ? "quotesHero.coWaitingSub.one"
+    : "quotesHero.coWaitingSub.other";
+}
+
 /** REQ-1030 (LOOP-007 q2-14): the hero's line for change orders the
  *  assistant made but never sent (REQ-652) — "CO-001 isn't sent to Maria
  *  yet." They are not waiting on the customer, and not hidden either. Null
