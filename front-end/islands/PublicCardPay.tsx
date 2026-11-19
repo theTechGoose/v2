@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { Icon } from "../components/ui/Icon.tsx"; // REQ-366
 import { fmtMoneyExact } from "../lib/format.ts";
+import { flipInvoiceHeadline } from "../lib/invoice-headline-flip.ts"; // REQ-984
 import {
   brandOf,
   type CardDraft,
@@ -449,6 +450,7 @@ export default function PublicCardPay(
       const wrap = document.querySelector<HTMLElement>("[data-claim-wrap]");
       if (wrap) wrap.hidden = true;
     } catch { /* decorative */ }
+    flipInvoiceHeadline("paid", lang); // REQ-984: the headline reads Paid too
   }
 
   async function settle(
