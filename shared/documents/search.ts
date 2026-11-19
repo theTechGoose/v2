@@ -30,6 +30,7 @@ import {
 import { docNumberOf, matchesDocNumber } from "./numbering.ts";
 import { formatShortDate } from "../quote-flow/format-helpers.ts";
 import { fmtServiceDates } from "./service-dates.ts"; // REQ-1064
+import { invoiceDisplayStatus } from "./invoice-status.ts"; // REQ-1073
 import {
   invoiceBalance,
   invoiceState,
@@ -87,6 +88,8 @@ export interface SearchHit {
   customerName?: string;
   customerNumber?: string;
   amountCents?: number;
+  /** REQ-1073: an invoice row's balance still owed (amount − paid) */
+  balanceCents?: number;
   status?: string;
   /** the records this one is tied to, in display order */
   related: SearchRelated[];
@@ -596,7 +599,9 @@ export function searchRecords(
         customerName: cust.name,
         customerNumber: cust.number,
         amountCents: i.amount,
-        status: invoiceState(i),
+        // REQ-1073 (LOOP-007 q2-62): what is still owed, beside the total
+        balanceCents: hitBalanceCents(i),
+        status: invoiceSearchState(i),
         related,
       });
     }
@@ -721,6 +726,29 @@ export function bestHit(hits: readonly SearchHit[]): SearchHit | undefined {
   return hits.length
     ? hits.reduce((b, h) => (h.rank < b.rank ? h : b), hits[0])
     : undefined;
+}
+
+/**
+ * REQ-1073 (LOOP-007 q2-62): an invoice row's status — the document state
+ * (versions.ts `invoiceState`), except that an open bill with money on it
+ * reads "partly_paid", by the same rule (and order: past due first) as the
+ * customer's Invoices tab, the /invoices card, /i and the CSV.
+ */
+export function invoiceSearchState(
+  i: {
+    status?: string;
+    version?: number;
+    issuedDate?: string;
+    amount?: number;
+    paidCents?: number;
+    paidAt?: string | null;
+    dueDate?: string;
+  },
+  now: Date = new Date(),
+): string {
+  const state = invoiceState(i);
+  if (state !== "sent" && state !== "revised") return state;
+  return invoiceDisplayStatus(i, now) === "partly paid" ? "partly_paid" : state;
 }
 
 /** The open balance of an invoice row, for display next to its amount. */

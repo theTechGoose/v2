@@ -25,6 +25,7 @@ export type InvoicePillKind =
   | "draft"
   | "scheduled"
   | "pastDue"
+  | "partly"
   | "due";
 
 /** Colour family; the route maps it to its palette. */
@@ -56,6 +57,8 @@ export function invoiceStatusPill(
     scheduledFor?: string;
     /** REQ-627: the business voided it — it says so and cannot be paid */
     voided?: boolean;
+    /** REQ-1073: money is on it and a balance remains (`isPartlyPaid`) */
+    partlyPaid?: boolean;
   },
   lang: Lang,
 ): InvoicePill {
@@ -103,6 +106,15 @@ export function invoiceStatusPill(
       key: "publicInvoice.status.pastDue",
     };
   }
+  // REQ-1073: past due wins (REQ-966's order); otherwise an open bill with
+  // money on it reads "Partly paid", as every other screen says
+  if (input.partlyPaid) {
+    return {
+      kind: "partly",
+      tone: "pending",
+      key: "publicInvoice.status.partlyPaid",
+    };
+  }
   return { kind: "due", tone: "due", key: "publicInvoice.status.due" };
 }
 
@@ -112,6 +124,8 @@ export interface InvoiceStatusInput {
   paidAt?: string | null;
   dueDate?: string;
   paidCents?: number;
+  /** the total, in cents */
+  amount?: number;
   /** REQ-557: a customer's "I paid" claim */
   paymentIntent?: unknown;
 }
@@ -127,20 +141,49 @@ export function isPastDue(dueDate: string | undefined, now: Date): boolean {
 }
 
 /**
+ * REQ-1073 (LOOP-007 q2-62): the one "partly paid" rule every screen reads —
+ * the customer Invoices tab, the /invoices card, the header search, /i and
+ * its PDF, the CSV. An open bill (not void, not paid) with money recorded on
+ * it and a balance still owed. The stored "pending" is NOT the signal: it is
+ * also what ComputeInvoiceBalance leaves after every payment is deleted.
+ * Whether "overdue" outranks it is each caller's order (REQ-966: it does).
+ */
+export function isPartlyPaid(
+  invoice: Pick<
+    InvoiceStatusInput,
+    "status" | "paidAt" | "paidCents" | "amount"
+  >,
+): boolean {
+  if (invoice.status === "void" || invoice.status === "paid") return false;
+  if (invoice.paidAt) return false;
+  const paid = invoice.paidCents ?? 0;
+  if (paid <= 0) return false;
+  return typeof invoice.amount !== "number" || paid < invoice.amount;
+}
+
+/**
  * REQ-966: the flags the /i pill and the invoice PDF's stamp are drawn from —
- * void, then paid, then claimed, then past due.
+ * void, then paid, then claimed, then past due, then (REQ-1073) partly paid.
  */
 export function invoicePillFlags(
   invoice: InvoiceStatusInput,
   now: Date,
-): { voided: boolean; paid: boolean; claimed: boolean; pastDue: boolean } {
+): {
+  voided: boolean;
+  paid: boolean;
+  claimed: boolean;
+  pastDue: boolean;
+  partlyPaid: boolean;
+} {
   const voided = invoice.status === "void";
   const paid = !voided && (invoice.status === "paid" || !!invoice.paidAt);
   const claimed = !voided && invoice.status === "claimed" &&
     !!invoice.paymentIntent;
   const pastDue = !voided && !paid && !claimed &&
     isPastDue(invoice.dueDate, now);
-  return { voided, paid, claimed, pastDue };
+  const partlyPaid = !voided && !paid && !claimed && !pastDue &&
+    isPartlyPaid(invoice);
+  return { voided, paid, claimed, pastDue, partlyPaid };
 }
 
 /**
@@ -164,7 +207,9 @@ const KEPT = new Set(["void", "draft", "scheduled", "claimed"]);
  * GET /invoices says, never the internal "pending". void / draft / scheduled
  * / claimed as stored; paid; "overdue" for an open invoice past due (the
  * `isOverdue` rule, so it agrees with `urgency`); "partly paid" for an open
- * one not yet due with money on it; otherwise the stored status ("sent").
+ * one not yet due with money on it (REQ-1073: `isPartlyPaid`); otherwise the
+ * stored status ("sent") — a "pending" with nothing paid on it (every payment
+ * deleted) is an open, sent bill.
  */
 export function invoiceDisplayStatus(
   invoice: InvoiceStatusInput,
@@ -175,8 +220,6 @@ export function invoiceDisplayStatus(
   if (status === "paid" || invoice.paidAt) return "paid";
   if (KEPT.has(status)) return status;
   if (isInvoiceOverdue(invoice, now)) return "overdue";
-  if ((invoice.paidCents ?? 0) > 0 || status === "pending") {
-    return "partly paid";
-  }
-  return status;
+  if (isPartlyPaid(invoice)) return "partly paid";
+  return status === "pending" ? "sent" : status;
 }

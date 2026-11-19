@@ -43,6 +43,7 @@ const CSS = `
 .gsearch__amt{font-weight:700;color:var(--fg)}
 .gsearch__status{padding:1px 7px;border-radius:999px;background:rgba(100,69,54,.08);font-size:11px;color:var(--fg-muted)}
 .gsearch__status--paid,.gsearch__status--accepted,.gsearch__status--approved,.gsearch__status--done{background:rgba(81,152,67,.14);color:#2f6b25}
+.gsearch__status--partly_paid{background:rgba(255,170,40,.15);color:#a06800}
 .gsearch__status--scheduled{background:rgba(20,72,82,.08);color:var(--brand-teal)}
 .gsearch__sub,.gsearch__related{grid-column:1/-1;font-size:12px;color:var(--fg-muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .gsearch__related a{margin-left:6px;color:var(--brand-teal);text-decoration:underline;white-space:nowrap}
@@ -342,8 +343,19 @@ export default function GlobalSearch(
                     </div>
                     <div class="gsearch__meta">
                       {typeof h.amountCents === "number" && (
-                        <span class="gsearch__amt">
-                          {money(h.amountCents, lang)}
+                        <span class="gsearch__amt" data-cy="global-search-amt">
+                          {
+                            /* REQ-1073: a part-paid bill shows what is
+                              still owed — "$690.75 due of $1,190.75" */
+                            typeof h.balanceCents === "number" &&
+                              h.balanceCents > 0 &&
+                              h.balanceCents < h.amountCents
+                              ? tFor(lang, "search.balanceOf", {
+                                balance: money(h.balanceCents, lang),
+                                total: money(h.amountCents, lang),
+                              })
+                              : money(h.amountCents, lang)
+                          }
                         </span>
                       )}
                       {h.status && (
