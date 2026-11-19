@@ -113,7 +113,7 @@ Deno.test("REQ-689 p5: an approved /co says it was approved and the new total; a
     await page.locator("[data-cy=co-intro]").waitFor({ timeout: 15_000 });
     const done = await page.locator("[data-cy=co-intro]").innerText();
     expect(
-      /^You approved this change on \w{3} \d{1,2}, \d{4} — your total is now \$20,050\.00\.$/
+      /^You approved this change on \w{3} \d{1,2}, \d{4} — your job total is now \$20,050\.00\.$/
         .test(done.trim()),
       `approved intro (got "${done}")`,
     );

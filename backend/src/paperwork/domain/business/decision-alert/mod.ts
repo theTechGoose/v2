@@ -178,7 +178,16 @@ export function buildChangeOrderReceipt(o: {
   ref: string;
   description: string;
   deltaCents: number;
+  /** the linked invoice's total after the order */
   newTotalCents: number;
+  /** REQ-1055: the JOB's agreed total after the order (quote total +
+   *  approved change orders) — the figure /co heads with. When present the
+   *  receipt names both totals, each labeled; absent (no linked quote) it
+   *  keeps the single invoice-total line. */
+  jobTotalCents?: number;
+  /** REQ-1055: the invoice's number as the customer knows it ("INV-002"),
+   *  only for an issued invoice */
+  invoiceLabel?: string;
   approvedName?: string;
   approvedAt?: string;
   url: string;
@@ -193,24 +202,49 @@ export function buildChangeOrderReceipt(o: {
   const approvedLine = who
     ? t(lang, "decisionAlert.coReceipt.approvedBy", { name: who, date })
     : t(lang, "decisionAlert.coReceipt.approvedOn", { date });
-  const totalLine = t(lang, "decisionAlert.coReceipt.newTotal", { total });
+  // REQ-1055 (LOOP-007 q2-39): with the job total known, name both totals —
+  // "Job total: $11,200.00." then "Invoice INV-002 total: $8,680.00." — so
+  // the receipt and /co (which heads with the job total) agree on words.
+  const jobTotal = typeof o.jobTotalCents === "number"
+    ? fmtUsd(o.jobTotalCents)
+    : undefined;
+  const invoice = [
+    t(lang, "decisionAlert.coReceipt.invoiceNoun"),
+    o.invoiceLabel?.trim(),
+  ].filter(Boolean).join(" ");
+  const totalLines = jobTotal
+    ? [
+      t(lang, "decisionAlert.coReceipt.jobTotal", { total: jobTotal }),
+      t(lang, "decisionAlert.coReceipt.invoiceTotal", { invoice, total }),
+    ]
+    : [t(lang, "decisionAlert.coReceipt.newTotal", { total })];
   const subject = `${
     t(lang, "decisionAlert.coReceipt.subject", { business: o.businessName })
   } — ${o.ref}`;
   const sms = `${o.ref}: ${
-    t(lang, "decisionAlert.coReceipt.sms", {
-      business: o.businessName,
-      what: o.description.trim(),
-      delta,
-      total,
-      url: o.url,
-    })
+    jobTotal
+      ? t(lang, "decisionAlert.coReceipt.smsJob", {
+        business: o.businessName,
+        what: o.description.trim(),
+        delta,
+        jobTotal,
+        invoice,
+        total,
+        url: o.url,
+      })
+      : t(lang, "decisionAlert.coReceipt.sms", {
+        business: o.businessName,
+        what: o.description.trim(),
+        delta,
+        total,
+        url: o.url,
+      })
   }`;
   const html = shell({
     lang,
     ref: o.ref,
     headline: t(lang, "decisionAlert.coReceipt.headline"),
-    paragraphs: [o.description, delta, approvedLine, totalLine],
+    paragraphs: [o.description, delta, approvedLine, ...totalLines],
     body: t(lang, "decisionAlert.coReceipt.body", {
       business: o.businessName,
     }),

@@ -5,7 +5,8 @@
  * /co/:id rendered `changeOrderPublic.intro` for every status. The intro now
  * follows the order's status:
  *   pending  → the ask ("Review it below and approve…"), unchanged
- *   approved → "You approved this change on {date} — your total is now {total}."
+ *   approved → "You approved this change on {date} — your job total is now {total}."
+ *              (REQ-1055: "your invoice total" when there are no job totals)
  *   declined → "You declined this change."
  */
 import * as fs from "fs";
@@ -54,7 +55,7 @@ describe("REQ-689 p5 the /co intro follows the order's status", () => {
     );
     const en = render("en", r);
     expect(en).toBe(
-      "You approved this change on Nov 6, 2026 — your total is now $20,050.00.",
+      "You approved this change on Nov 6, 2026 — your job total is now $20,050.00.",
     );
     expect(en).not.toMatch(/approve to update|Review it below/);
     const es = render(
@@ -81,7 +82,7 @@ describe("REQ-689 p5 the /co intro follows the order's status", () => {
       money,
     );
     expect(render("en", r)).toBe(
-      "You approved this change on Nov 6, 2026 — your total is now $10,450.00.",
+      "You approved this change on Nov 6, 2026 — your invoice total is now $10,450.00.",
     );
   });
 
