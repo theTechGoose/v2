@@ -196,6 +196,9 @@ function quotePill(state: string, lang: Lang): { text: string; cls: string } {
   return { text: tFor(lang, "customerWs.quote.waiting"), cls: "sent" };
 }
 
+/** REQ-1108: `land` — after a tab switch, bring its content into view */
+type SetTabOpts = { land?: boolean };
+
 export default function CustomerWorkspace(
   { customerId, timeZone }: {
     customerId: string;
@@ -312,9 +315,9 @@ export default function CustomerWorkspace(
 
   /** REQ-1146: a tab click ADDS a history entry (pushState), so Back returns to the earlier tab.
    *  REQ-1108: `land` — after the switch, bring the tab's content into view (Messages: and focus the composer) */
-  function setTab(t: WsTab, opts: { land?: boolean } = {}) {
+  function setTab(t: WsTab, opts?: SetTabOpts) {
     setTabState(t);
-    if (opts.land) setLandMessages((n) => n + 1);
+    if (opts?.land) setLandMessages((n) => n + 1);
     try {
       if (tabFromUrl() === t) return; // already showing — no duplicate entry
       const url = new URL(globalThis.location.href);

@@ -74,7 +74,9 @@ Deno.test("REQ-1109 (LOOP-007 q3-35) int: the reminder preview and the sent nudg
     });
     assertEquals(pv.status, 200);
     const preview = await pv.json();
-    const previewText = String(preview.smsBody);
+    // REQ-1113 (q3-38): an email-only nudge previews the email's words
+    // (emailText); smsBody is there only when a text will go
+    const previewText = String(preview.emailText ?? preview.smsBody);
 
     const res = await fetch(`${base()}/cron/invoice-reminder`, {
       method: "POST",

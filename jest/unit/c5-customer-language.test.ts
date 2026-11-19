@@ -264,7 +264,7 @@ describe("REQ-715 wiring — every place a customer is made or edited, and every
   it("REQ-715 the New customer form sends the picked language", () => {
     expect(page()).toMatch(/<CustomerLanguageSelect/);
     expect(page()).toMatch(/data-cy="cf-language"/);
-    expect(page()).toMatch(/customerCreatePayload\(values, language\)/);
+    expect(page()).toMatch(/customerCreatePayload\(values, language[,)]/);
   });
 
   it("REQ-715 the card shows the language and saves a change through PUT /customers/:id", () => {
@@ -275,9 +275,10 @@ describe("REQ-715 wiring — every place a customer is made or edited, and every
 
   it("REQ-715 the New invoice modal's new client carries the language", () => {
     expect(invoices()).toMatch(/<CustomerLanguageSelect/);
-    // REQ-715 AMENDMENT (reconciled with develop's REQ-625 shared form)
+    // REQ-715 AMENDMENT (reconciled with develop's REQ-625 shared form);
+    // REQ-1149 (q3-80) adds a 3rd opts argument ({ allowDuplicate }) after the language
     expect(invoices()).toMatch(
-      /customerCreatePayload\(newClient, newLanguage\)/,
+      /customerCreatePayload\(newClient, newLanguage[,)]/,
     );
   });
 

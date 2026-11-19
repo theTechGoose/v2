@@ -89,9 +89,8 @@ import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { type NudgePreview, sendInvoiceNudge } from "../lib/invoice-nudge.ts";
 // REQ-1112 (LOOP-007 q3-37): every /invoices nudge confirms with the preview
-import InvoiceNudgeDialog, {
-  NudgePreviewBody, // REQ-1113
-} from "../components/InvoiceNudgeDialog.tsx";
+import InvoiceNudgeDialog from "../components/InvoiceNudgeDialog.tsx";
+import { NudgePreviewBody } from "../components/InvoiceNudgeDialog.tsx"; // REQ-1113
 import {
   outReadKey,
   paidReadKey,
