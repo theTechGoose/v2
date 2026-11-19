@@ -783,8 +783,20 @@ export interface InvoiceTitleDoc {
   summary?: string;
   /** the invoice's own lines' descriptions, in the page's language */
   lineDescriptions?: readonly (string | undefined)[];
+  /** REQ-1124: the lines themselves, flags and all — preferred over
+   *  `lineDescriptions`; a chargeback's own lines never title the bill */
+  lines?: readonly InvoiceTitleLine[];
   /** "INV-001" */
   number: string;
+}
+
+/** REQ-1124: a line as the title reads it */
+export interface InvoiceTitleLine {
+  description?: string | null;
+  /** REQ-926: a chargeback's fee line */
+  chargebackFor?: unknown;
+  /** REQ-1124: the base line a chargeback made up on an amount-only bill */
+  chargebackBase?: unknown;
 }
 
 /**
@@ -792,11 +804,20 @@ export interface InvoiceTitleDoc {
  * the job name, else its summary, else its first line's description, else the
  * invoice by number ("Invoice INV-001" / "Factura INV-001"). Never a generic
  * placeholder like "Project" — an amount-only invoice has no job name.
+ * REQ-1124 (q3-52): a chargeback's own lines (its fee, and the base line it
+ * made up on an amount-only bill) are skipped — a chargeback never retitles.
  */
 export function invoiceTitle(doc: InvoiceTitleDoc, lang: Lang = "en"): string {
   const named = doc.jobName?.trim() || doc.summary?.trim();
   if (named) return named;
-  const first = (doc.lineDescriptions ?? [])
+  const descriptions = doc.lines
+    ? doc.lines
+      .filter((l) =>
+        l.chargebackFor === undefined && l.chargebackBase === undefined
+      )
+      .map((l) => l.description ?? undefined)
+    : doc.lineDescriptions ?? [];
+  const first = descriptions
     .map((d) => d?.trim())
     .find((d): d is string => Boolean(d));
   if (first) return first;

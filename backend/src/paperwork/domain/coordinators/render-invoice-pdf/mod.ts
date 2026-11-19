@@ -276,9 +276,11 @@ export class RenderInvoicePdf {
       // else "Invoice INV-001", never "Project"
       invoiceTitle(
         {
-          lineDescriptions: (invoice.lineItems ?? []).map((li) =>
-            lineItemDescription(li, lang)
-          ),
+          // REQ-1124: a chargeback's own lines never title the bill
+          lines: (invoice.lineItems ?? []).map((li) => ({
+            ...li,
+            description: lineItemDescription(li, lang),
+          })),
           number: docRef(invoice),
         },
         lang,

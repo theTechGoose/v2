@@ -1313,6 +1313,10 @@ export class PaperworkPublicController {
           quantity: li.quantity,
           unit: li.unit,
           price: li.price,
+          // REQ-1124: a chargeback's own lines keep their flag, so /i's
+          // heading skips them (REQ-984)
+          ...(li.chargebackFor ? { chargebackFor: li.chargebackFor } : {}),
+          ...(li.chargebackBase ? { chargebackBase: li.chargebackBase } : {}),
         }))
         : undefined;
       if (!jobDetails && (i.jobName || i.description || ownItems)) {

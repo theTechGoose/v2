@@ -182,3 +182,79 @@ Deno.test("REQ-926: Chargeback on a payment — Settings' fee prefilled in the m
     expect.eq(back.status, "paid", "undo: paid again");
     expect.eq(back.amount, 25000, "undo: no fee");
   }));
+
+/*
+ * REQ-1124 (LOOP-007 q3, q3-52) — the tester's invoice: amount only, no job
+ * name, $1,000.50 paid by check, then a $35 chargeback. The customer's /i
+ * heading read "Invoice INV-002" before and "Services" after, with a made-up
+ * "Services $1,000.50" line in JOB DETAILS. It must stay "Invoice INV-…",
+ * and Undo must leave the invoice with no lines.
+ */
+Deno.test("REQ-1124 (q3-52): a chargeback on an amount-only invoice keeps the customer's /i heading 'Invoice INV-…', never 'Services'; Undo leaves no lines", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    const customer = await json(http, "/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: `Ann Lee ${digits()}` }),
+    });
+    const inv = await json(http, "/api/invoices", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        customerId: customer.id,
+        status: "sent",
+        amount: 100050,
+      }),
+    });
+    const heading = async () => {
+      await page.goto(`/i/${inv.id}?as=customer`);
+      const h1 = page.locator("[data-cy='invoice-doc'] h1").first();
+      await h1.waitFor({ timeout: 15_000 });
+      return (await h1.innerText()).trim();
+    };
+    const before = await heading();
+    expect.eq(
+      before,
+      `Invoice ${inv.number}`,
+      "before the chargeback the heading names the invoice",
+    );
+
+    const pay = await json(http, "/api/payments", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        invoiceId: inv.id,
+        amount: 100050,
+        method: "check",
+        receivedAt: new Date().toISOString(),
+      }),
+    });
+    await json(http, `/api/payments/${pay.id}/chargeback`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ feeCents: 3500 }),
+    });
+
+    const after = await heading();
+    expect(after !== "Services", `the heading became "${after}"`);
+    expect.eq(
+      after,
+      `Invoice ${inv.number}`,
+      "after the chargeback the heading still names the invoice",
+    );
+
+    await json(http, `/api/payments/${pay.id}/chargeback/undo`, {
+      method: "POST",
+      headers: auth,
+      body: "{}",
+    });
+    const back = await json(http, `/api/invoices/${inv.id}`, {
+      headers: auth,
+    });
+    expect.eq(
+      JSON.stringify(back.lineItems ?? []),
+      "[]",
+      "undo: the invoice is amount-only again",
+    );
+  }));

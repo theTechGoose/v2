@@ -59,3 +59,30 @@ Deno.test("REQ-984 (q1-60): invoiceTitle — job, else summary, else the first l
     "A",
   );
 });
+
+Deno.test("REQ-1124 (q3-52): invoiceTitle skips a chargeback's own lines — an amount-only bill stays 'Invoice INV-002' / 'Factura INV-002'", () => {
+  const lines = [
+    {
+      description: "Invoice amount",
+      price: 100050,
+      chargebackBase: "pay-1",
+    },
+    { description: "Chargeback fee", price: 3500, chargebackFor: "pay-1" },
+  ];
+  assertEquals(
+    invoiceTitle({ number: "INV-002", lines }, "en"),
+    "Invoice INV-002",
+  );
+  assertEquals(
+    invoiceTitle({ number: "INV-002", lines }, "es"),
+    "Factura INV-002",
+  );
+  // a real line still titles the bill; the fee after it does not
+  assertEquals(
+    invoiceTitle({
+      number: "INV-002",
+      lines: [{ description: "Mow" }, lines[1]],
+    }),
+    "Mow",
+  );
+});

@@ -104,6 +104,8 @@ export class CreateInvoiceDto {
     overhead?: boolean;
     /** REQ-926: a chargeback's fee line — the payment it came from */
     chargebackFor?: string;
+    /** REQ-1124: the amount-only invoice's base line a chargeback made up */
+    chargebackBase?: string;
     /** REQ-710 (cycle 5, M4): a STANDALONE invoice's line per language,
      *  written by TranslateInvoice — the `lang` slot is the typed text (the
      *  cache key, shared/documents/invoice-lang.ts). */
@@ -224,6 +226,8 @@ export class UpdateInvoiceDto {
     overhead?: boolean;
     /** REQ-926: a chargeback's fee line — the payment it came from */
     chargebackFor?: string;
+    /** REQ-1124: the amount-only invoice's base line a chargeback made up */
+    chargebackBase?: string;
     /** REQ-710: see CreateInvoiceDto — set by TranslateInvoice. */
     descriptionByLang?: Record<string, string>;
   }>;

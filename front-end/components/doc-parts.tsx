@@ -70,6 +70,9 @@ export interface LineItem {
   price?: number;
   quantity?: number;
   unit?: string;
+  /** REQ-926/1124: a chargeback's fee line / the base line it made up */
+  chargebackFor?: string;
+  chargebackBase?: string;
 }
 
 export interface Term {
