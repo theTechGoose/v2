@@ -275,6 +275,32 @@ export function paidThisMonthCents(
   return { cents, overCents, clearedCount };
 }
 
+/** REQ-1074 (LOOP-007 q2-63): the bills the "Paid this month" money came
+ *  from — the ids of every invoice that received credited money on/after
+ *  `monthStart`, from the SAME payment population `paidThisMonthCents`
+ *  sums (non-reversed, receivedAt this month, credited > 0). /invoices
+ *  lists these in track 06 and counts them in the tile subline, so a $500
+ *  part payment never reads "$500 · 0" or "Nothing paid yet this month".
+ *  Order: first appearance in `payments`; each id once. */
+export function paidThisMonthInvoiceIds(
+  payments: Parameters<typeof paidThisMonthCents>[0],
+  invoices: Parameters<typeof paidThisMonthCents>[1],
+  monthStart: Date,
+): string[] {
+  const live = payments.filter((p) =>
+    !p.reversedAt && p.status !== "reversed"
+  );
+  const credited = creditedPayments(live, invoices);
+  const cutoff = monthStart.getTime();
+  const ids = new Set<string>();
+  for (const p of live) {
+    if (!(new Date(p.receivedAt).getTime() >= cutoff)) continue;
+    const c = credited.get(p.id)?.creditedCents ?? Math.max(0, p.amount || 0);
+    if (c > 0 && p.invoiceId) ids.add(p.invoiceId);
+  }
+  return [...ids];
+}
+
 /** REQ-478 (demo-loop cycle 3, M32): the /invoices KPI tiles and hero total.
  *  A payment the customer reported and the contractor has not confirmed
  *  (stage "claimed") is still money out — it counts in "Out for payment"

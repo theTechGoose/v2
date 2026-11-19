@@ -98,6 +98,7 @@ import {
   invoicesHeroOutstandingKey,
   paidKpiInvoiceCents,
   paidThisMonthCents, // REQ-959
+  paidThisMonthInvoiceIds, // REQ-1074
   reloadInvoiceData,
   scheduledHeroSubKey,
 } from "../lib/headline-counts.ts";
@@ -849,8 +850,27 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   ) => (a.scheduledFor ?? "").localeCompare(b.scheduledFor ?? ""));
   const drafting = enriched.filter((i) => i.stage === "drafting");
   const monthCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
-  const paidThisMonth = enriched.filter((i) =>
+  // Bills paid in full this month — the "n cleared" part of the subline.
+  const clearedThisMonth = enriched.filter((i) =>
     i.stage === "paid" && i.paidAt && new Date(i.paidAt) >= monthCutoff
+  );
+  // REQ-1074 (q2-63): track 06 and the tile subline count the SAME payments
+  // the tile's value sums (paidThisMonthCents) — every bill that received
+  // money this month, a part-paid one included — plus any bill marked paid
+  // this month without a payment record. Its card carries the REQ-202
+  // "partial" line, so a part-paid bill reads as partly paid.
+  const paidIds = new Set(
+    s.payments
+      ? paidThisMonthInvoiceIds(
+        s.payments,
+        Array.isArray(s.invoices) ? s.invoices : [],
+        monthCutoff,
+      )
+      : [],
+  );
+  const clearedIds = new Set(clearedThisMonth.map((i) => i.id));
+  const paidThisMonth = enriched.filter((i) =>
+    clearedIds.has(i.id) || paidIds.has(i.id)
   );
 
   // REQ-478 (M32): a reported-but-unconfirmed payment is still money out —
@@ -880,7 +900,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
       Array.isArray(s.invoices) ? s.invoices : [],
       monthCutoff,
     ).cents
-    : paidThisMonth.reduce((sum, i) => sum + paidKpiInvoiceCents(i), 0);
+    : clearedThisMonth.reduce((sum, i) => sum + paidKpiInvoiceCents(i), 0);
 
   const openInv = openId ? enriched.find((i) => i.id === openId) : undefined;
   // REQ-627: voided invoices stay — newest cancellation first
@@ -890,14 +910,17 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     )
   );
   // REQ-629: "in view" = every invoice the tracks below list, in their order
+  // — each once (REQ-1074: a part-paid bill sits in 03 and in 06)
   const inView = [
-    ...overdue,
-    ...claimed,
-    ...out,
-    ...scheduled,
-    ...drafting,
-    ...paidThisMonth,
-    ...cancelled,
+    ...new Set([
+      ...overdue,
+      ...claimed,
+      ...out,
+      ...scheduled,
+      ...drafting,
+      ...paidThisMonth,
+      ...cancelled,
+    ]),
   ];
   const picked = inView.filter((i) => selected.has(i.id));
   const skipLabel = (reason: string) =>
@@ -1159,6 +1182,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
         draftingCount={drafting.length}
         scheduledCount={scheduled.length}
         paidCount={paidThisMonth.length}
+        clearedCount={clearedThisMonth.length}
         paidTotal={paidThisMonthTotal}
         lang={lang}
       />
@@ -1480,7 +1504,17 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
             storageKey="invoices:track:04"
           >
             {paidThisMonth.length === 0
-              ? <EmptyTrack hint={tFor(lang, "invoicesPage.empty.paid")} />
+              ? (
+                <EmptyTrack
+                  hint={paidThisMonthTotal > 0
+                    // REQ-1074: money came in on a bill no longer listed —
+                    // never "Nothing paid" beside a non-zero tile
+                    ? tFor(lang, "invoicesPage.empty.paidUnlisted", {
+                      amount: fmtMoneyTotal(paidThisMonthTotal),
+                    })
+                    : tFor(lang, "invoicesPage.empty.paid")}
+                />
+              )
               : (
                 <div class="qcards">
                   {paidThisMonth.map(cardFor)}
@@ -1633,7 +1667,7 @@ function InvoicesHero(
                   return (
                     <>
                       {pre}
-                      <em>{fmtMoney(scheduledCents)}</em>
+                      <em>{fmtMoneyTotal(scheduledCents)}</em>
                       {post ?? ""}
                     </>
                   );
@@ -1673,7 +1707,7 @@ function InvoicesHero(
             )
             : (
               <>
-                <em>{fmtMoney(outstandingTotal)}</em>{" "}
+                <em>{fmtMoneyTotal(outstandingTotal)}</em>{" "}
                 {/* REQ-958: overdue money is not "on the way" (the Out tile's phrase) */}
                 {tFor(lang, invoicesHeroOutstandingKey(overdueCount))}
                 <br />
@@ -1822,6 +1856,7 @@ function InvoicesKpis(
     draftingCount,
     scheduledCount = 0,
     paidCount,
+    clearedCount,
     paidTotal,
     lang,
   }: {
@@ -1835,7 +1870,10 @@ function InvoicesKpis(
     draftingCount: number;
     /** REQ-481 (m10): installments waiting for their send day */
     scheduledCount?: number;
+    /** REQ-1074: bills that received money this month (track 06) */
     paidCount: number;
+    /** bills paid in full this month; defaults to `paidCount` */
+    clearedCount?: number;
     paidTotal: number;
     lang: Lang;
   },
@@ -1882,7 +1920,17 @@ function InvoicesKpis(
         <div class="qkpi__lbl">{tFor(lang, "invoicesPage.kpi.paid")}</div>
         <div class="qkpi__val">{fmtMoneyTotal(paidTotal)}</div>
         <div class="qkpi__sub">
-          {tnFor(lang, "invoicesPage.kpi.paidSub", paidCount)}
+          {
+            // REQ-1074 (q2-63): when part payments are in the money, the
+            // subline names the bills it came from AND how many cleared —
+            // never "$500 · 0 cleared" on its own.
+            clearedCount !== undefined && clearedCount !== paidCount
+              ? [
+                tnFor(lang, "invoicesPage.kpi.paidSubBills", paidCount),
+                tnFor(lang, "invoicesPage.kpi.paidSubFull", clearedCount),
+              ].join(" · ")
+              : tnFor(lang, "invoicesPage.kpi.paidSub", paidCount)
+          }
         </div>
       </div>
     </div>
