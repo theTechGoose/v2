@@ -342,7 +342,7 @@ Deno.test("REQ-699 M20: '$180 al mes' — the payment step asks once or every mo
     // The owner's thread says who signed and where the billing lives.
     await page.goto(`/assistant/${conv.id}`);
     await expect.see(
-      `María López firmó ${quote.number} · Mensual · $180/mes — se cobra desde Campo → Suscripciones`,
+      `María López firmó ${quote.number} · Mensual · $180/mes — se cobra desde Campo → Visitas repetidas`,
       { timeout: 30_000 },
     );
   }));
