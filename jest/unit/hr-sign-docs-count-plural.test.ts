@@ -17,7 +17,7 @@ const island = read("front-end/islands/HrSignPacket.tsx");
 
 /** The key expression HrSignPacket passes to t() for the docs count, evaluated for `total`. */
 function keyFor(total: number): string {
-  const m = island.match(/t\(\s*([^,]*hr\.sign\.docsCount[^,]*),\s*\{\s*n:\s*total\s*\}\s*\)/);
+  const m = island.match(/t\(\s*([^,]*hr\.sign\.docsCount[^,]*),\s*\{\s*n:\s*total\s*,?\s*\}\s*,?\s*\)/);
   if (!m) throw new Error("HrSignPacket.tsx: no t(<hr.sign.docsCount…>, { n: total }) call");
   // the first argument is a string literal or a template literal over `total`
   return new Function("total", `return ${m[1]};`)(total) as string;

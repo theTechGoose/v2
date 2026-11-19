@@ -172,7 +172,10 @@ export default function HrSignPacket({ token, initialLang }: Props) {
                       <strong>
                         {t("hr.sign.dept", { department: p.departmentName })}
                       </strong>{" "}
-                      · {t("hr.sign.docsCount", { n: total })}
+                      ·{" "}
+                      {t(`hr.sign.docsCount.${total === 1 ? "one" : "other"}`, {
+                        n: total,
+                      })}
                     </p>
                   </>
                 )}
