@@ -10,12 +10,32 @@
 import { invoiceBalance, isInvoiceIssued, versionOf } from "./versions.ts";
 import { docNumberOf } from "./numbering.ts";
 
+/** REQ-1053: a quote the customer declined, or one voided/canceled — there
+ *  is nothing left to bill on it. One set for the ledger panel and the
+ *  invoice form's prior-billing list, so the two can't drift apart. */
+export const CLOSED_QUOTE_STATUSES: ReadonlySet<string> = new Set([
+  "lost",
+  "declined",
+  "void",
+  "canceled",
+  "cancelled",
+]);
+
+/** REQ-1053: declined or void — by status, or by a lostAt stamp. */
+export function isClosedQuote(
+  q: { status?: string | null; lostAt?: string | null },
+): boolean {
+  return CLOSED_QUOTE_STATUSES.has(q.status ?? "") || Boolean(q.lostAt);
+}
+
 export interface LedgerQuote {
   id: string;
   number?: string;
   version?: number;
   status?: string;
   acceptedAt?: string;
+  /** REQ-1053: stamped when the customer declines */
+  lostAt?: string | null;
   estimatedTotal?: number;
   lineItems?: Array<{ price?: number; quantity?: number }>;
 }
@@ -114,6 +134,8 @@ export interface QuoteLedger {
     number: string;
     version: number;
     status?: string;
+    /** REQ-1053: when the customer declined */
+    lostAt?: string;
     accepted: boolean;
     url: string;
   };
@@ -406,6 +428,7 @@ export function quoteLedger(
       number: docNumberOf(quote),
       version: versionOf(quote),
       ...(quote.status ? { status: quote.status } : {}),
+      ...(quote.lostAt ? { lostAt: quote.lostAt } : {}),
       accepted: quote.status === "accepted" || Boolean(quote.acceptedAt),
       url: `/q/${quote.id}`,
     },

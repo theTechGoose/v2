@@ -15,7 +15,7 @@ import type {
   LineSummary,
   VersionChanges,
 } from "./versions.ts";
-import { type QuoteLedger, quoteTotalCents } from "./ledger.ts";
+import { isClosedQuote, type QuoteLedger, quoteTotalCents } from "./ledger.ts";
 
 export type Lang = "en" | "es";
 
@@ -600,7 +600,8 @@ export interface LedgerSummary {
   fullyInvoicedKey:
     | "quotes.ledger.fullyInvoiced"
     | "quotes.ledger.restScheduled"
-    | "quotes.ledger.restDrafted";
+    | "quotes.ledger.restDrafted"
+    | "quotes.ledger.declinedNoInvoice";
 }
 
 /** The panel's totals. The first row is the agreement total; it is
@@ -627,6 +628,10 @@ export function ledgerSummary(
   const scheduledCents = l.scheduledCents ?? 0;
   const next = l.nextScheduled;
   const issued = l.quote.status !== "draft";
+  // REQ-1053 (LOOP-007 q2-43): a declined / void quote is still "issued"
+  // (it was sent), but nothing is left to bill on it — no remaining row,
+  // no live "Create next invoice", and the reason says so.
+  const closed = isClosedQuote(l.quote);
   return {
     issued,
     rows: [
@@ -640,13 +645,14 @@ export function ledgerSummary(
       ...(scheduledCents > 0
         ? [{ key: "scheduled" as const, cents: scheduledCents }]
         : []),
-      ...(issued
+      ...(issued && !closed
         ? [{ key: "remaining" as const, cents: l.remainingToInvoiceCents }]
         : []),
     ],
     overpaid: l.overpaidCents > 0,
     overpaidCents: l.overpaidCents,
-    canCreateNextInvoice: issued && l.remainingToInvoiceCents > 0,
+    canCreateNextInvoice: issued && !closed &&
+      l.remainingToInvoiceCents > 0,
     ...(next
       ? {
         scheduled: {
@@ -655,7 +661,9 @@ export function ledgerSummary(
         },
       }
       : {}),
-    fullyInvoicedKey: !next
+    fullyInvoicedKey: closed
+      ? "quotes.ledger.declinedNoInvoice"
+      : !next
       ? "quotes.ledger.fullyInvoiced"
       : next.scheduledFor
       ? "quotes.ledger.restScheduled"

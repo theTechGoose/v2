@@ -11,6 +11,7 @@
  */
 import { isDueNowTermValue } from "../quote-flow/terms-i18n.ts";
 import { docNumberOf } from "./numbering.ts";
+import { CLOSED_QUOTE_STATUSES } from "./ledger.ts";
 import { MAX_CENTS } from "../quote-flow/assistant-draft.ts";
 import {
   formatPhoneDisplay,
@@ -764,7 +765,6 @@ interface PriorQuoteIn {
 }
 
 const OPEN_STATUSES = new Set(["sent", "viewed", "claimed", "pending"]);
-const CLOSED_QUOTE = new Set(["lost", "void", "canceled", "cancelled"]);
 
 /**
  * REQ-474 (demo-loop cycle 3, M17): the New invoice modal's "this client
@@ -819,7 +819,7 @@ export function priorBillingFor(
   const signed: LinkableQuote[] = theirQuotes
     .filter((q) =>
       (q.status === "accepted" || !!q.acceptedAt) &&
-      !CLOSED_QUOTE.has(q.status ?? "")
+      !CLOSED_QUOTE_STATUSES.has(q.status ?? "")
     )
     .map((q) => {
       const invoiced = live.filter((i) => i.quoteId === q.id)
