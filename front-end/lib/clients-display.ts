@@ -213,20 +213,35 @@ export function balanceDisplay(
   // settle, so it reads "Nothing billed yet" until an invoice has been issued.
   return {
     cls: "ccard2__bal-val--zero",
-    text: tFor(
-      lang,
-      hasBilled(c)
-        ? "clientsDisplay.balance.settled"
-        : "clientsDisplay.balance.nothingBilled",
-    ),
+    text: tFor(lang, zeroBalanceKey(hasBilled(c))),
   };
 }
 
+/**
+ * REQ-990 (amends REQ-323 / REQ-924) — THE word for "nothing owed", shared by the /customers board
+ * card, the sidebar's customer row (CustomersNav) and the customer page's Balance KPI
+ * (CustomerWorkspace): "Settled" / "Saldado" once an invoice has been issued, else "Nothing billed
+ * yet" / "Sin facturar". One choice, so the three surfaces cannot drift apart again.
+ */
+export function zeroBalanceKey(billed: boolean): string {
+  return billed
+    ? "clientsDisplay.balance.settled"
+    : "clientsDisplay.balance.nothingBilled";
+}
+
 /** REQ-323 — an issued, non-void invoice exists (sent, viewed, claimed, paid …). */
-export function hasBilled(c: Pick<CustomerCard, "documents">): boolean {
+export function hasBilled(
+  c: { documents?: CustomerCard["documents"] },
+): boolean {
   return (c.documents ?? []).some((d) =>
-    d.kind === "invoice" && d.state !== "draft" && d.state !== "void"
+    d.kind === "invoice" && isIssuedState(d.state)
   );
+}
+
+/** REQ-323 / REQ-990 — an invoice in this state has been issued and still stands (not a draft, not
+ *  void); the board's `hasBilled` and the customer page's billed check both read it. */
+export function isIssuedState(state: string): boolean {
+  return state !== "draft" && state !== "void";
 }
 
 export function segmentLabel(

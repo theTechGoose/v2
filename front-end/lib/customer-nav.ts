@@ -2,9 +2,12 @@
  * REQ-924 — the sidebar's Customers context: on /customers and /customers/<id> the sidebar rests on a
  * list of the customers instead of the root (Back returns to it). Pure: which pages rest there, the
  * open customer, and the rows — most overdue first, then most owed, then by name — with the kind of
- * status line each shows ("$X overdue", "Owes $X", the repeat visit's schedule, "Paid up"). The
+ * status line each shows ("$X overdue", "Owes $X", the repeat visit's schedule, else the board's REQ-990 zero-balance word). The
  * island words the line in the live language.
  */
+
+import type { CustomerCard } from "../clients/clients.ts";
+import { hasBilled } from "./clients-display.ts";
 
 /** the sidebar path that means "the Customers context" (not a folder of NAV) */
 export const CUSTOMERS_CONTEXT = "@customers";
@@ -32,6 +35,9 @@ export interface CustomerNavRow {
   amountCents: number;
   /** rec: the active repeat visit's schedule */
   schedule?: { en: string; es: string };
+  /** REQ-990: an issued, non-void invoice exists (REQ-323 `hasBilled`) — "paid" words it
+   *  "Settled" when true, "Nothing billed yet" when not (`zeroBalanceKey`) */
+  billed?: boolean;
 }
 
 export interface NavCard {
@@ -39,6 +45,8 @@ export interface NavCard {
   name: string;
   balanceCents: number;
   overdueCents?: number;
+  /** the card's documents — only `hasBilled` reads them (REQ-990) */
+  documents?: CustomerCard["documents"];
 }
 export interface NavSub {
   active: boolean;
@@ -84,7 +92,7 @@ export function customerNavRows(
           schedule: live.schedule,
         };
       }
-      return { ...base, tone: "paid", amountCents: 0 };
+      return { ...base, tone: "paid", amountCents: 0, billed: hasBilled(c) };
     })
     .sort((a, b) =>
       RANK[a.tone] - RANK[b.tone] ||

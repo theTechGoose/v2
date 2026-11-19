@@ -2,7 +2,7 @@
  * REQ-924 — the sidebar's Customers context (rendered by the DashSidebar island on /customers and
  * /customers/<id>): Back to the root, "Customers · N", All customers (the board), New customer, then
  * one row per customer — initials, name, and the status line ("$X overdue" / "Owes $X" / the repeat
- * visit's schedule / "Paid up"). The open customer's row is the active one. No search box here: the
+ * visit's schedule / the board's zero-balance word, REQ-990). The open customer's row is the active one. No search box here: the
  * top bar's search is the context-aware one.
  */
 import { useEffect, useState } from "preact/hooks";
@@ -11,6 +11,7 @@ import { type Lang, tFor } from "../lib/i18n.ts";
 import { clientsClient, type CustomerCard } from "../clients/clients.ts";
 import { fieldClient, type SubscriptionView } from "../clients/field.ts";
 import { subscriptionsByCustomer } from "../lib/field.ts";
+import { zeroBalanceKey } from "../lib/clients-display.ts";
 import {
   type CustomerNavRow,
   customerNavRows,
@@ -31,7 +32,8 @@ async function allCards(): Promise<CustomerCard[]> {
   return out;
 }
 
-const CACHE_KEY = "pm:customers-nav";
+// v2 (REQ-990): rows carry `billed`; an older cached row would word a paid-up customer as never billed
+const CACHE_KEY = "pm:customers-nav:v2";
 function readCachedRows(): CustomerNavRow[] | null {
   try {
     const raw = globalThis.sessionStorage?.getItem(CACHE_KEY);
@@ -69,7 +71,8 @@ function statusLine(r: CustomerNavRow, lang: Lang): string {
     });
   }
   if (r.tone === "rec" && r.schedule) return `🔁 ${r.schedule[lang]}`;
-  return tFor(lang, "customerWs.nav.paid");
+  // REQ-990: the board's zero-balance word — "Settled", or "Nothing billed yet" when never billed
+  return tFor(lang, zeroBalanceKey(r.billed ?? false));
 }
 
 export default function CustomersNav(
