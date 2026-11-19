@@ -75,3 +75,53 @@ describe("REQ-237 M17 review card job details", () => {
     expect(src).toMatch(/data-cy="review-job-detail-amount"/);
   });
 });
+
+/**
+ * REQ-1049 (LOOP-007 cycle 2, q2-34) — the owner's "Ready to send" preview of
+ * a quote that has BOTH a job-details description (the job-details pick) and
+ * three priced lines showed only the description; the customer /q shows the
+ * three priced lines ($4,200 / $900 / $1,350). The review card must list the
+ * priced lines too, with their amounts.
+ */
+describe("REQ-1049 q2-34 review card lists priced lines alongside the description", () => {
+  const Q002_LINES = [
+    { description: "Mano de obra — pintura exterior", amountCents: 420_000 },
+    { description: "Pintar la cerca", amountCents: 90_000 },
+    { description: "Materiales", amountCents: 135_000 },
+  ];
+  const Q002_DESCRIPTION =
+    "• Pintar el exterior de la casa, dos capas\n• También incluye la cerca del patio";
+
+  it("REQ-1049: a description plus 3 priced lines gives rows carrying all 3 amounts (420000/90000/135000)", () => {
+    const rows = reviewJobDetails({
+      previewLang: "es",
+      descriptionByLang: { es: Q002_DESCRIPTION },
+      lockedDescription: Q002_DESCRIPTION,
+      description: Q002_DESCRIPTION,
+      lineItems: Q002_LINES,
+    });
+    const amounts = rows
+      .filter((r) => typeof r.amountCents === "number")
+      .map((r) => r.amountCents);
+    expect(amounts).toEqual([420_000, 90_000, 135_000]);
+    for (const li of Q002_LINES) {
+      expect(rows).toContainEqual({
+        text: li.description,
+        amountCents: li.amountCents,
+      });
+    }
+  });
+
+  it("REQ-1049: the description is still shown (its lines come first, without amounts)", () => {
+    const rows = reviewJobDetails({
+      previewLang: "es",
+      descriptionByLang: { es: Q002_DESCRIPTION },
+      lineItems: Q002_LINES,
+    });
+    expect(rows.slice(0, 2)).toEqual([
+      { text: "Pintar el exterior de la casa, dos capas" },
+      { text: "También incluye la cerca del patio" },
+    ]);
+    expect(rows.length).toBe(5);
+  });
+});

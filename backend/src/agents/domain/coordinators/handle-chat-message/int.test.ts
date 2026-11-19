@@ -702,6 +702,97 @@ Deno.test("REQ-237 M17 handle-chat-message integration: a chat-drafted quote, lo
   await resetKv();
 });
 
+// REQ-1049 (LOOP-007 cycle 2, q2-34): a chat-drafted quote with 3 priced
+// lines that then gets job details (a description) — the review card must
+// still list the 3 priced lines with their amounts, as the customer /q does.
+Deno.test("REQ-1049 q2-34 handle-chat-message integration: a 3-line quote that gets job details, locked, gives the review card its 3 priced lines", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { conversations, messages, llm, quotes, users, flow } = fresh();
+  await seedOnboarded("u-1");
+  const LINES = [
+    { description: "Mano de obra — pintura exterior", amountCents: 420_000 },
+    { description: "Pintar la cerca", amountCents: 90_000 },
+    { description: "Materiales", amountCents: 135_000 },
+  ];
+  llm.setScript([
+    {
+      text: "Aquí está tu cotización.",
+      action: {
+        type: "create_quote",
+        payload: { summary: "Pintura exterior", lineItems: LINES },
+      },
+    },
+    {
+      text: "",
+      action: {
+        type: "update_job_details",
+        payload: {
+          descriptionByLang: {
+            es:
+              "Pintar el exterior de la casa, dos capas\nTambién incluye la cerca del patio",
+          },
+        },
+      },
+    },
+  ]);
+  const conv = await conversations.create({ userId: "u-1" });
+  const drafted = await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "pintar el exterior $4200, la cerca $900, materiales $1350",
+  });
+  const card = drafted.newMessages.find((m) => m.kind === "action_card")!;
+  const quoteId = (card.payload as { quoteId: string }).quoteId;
+  await flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "pon los detalles del trabajo en español",
+  });
+  const withDetails = await quotes.getOwned(quoteId, "u-1");
+  assert(
+    (withDetails.descriptionByLang?.es ?? "").includes("Pintar el exterior"),
+    `the job-details write reached the quote: ${
+      JSON.stringify(withDetails.descriptionByLang)
+    }`,
+  );
+
+  const locked = await new LockQuote(
+    conversations,
+    messages,
+    quotes,
+    users,
+  ).run({ userId: "u-1", conversationId: conv.id, quoteId });
+  const lockCard = locked.newMessages.find((m) => m.kind === "action_card")!;
+  const lockPayload = lockCard.payload as {
+    description?: string;
+    lineItems?: Array<{ description: string; amountCents: number }>;
+  };
+  assertEquals(
+    (lockPayload.lineItems ?? []).map((l) => l.amountCents),
+    [420_000, 90_000, 135_000],
+  );
+
+  // The review card's inputs, exactly as AsstChat assembles them.
+  const stored = await quotes.getOwned(quoteId, "u-1");
+  const rows = reviewJobDetails({
+    previewLang: "es",
+    descriptionByLang: stored.descriptionByLang,
+    lockedDescription: lockPayload.description,
+    description: stored.description,
+    lineItems: lockPayload.lineItems,
+  });
+  assertEquals(
+    rows.filter((r) => typeof r.amountCents === "number").map((r) => ({
+      text: r.text,
+      amountCents: r.amountCents,
+    })),
+    LINES.map((l) => ({ text: l.description, amountCents: l.amountCents })),
+    `review rows: ${JSON.stringify(rows)}`,
+  );
+  await resetKv();
+});
+
 // ---------------------------------------------------------------------------
 // REQ-238 (demo M27): "Change order for Maria: add …" must change Maria's
 // existing job — a change order on her invoice, a pending revision on her
