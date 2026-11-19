@@ -140,6 +140,19 @@ export function dueDateFrom(issuedDate: string, netDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** REQ-962 (LOOP-007 q1-39): an invoice is never due before it is issued.
+ *  True when `dueDate` (yyyy-mm-dd) falls before `issuedDate`; the same day
+ *  is fine. A blank date on either side is not a conflict. */
+export function dueBeforeIssued(
+  issuedDate: string | null | undefined,
+  dueDate: string | null | undefined,
+): boolean {
+  const issued = (issuedDate ?? "").slice(0, 10);
+  const due = (dueDate ?? "").slice(0, 10);
+  if (!issued || !due) return false;
+  return due < issued;
+}
+
 /** REQ-483 (demo-loop cycle 3, m18): the picker's preset day counts. Any
  *  other count opens as custom terms with its due date filled in. */
 export function isPresetNetDays(n: number): boolean {
@@ -599,7 +612,11 @@ export function buildInvoiceBody(
   body.amount = totals.totalCents;
   body.netDays = form.netDays;
   body.issuedDate = form.issuedDate;
-  body.dueDate = form.dueDate ?? dueDateFrom(form.issuedDate, form.netDays);
+  // REQ-962: never send a due date before the issue date — the form refuses
+  // it first; this is the last guard, falling back to the terms' due date.
+  body.dueDate = form.dueDate && !dueBeforeIssued(form.issuedDate, form.dueDate)
+    ? form.dueDate
+    : dueDateFrom(form.issuedDate, form.netDays);
   if (opts.scheduledFor) body.scheduledFor = opts.scheduledFor;
   const serviceAddress = nonEmpty(form.serviceAddress);
   if (serviceAddress) body.serviceAddress = serviceAddress;

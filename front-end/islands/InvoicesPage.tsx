@@ -170,6 +170,7 @@ import {
   defaultInvoiceNetDays,
   defaultPaymentInstructions,
   dollarsToCents,
+  dueBeforeIssued,
   dueDateFrom,
   EMPTY_BILL_TO,
   formatInvoiceHeadline,
@@ -5574,6 +5575,11 @@ export function NewInvoiceModal(
       setError(tFor(lang, "invoicesPage.new.errDueDate"));
       return;
     }
+    // REQ-962 (LOOP-007 q1-39): an invoice is never due before it is issued.
+    if (dueBeforeIssued(issuedDate, dueDate)) {
+      setError(tFor(lang, "invoicesPage.new.errDueBeforeIssued"));
+      return;
+    }
     // REQ-550 (demo cycle 4, B1): Issue needs someone to bill, and nothing
     // bills past the $1bn cap — the missing-info list stays a prompt.
     const block = invoiceIssueBlock({
@@ -6331,6 +6337,7 @@ export function NewInvoiceModal(
               type="date"
               data-cy="new-invoice-due"
               value={dueDate}
+              min={issuedDate || undefined}
               disabled={busy}
               onInput={(e) => {
                 setTermsTouched(true);

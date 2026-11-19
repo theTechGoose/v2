@@ -1867,6 +1867,7 @@
   "invoicesPage.new.errCreate": "No se pudo crear la factura. Inténtalo de nuevo.",
   "invoicesPage.new.errExceedsAgreement": "Ese monto es mayor que lo que queda por facturar en este acuerdo.",
   "invoicesPage.new.errDueDate": "Elige una fecha de vencimiento.",
+  "invoicesPage.new.errDueBeforeIssued": "La fecha de vencimiento no puede ser anterior a la fecha de emisión.",
   "invoicesPage.new.errRecipient": "Elige un cliente o escribe a quién va facturada antes de emitirla.",
   "invoicesPage.new.errAmountMax": "Ese monto es demasiado grande — una factura puede cobrar como máximo $1,000,000,000.",
   "invoicesPage.new.confirmLarge": "Esta factura es por {amount}. ¿Es correcto? Pulsa Emitir factura otra vez para confirmar.",
