@@ -212,3 +212,60 @@ Deno.test("REQ-202: change orders have a per-account index, list by quote, and a
     await resetKv();
   }
 });
+
+Deno.test("REQ-1021 (REQ-565/REQ-204, LOOP-007 q2-13): a quote whose customer is linked after create gets the customer snapshot — its change orders have her email", async () => {
+  await fresh();
+  try {
+    const customers = new CustomerStore();
+    const quotes = new QuoteStore();
+    // the assistant drafts the quote before the brand-new customer is on file
+    const q = await quotes.create("u1", {
+      summary: "Bathroom remodel",
+      lineItems: [],
+    });
+    assertEquals(q.customerSnapshot, undefined);
+    const maria = await customers.create("u1", {
+      name: "Maria Garcia",
+      email: "maria.g@example.com",
+      phoneNumber: "(512) 555-0142",
+    });
+    // BindConversationCustomer / send-quote link her with update({customerId})
+    const linked = await quotes.update(q.id, "u1", { customerId: maria.id });
+    assertEquals(
+      linked.customerSnapshot?.email,
+      "maria.g@example.com",
+      "update({customerId}) snapshots the customer just linked",
+    );
+    const stored = await quotes.get(q.id);
+    assertEquals(stored.customerSnapshot?.email, "maria.g@example.com");
+    assertEquals(stored.customerSnapshot?.name, "Maria Garcia");
+    // REQ-204 still holds: a later CRM edit does not rewrite that snapshot
+    await customers.update(maria.id, "u1", { email: "new@example.com" });
+    const later = await quotes.update(q.id, "u1", { summary: "Bathroom v1b" });
+    assertEquals(later.customerSnapshot?.email, "maria.g@example.com");
+  } finally {
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-1021 (REQ-565/REQ-204, LOOP-007 q2-13): updateIf that links a customer snapshots her too", async () => {
+  await fresh();
+  try {
+    const customers = new CustomerStore();
+    const quotes = new QuoteStore();
+    const q = await quotes.create("u1", {
+      summary: "Bathroom remodel",
+      lineItems: [],
+    });
+    const maria = await customers.create("u1", {
+      name: "Maria Garcia",
+      email: "maria.g@example.com",
+    });
+    const linked = await quotes.updateIf(q.id, () => true, {
+      customerId: maria.id,
+    });
+    assertEquals(linked?.customerSnapshot?.email, "maria.g@example.com");
+  } finally {
+    await resetKv();
+  }
+});
