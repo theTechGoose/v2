@@ -99,6 +99,7 @@ import {
   isValidDate,
   shiftDate,
   todayIn,
+  startOf,
 } from "@field/domain/business/schedule/mod.ts";
 import { businessZoneOf, fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940: the business's day
 import {
@@ -1371,6 +1372,11 @@ export class FieldSubscriptionsController {
     }
     const netDays = parseNetDays(b.netDays); // REQ-174
     if (!netDays.ok) throw new FieldError(netDays.reason);
+    // REQ-940: the business's field day, not the server's
+    const startDate = isValidDate(b.startDate)
+      ? b.startDate
+      : await fieldTodayFor(user.id);
+    const end = parseEndDate(b.endDate, undefined, startDate); // REQ-1004
     const { lat, lng } = await this.geocoder.geocode(address); // once, for this address only
     const now = new Date().toISOString();
     const s: Subscription = {
@@ -1383,7 +1389,8 @@ export class FieldSubscriptionsController {
       items,
       ...(ckl.set && ckl.id ? { checklistId: ckl.id } : {}), // REQ-811
       ...sched,
-      startDate: isValidDate(b.startDate) ? b.startDate : await fieldTodayFor(user.id),
+      startDate,
+      ...(end ? { endDate: end } : {}), // REQ-1004
       ...(netDays.value !== undefined ? { netDays: netDays.value } : {}),
       ...(b.overhead === true ? { overhead: true } : {}), // REQ-788
       active: true,
@@ -1412,6 +1419,15 @@ export class FieldSubscriptionsController {
     if (b.startDate !== undefined && !isValidDate(b.startDate)) {
       throw new FieldError("startDate must be YYYY-MM-DD");
     }
+    // REQ-1004: a date sets the last visit day, null / "" clears it, never before the first visit
+    // (re-checked when either end moves; an untouched pair is kept as it is)
+    const end = b.endDate === undefined && b.startDate === undefined
+      ? s.endDate
+      : parseEndDate(
+        b.endDate,
+        s.endDate,
+        isValidDate(b.startDate) ? b.startDate : startOf(s),
+      );
     if (typeof b.active === "boolean") {
       s.active = b.active;
       if (!s.active) {
@@ -1441,6 +1457,8 @@ export class FieldSubscriptionsController {
     }
     Object.assign(s, sched);
     if (isValidDate(b.startDate)) s.startDate = b.startDate;
+    if (end) s.endDate = end; // REQ-1004
+    else delete s.endDate;
     if (b.netDays !== undefined) { // REQ-174: a number sets it, null clears it
       const nd = parseNetDays(b.netDays);
       if (!nd.ok) throw new FieldError(nd.reason);
@@ -1724,6 +1742,24 @@ export class FieldChecklistsController {
     await this.checklists.delete(c);
     return { ok: true };
   }
+}
+
+/**
+ * REQ-1004 — a repeat visit's optional last day: `YYYY-MM-DD`, not before its first visit (else 400).
+ * Absent keeps `cur`; null or "" clears it. The result is the end date to store, or undefined for none.
+ */
+export function parseEndDate(
+  v: unknown,
+  cur: string | undefined,
+  start: string,
+): string | undefined {
+  const end = v === undefined ? cur : v === null || v === "" ? undefined : v;
+  if (end === undefined) return undefined;
+  if (!isValidDate(end)) throw new FieldError("endDate must be YYYY-MM-DD");
+  if (end < start) {
+    throw new FieldError("endDate can't be before the first visit (startDate)");
+  }
+  return end;
 }
 
 /** REQ-139: cadence / days / intervalWeeks, validated; REQ-157: daysOfMonth (1–31); REQ-787: month (1–12) for annual */

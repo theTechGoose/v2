@@ -2777,3 +2777,85 @@ Deno.test("REQ-842 absences — the grass crew out today, covered by the mulch c
     assertEquals((await call("POST", "/field/tasks/reassign", { date: today, fromCrewId: grass.id }, H)).status, 400);
   });
 });
+
+// REQ-1004 (LOOP-007 q1, q1-90) — a repeat visit can end: POST and PUT /field/subscriptions take an
+// optional endDate (YYYY-MM-DD, not before the first visit, else 400; null on PUT clears it), it is
+// stored and returned, the card's schedule reads "· until …", and no task is generated after it.
+Deno.test("REQ-1004 subscriptions — an endDate is kept on create, refused before the start or malformed, set and cleared on edit, and no task is generated after it", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const customer = (await call("POST", "/customers", {
+      name: "Seasonal Sam",
+      email: "sam.seasonal@blackhole.postmarkapp.com",
+    }, H)).body;
+    const today = fieldToday();
+    const end = shiftDate(today, 7); // two weekly visits: today and a week out
+    const base = {
+      customerId: customer.id,
+      address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+      startDate: today,
+      items: [{ taskTypeName: "Lawn", priceCents: 6500 }],
+    };
+    const res = await call("POST", "/field/subscriptions", {
+      ...base,
+      endDate: end,
+    }, H);
+    assertEquals(res.status, 201, JSON.stringify(res.body));
+    assertEquals(res.body.endDate, end, "the end date is kept on create");
+    assert(
+      String(res.body.schedule.en).includes("· until "),
+      `the card's schedule names the end: ${res.body.schedule.en}`,
+    );
+    assert(
+      String(res.body.schedule.es).includes("· hasta el "),
+      `the Spanish card names the end: ${res.body.schedule.es}`,
+    );
+    const listed = (await call("GET", "/field/subscriptions", undefined, H))
+      .body.find((s: { id: string }) => s.id === res.body.id);
+    assertEquals(listed?.endDate, end, "the list reads it back");
+
+    const before = await call("POST", "/field/subscriptions", {
+      ...base,
+      endDate: shiftDate(today, -1),
+    }, H);
+    assertEquals(before.status, 400, "an end before the first visit is refused");
+    const malformed = await call("POST", "/field/subscriptions", {
+      ...base,
+      endDate: "31/03/2027",
+    }, H);
+    assertEquals(malformed.status, 400, "a malformed end date is refused");
+
+    // no task after the end: a week out is the last visit, two weeks out has none
+    const w = (await call("POST", "/field/workers", {
+      name: "Mario",
+      phoneNumber: "8435550998",
+      pin: "2468",
+    }, H)).body;
+    for (const r of (await call("GET", "/field/regions", undefined, H)).body) {
+      await call("PUT", `/field/regions/${r.id}/worker`, { workerId: w.id }, H);
+    }
+    const last = await call("POST", "/field/tasks/generate", { date: end }, H);
+    assertEquals(last.body.created, 1, "the end day itself still has its visit");
+    const after = await call("POST", "/field/tasks/generate", {
+      date: shiftDate(today, 14),
+    }, H);
+    assertEquals(after.body.created, 0, "no visit after the end date");
+
+    // edit: move it, refuse a bad one, then clear it
+    const later = shiftDate(today, 28);
+    const moved = await call("PUT", `/field/subscriptions/${res.body.id}`, {
+      endDate: later,
+    }, H);
+    assertEquals(moved.status, 200, JSON.stringify(moved.body));
+    assertEquals(moved.body.endDate, later, "an edit moves the end date");
+    const badEdit = await call("PUT", `/field/subscriptions/${res.body.id}`, {
+      endDate: shiftDate(today, -3),
+    }, H);
+    assertEquals(badEdit.status, 400, "an edit can't end before the start");
+    const cleared = await call("PUT", `/field/subscriptions/${res.body.id}`, {
+      endDate: null,
+    }, H);
+    assertEquals(cleared.status, 200);
+    assertEquals(cleared.body.endDate, undefined, "null clears the end date");
+  });
+});

@@ -66,6 +66,8 @@ interface Form {
   address: string;
   cadence: CadenceChoice;
   startDate: string;
+  /** REQ-1004 — the optional last visit day ("" = no end) */
+  endDate: string;
   days: number[];
   /** REQ-157 — monthly: the picked days of the month (REQ-787: annual's days in its month) */
   daysOfMonth: number[];
@@ -147,6 +149,7 @@ function blankForm(defaultNetDays = 30, today?: string | null): Form {
     address: "",
     cadence: "1",
     startDate,
+    endDate: "",
     days: [weekdayOf(startDate)],
     daysOfMonth: [monthDayOf(startDate)],
     month: monthOf(startDate),
@@ -178,6 +181,7 @@ function formFor(s: SubscriptionView, defaultNetDays = 30): Form {
       ? cadence
       : "1",
     startDate,
+    endDate: s.endDate ?? "", // REQ-1004
     days: s.days?.length ? s.days : [weekdayOf(startDate)],
     daysOfMonth: s.daysOfMonth?.length
       ? s.daysOfMonth
@@ -245,6 +249,8 @@ export default function FieldSubscriptionsPage(
   });
   /** the card whose Delete is waiting for its Confirm */
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  /** REQ-1004 — the card whose Pause is waiting for its Confirm */
+  const [pauseId, setPauseId] = useState<string | null>(null);
   /** the card with a request in flight, and the message its last one failed with */
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cardErr, setCardErr] = useState<{ id: string; msg: string } | null>(
@@ -478,6 +484,11 @@ export default function FieldSubscriptionsPage(
       setForm({ ...f, err: t("field.subs.daysHint") });
       return;
     }
+    // REQ-1004: the last visit day can't come before the first
+    if (f.endDate && f.endDate < f.startDate) {
+      setForm({ ...f, err: t("field.subs.endBeforeStart") });
+      return;
+    }
     // REQ-174: a whole number of days, 0–365
     const netDays = Number(f.netDays);
     if (
@@ -528,6 +539,7 @@ export default function FieldSubscriptionsPage(
           ...schedule,
           items,
           checklistId: f.checklistId || null, // REQ-811: null clears it
+          endDate: f.endDate || null, // REQ-1004: blank clears it
           netDays,
           overhead: f.overhead,
         });
@@ -538,6 +550,7 @@ export default function FieldSubscriptionsPage(
           ...schedule,
           items,
           ...(f.checklistId ? { checklistId: f.checklistId } : {}), // REQ-811
+          ...(f.endDate ? { endDate: f.endDate } : {}), // REQ-1004
           netDays,
           overhead: f.overhead,
         });
@@ -564,6 +577,7 @@ export default function FieldSubscriptionsPage(
         active: !s.active,
       });
       setSubs((list) => (list ?? []).map((x) => (x.id === s.id ? next : x)));
+      setPauseId(null);
     } catch (err) {
       setCardErr({ id: s.id, msg: errMsg(err) });
     } finally {
@@ -636,6 +650,7 @@ export default function FieldSubscriptionsPage(
             {list.map((s) => {
               const busy = busyId === s.id;
               const confirming = confirmId === s.id;
+              const pausing = pauseId === s.id; // REQ-1004
               return (
                 <div
                   class={`sub${s.active ? "" : " sub--off"}`}
@@ -752,7 +767,34 @@ export default function FieldSubscriptionsPage(
                         : t("field.subs.paused")}
                     </span>
                     <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-                      {confirming
+                      {pausing
+                        ? (
+                          <>
+                            {/* REQ-1004 — Pause asks first: the visit stays active until confirmed */}
+                            <span class="hint" style="align-self:center">
+                              {t("field.subs.confirmPause")}
+                            </span>
+                            <button
+                              type="button"
+                              class="btn btn--pink btn--sm"
+                              data-cy="subs-pause-confirm"
+                              disabled={busy}
+                              onClick={() => toggle(s)}
+                            >
+                              {t("field.subs.pause")}
+                            </button>
+                            <button
+                              type="button"
+                              class="btn btn--ghost btn--sm"
+                              data-cy="subs-pause-cancel"
+                              disabled={busy}
+                              onClick={() => setPauseId(null)}
+                            >
+                              {t("field.common.cancel")}
+                            </button>
+                          </>
+                        )
+                        : confirming
                         ? (
                           <>
                             <span class="hint" style="align-self:center">
@@ -794,7 +836,12 @@ export default function FieldSubscriptionsPage(
                               class="btn btn--ghost btn--sm"
                               data-cy="subs-toggle"
                               disabled={busy}
-                              onClick={() => toggle(s)}
+                              onClick={() => {
+                                if (!s.active) return toggle(s); // Resume needs no confirmation
+                                setCardErr(null);
+                                setConfirmId(null);
+                                setPauseId(s.id); // REQ-1004
+                              }}
                             >
                               {s.active
                                 ? t("field.subs.pause")
@@ -807,6 +854,7 @@ export default function FieldSubscriptionsPage(
                               disabled={busy}
                               onClick={() => {
                                 setCardErr(null);
+                                setPauseId(null);
                                 setConfirmId(s.id);
                               }}
                             >
@@ -991,6 +1039,26 @@ export default function FieldSubscriptionsPage(
                     {formatLongDate(form.startDate, lang)}
                   </span>
                 )}
+              </label>
+              {/* REQ-1004 — an optional last visit day: a seasonal visit ends on its own */}
+              <label class="field">
+                {t("field.subs.end")}
+                <input
+                  type="date"
+                  name="endDate"
+                  data-cy="subs-end"
+                  value={form.endDate}
+                  min={form.startDate || undefined}
+                  onChange={(e) =>
+                    patch({
+                      endDate: (e.currentTarget as HTMLInputElement).value,
+                    })}
+                />
+                <span class="hint" data-cy="subs-end-text">
+                  {form.endDate
+                    ? formatLongDate(form.endDate, lang)
+                    : t("field.subs.endNone")}
+                </span>
               </label>
             </div>
 
