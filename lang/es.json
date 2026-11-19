@@ -6149,6 +6149,8 @@
   "customerWs.visit.unbilled": "Hecha · sin facturar",
   "customerWs.visits.none": "Todavía no hay visitas.",
   "customerWs.visits.title": "Historial de visitas",
+  "publicInvoice.footer.thanksCancelled": "Gracias por confiar en {business} para el cuidado de tu propiedad — es un gusto atenderte.",
+  "publicInvoice.footer.questionsCancelled": "Si tienes alguna pregunta sobre esta factura cancelada,",
   "comms.a2p.title": "Registro para mensajes de texto",
   "comms.a2p.sub": "Las operadoras solo entregan mensajes de empresas desde un número registrado (A2P 10DLC). Complétalo una vez y lo presentamos a Twilio para este número.",
   "comms.a2p.state.none": "Sin registrar",

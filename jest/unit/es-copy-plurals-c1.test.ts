@@ -539,10 +539,11 @@ describe("REQ-499 (p6, cycle 3) the /i footer", () => {
       } 555`).not.toMatch(LOWER_AFTER_STOP);
     }
   });
-  test("routes/i/[id].tsx renders the footer lead-in by status (paid → claimed → open)", () => {
+  // REQ-983 amends this: a voided invoice is checked ahead of paid → claimed → open
+  test("routes/i/[id].tsx renders the footer lead-in by status (voided → paid → claimed → open)", () => {
     const src = read("front-end/routes/i/[id].tsx");
     expect(src).toMatch(
-      /<span data-invoice-question>\s*\{tFor\(\s*lang,\s*paid\s*\?\s*"publicInvoice\.footer\.questionsPaid"\s*:\s*claimed\s*\?\s*"publicInvoice\.footer\.questionsClaimed"\s*:\s*"publicInvoice\.footer\.questions",?\s*\)\}/,
+      /<span data-invoice-question>\s*\{tFor\(\s*lang,\s*voided\s*\?\s*"publicInvoice\.footer\.questionsCancelled"\s*:\s*paid\s*\?\s*"publicInvoice\.footer\.questionsPaid"\s*:\s*claimed\s*\?\s*"publicInvoice\.footer\.questionsClaimed"\s*:\s*"publicInvoice\.footer\.questions",?\s*\)\}/,
     );
   });
 });

@@ -1251,9 +1251,16 @@ function InvoiceDoc(
             style={`margin-top:30px;padding-top:22px;border-top:1px solid ${LINE};color:${INK};font-size:14px;line-height:1.5`}
           >
             <p data-cy="invoice-thanks" style="margin:0 0 10px">
-              {tFor(lang, "publicInvoice.footer.thanks", {
-                business: businessLabel,
-              })}
+              {
+                /* REQ-983: a cancelled invoice is not thanked for prompt payment */
+              }
+              {tFor(
+                lang,
+                voided
+                  ? "publicInvoice.footer.thanksCancelled"
+                  : "publicInvoice.footer.thanks",
+                { business: businessLabel },
+              )}
             </p>
             {(invoice.contractor?.phoneNumber || invoice.contractor?.email)
               ? (
@@ -1261,12 +1268,16 @@ function InvoiceDoc(
                   {
                     /* REQ-499 (demo p6): the lead-in follows the status, so a
                       paid invoice never asks for questions "before paying" —
-                      on a reload too, not only after an in-session claim. */
+                      on a reload too, not only after an in-session claim.
+                      REQ-983: a voided invoice is checked first, so it never
+                      asks "before paying" either. */
                   }
                   <span data-invoice-question>
                     {tFor(
                       lang,
-                      paid
+                      voided
+                        ? "publicInvoice.footer.questionsCancelled"
+                        : paid
                         ? "publicInvoice.footer.questionsPaid"
                         : claimed
                         ? "publicInvoice.footer.questionsClaimed"
