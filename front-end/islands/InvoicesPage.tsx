@@ -81,6 +81,7 @@ import {
   sendNowDates,
   type StageActionKind,
 } from "../lib/invoice-card.ts";
+import { isPartlyPaid } from "../../shared/documents/invoice-status.ts"; // REQ-1073
 import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import {
@@ -373,10 +374,12 @@ interface EnrichedInvoice extends Invoice {
   invoiceRef: string;
   daysOverdue: number;
   daysIn: number;
+  /** REQ-1073: "partly" — a part-paid bill, still in the Out lane */
   stage:
     | "scheduled"
     | "overdue"
     | "out"
+    | "partly"
     | "claimed"
     | "drafting"
     | "paid"
@@ -447,6 +450,10 @@ function enrich(
     ? "drafting"
     : daysOverdue > 0
     ? "overdue"
+    // REQ-1073 (LOOP-007 q2-62): money on it, a balance left — the shared
+    // rule the customer tab, search and /i read, so all say "Partly paid"
+    : isPartlyPaid(inv)
+    ? "partly"
     : "out";
   return {
     ...inv,
@@ -492,6 +499,14 @@ const STAGE_MOOD: Record<
     shadow: "rgba(86,150,158,0.28)",
     statusFg: "#0F3036",
     labelKey: "invoicesPage.stage.out",
+  },
+  // REQ-1073: the Out lane's colours, its own word
+  partly: {
+    from: "#C8DDE0",
+    to: "#56969E",
+    shadow: "rgba(86,150,158,0.28)",
+    statusFg: "#0F3036",
+    labelKey: "invoicesPage.stage.partly",
   },
   claimed: {
     from: "#FFE7B5",
@@ -835,9 +850,9 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const overdue = enriched.filter((i) => i.stage === "overdue").sort((a, b) =>
     b.daysOverdue - a.daysOverdue
   );
-  const out = enriched.filter((i) => i.stage === "out").sort((a, b) =>
-    b.daysIn - a.daysIn
-  );
+  // REQ-1073: a part-paid bill ("partly") is still out for payment
+  const out = enriched.filter((i) => i.stage === "out" || i.stage === "partly")
+    .sort((a, b) => b.daysIn - a.daysIn);
   const claimed = enriched.filter((i) => i.stage === "claimed").sort((a, b) =>
     (b.paymentIntent?.claimedAt ?? "").localeCompare(
       a.paymentIntent?.claimedAt ?? "",
@@ -2818,7 +2833,8 @@ function InvoiceDetail(
           /* REQ-018 (NW-27): the contractor can say "payment received" on
             anything the customer still owes — no customer claim required. */
         }
-        {(inv.stage === "out" || inv.stage === "overdue" ||
+        {(inv.stage === "out" || inv.stage === "partly" ||
+          inv.stage === "overdue" ||
           inv.stage === "claimed") && (
           <button
             type="button"
@@ -3968,7 +3984,7 @@ function InvoiceCard(
     ? tFor(lang, "invoicesPage.cta.overdue")
     : inv.stage === "scheduled"
     ? tFor(lang, "invoicesPage.cta.scheduled")
-    : inv.stage === "out"
+    : inv.stage === "out" || inv.stage === "partly"
     // REQ-018 (NW-27): the receipt is the out-for-payment card's next step;
     // "View invoice" stays on the card back ("Open").
     ? tFor(lang, "invoicesPage.cta.outReceived")
@@ -3996,7 +4012,7 @@ function InvoiceCard(
     })
     : inv.stage === "scheduled"
     ? scheduledSubline(inv.scheduledFor, now, lang)
-    : inv.stage === "out"
+    : inv.stage === "out" || inv.stage === "partly"
     // REQ-499 (demo p6): the send day reads "Sent today", never "Out 0d".
     // REQ-556 (cycle 4, M7): "Issued today" when signing billed it but no
     // email or text reached the customer.
@@ -4121,7 +4137,9 @@ function InvoiceCard(
   }
   function ctaAction(e: Event) {
     if (inv.stage === "claimed") return doConfirmReceived(e);
-    if (inv.stage === "out") return doPaymentReceived(e);
+    if (inv.stage === "out" || inv.stage === "partly") {
+      return doPaymentReceived(e);
+    }
     if (inv.stage === "overdue") return doSendNudge(e);
     if (inv.stage === "scheduled" || inv.stage === "drafting") {
       return openSendSheet(e);
@@ -4281,7 +4299,7 @@ function InvoiceCard(
       textPhone: inv.textPhone,
       email: inv.contactEmail,
     }, lang)
-    : inv.stage === "out"
+    : inv.stage === "out" || inv.stage === "partly"
     // REQ-556 (cycle 4, M7): signing billed it but nobody received it
     ? tFor(lang, outReadKey(inv), {
       issued: fmtDate(inv.issuedDate ?? inv.createdAt, now, lang),
@@ -5019,7 +5037,8 @@ function InvoiceCard(
                 {tFor(lang, "invoicesPage.back.addContact")}
               </a>
             )}
-          {(inv.stage === "overdue" || inv.stage === "out")
+          {(inv.stage === "overdue" || inv.stage === "out" ||
+              inv.stage === "partly")
             ? (
               <button
                 type="button"

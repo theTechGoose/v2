@@ -395,7 +395,10 @@ function InvoiceDoc(
   // REQ-627: a voided invoice says so and cannot be paid
   const voided = invoice.status === "void";
   // REQ-966: the same flags stamp the invoice PDF (shared/documents/invoice-status.ts)
-  const { paid, claimed, pastDue } = invoicePillFlags(invoice, new Date());
+  const { paid, claimed, pastDue, partlyPaid } = invoicePillFlags(
+    invoice,
+    new Date(),
+  );
   const es = lang === "es";
   /** REQ-944: the business's zone — dates are its day, not the UTC day */
   const tz = invoice.contractor?.timezone;
@@ -588,6 +591,7 @@ function InvoiceDoc(
               paid={paid}
               claimed={claimed}
               pastDue={pastDue}
+              partlyPaid={partlyPaid}
               status={invoice.status}
               internal={invoice.internal === true}
               scheduledFor={invoice.scheduledFor}
@@ -1436,10 +1440,22 @@ const PILL_COLORS: Record<InvoicePillTone, { bg: string; color: string }> = {
 };
 
 function StatusPill(
-  { paid, claimed, pastDue, status, internal, scheduledFor, voided, es }: {
+  {
+    paid,
+    claimed,
+    pastDue,
+    partlyPaid,
+    status,
+    internal,
+    scheduledFor,
+    voided,
+    es,
+  }: {
     paid: boolean;
     claimed: boolean;
     pastDue: boolean;
+    /** REQ-1073: open, money on it, not past due */
+    partlyPaid: boolean;
     status?: string;
     internal: boolean;
     scheduledFor?: string;
@@ -1449,7 +1465,16 @@ function StatusPill(
 ) {
   const lang = es ? "es" : "en";
   const pill = invoiceStatusPill(
-    { paid, claimed, pastDue, status, internal, scheduledFor, voided },
+    {
+      paid,
+      claimed,
+      pastDue,
+      partlyPaid,
+      status,
+      internal,
+      scheduledFor,
+      voided,
+    },
     lang,
   );
   const { bg, color } = PILL_COLORS[pill.tone];

@@ -39,6 +39,7 @@ import { assistantThreadPath } from "../lib/quote-panel-send.ts";
 import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
 import { initialsOf, invoiceFormTarget } from "../lib/customer-nav.ts";
 import { isIssuedState, zeroBalanceKey } from "../lib/clients-display.ts";
+import { isPartlyPaid } from "../lib/invoice-status-pill.ts"; // REQ-1073
 import { CUSTOMERS_CHANGED } from "../components/CustomersNav.tsx";
 import Backdrop from "../components/Backdrop.tsx";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
@@ -137,7 +138,14 @@ function invoicePill(
   if (i.state === "scheduled") {
     return { text: tFor(lang, "customerWs.state.scheduled"), cls: "draft" };
   }
-  if (i.paidCents > 0 && i.balanceCents > 0) {
+  // REQ-1073: the one partly-paid rule /invoices, search and /i read too
+  if (
+    isPartlyPaid({
+      status: i.status,
+      paidCents: i.paidCents,
+      amount: i.amountCents,
+    })
+  ) {
     return { text: tFor(lang, "customerWs.state.partly"), cls: "part" };
   }
   return { text: tFor(lang, "customerWs.state.sent"), cls: "sent" };

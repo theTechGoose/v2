@@ -303,7 +303,8 @@ export function invoiceKpiTotals(
     if (inv.stage === "overdue") {
       overdueCount++;
       overdueCents += bal;
-    } else if (inv.stage === "out") {
+    } else if (inv.stage === "out" || inv.stage === "partly") {
+      // REQ-1073: a part-paid bill ("partly") is still out for payment
       outCount++;
       outCents += bal;
     } else if (inv.stage === "claimed") {

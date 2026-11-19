@@ -11,6 +11,7 @@ export type CardStage =
   | "scheduled"
   | "overdue"
   | "out"
+  | "partly" // REQ-1073: a part-paid bill — acts as "out", reads "Partly paid"
   | "claimed"
   | "drafting"
   | "paid"
@@ -111,7 +112,7 @@ export function paymentReceivedTarget(
  * stage CTA already IS the nudge, so it gets no second one.
  */
 export function hasNudgeButton(stage: CardStage): boolean {
-  return stage === "claimed" || stage === "out";
+  return stage === "claimed" || stage === "out" || stage === "partly";
 }
 
 /** yyyy-mm-dd + n days (UTC calendar arithmetic) */
@@ -267,7 +268,7 @@ export function detailStageAction(
   if (stage === "drafting") {
     return { kind: "finishSend", labelKey: "invoicesPage.cta.drafting" };
   }
-  if (stage === "out" || stage === "overdue") {
+  if (stage === "out" || stage === "partly" || stage === "overdue") {
     return { kind: "remind", labelKey: "invoicesPage.detail.sendReminder" };
   }
   return null;
