@@ -226,6 +226,8 @@ export interface Invoice {
   serviceDateTo?: string;
   paymentInstructions?: string;
   billTo?: InvoiceBillTo;
+  /** REQ-988: the customer as she was when the bill was issued (survives a delete). */
+  customerSnapshot?: { name?: string; businessName?: string } | null;
   /** REQ-206: when it was first put in front of the customer. */
   sentAt?: string;
   /** REQ-627: when, by whom and why it was voided. */
