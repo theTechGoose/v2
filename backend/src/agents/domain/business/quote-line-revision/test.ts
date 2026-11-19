@@ -14,6 +14,7 @@ import {
   parseLineReprice,
   type RevisableLine,
   reviseLineItems,
+  splitAdditions,
 } from "./mod.ts";
 
 /** Dana's bathroom remodel as the demo quoted it: $9,500 over four lines. */
@@ -397,4 +398,36 @@ Deno.test("REQ-1084 q3-18 reviseLineItems: add 'Pintura del pasillo' $450 + remo
   assertEquals(out.estimatedTotal, 275_000);
   // the input is not mutated
   assertEquals(Q002.length, 2);
+});
+
+Deno.test("REQ-1084 q3-18 splitAdditions: a priced lines[] entry naming no line, in words that ask to add, is an added line; a misspelled reprice is not", () => {
+  const legacy = [{ match: "Pintura interior (pasillo)", amountCents: 45_000 }];
+  for (
+    const text of [
+      "Jose quiere agregar pintar el pasillo por $450 y quitar el drywall. hazme una nueva versión",
+      "add a new line: hallway painting $450. and remove the drywall line. make it version 2",
+      "añade una nueva partida de pasillo, $450",
+    ]
+  ) {
+    assertEquals(splitAdditions(Q002, legacy, text, [45_000]), {
+      lines: [],
+      add: [{ description: "Pintura interior (pasillo)", amountCents: 45_000 }],
+    }, text);
+  }
+  // no add verb: a misspelled reprice still reaches no_such_line
+  assertEquals(
+    splitAdditions(Q002, legacy, "change pintura pasillo to $450", [45_000]),
+    { lines: legacy, add: [] },
+  );
+  // a price the user never typed is not an addition
+  assertEquals(
+    splitAdditions(Q002, legacy, "add the hallway too", []),
+    { lines: legacy, add: [] },
+  );
+  // an entry that names an existing line stays a reprice
+  const reprice = [{ match: "drywall", amountCents: 45_000 }];
+  assertEquals(
+    splitAdditions(Q002, reprice, "add $450 to the drywall", [45_000]),
+    { lines: reprice, add: [] },
+  );
 });

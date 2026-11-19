@@ -17,9 +17,11 @@ import {
 import {
   dropRemovedLineBullets,
   findLine,
+  type LineAddition,
   type LineChange,
   reviseLineItems,
   settleToTotal,
+  splitAdditions,
   totalOf,
 } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
@@ -45,6 +47,12 @@ export interface ReviseQuoteInput {
   quoteNumber?: string;
   lines: LineChange[];
   remove: string[];
+  /** REQ-1084 (LOOP-007 q3-18): NEW lines added in the same Version
+   *  (revise_quote's `add`), each qty 1 at its total. */
+  add?: LineAddition[];
+  /** REQ-1084: the lines are a change order read as a reprice — an
+   *  unmatched one is never turned into an added line. */
+  repriceOnly?: boolean;
   /** What the user typed — the reply mentions a deposit ask (REQ-267). */
   userText: string;
   /** REQ-585 (demo-loop cycle 4, M4): the bound quote's job details, every
@@ -325,15 +333,31 @@ export class ReviseQuote {
       findLine(bullets, name) >= 0;
     const inDetails = [...input.lines.map((l) => l.match), ...input.remove]
       .filter(isBullet);
-    const lines = input.lines.filter((l) => !inDetails.includes(l.match));
+    const named = input.lines.filter((l) => !inDetails.includes(l.match));
     const remove = input.remove.filter((r) => !inDetails.includes(r));
+    // REQ-1084 (LOOP-007 q3-18): "add a new line: hallway painting $450. and
+    // remove the drywall line. make it version 2" — the model put the NEW
+    // line in lines[] and the whole Version was refused ("I couldn't find a
+    // line called … so I changed nothing"). A priced entry that names no
+    // line, in words that ask to add, is an added line.
+    const split = input.repriceOnly
+      ? { lines: named, add: [] }
+      : splitAdditions(base, named, input.userText, [
+        ...changeOrderAmountsCents(input.userText),
+        ...typedAmountsCents(input.userText),
+      ]);
+    const lines = split.lines;
+    const add: LineAddition[] = [...(input.add ?? []), ...split.add];
     const detailsNote = inDetails.length > 0 && !input.jobDetailsUpdated
       ? t(lang, "chatCoordinator.reviseQuote.jobDetailsLine", {
         ...vars,
         line: inDetails.join('", "'),
       })
       : "";
-    if (inDetails.length > 0 && lines.length === 0 && remove.length === 0) {
+    if (
+      inDetails.length > 0 && lines.length === 0 && remove.length === 0 &&
+      add.length === 0
+    ) {
       return {
         text: detailsNote,
         outcome: {
@@ -346,7 +370,7 @@ export class ReviseQuote {
     }
     const withNote = (text: string) =>
       detailsNote ? `${text} ${detailsNote}` : text;
-    let rev = reviseLineItems(base, lines, remove);
+    let rev = reviseLineItems(base, lines, remove, add);
     if (rev.unmatched.length > 0) {
       const list = base
         .map((l) =>
@@ -396,6 +420,7 @@ export class ReviseQuote {
           ...changeOrderAmountsCents(input.userText),
           ...typedAmountsCents(input.userText),
         ].filter((c) => c !== statedTotal),
+        add,
       );
       if (!settled) {
         return askTotal(
