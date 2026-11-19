@@ -69,6 +69,9 @@ export default function OutboxPage() {
     };
   }, [openId]);
 
+  const sentCount = rows?.filter((r) => r.status === "sent").length ?? 0;
+  const notSentCount = (rows?.length ?? 0) - sentCount;
+
   function close() {
     setOpenId(null);
     syncOpenParam(null);
@@ -91,7 +94,19 @@ export default function OutboxPage() {
       <div class="panel">
         <div class="panel__title">
           {t("outbox.listTitle")}
-          <span class="count" data-cy="outbox-count">{rows?.length ?? 0}</span>
+          {
+            /* REQ-1078 (q2-66): REQ-784 lists what went AND what was meant to go,
+             so the count says how many went and how many didn't — never one
+             "sent" total over every row. */
+          }
+          <span class="count" data-cy="outbox-count">
+            {t("outbox.countSent", { n: sentCount })}
+          </span>
+          {notSentCount > 0 && (
+            <span class="count" data-cy="outbox-count-not-sent">
+              {t("outbox.countNotSent", { n: notSentCount })}
+            </span>
+          )}
         </div>
         {rows === null
           ? (
