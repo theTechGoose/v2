@@ -10,6 +10,7 @@ import {
   validateSync,
 } from "#class-validator";
 import { MAX_CENTS } from "#quote-flow/assistant-draft.ts";
+import { isValidCustomerPhone } from "#quote-flow/customer-contact.ts"; // REQ-1119
 import { plainToInstance, Type } from "#class-transformer";
 import type { InvoiceUrgency } from "@paperwork/domain/business/invoice-urgency/mod.ts";
 import type {
@@ -375,6 +376,24 @@ export interface Invoice extends CreateInvoiceDto, NumberedFields {
   lang?: string;
   jobNameByLang?: Record<string, string>;
   descriptionByLang?: Record<string, string>;
+}
+
+/**
+ * REQ-1119 (LOOP-007 cycle 3, q3-45/q3-46/q3-47): the bill-to phone obeys the
+ * ONE phone rule (REQ-1080, `customerPhoneE164`) — the rule the customer is
+ * saved with and the SMS send path dials with. "843-555-0145 x12" was stored
+ * raw on the invoice (and shown on /i), quietly left off the bill-to customer
+ * (Phone "—") and refused only at send time. Blank is fine.
+ * Returns the dictionary key /customers answers with, or null.
+ */
+export function billToPhoneError(
+  billTo: { phoneNumber?: unknown } | null | undefined,
+): "customer.invalidPhone" | null {
+  const raw = billTo?.phoneNumber;
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "string") return "customer.invalidPhone";
+  const phone = raw.trim();
+  return phone && !isValidCustomerPhone(phone) ? "customer.invalidPhone" : null;
 }
 
 export function parseCreateInvoice(input: unknown): CreateInvoiceDto {

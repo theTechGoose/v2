@@ -133,3 +133,50 @@ for (const phoneNumber of ["+1 (843) 555-0124 ext 9", "+1 843 555 0124 x9"]) {
     assertEquals(err.message, "customer.invalidPhone");
   });
 }
+
+// REQ-1119 (LOOP-007 cycle 3, q3-47): an undeclared key is never accepted and
+// saved. QA posted `phone` (not `phoneNumber`) — 200, stored, and then ignored
+// by every screen, so the customer page read "Phone —" while GET /customers
+// returned the number. The DTO gate refuses it (and any injected record key
+// such as deletedAt) with a 400 instead of keeping it.
+for (
+  const [label, body] of [
+    ["phone '843-555-0111'", { name: "Lupe Garza", phone: "843-555-0111" }],
+    ["phone '512-555-0123 ext 4'", {
+      name: "Lupe Garza",
+      phone: "512-555-0123 ext 4",
+    }],
+    ["deletedAt", { name: "Lupe Garza", deletedAt: "2026-01-01T00:00:00Z" }],
+    ["isAdmin", { name: "Lupe Garza", isAdmin: true }],
+  ] as const
+) {
+  Deno.test(`REQ-1119 q3-47 parseCreateCustomer refuses the undeclared key ${label} with a 400`, () => {
+    let threw: { status?: number; message: string } | undefined;
+    let kept: unknown;
+    try {
+      kept = parseCreateCustomer(body);
+    } catch (e) {
+      threw = e as { status?: number; message: string };
+    }
+    assertEquals(
+      threw?.status,
+      400,
+      `accepted and kept: ${JSON.stringify(kept)}`,
+    );
+  });
+}
+
+Deno.test("REQ-1119 q3-47 parseUpdateCustomer refuses the undeclared key `phone` with a 400", () => {
+  let threw: { status?: number; message: string } | undefined;
+  let kept: unknown;
+  try {
+    kept = parseUpdateCustomer({ phone: "843-555-0145 x12" });
+  } catch (e) {
+    threw = e as { status?: number; message: string };
+  }
+  assertEquals(
+    threw?.status,
+    400,
+    `accepted and kept: ${JSON.stringify(kept)}`,
+  );
+});

@@ -22,6 +22,7 @@ import {
   type CustomerFormErrors,
   customerFormErrors,
   isValidCustomerEmail,
+  isValidCustomerPhone,
 } from "../quote-flow/customer-contact.ts";
 import {
   type DocState,
@@ -558,9 +559,13 @@ export function invoiceIssueBlock(opts: {
  * picked, the new client's name / phone / email follow REQ-352's
  * customerFormErrors; the bill-to email follows the same email rule. Blank
  * contacts are fine. An empty object means the form may go ahead.
+ * REQ-1119 (LOOP-007 cycle 3, q3-45): the bill-to phone follows the ONE
+ * phone rule (REQ-1080) too — "843-555-0145 x12" is named under its field,
+ * never issued, stored raw or recommended a text.
  */
 export interface NewInvoiceFieldErrors extends CustomerFormErrors {
   billEmail?: "customer.invalidEmail";
+  billPhone?: "customer.invalidPhone";
 }
 
 export function newInvoiceFieldErrors(form: {
@@ -569,6 +574,7 @@ export function newInvoiceFieldErrors(form: {
   phoneNumber?: string | null;
   email?: string | null;
   billEmail?: string | null;
+  billPhone?: string | null;
 }): NewInvoiceFieldErrors {
   const out: NewInvoiceFieldErrors = form.newClient
     ? customerFormErrors(form)
@@ -576,6 +582,10 @@ export function newInvoiceFieldErrors(form: {
   const billEmail = (form.billEmail ?? "").trim();
   if (billEmail && !isValidCustomerEmail(billEmail)) {
     out.billEmail = "customer.invalidEmail";
+  }
+  const billPhone = (form.billPhone ?? "").trim();
+  if (billPhone && !isValidCustomerPhone(billPhone)) {
+    out.billPhone = "customer.invalidPhone"; // REQ-1119
   }
   return out;
 }

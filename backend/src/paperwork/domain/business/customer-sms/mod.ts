@@ -75,9 +75,12 @@ export async function dispatchCustomerSms(
       };
     }
     if (target.failureCode === "invalid") {
+      // REQ-1119 (q3-45): the contractor's words, never the developer string
+      // `invalid phone: …` pasted into "The text didn't go through: {reason}".
       return {
         ok: false,
-        reason: `invalid phone: ${input.to}`,
+        reason: t(input.uiLang, "sms.invalidNumber"),
+        detail: `invalid phone: ${input.to}`,
         to: input.to,
         failureCode: "invalid",
       };

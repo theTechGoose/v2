@@ -143,3 +143,57 @@ Deno.test("REQ-1080 q2-69 a phone with an extension is not a textable number", (
   assertEquals(customerPhoneE164("+1 (843) 555-0124 ext 9"), null);
   assertEquals(customerSmsTarget("+1 (843) 555-0124 ext 9").ok, false);
 });
+
+// REQ-1119 (LOOP-007 cycle 3, q3-45): a phone the one rule cannot parse
+// ('843-555-0145 x12') is refused in the contractor's words — a dictionary
+// line in their language — never the developer string `invalid phone: …`
+// pasted into "The text didn't go through: {reason}".
+Deno.test("REQ-1119 q3-45 dispatchCustomerSms: an invalid phone's reason is translated copy, never the raw 'invalid phone: …'", async () => {
+  const en = JSON.parse(
+    await Deno.readTextFile(
+      new URL("../../../../../../lang/en.json", import.meta.url),
+    ),
+  ) as Record<string, string>;
+  const es = JSON.parse(
+    await Deno.readTextFile(
+      new URL("../../../../../../lang/es.json", import.meta.url),
+    ),
+  ) as Record<string, string>;
+  for (const [uiLang, dict] of [["en", en], ["es", es]] as const) {
+    const { sms, sent } = spySms();
+    const res = await dispatchCustomerSms(sms, {
+      to: "843-555-0145 x12",
+      body: "hi",
+      uiLang,
+    });
+    assertEquals(res.ok, false);
+    assertEquals(res.failureCode, "invalid");
+    assertEquals(sent.length, 0);
+    assertEquals(
+      /invalid phone:/i.test(res.reason ?? ""),
+      false,
+      `${uiLang}: raw developer reason ${JSON.stringify(res.reason)}`,
+    );
+    assertEquals(
+      Object.values(dict).includes(res.reason ?? ""),
+      true,
+      `${uiLang}: reason ${
+        JSON.stringify(res.reason)
+      } is not a ${uiLang} dictionary line`,
+    );
+  }
+  assertEquals(
+    (await dispatchCustomerSms(spySms().sms, {
+      to: "843-555-0145 x12",
+      body: "hi",
+      uiLang: "es",
+    })).reason !==
+      (await dispatchCustomerSms(spySms().sms, {
+        to: "843-555-0145 x12",
+        body: "hi",
+        uiLang: "en",
+      })).reason,
+    true,
+    "the es reason differs from the en one",
+  );
+});

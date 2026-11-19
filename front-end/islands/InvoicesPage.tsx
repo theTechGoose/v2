@@ -116,10 +116,7 @@ import { type Payment, paymentsClient } from "../clients/payments.ts"; // REQ-95
 import { announcingFetch as fetch } from "../lib/owner-writes.ts";
 import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-696
 import { isChangeOrderMutable } from "../../shared/quote-flow/adjustment-guards.ts";
-import {
-  formatPhoneInput,
-  formatShortDate,
-} from "../../shared/quote-flow/format-helpers.ts";
+import { formatShortDate } from "../../shared/quote-flow/format-helpers.ts";
 import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import MarkPaidDialog from "../components/MarkPaidDialog.tsx"; // REQ-930
 import { confirmPaymentInit } from "../lib/mark-paid.ts"; // REQ-930
@@ -129,6 +126,7 @@ import {
   customerCreatePayload,
   type CustomerFormValues,
   emptyCustomerForm,
+  formatPhoneLenient, // REQ-1119
   validateCustomerForm,
 } from "../../shared/customer-form/mod.ts";
 import { composeAddress } from "../../shared/customer-address/mod.ts";
@@ -5747,6 +5745,7 @@ export function NewInvoiceModal(
       phoneNumber: over.phone ?? newPhone,
       email: over.email ?? newEmail,
       billEmail: over.billEmail ?? billTo.email,
+      billPhone: over.billPhone ?? billTo.phoneNumber, // REQ-1119
     });
   }
   /** REQ-708: re-check ONE field (on blur, or while it already shows a message) */
@@ -6307,12 +6306,20 @@ export function NewInvoiceModal(
             <input
               type="tel"
               data-cy="new-invoice-bill-phone"
-              value={formatPhoneInput(billTo.phoneNumber)} /* REQ-593 */
+              /* REQ-593's mask; REQ-1119 (q3-45): never one that hides an
+                 extension — "843-555-0145 x12" shows as typed */
+              value={formatPhoneLenient(billTo.phoneNumber)}
               disabled={busy}
-              onInput={(e) =>
-                setBill({ phoneNumber: (e.target as HTMLInputElement).value })}
-              style={smallInput}
+              {...flag("billPhone")}
+              onInput={(e) => {
+                const v = (e.target as HTMLInputElement).value;
+                setBill({ phoneNumber: v });
+                if (fieldErrs.billPhone) checkField("billPhone", v);
+              }}
+              onBlur={() => checkField("billPhone")} /* REQ-1119 */
+              style={smallInput + (fieldErrs.billPhone ? badBorder : "")}
             />
+            {fieldError("billPhone")}
           </label>
         </div>
         <label style={labelStyle}>
