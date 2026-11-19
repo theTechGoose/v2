@@ -77,6 +77,9 @@ export default function TimesheetPage() {
   const [report, setReport] = useState<Report | null>(null);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [workers, setWorkers] = useState<FieldWorker[]>([]);
+  // REQ-1000 (LOOP-007 q1-86) — which week offset the data above belongs to; null until the
+  // first fetch settles. Not loaded must never read as loaded-and-empty ("No punches", 0).
+  const [loadedWeeks, setLoadedWeeks] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [voiding, setVoiding] = useState<{ id: string; reason: string } | null>(
@@ -96,12 +99,14 @@ export default function TimesheetPage() {
     setOnly(workerFromSearch(location.search));
   }, []);
   const shown = onlyWorker(report, punches, only);
+  const loaded = loadedWeeks === weeks;
   function showAll() {
     setOnly(null);
     history.replaceState(null, "", location.pathname);
   }
 
   async function load() {
+    const forWeeks = weeks;
     try {
       const [r, p, w] = await Promise.all([
         timeclockClient.report(win.from, win.to),
@@ -111,6 +116,7 @@ export default function TimesheetPage() {
       setReport(r);
       setPunches(p);
       setWorkers(w);
+      setLoadedWeeks(forWeeks);
       const pick = workerFromSearch(location.search);
       setAdd((a) =>
         a.workerId || !w.length
@@ -403,9 +409,19 @@ export default function TimesheetPage() {
 
       <div class="panel" data-cy="ts-log-panel">
         <h3 class="panel__title">
-          {t("ts.log")} <span class="count">{shown.punches.length}</span>
+          {t("ts.log")}{" "}
+          {loaded && <span class="count">{shown.punches.length}</span>}
         </h3>
-        {shown.punches.length === 0
+        {!loaded
+          ? (
+            <div
+              style="color:var(--fg-muted);font-size:13px"
+              data-cy="ts-log-loading"
+            >
+              {t("field.common.loading")}
+            </div>
+          )
+          : shown.punches.length === 0
           ? (
             <div style="color:var(--fg-muted);font-size:13px">
               {t("ts.noPunches")}
