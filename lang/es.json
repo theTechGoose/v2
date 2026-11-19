@@ -5051,6 +5051,7 @@
   "invoicesPage.detail.downloadPdf": "Descargar PDF",
   "invoicesPage.empty.cancelled": "Nada cancelado. Las facturas anuladas quedan aquí para sus registros.",
   "invoicesPage.remove.duplicateHint": "Cancela esta y empieza una copia corregida con un número nuevo",
+  "invoicesPage.remove.feeNote": "El cargo por contracargo no se copia a la copia corregida — agréguelo allí si todavía se debe.",
   "invoicesPage.remove.err.already_void": "Esta factura ya está cancelada.",
   "invoicesPage.remove.err.locked_paid": "Las facturas pagadas están bloqueadas.",
   "invoicesPage.remove.err.must_delete": "Esta factura nunca se envió — elimínela.",

@@ -5051,6 +5051,7 @@
   "invoicesPage.detail.downloadPdf": "Download PDF",
   "invoicesPage.empty.cancelled": "Nothing cancelled. Voided invoices stay here for your records.",
   "invoicesPage.remove.duplicateHint": "Cancel this one and start a corrected copy with a new number",
+  "invoicesPage.remove.feeNote": "The chargeback fee isn't copied to the corrected copy — add it back there if it's still owed.",
   "invoicesPage.remove.err.already_void": "This invoice is already cancelled.",
   "invoicesPage.remove.err.locked_paid": "Paid invoices are locked.",
   "invoicesPage.remove.err.must_delete": "This invoice was never sent — delete it instead.",
