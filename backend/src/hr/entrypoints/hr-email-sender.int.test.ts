@@ -305,9 +305,15 @@ Deno.test(
         ...base,
         id: "old",
         key: "dm-email",
-        desc: "A welcome note with the handbook portal's login, from DocuMonster",
+        desc:
+          "A welcome note with the handbook portal's login, from DocuMonster",
       });
-      await store.put({ ...base, id: "mine", key: "dm-email", desc: "Our note" });
+      await store.put({
+        ...base,
+        id: "mine",
+        key: "dm-email",
+        desc: "Our note",
+      });
       const list = await store.listByUser("u-1036");
       const byId = Object.fromEntries(list.map((s) => [s.id, s.desc]));
       assertEquals(
@@ -318,14 +324,183 @@ Deno.test(
         },
         {
           listed: {
-            old: "A welcome note with the handbook portal's login, from your business",
+            old:
+              "A welcome note with the handbook portal's login, from your business",
             mine: "Our note",
           },
-          got: "A welcome note with the handbook portal's login, from your business",
-          found: "A welcome note with the handbook portal's login, from your business",
+          got:
+            "A welcome note with the handbook portal's login, from your business",
+          found:
+            "A welcome note with the handbook portal's login, from your business",
         },
       );
     } finally {
+      await resetKv();
+    }
+  },
+);
+
+/**
+ * REQ-1169 (LOOP-007 q3, q3-103) — AMENDMENT of REQ-884b / REQ-1003, citing REQ-1033 + REQ-628:
+ * every HR email is written in the house email layout, like every other email DocuMonster
+ * sends (payment receipt, decision alerts, send-paperwork-email): `<!doctype html>\n<html
+ * lang>` (REQ-1033), the cream #f7f6f1 body + white card, the business's logo or name
+ * wordmark at the top (REQ-628), the #144852 headline/CTA. Today POST /hr/hires sends the
+ * invite as a bare `<div style="font-family:Arial,sans-serif;max-width:520px;…">` with an
+ * `<h2>` and a `background:#1a8e40` pill; the packet-complete note to HR is the same bare div;
+ * the dm-email welcome note (REQ-1036) is a bare run of `<p>`s. Read off the Postmark payload's
+ * HtmlBody — the HR email shows on no app page, so the email boundary is where it is seen.
+ */
+function houseShape(html: string, withWordmark: boolean) {
+  return {
+    root: html.match(/^<!doctype html>\s*<html lang="([^"]*)"[\s>]/i)?.[1] ??
+      `(no <html lang>: ${JSON.stringify(html.slice(0, 60))})`,
+    creamBody: html.includes("background:#f7f6f1"),
+    houseTeal: html.includes("#144852"),
+    ...(withWordmark
+      ? {
+        wordmarkNamesBusiness:
+          /<div data-biz-wordmark[^>]*>Reyes Lawn &amp; Landscape<\/div>/
+            .test(html),
+      }
+      : {}),
+    offBrandGreen: html.includes("#1a8e40"),
+    bareArialDiv: html.includes(
+      "font-family:Arial,sans-serif;max-width:520px",
+    ),
+  };
+}
+const HOUSE = (lang: string, withWordmark: boolean) => ({
+  root: lang,
+  creamBody: true,
+  houseTeal: true,
+  ...(withWordmark ? { wordmarkNamesBusiness: true } : {}),
+  offBrandGreen: false,
+  bareArialDiv: false,
+});
+
+Deno.test(
+  "REQ-1169 (q3-103) the HR emails (invite, packet-complete to HR, dm-email welcome) use the house layout: <html lang>, cream card, the business's wordmark, #144852 — no Arial div, no #1a8e40",
+  async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    Deno.env.delete("POSTMARK_API_KEY");
+    Deno.env.delete("TWILIO_ACCOUNT_SID");
+    Deno.env.delete("DENO_DEPLOYMENT_ID");
+    await resetKv();
+    const sent: SendEmailInput[] = [];
+    const orig = EmailService.prototype.send;
+    EmailService.prototype.send = function (input: SendEmailInput) {
+      sent.push(input);
+      return orig.call(this, input);
+    };
+    const port = PORT + 2;
+    const server = await bootstrapServer(TestApp, { port, swagger: false });
+    await server.listen();
+    const call = async (
+      method: string,
+      path: string,
+      body?: unknown,
+      h = {},
+    ): Promise<Res> => {
+      const r = await fetch(`http://localhost:${port}${path}`, {
+        method,
+        headers: { ...J, ...h },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await r.text();
+      try {
+        return { status: r.status, body: JSON.parse(text), text };
+      } catch {
+        return { status: r.status, body: text, text };
+      }
+    };
+    try {
+      const phone = "+17025550144";
+      await call("POST", "/auth/send-otp", { phoneNumber: phone });
+      const otp = await new OtpStore().get(phone);
+      const v = await call("POST", "/auth/verify-otp", {
+        phoneNumber: phone,
+        code: otp!.code,
+      });
+      const H = { "x-session-id": v.body.sessionId as string };
+      await call("PUT", "/me", {
+        name: "Maria Reyes",
+        language: "es",
+        email: "maria@example.com",
+      }, H);
+      await call("PUT", "/profile/identity", { businessName: BUSINESS }, H);
+      const st = await call("PUT", "/hr/settings", {
+        notifyOnComplete: true,
+        hrEmail: "hr@reyes.example.com",
+      }, H);
+      assertEquals(st.status, 200, st.text);
+      const emailSys = await call(
+        "POST",
+        "/hr/systems",
+        { key: "dm-email" },
+        H,
+      );
+      assertEquals(emailSys.status, 201, emailSys.text);
+      const dept = await call("POST", "/hr/departments", {
+        name: "Crew",
+        division: "outbound",
+      }, H);
+      assertEquals(dept.status, 201, dept.text);
+      const doc = await call("POST", "/hr/documents", {
+        name: "Handbook",
+        kind: "ack",
+        contentHtml: "<p>Be kind.</p>",
+      }, H);
+      assertEquals(doc.status, 201, doc.text);
+      const cfg = await call("PUT", `/hr/departments/${dept.body.id}`, {
+        docIds: [doc.body.id],
+        systemIds: [emailSys.body.id],
+      }, H);
+      assertEquals(cfg.status, 200, cfg.text);
+
+      sent.length = 0;
+      const hire = await call("POST", "/hr/hires", {
+        firstName: "Jose",
+        lastName: "Diaz",
+        email: "jose.diaz@example.com",
+        departmentId: dept.body.id,
+      }, H);
+      assertEquals(hire.status, 201, hire.text);
+      const invite = sent.find((s) => s.to === "jose.diaz@example.com");
+      assert(invite, `the invite email went out: ${JSON.stringify(sent)}`);
+
+      sent.length = 0;
+      const signed = await call(
+        "POST",
+        `/hr/sign/${hire.body.token}/docs/${doc.body.id}`,
+        { printedName: "Jose Diaz", consent: true, signaturePng: PNG },
+      );
+      assertEquals(signed.status, 201, signed.text);
+      assertEquals(signed.body.complete, true, signed.text);
+      const complete = sent.find((s) => s.to === "hr@reyes.example.com");
+      assert(
+        complete,
+        `the packet-complete email went out: ${JSON.stringify(sent)}`,
+      );
+      const welcome = sent.find((s) => s.to === "jose.diaz@example.com");
+      assert(welcome, `the welcome email went out: ${JSON.stringify(sent)}`);
+
+      assertEquals(
+        {
+          invite: houseShape(postmarkPayload(invite).HtmlBody, true),
+          complete: houseShape(postmarkPayload(complete).HtmlBody, false),
+          welcome: houseShape(postmarkPayload(welcome).HtmlBody, true),
+        },
+        {
+          invite: HOUSE("es", true),
+          complete: HOUSE("es", false),
+          welcome: HOUSE("es", true),
+        },
+        `invite HtmlBody=${postmarkPayload(invite).HtmlBody.slice(0, 160)}`,
+      );
+    } finally {
+      EmailService.prototype.send = orig;
+      await server.stop();
       await resetKv();
     }
   },
