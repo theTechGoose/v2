@@ -52,6 +52,9 @@ const demo = {
   targetPath: null,
   pid: "p1",
 };
+/** the page's words without markup — REQ-893 wraps the customer's name in a nowrap span */
+const textOf = (html: string) => html.replace(/<[^>]+>/g, "");
+
 const noDemo = { role: null, session: null, targetPath: null, pid: null };
 
 type Who = "impersonating" | "staff" | "customer";
@@ -98,7 +101,7 @@ Deno.test("REQ-376 /admin while this browser guides a customer: an interstitial 
   assertEquals(res.headers.get("location"), null);
   assert(!body.includes("ADMIN CONSOLE"), "the console is not served");
   assert(
-    body.includes("You are guiding Ana Torres in this browser"),
+    textOf(body).includes("You are guiding Ana Torres in this browser"),
     `names the customer: ${body.slice(0, 400)}`,
   );
   assert(body.includes('data-cy="admin-gate"'));
@@ -119,7 +122,7 @@ Deno.test("REQ-376 /admin while this browser guides a customer: an interstitial 
 Deno.test("REQ-376 the interstitial speaks the presenter's language (es), not the customer's", async () => {
   const { body } = await hitAdmin(backend("impersonating", demo, "es"));
   assert(
-    body.includes("Estás guiando a Ana Torres en este navegador"),
+    textOf(body).includes("Estás guiando a Ana Torres en este navegador"),
     body.slice(0, 400),
   );
 });
@@ -200,7 +203,7 @@ Deno.test("REQ-855 (dm3 rc-17): an es presenter who picks EN on the gate reads i
     "/admin?lang=en",
   );
   assert(
-    body.includes("You are guiding Ana Torres in this browser"),
+    textOf(body).includes("You are guiding Ana Torres in this browser"),
     body.slice(0, 400),
   );
   assert(
@@ -237,7 +240,7 @@ Deno.test("REQ-863 (dm4 p5): an es-profile presenter whose demo runs in en (pm_d
   );
   assertEquals(res.status, 200);
   assert(
-    body.includes("You are guiding Ana Torres in this browser"),
+    textOf(body).includes("You are guiding Ana Torres in this browser"),
     body.slice(0, 400),
   );
   assert(
