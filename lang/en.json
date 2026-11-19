@@ -3374,6 +3374,7 @@
   "setupChecklist.aria.section": "Finish setting up",
   "setupChecklist.eyebrow": "Setup checklist",
   "setupChecklist.heading.one": "Finish setting up — {n} thing left",
+  "setupChecklist.heading.optionalOnly": "You're set up — the rest is optional",
   "setupChecklist.heading.other": "Finish setting up — {n} things left",
   "setupChecklist.hide": "Hide",
   "setupChecklist.item.address": "Mailing address",

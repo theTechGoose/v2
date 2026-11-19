@@ -10,13 +10,16 @@ import {
 } from "../lib/profile-events.ts";
 import { editableName } from "../../shared/person-name/mod.ts"; // REQ-624
 import { hasAnyPayWay } from "../../shared/payments/pay-links.ts"; // REQ-630 AMENDMENT
+import { setupChecklistSummary } from "../lib/setup-checklist.ts"; // REQ-974
 
 /**
  * SetupChecklist — post-onboarding "finish setting up" card on the
  * dashboard. Lists the high-leverage items that onboarding doesn't
  * collect (logo, payment method, insurance, contract defaults) plus
  * any address piece the user skipped. Self-hides once every item is
- * checked.
+ * checked. REQ-974: an `optional` item (insurance) stays listed but is never
+ * counted as a thing left — with only optional items open the card turns
+ * calm (full green bar, "you're set up" heading) instead of the coral alarm.
  *
  * Pulled into its own island so the dashboard route stays SSR-clean —
  * fetching /profile here means the checklist appears only when we
@@ -29,6 +32,8 @@ interface Item {
   done: boolean;
   /** REQ-513: the Settings section that answers it, never the bare /settings */
   href: string;
+  /** REQ-974: listed, never counted as a thing left */
+  optional?: boolean;
 }
 
 export default function SetupChecklist() {
@@ -106,34 +111,36 @@ export default function SetupChecklist() {
       label: tFor(lang, "setupChecklist.item.insurance"),
       done: !!snap.insurance?.provider?.trim(),
       href: setupItemHref("insurance"),
+      optional: true, // REQ-227(5) keeps it on the list; REQ-974 never counts it
     },
   ];
-  const remaining = items.filter((i) => !i.done);
-  if (remaining.length === 0) return null;
-
-  const pct = Math.round(
-    ((items.length - remaining.length) / items.length) * 100,
+  // REQ-974: the heading count and the bar use the required items only
+  const { requiredLeft, optionalLeft, pct, headingKey } = setupChecklistSummary(
+    items,
   );
+  if (requiredLeft === 0 && optionalLeft === 0) return null;
+  // only optional extras open → a calm "you're set up" card, not the alarm
+  const calm = requiredLeft === 0;
 
   return (
     <section
       class="panel"
       aria-label={tFor(lang, "setupChecklist.aria.section")}
-      style="padding:18px 22px;margin-bottom:18px;background:linear-gradient(135deg,rgba(255,107,107,0.08) 0%,rgba(255,107,107,0.02) 100%);border:1px solid rgba(255,107,107,0.25)"
+      style={calm
+        ? "padding:18px 22px;margin-bottom:18px;background:linear-gradient(135deg,rgba(81,152,67,0.08) 0%,rgba(81,152,67,0.02) 100%);border:1px solid rgba(81,152,67,0.25)"
+        : "padding:18px 22px;margin-bottom:18px;background:linear-gradient(135deg,rgba(255,107,107,0.08) 0%,rgba(255,107,107,0.02) 100%);border:1px solid rgba(255,107,107,0.25)"}
     >
       <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
         <div>
-          <div style="font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#d94e4e">
+          <div
+            style={`font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:${
+              calm ? "#3f7a34" : "#d94e4e"
+            }`}
+          >
             {tFor(lang, "setupChecklist.eyebrow")}
           </div>
           <h3 style="margin:4px 0 0;font-family:var(--font-heading);font-weight:800;font-size:18px;color:var(--brand-teal)">
-            {tFor(
-              lang,
-              `setupChecklist.heading.${
-                remaining.length === 1 ? "one" : "other"
-              }`,
-              { n: remaining.length },
-            )}
+            {tFor(lang, headingKey, { n: requiredLeft })}
           </h3>
         </div>
         <button
@@ -151,10 +158,16 @@ export default function SetupChecklist() {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={pct}
-        style="height:4px;border-radius:999px;background:rgba(255,107,107,0.15);overflow:hidden;margin-top:10px"
+        style={`height:4px;border-radius:999px;background:${
+          calm ? "rgba(81,152,67,0.15)" : "rgba(255,107,107,0.15)"
+        };overflow:hidden;margin-top:10px`}
       >
         <div
-          style={`height:100%;width:${pct}%;background:linear-gradient(90deg,#FF6B6B,#d94e4e);transition:width 480ms`}
+          style={`height:100%;width:${pct}%;background:${
+            calm
+              ? "linear-gradient(90deg,#6bb35c,#519843)"
+              : "linear-gradient(90deg,#FF6B6B,#d94e4e)"
+          };transition:width 480ms`}
         />
       </div>
       <ul style="margin:12px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
