@@ -3,14 +3,19 @@
  * dictionary key by the task count, so one task is singular ("0 of 1 task done" /
  * "0 de 1 tarea lista") and an empty day says "No tasks today" / "Sin tareas hoy" instead of
  * "0 of 0 tasks done". Every key takes the same {done} and {n} vars.
+ *
+ * REQ-1005 (LOOP-007 q1-91, REQ-744 AMENDMENT): the worker view also shows Yesterday,
+ * Tomorrow and any picked day, so the picker is told whether the shown day is today; an
+ * empty other day says "No tasks this day" / "Sin tareas este día", never "today" / "hoy".
  */
 export type WorkerTodayKey =
   | "worker.today"
   | "worker.today.one"
-  | "worker.today.none";
+  | "worker.today.none"
+  | "worker.day.none";
 
-export function workerTodayKey(n: number): WorkerTodayKey {
-  if (n === 0) return "worker.today.none";
+export function workerTodayKey(n: number, isToday = true): WorkerTodayKey {
+  if (n === 0) return isToday ? "worker.today.none" : "worker.day.none";
   if (n === 1) return "worker.today.one";
   return "worker.today";
 }
