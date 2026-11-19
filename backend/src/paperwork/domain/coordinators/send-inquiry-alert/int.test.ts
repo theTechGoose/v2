@@ -149,3 +149,132 @@ Deno.test("REQ-701 M21 the alert's link opens the quote's questions (/quotes?ope
   assert(ctx.emails[0].htmlBody.includes(link), "the email's button");
   await resetKv();
 });
+
+/**
+ * REQ-947 (LOOP-007 q1, q1-23) — "'Customer asked a question' email says
+ * 'Reply directly to the customer' but gives no way to" reach them. Jose left
+ * "how to reach you" empty; his email + phone are on the quote's customer
+ * record, yet the alert carried neither, had no Reply-To, and still told the
+ * owner to "Reply directly to the customer".
+ */
+async function seedJose(ctx: ReturnType<typeof fresh>, language: "en" | "es") {
+  const contractor = await ctx.users.create({ phoneNumber: "+15125556901" });
+  await ctx.users.update(contractor.id, {
+    email: "hans@example.com",
+    language,
+  });
+  const customer = await ctx.customers.create(contractor.id, {
+    name: "Jose Martinez",
+    email: "jose.m@example.com",
+    phoneNumber: "(512) 555-0147",
+  });
+  const quote = await ctx.quotes.create(contractor.id, {
+    customerId: customer.id,
+    summary: "Garage cleanout",
+    jobName: "Garage Cleanout",
+    lineItems: [],
+  });
+  return { contractor, customer, quote };
+}
+
+const JOSE_Q = "Can you come Saturday morning instead?";
+const PHONE_SHAPES = /555-0147|5550147|\(512\) 555-0147/;
+
+Deno.test("REQ-947 q1-23 no contactBack: the alert email carries the customer's email + phone on file and Reply-To the customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { quote } = await seedJose(ctx, "en");
+  const res = await ctx.alert.run(quote.id, { question: JOSE_Q, name: "Jose" });
+  assertEquals(res.ok, true);
+  assertEquals(ctx.emails.length, 1);
+  const mail = ctx.emails[0];
+  assert(
+    mail.htmlBody.includes("jose.m@example.com"),
+    "REQ-947: the email body names the customer's email on file",
+  );
+  assert(
+    PHONE_SHAPES.test(mail.htmlBody),
+    "REQ-947: the email body names the customer's phone on file",
+  );
+  assert(
+    mail.htmlBody.includes("mailto:jose.m@example.com"),
+    "REQ-947: the email is a mailto: link",
+  );
+  assert(
+    /tel:\+?1?5125550147/.test(mail.htmlBody),
+    "REQ-947: the phone is a tel: link",
+  );
+  assert(
+    typeof mail.replyTo === "string" && mail.replyTo.trim() !== "",
+    `REQ-947: the alert sets a Reply-To (got ${JSON.stringify(mail.replyTo)})`,
+  );
+  assert(
+    !/hello@documonster\.com/i.test(mail.replyTo ?? ""),
+    "REQ-947: Reply-To is not the house From",
+  );
+  assert(
+    mail.replyTo === "jose.m@example.com" || /^reply\+/.test(mail.replyTo ?? ""),
+    `REQ-947: Reply-To reaches the customer (their address or a reply+ token), got ${mail.replyTo}`,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-947 q1-23 no contactBack: the alert text carries a way to reach the customer", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { quote } = await seedJose(ctx, "en");
+  await ctx.alert.run(quote.id, { question: JOSE_Q, name: "Jose" });
+  assertEquals(ctx.texts.length, 1);
+  const body = ctx.texts[0].body;
+  assert(
+    PHONE_SHAPES.test(body) || /5125550147/.test(body) ||
+      body.includes("jose.m@example.com"),
+    `REQ-947: the SMS names the customer's phone or email on file: ${body}`,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-947 q1-23 the alert copy no longer says 'Reply directly to the customer' (en) / 'Respóndele directamente' (es)", async () => {
+  for (const lang of ["en", "es"] as const) {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    const ctx = fresh();
+    const { quote } = await seedJose(ctx, lang);
+    await ctx.alert.run(quote.id, { question: JOSE_Q, name: "Jose" });
+    const html = ctx.emails[0].htmlBody;
+    assert(
+      !/Reply directly to the customer/i.test(html),
+      `REQ-947 (${lang}): stale REQ-031 copy "Reply directly to the customer"`,
+    );
+    assert(
+      !/Respóndele directamente al cliente/i.test(html),
+      `REQ-947 (${lang}): stale REQ-031 copy "Respóndele directamente al cliente"`,
+    );
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-947 q1-23 a typed email in contactBack is the Reply-To (it wins over the one on file)", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const ctx = fresh();
+  const { quote } = await seedJose(ctx, "en");
+  await ctx.alert.run(quote.id, {
+    question: JOSE_Q,
+    name: "Jose",
+    contactBack: "jose.work@example.com",
+  });
+  const mail = ctx.emails[0];
+  assert(
+    mail.replyTo === "jose.work@example.com" ||
+      /^reply\+/.test(mail.replyTo ?? ""),
+    `REQ-947: Reply-To is the typed address (or a reply+ token), got ${mail.replyTo}`,
+  );
+  assert(
+    mail.htmlBody.includes("(512) 555-0147") || /tel:\+?1?5125550147/.test(mail.htmlBody),
+    "REQ-947: the phone on file fills the channel the customer did not type",
+  );
+  await resetKv();
+});
