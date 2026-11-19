@@ -19,7 +19,9 @@ export type OutboxKind =
   | "receipt"
   | "signedCopy"
   | "reminder"
-  | "reply";
+  | "reply"
+  /** REQ-1135: the void told her the invoice is cancelled, nothing due */
+  | "invoiceCancelled";
 
 export const OUTBOX_KINDS: readonly OutboxKind[] = [
   "quote",
@@ -30,6 +32,7 @@ export const OUTBOX_KINDS: readonly OutboxKind[] = [
   "signedCopy",
   "reminder",
   "reply",
+  "invoiceCancelled",
 ];
 
 /** One customer message as the list shows it — no body. */

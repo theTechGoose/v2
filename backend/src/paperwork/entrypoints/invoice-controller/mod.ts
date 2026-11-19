@@ -85,6 +85,10 @@ import type { VoidedBy } from "@paperwork/dto/invoice.ts";
 import { ForbiddenError, NotFoundError } from "@core/data/repository/mod.ts";
 import { RenderInvoicePrintPdf } from "@paperwork/domain/coordinators/render-invoice-print-pdf/mod.ts"; // REQ-629
 import { stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts"; // REQ-922
+import {
+  SendInvoiceCancelled,
+  type VoidNoticeResult,
+} from "@paperwork/domain/coordinators/send-invoice-cancelled/mod.ts"; // REQ-1135
 
 /** number order for an export (INV-001 before INV-002; unnumbered rows by age) */
 const bySeq = (
@@ -159,6 +163,7 @@ export class InvoiceController {
     private sendPreview: PreviewInvoiceSend,
     private payments: PaymentStore, // REQ-627
     private printPdf: RenderInvoicePrintPdf, // REQ-629
+    private cancelNotice: SendInvoiceCancelled, // REQ-1135
     private translator?: InvoiceTranslatorPort,
   ) {}
 
@@ -246,21 +251,38 @@ export class InvoiceController {
     if (typeof ids === "string") {
       return ctx.json({ ok: false, reason: ids }, 400);
     }
-    const b = (body ?? {}) as { action?: string; reason?: unknown };
+    const b = (body ?? {}) as {
+      action?: string;
+      reason?: unknown;
+      notify?: unknown;
+    };
     if (b.action !== "delete" && b.action !== "void") {
       return ctx.json({ ok: false, reason: "invalid", field: "action" }, 400);
     }
     const by = await publisherOf(ctx, this.sessions, this.users, user);
     const reason = cleanReason(b.reason);
-    const results: Array<{ id: string; outcome: string; reason?: string }> = [];
+    const results: Array<
+      {
+        id: string;
+        outcome: string;
+        reason?: string;
+        notice?: VoidNoticeResult;
+      }
+    > = [];
     for (const id of ids) {
-      results.push({
+      const r = await removeOne(
+        this.store,
+        this.payments,
         id,
-        ...await removeOne(this.store, this.payments, id, user.id, b.action, {
-          by,
-          reason,
-        }),
-      });
+        user.id,
+        b.action,
+        { by, reason },
+      );
+      // REQ-1135: each voided one the customer was sent can tell her
+      const notice = r.outcome === "voided" && b.notify === true
+        ? await this.cancelNotice.run(user.id, id)
+        : undefined;
+      results.push({ id, ...r, ...(notice ? { notice } : {}) });
     }
     const done = results.filter((r) => r.outcome !== "skipped").length;
     return ctx.json({
@@ -295,9 +317,15 @@ export class InvoiceController {
         r.reason === "not_found" ? 404 : 409,
       );
     }
-    return ctx.json(
-      project(await this.store.getOwned(id, user.id), new Date()),
-    );
+    // REQ-1135: "Let <customer> know" — after the void; a failed send never
+    // undoes it, the answer says how it went
+    const notice = wantsNotice(body)
+      ? await this.cancelNotice.run(user.id, id)
+      : undefined;
+    return ctx.json({
+      ...project(await this.store.getOwned(id, user.id), new Date()),
+      ...(notice ? { notice } : {}),
+    });
   }
 
   /**
@@ -334,10 +362,15 @@ export class InvoiceController {
     const voided = await this.store.update(id, user.id, {
       replacedBy: draft.id,
     });
+    // REQ-1135: she hears it is cancelled and a corrected one follows
+    const notice = wantsNotice(body)
+      ? await this.cancelNotice.run(user.id, id, { corrected: true })
+      : undefined;
     const now = new Date();
     return ctx.json({
       voided: project(voided, now),
       draft: project(draft, now),
+      ...(notice ? { notice } : {}),
     });
   }
 
@@ -1086,6 +1119,11 @@ function parseIds(body: unknown): string[] | "no_ids" | "too_many" | "invalid" {
   if (ids.length === 0) return "no_ids";
   if (ids.length > MAX_BULK_IDS) return "too_many";
   return [...new Set(ids as string[])];
+}
+
+/** REQ-1135: `{ notify: true }` asks the void to tell the customer. */
+function wantsNotice(body: unknown): boolean {
+  return (body as { notify?: unknown } | null)?.notify === true;
 }
 
 function cleanReason(r: unknown): string | undefined {

@@ -171,6 +171,7 @@ import {
   MAX_BULK_IDS,
   removalFor,
 } from "../../shared/documents/removal.ts"; // REQ-627, REQ-964
+import { voidNoticeDefault } from "../../shared/documents/void-notice.ts"; // REQ-1135
 import {
   bulkPlan,
   type BulkResult,
@@ -733,6 +734,8 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [bulkStep, setBulkStep] = useState<null | "delete" | "void">(null);
   const [bulkReason, setBulkReason] = useState("");
+  // REQ-1135: bulk void tells each customer who was sent hers
+  const [bulkNotify, setBulkNotify] = useState(true);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<
     { text: string; error?: boolean } | null
@@ -983,6 +986,7 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
           ...(action === "void" && bulkReason.trim()
             ? { reason: bulkReason.trim() }
             : {}),
+          ...(action === "void" ? { notify: bulkNotify } : {}),
         }),
       });
       if (!r.ok) {
@@ -1346,6 +1350,18 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
                       setBulkReason((e.target as HTMLInputElement).value)}
                     style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px"
                   />
+                )}
+                {bulkStep === "void" && plan.apply.length > 0 && (
+                  <label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:var(--fg,#144852);cursor:pointer">
+                    <input
+                      type="checkbox"
+                      data-cy="invoices-bulk-notify"
+                      checked={bulkNotify}
+                      onChange={(e) =>
+                        setBulkNotify((e.target as HTMLInputElement).checked)}
+                    />
+                    {tFor(lang, "invoicesPage.bulk.notify")}
+                  </label>
                 )}
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
                   {plan.apply.length > 0 && (
@@ -2096,13 +2112,27 @@ function voidedLine(inv: Invoice, lang: Lang): string {
  */
 function VoidPanel(
   { inv, lang, onCancel, onDone }: {
-    inv: Invoice;
+    inv: Invoice & {
+      client?: string;
+      contactEmail?: string | null;
+      textPhone?: string | null;
+    };
     lang: Lang;
     onCancel: () => void;
-    onDone: (draftId?: string) => void | Promise<void>;
+    onDone: (
+      draftId?: string,
+      noticeFailed?: boolean,
+    ) => void | Promise<void>;
   },
 ) {
   const [reason, setReason] = useState("");
+  // REQ-1135: "Let <customer> know" — offered, and checked, when the invoice
+  // went out and she can be reached
+  const canNotify = voidNoticeDefault(inv, {
+    email: inv.contactEmail,
+    textPhone: inv.textPhone,
+  });
+  const [notify, setNotify] = useState(canNotify);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const hasPayments = removalFor(inv, 0).hasPayments;
@@ -2119,7 +2149,10 @@ function VoidPanel(
           method: "POST",
           credentials: "include",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(reason.trim() ? { reason: reason.trim() } : {}),
+          body: JSON.stringify({
+            ...(reason.trim() ? { reason: reason.trim() } : {}),
+            ...(canNotify ? { notify } : {}),
+          }),
         },
       );
       const body = await r.json().catch(() => ({}));
@@ -2127,7 +2160,10 @@ function VoidPanel(
         setErr(tFor(lang, `invoicesPage.remove.err.${body.reason ?? "other"}`));
         return;
       }
-      await onDone(duplicate ? body.draft?.id : undefined);
+      // REQ-1135: the void stands even when the message did not go out
+      const noticeFailed = !!body.notice &&
+        !(body.notice.channels?.length > 0);
+      await onDone(duplicate ? body.draft?.id : undefined, noticeFailed);
     } finally {
       setBusy(false);
     }
@@ -2172,6 +2208,34 @@ function VoidPanel(
           style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#d8dcd5);border-radius:8px;font:inherit;font-size:13.5px;font-weight:400"
         />
       </label>
+      {canNotify && (
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:var(--fg,#144852);cursor:pointer">
+            <input
+              type="checkbox"
+              data-cy="invoice-void-notify"
+              checked={notify}
+              onChange={(e) =>
+                setNotify((e.target as HTMLInputElement).checked)}
+            />
+            {inv.client?.trim()
+              ? tFor(lang, "invoicesPage.remove.notifyLabel", {
+                name: inv.client.trim().split(/\s+/)[0],
+              })
+              : tFor(lang, "invoicesPage.remove.notifyNoName")}
+          </label>
+          {notify && (
+            <p
+              data-cy="invoice-void-notify-preview"
+              style="margin:0 0 0 24px;font-size:12px;line-height:1.4;color:var(--fg-muted,#6b7560)"
+            >
+              {tFor(lang, "invoicesPage.remove.notifyPreview", {
+                ref: docNumberOf(inv),
+              })}
+            </p>
+          )}
+        </div>
+      )}
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button
           type="button"
@@ -2904,8 +2968,15 @@ function InvoiceDetail(
           inv={inv}
           lang={lang}
           onCancel={() => setVoidOpen(false)}
-          onDone={async (draftId) => {
+          onDone={async (draftId, noticeFailed) => {
             setVoidOpen(false);
+            // REQ-1135: voided, but she was not told — say so
+            if (noticeFailed) {
+              onFlash({
+                cy: "invoice-void-notice-failed",
+                text: tFor(lang, "invoicesPage.remove.notifyFailed"),
+              });
+            }
             if (draftId) {
               // REQ-627: straight to the corrected copy, ready to edit
               globalThis.location.assign(`/invoices?open=${draftId}`);
