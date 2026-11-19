@@ -92,10 +92,12 @@ import {
   invoicesHeroGood,
   invoicesHeroMode,
   paidKpiInvoiceCents,
+  paidThisMonthCents, // REQ-959
   reloadInvoiceData,
   scheduledHeroSubKey,
 } from "../lib/headline-counts.ts";
 import { followChanges, isDocChange } from "../lib/change-feed.ts";
+import { type Payment, paymentsClient } from "../clients/payments.ts"; // REQ-959
 // REQ-754 (demo-loop cycle 5v1, M5): every fetch on this page announces a
 // successful invoice write to the owner's other tabs (an open /customers
 // re-reads its owed total when an invoice is marked paid or deleted here).
@@ -269,6 +271,9 @@ interface State {
   error: string | null;
   invoices: Invoice[];
   customers: Customer[];
+  /** REQ-959: the payments behind "Paid this month" — null when GET
+   *  /payments failed (the tile falls back to the bills' own paidCents). */
+  payments: Payment[] | null;
 }
 
 const INITIAL: State = {
@@ -276,6 +281,7 @@ const INITIAL: State = {
   error: null,
   invoices: [],
   customers: [],
+  payments: [],
 };
 
 /** Map an Invoice.paymentIntent.method (lowercase canonical) to the
@@ -706,6 +712,10 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     // A failed half keeps what it had rather than blanking the page.
     const invoices = fresh.invoices;
     if (invoices) setS((prev) => ({ ...prev, invoices }));
+    // REQ-959: a recorded payment moves "Paid this month" — re-read them.
+    paymentsClient.list().then((payments) => {
+      if (Array.isArray(payments)) setS((prev) => ({ ...prev, payments }));
+    }).catch(() => {/* the tile keeps what it had */});
     if (fresh.forecast) setForecast(fresh.forecast);
     // REQ-727: a contact typed in the send sheet is saved on the customer —
     // re-read the customers, so the next sheet finds it on file.
@@ -724,9 +734,17 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
     Promise.all([
       dashboardClient.invoices(undefined).catch(() => [] as Invoice[]),
       dashboardClient.customers().catch(() => [] as Customer[]),
-    ]).then(([invoices, customers]) => {
+      // REQ-959: "Paid this month" sums the payments, as /payments does.
+      paymentsClient.list().catch(() => null),
+    ]).then(([invoices, customers, payments]) => {
       if (!alive) return;
-      setS({ loading: false, error: null, invoices, customers });
+      setS({
+        loading: false,
+        error: null,
+        invoices,
+        customers,
+        payments: Array.isArray(payments) ? payments : null,
+      });
     }).catch((err: Error) => {
       if (!alive) return;
       setS({ ...INITIAL, loading: false, error: err.message });
@@ -830,11 +848,17 @@ export default function InvoicesPage(_props: { lang?: Lang }) {
   const nextScheduledFor = nextScheduled?.scheduledFor;
   // REQ-551 (demo B2): one "paid" definition with /payments — what was
   // collected against each bill, min(paid, amount); overpayments are
-  // flagged on the row (REQ-202), never counted as revenue.
-  const paidThisMonthTotal = paidThisMonth.reduce(
-    (sum, i) => sum + paidKpiInvoiceCents(i),
-    0,
-  );
+  // flagged on the row (REQ-202), never counted as revenue. REQ-959: the
+  // tile sums this month's PAYMENTS through the same helper as the
+  // /payments hero, so a part payment (no paidAt yet) counts here too.
+  // Without the payments list it falls back to the fully paid bills.
+  const paidThisMonthTotal = s.payments
+    ? paidThisMonthCents(
+      s.payments,
+      Array.isArray(s.invoices) ? s.invoices : [],
+      monthCutoff,
+    ).cents
+    : paidThisMonth.reduce((sum, i) => sum + paidKpiInvoiceCents(i), 0);
 
   const openInv = openId ? enriched.find((i) => i.id === openId) : undefined;
   // REQ-627: voided invoices stay — newest cancellation first

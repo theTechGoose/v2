@@ -209,6 +209,57 @@ export function creditedPayments(
   return out;
 }
 
+/** REQ-959 (LOOP-007 q1-34): the ONE "money collected this month" both
+ *  /invoices ("Paid this month" tile) and /payments ("showed up this month"
+ *  hero) show. It starts from the payments, not the invoices, so a part
+ *  payment ($400 on a $1,000 bill — no paidAt yet) counts on both screens:
+ *  every non-reversed payment received on/after `monthStart`, credited
+ *  through `creditedPayments` (REQ-551: an overpayment's excess is
+ *  `overCents`, never revenue). `clearedCount` is the number of bills paid
+ *  in full this month (paidAt this month, not voided). INTEGER CENTS. */
+export function paidThisMonthCents(
+  payments: ReadonlyArray<
+    {
+      id: string;
+      invoiceId: string;
+      amount: number;
+      receivedAt: string;
+      createdAt?: string;
+      reversedAt?: string | null;
+      status?: string;
+    }
+  >,
+  invoices: ReadonlyArray<
+    {
+      id: string;
+      amount?: number | null;
+      status?: string;
+      paidAt?: string | null;
+    }
+  >,
+  monthStart: Date,
+): { cents: number; overCents: number; clearedCount: number } {
+  const live = payments.filter((p) =>
+    !p.reversedAt && p.status !== "reversed"
+  );
+  const credited = creditedPayments(live, invoices);
+  const cutoff = monthStart.getTime();
+  let cents = 0, overCents = 0;
+  for (const p of live) {
+    const t = new Date(p.receivedAt).getTime();
+    if (!(t >= cutoff)) continue;
+    const c = credited.get(p.id) ??
+      { creditedCents: Math.max(0, p.amount || 0), overCents: 0 };
+    cents += c.creditedCents;
+    overCents += c.overCents;
+  }
+  const clearedCount = invoices.filter((i) =>
+    i.status !== "void" && !!i.paidAt &&
+    new Date(i.paidAt).getTime() >= cutoff
+  ).length;
+  return { cents, overCents, clearedCount };
+}
+
 /** REQ-478 (demo-loop cycle 3, M32): the /invoices KPI tiles and hero total.
  *  A payment the customer reported and the contractor has not confirmed
  *  (stage "claimed") is still money out — it counts in "Out for payment"
