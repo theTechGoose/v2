@@ -662,7 +662,7 @@ export class HrController {
       id: newId(),
       userId: user.id,
       name,
-      division: b.division === "inbound" ? "inbound" : "outbound",
+      // REQ-1002: no call-centre division — a department is a name + packet + accounts
       docIds: await checkDocIds(this, user.id, strList(b.docIds) ?? []),
       systemIds: await checkSystemIds(
         this,
@@ -707,9 +707,6 @@ export class HrController {
         )
       ) throw new HrError("department_exists", 409, `${name} already exists`);
       next.name = name;
-    }
-    if (b.division !== undefined) {
-      next.division = b.division === "inbound" ? "inbound" : "outbound";
     }
     const docIds = strList(b.docIds);
     if (docIds) next.docIds = await checkDocIds(this, user.id, docIds);

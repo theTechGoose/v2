@@ -1,5 +1,5 @@
 /**
- * REQ-887 — /hr/departments: the table (name, division, documents, systems), Add, and the
+ * REQ-887 — /hr/departments: the table (name, documents, systems), Add, and the
  * department's page (`?dept=<id>`): the signing packet (documents, checked and ordered) and the
  * accounts to create (connected systems). The department is the configuration unit: a new hire
  * in it gets exactly this. Data: /hr/departments, /hr/documents, /hr/systems. Strings: hr.depts.*.
@@ -7,7 +7,6 @@
 import { useEffect, useState } from "preact/hooks";
 import {
   type Department,
-  type Division,
   hrClient,
   type HrDocument,
   type HrSystem,
@@ -106,7 +105,6 @@ export default function HrDepartmentsPage(
             <thead>
               <tr>
                 <th>{t("hr.depts.col.name")}</th>
-                <th>{t("hr.depts.col.division")}</th>
                 <th>{t("hr.depts.col.docs")}</th>
                 <th>{t("hr.depts.col.systems")}</th>
                 <th />
@@ -123,11 +121,6 @@ export default function HrDepartmentsPage(
                   <td>
                     <span class="hr-who__name" data-cy="hr-dept-name">
                       {d.name}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="chip chip--muted">
-                      {t(`hr.depts.${d.division}`)}
                     </span>
                   </td>
                   <td>{t("hr.depts.nDocs", { n: d.docIds.length })}</td>
@@ -165,7 +158,6 @@ function AddDept(
   },
 ) {
   const [name, setName] = useState("");
-  const [division, setDivision] = useState<Division>("inbound");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   async function submit(e: Event) {
@@ -173,7 +165,7 @@ function AddDept(
     if (!name.trim()) return setErr(t("hr.depts.err.name_required"));
     setBusy(true);
     try {
-      onAdded(await hrClient.createDepartment({ name: name.trim(), division }));
+      onAdded(await hrClient.createDepartment({ name: name.trim() }));
     } catch (e2) {
       setErr(friendlyHr(e2, "hr.depts"));
       setBusy(false);
@@ -191,18 +183,6 @@ function AddDept(
             autoFocus
             onInput={(e) => setName((e.target as HTMLInputElement).value)}
           />
-        </label>
-        <label class="field">
-          <span>{t("hr.depts.division")}</span>
-          <select
-            value={division}
-            data-cy="hr-dept-new-division"
-            onChange={(e) =>
-              setDivision((e.target as HTMLSelectElement).value as Division)}
-          >
-            <option value="inbound">{t("hr.depts.inbound")}</option>
-            <option value="outbound">{t("hr.depts.outbound")}</option>
-          </select>
         </label>
         {err && <p class="alert" data-cy="hr-dept-err">{err}</p>}
         <div class="modal__foot">
@@ -231,7 +211,6 @@ function DeptConfig({ dept, docs, systems, onBack, onSaved }: {
   onSaved: (d: Department) => void;
 }) {
   const [name, setName] = useState(dept.name);
-  const [division, setDivision] = useState<Division>(dept.division);
   const [docIds, setDocIds] = useState<string[]>(dept.docIds);
   const [systemIds, setSystemIds] = useState<string[]>(dept.systemIds);
   const [busy, setBusy] = useState(false);
@@ -257,7 +236,6 @@ function DeptConfig({ dept, docs, systems, onBack, onSaved }: {
       onSaved(
         await hrClient.saveDepartment(dept.id, {
           name: name.trim(),
-          division,
           docIds,
           systemIds,
         }),
@@ -300,17 +278,6 @@ function DeptConfig({ dept, docs, systems, onBack, onSaved }: {
               data-cy="hr-dept-cfg-name"
               onInput={(e) => setName((e.target as HTMLInputElement).value)}
             />
-          </label>
-          <label class="field">
-            <span>{t("hr.depts.division")}</span>
-            <select
-              value={division}
-              onChange={(e) =>
-                setDivision((e.target as HTMLSelectElement).value as Division)}
-            >
-              <option value="inbound">{t("hr.depts.inbound")}</option>
-              <option value="outbound">{t("hr.depts.outbound")}</option>
-            </select>
           </label>
         </div>
       </section>
