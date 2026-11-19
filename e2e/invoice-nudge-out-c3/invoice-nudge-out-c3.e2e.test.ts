@@ -124,6 +124,11 @@ Deno.test("REQ-477 (demo M31): a sent, not-yet-overdue invoice card offers 'Send
       { timeout: 15_000 },
     );
     await nudge.click();
+    // REQ-1112 (LOOP-007 q3-37; amends REQ-477): the nudge asks first, with
+    // the reminder preview — only the dialog's Send sends it
+    const dialog = page.locator("[data-cy='send-dialog']");
+    await dialog.waitFor({ timeout: 15_000 });
+    await dialog.locator("[data-cy='send-keep']").click();
     const res = await sent;
     expect.eq(res.status(), 200, "the reminder endpoint accepted it");
     const body = await res.json() as { channels?: string[] };
