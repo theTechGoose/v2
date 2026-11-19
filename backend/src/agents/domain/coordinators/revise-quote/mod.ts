@@ -33,6 +33,11 @@ import {
 export interface ReviseQuoteInput {
   userId: string;
   lang: Lang;
+  /** REQ-1056 (LOOP-007 q2, q2-41): the language of the owner's SCREEN.
+   *  `lang` is the reply's (REQ-438: the language they typed); a button the
+   *  reply tells them to tap is quoted in this one, as the /quotes page draws
+   *  it. Defaults to `lang`. */
+  screenLang?: Lang;
   /** The conversation's bound quote, if any. */
   boundQuoteId?: string;
   customerName?: string;
@@ -484,6 +489,8 @@ export class ReviseQuote {
             t(lang, "chatCoordinator.reviseQuote.publishHint", {
               ...vars,
               version: nextVersion,
+              // REQ-1056: the /quotes button, as the owner's screen reads it.
+              button: t(input.screenLang ?? lang, "quotes.ledger.publish"),
             })
           }`,
         )),
