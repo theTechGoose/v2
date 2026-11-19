@@ -366,6 +366,7 @@ export class FieldWorkersController {
     if (b.role === "foreman") w.role = "foreman";
     w.language = newWorkerLang(language, user); // REQ-774 — the picked one, else the owner's
     await this.workers.put(w);
+    await this.workers.clearRemoved(phone); // REQ-1165 — the cell is someone's again; the old removal no longer applies
     // REQ-151 — the welcome text: who added them, the /worker address, the PIN; its failure is logged, never thrown
     const welcome = await welcomeWorker(deps(this), user, w);
     // REQ-601 — the link and the very text, so a page whose text failed can hand them to the owner to share
@@ -539,7 +540,7 @@ export class FieldWorkersController {
         await this.crews.put(crew);
       }
     }
-    await this.workers.delete(w);
+    await this.workers.remove(w); // REQ-1165 — leaves a tombstone so sign-in can say so
     return { ok: true };
   }
 }

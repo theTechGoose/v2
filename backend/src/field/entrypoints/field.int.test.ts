@@ -2013,6 +2013,61 @@ Deno.test("REQ-421 (demo cycle 2, m42) POST /field/workers answers a stable `cod
   });
 });
 
+Deno.test("REQ-1165 (LOOP-007 q3, q3-98) a worker whose access was removed signs in with the right cell and PIN → 403 worker_removed; the wrong PIN on that cell stays a plain 401; a new worker on the cell signs in 200", async () => {
+  await withServer(async (call) => {
+    const H = await login(call, "+15125551402", "Removal Owner");
+    const made = await call("POST", "/field/workers", {
+      name: "Maya Chen",
+      phoneNumber: "8435551234",
+      pin: "1111",
+    }, H);
+    assertEquals(made.status, 201);
+    const removed = await call(
+      "DELETE",
+      `/field/workers/${made.body.id}`,
+      undefined,
+      H,
+    );
+    assertEquals(removed.status, 200, "Remove access succeeds");
+    const right = await call("POST", "/field/worker/login", {
+      phoneNumber: "(843) 555-1234",
+      pin: "1111",
+    });
+    assertEquals(
+      [right.status, right.body?.code],
+      [403, "worker_removed"],
+      `the removed worker is told the access was removed, not "wrong cell or PIN" (${JSON.stringify(right.body)})`,
+    );
+    assertEquals(right.headers.get("set-cookie"), null, "no session for a removed worker");
+    const wrong = await call("POST", "/field/worker/login", {
+      phoneNumber: "8435551234",
+      pin: "9999",
+    });
+    assertEquals(
+      wrong.status,
+      401,
+      "a wrong PIN never reveals the number belonged to a removed worker",
+    );
+    assert(wrong.body?.code !== "worker_removed");
+    const again = await call("POST", "/field/workers", {
+      name: "Maya Again",
+      phoneNumber: "8435551234",
+      pin: "2222",
+    }, H);
+    assertEquals(again.status, 201, "the cell can be given to a worker again");
+    const back = await call("POST", "/field/worker/login", {
+      phoneNumber: "8435551234",
+      pin: "2222",
+    });
+    assertEquals(back.status, 200, "the re-added worker signs in");
+    const oldPin = await call("POST", "/field/worker/login", {
+      phoneNumber: "8435551234",
+      pin: "1111",
+    });
+    assertEquals(oldPin.status, 401, "the old PIN is just wrong once the cell is reused");
+  });
+});
+
 Deno.test("REQ-401 (demo M30/m45, cycle 2) send to a customer with no email or phone fails with code noRecipient and sends nothing; the worker's lock reads 'draft' until the invoice is sent, then 'invoiced'", async () => {
   await withServer(async (call) => {
     const { H, W, customer, worker, sub, today } = await setUp(call);

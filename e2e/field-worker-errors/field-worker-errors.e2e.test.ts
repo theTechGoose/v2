@@ -414,3 +414,66 @@ Deno.test("REQ-1162 (LOOP-007 q3-94): Remove access on a worker with an upcoming
       `no task on ${day} is left under Worker "—" with status assigned`,
     );
   }));
+
+/**
+ * REQ-1165 (LOOP-007 q3, q3-98) — the owner removes a worker's access on /field/workers; that
+ * worker then signs in on /worker in Spanish. A wrong PIN reads "Celular o PIN incorrecto." (the
+ * field is "Tu celular", not a "Trabajador"); the right cell + PIN reads "Tu acceso fue quitado…",
+ * never "Trabajador o PIN incorrecto."
+ */
+Deno.test("REQ-1165 (LOOP-007 q3-98): a removed worker signing in on /worker in Spanish is told the access was removed; a wrong PIN reads 'Celular o PIN incorrecto.'", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const cell = `843${digits()}`;
+    const r = await http("/api/field/workers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name: "Maya Chen", phoneNumber: cell, pin: "1111" }),
+    });
+    expect(r.status === 201, `worker created (${r.status})`);
+    const maya = (await r.json()) as { id: string };
+
+    // the owner presses Remove access → Confirm
+    await page.goto("/field/workers");
+    const row = page.locator(`[data-cy='wk-row'][data-id='${maya.id}']`);
+    await row.waitFor({ timeout: 20_000 });
+    await row.locator("[data-cy='wk-delete']").click();
+    const confirm = row.locator("[data-cy='wk-delete-confirm']");
+    await confirm.waitFor({ timeout: 5_000 });
+    const del = page.waitForResponse((x) =>
+      x.request().method() === "DELETE" && x.url().includes(maya.id)
+    );
+    await confirm.click();
+    expect((await del).ok(), "Remove access succeeds");
+    await row.waitFor({ state: "detached", timeout: 10_000 });
+
+    // the worker's phone, in Spanish
+    await page.context().addCookies([
+      ...new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]),
+    ].map((domain) => ({ name: "pm_lang", value: "es", domain, path: "/" })));
+    await page.goto("/worker?lang=es");
+    const tryLogin = async (pin: string) => {
+      await page.locator("[data-cy='w-cell']").fill(cell);
+      await page.locator("[data-cy='w-pin']").fill(pin);
+      const res = page.waitForResponse((x) =>
+        x.request().method() === "POST" && x.url().includes("/field/worker/login")
+      );
+      await page.locator("[data-cy='w-login']").click();
+      await res;
+      const err = page.locator("[data-cy='w-error']");
+      await err.waitFor({ timeout: 10_000 });
+      return (await err.innerText()).trim();
+    };
+    await page.locator("[data-cy='w-cell']").waitFor({ timeout: 20_000 });
+
+    const wrong = await tryLogin("9999");
+    expect.eq(wrong, "Celular o PIN incorrecto.", "a wrong PIN names the cell, not a 'Trabajador'");
+
+    const right = await tryLogin("1111");
+    expect.eq(
+      right,
+      "Tu acceso fue quitado. Habla con tu oficina.",
+      "the right cell + PIN of a removed worker says the access was removed",
+    );
+    expect(!/Trabajador o PIN/.test(right), `never "Trabajador o PIN incorrecto." (${right})`);
+  }));
