@@ -387,3 +387,12 @@ Deno.test("REQ-1036 (q2-19) the dm-email catalog card does not say the welcome n
   assert(card, "dm-email is in the catalog");
   assertEquals(/documonster/i.test(card.desc), false, `desc=${JSON.stringify(card.desc)}`);
 });
+
+Deno.test("REQ-1036 (q2-19) newHireSender: the business's name + alias, reply to HR; no alias → noreply@, never the house From", async () => {
+  const { newHireSender } = await import("./mod.ts");
+  assertEquals(newHireSender({ alias: "reyes-tile", company: "Reyes Tile & Bath", hrEmail: " hr@reyes.com " }), {
+    from: '"Reyes Tile & Bath" <reyes-tile@documonster.com>',
+    replyTo: "hr@reyes.com",
+  });
+  assertEquals(newHireSender({ company: "Reyes Tile & Bath" }), { from: '"Reyes Tile & Bath" <noreply@documonster.com>' });
+});

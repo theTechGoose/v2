@@ -17,6 +17,11 @@ import {
   postmarkPayload,
   type SendEmailInput,
 } from "@communication/domain/data/email-service/mod.ts";
+import {
+  HOUSE_FROM,
+  senderAddress,
+} from "@communication/domain/business/sender/mod.ts";
+import { HrSystemStore } from "@hr/domain/data/hr-stores/mod.ts";
 
 @Module({ imports: [HrModule] })
 class TestApp {}
@@ -259,7 +264,9 @@ Deno.test(
       assertEquals(
         {
           fromName,
-          fromIsHouse: wire.From.toLowerCase().includes("documonster"),
+          // the house inbox, not the domain: the business's alias lives on documonster.com
+          // by design (REQ-123 — every From is on SEND_DOMAIN), e.g. <reyes-…@documonster.com>
+          fromIsHouse: senderAddress(wire.From) === senderAddress(HOUSE_FROM),
           cardSaysFromDocuMonster: /documonster/i.test(card.desc),
         },
         {
@@ -272,6 +279,53 @@ Deno.test(
     } finally {
       EmailService.prototype.send = orig;
       await server.stop();
+      await resetKv();
+    }
+  },
+);
+
+Deno.test(
+  "REQ-1036 (q2-19) a dm-email system attached before the copy changed reads with today's catalog desc; an owner-written desc is kept",
+  async () => {
+    Deno.env.set("KV_PATH", ":memory:");
+    await resetKv();
+    try {
+      const store = new HrSystemStore();
+      const now = new Date().toISOString();
+      const base = {
+        userId: "u-1036",
+        name: "Welcome email (Postmark)",
+        kind: "email",
+        status: "connected",
+        webhookUrl: null,
+        createdAt: now,
+        updatedAt: now,
+      } as const;
+      await store.put({
+        ...base,
+        id: "old",
+        key: "dm-email",
+        desc: "A welcome note with the handbook portal's login, from DocuMonster",
+      });
+      await store.put({ ...base, id: "mine", key: "dm-email", desc: "Our note" });
+      const list = await store.listByUser("u-1036");
+      const byId = Object.fromEntries(list.map((s) => [s.id, s.desc]));
+      assertEquals(
+        {
+          listed: byId,
+          got: (await store.get("old")).desc,
+          found: (await store.find("old"))?.desc,
+        },
+        {
+          listed: {
+            old: "A welcome note with the handbook portal's login, from your business",
+            mine: "Our note",
+          },
+          got: "A welcome note with the handbook portal's login, from your business",
+          found: "A welcome note with the handbook portal's login, from your business",
+        },
+      );
+    } finally {
       await resetKv();
     }
   },

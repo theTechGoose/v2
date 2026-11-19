@@ -26,7 +26,7 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { A2pUnregisteredError, SendText } from "@communications/domain/coordinators/send-text/mod.ts";
 import { LineContext, NoLineError } from "@communications/domain/coordinators/line-context/mod.ts";
 import { DepartmentStore, HireStore, HrSettingsStore, HrSystemStore } from "@hr/domain/data/hr-stores/mod.ts";
-import { aggregateProvisioning, armMode, type BuiltinKey, fullName, provisionPlan } from "@hr/domain/business/onboarding/mod.ts";
+import { aggregateProvisioning, armMode, type BuiltinKey, fullName, newHireSender, provisionPlan } from "@hr/domain/business/onboarding/mod.ts";
 import { escapeHtml } from "@hr/domain/coordinators/hr-notices/mod.ts";
 import type { Hire, HrSystem, ProvisionResult } from "@hr/dto/hr.ts";
 
@@ -235,8 +235,13 @@ export class Provisioner {
       this.identities.get(hire.userId).catch(() => null),
     ]);
     const lang: "en" | "es" = owner.language === "es" ? "es" : "en";
-    const company = stored?.companyName?.trim() || identity?.businessName?.trim() || owner.name?.trim() || "the team";
-    return welcomeCopy(lang, {
+    // the same company + HR address HrNotices.settingsFor resolves, so both new-hire emails agree
+    const named = stored?.companyName?.trim() || identity?.businessName?.trim() || identity?.legalName?.trim() || owner.name?.trim() || "";
+    const company = named || "the team";
+    const hrEmail = stored?.hrEmail?.trim() || owner.email?.trim() || "";
+    // REQ-1036: the welcome note is from the hiring business, like REQ-1003's invite
+    const sender = newHireSender({ alias: identity?.emailAlias, company: named, hrEmail });
+    const copy = welcomeCopy(lang, {
       first: hire.firstName,
       company,
       portalUrl: appUrl(),
@@ -244,13 +249,14 @@ export class Provisioner {
       password: stored?.credsPassword ?? "",
       startDate: hire.startDate,
     });
+    return { ...copy, sender };
   }
 
-  /** the welcome note, through the house EmailService (Postmark) */
+  /** the welcome note, through EmailService (Postmark), From the business (REQ-1036) */
   private async sendWelcomeEmail(hire: Hire): Promise<ArmOutcome> {
     if (!hire.email?.trim()) return { ok: false, detail: "the hire has no email address" };
     const copy = await this.copyFor(hire);
-    const r = await this.email.send({ to: hire.email.trim(), subject: copy.subject, htmlBody: copy.html });
+    const r = await this.email.send({ to: hire.email.trim(), subject: copy.subject, htmlBody: copy.html, ...copy.sender });
     return r.ok ? { ok: true, detail: `welcome email sent to ${hire.email.trim()}` } : { ok: false, detail: `welcome email failed: ${r.reason ?? "unknown"}` };
   }
 
