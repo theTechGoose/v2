@@ -632,3 +632,81 @@ Deno.test("REQ-795 Reports: GET /invoices|customers|quotes|payments/export.csv t
     await server.stop();
   }
 });
+
+// REQ-966 (LOOP-007 q1, q1-64) — AMENDMENT to REQ-208: the export's Status
+// cell says what GET /invoices says. INV-002 in the run: past due, a part
+// payment recorded (POST /payments → ComputeInvoiceBalance stores "pending").
+// GET /invoices projects urgency overdue*; the CSV printed "pending".
+Deno.test("REQ-966 q1-64 GET /invoices/export.csv?status=all: a past-due invoice with a part payment exports Status 'overdue' (as GET /invoices urgency says), not the stored 'pending'; an unpaid past-due 'sent' one is 'overdue' too", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const { sid, userId } = await login("+15125557966");
+    const day = (offset: number) =>
+      new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    const customer = await new CustomerStore().create(userId, {
+      name: "Overdue Owner",
+    });
+    const invoices = new InvoiceStore();
+    const partly = await invoices.create(userId, {
+      customerId: customer.id,
+      amount: 120000,
+      status: "sent",
+      issuedDate: day(-40),
+      dueDate: day(-10),
+    } as CreateInvoiceDto);
+    const unpaid = await invoices.create(userId, {
+      customerId: customer.id,
+      amount: 50000,
+      status: "sent",
+      issuedDate: day(-40),
+      dueDate: day(-5),
+    } as CreateInvoiceDto);
+
+    // the part payment, over HTTP, the way the owner records it
+    const pay = await fetch(`${BASE}/payments`, {
+      method: "POST",
+      headers: { "x-session-id": sid, "content-type": "application/json" },
+      body: JSON.stringify({
+        invoiceId: partly.id,
+        amount: 40000,
+        method: "check",
+        receivedAt: new Date().toISOString(),
+      }),
+    });
+    assert(pay.ok, `the payment is recorded (${pay.status})`);
+    await drain(pay);
+
+    // what the UI reads
+    const list = await fetch(`${BASE}/invoices`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json()) as Array<
+      { id: string; status: string; urgency?: string }
+    >;
+    const uiPartly = list.find((i) => i.id === partly.id)!;
+    const uiUnpaid = list.find((i) => i.id === unpaid.id)!;
+    assertEquals(uiPartly.status, "pending", "setup: the part payment stored 'pending'");
+    assert(
+      uiPartly.urgency?.startsWith("overdue"),
+      `setup: GET /invoices calls it overdue (${uiPartly.urgency})`,
+    );
+    assert(
+      uiUnpaid.urgency?.startsWith("overdue"),
+      `setup: GET /invoices calls the unpaid one overdue (${uiUnpaid.urgency})`,
+    );
+
+    const all = await csv(sid, "/invoices/export.csv?status=all");
+    assertEquals(all.status, 200);
+    const statusOf = (number: string) =>
+      cells(all.lines.find((l) => l.startsWith(`${number},`))!)[2];
+    assertEquals(
+      [statusOf(partly.number!), statusOf(unpaid.number!)],
+      ["overdue", "overdue"],
+      `the export's Status column agrees with GET /invoices (${partly.number} partly paid, ${unpaid.number} unpaid, both past due)`,
+    );
+  } finally {
+    await server.stop();
+  }
+});

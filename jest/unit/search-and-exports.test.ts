@@ -616,3 +616,67 @@ describe("REQ-799 one search bar — the topbar's; a result opens the item itsel
     }
   });
 });
+
+// REQ-966 (LOOP-007 q1, q1-64) — AMENDMENT to REQ-208 "Exports preserve …
+// statuses": the Status column says what the UI says. "pending" is the stored
+// value for a partly-paid open invoice and "overdue" is never stored (it is
+// derived from dueDate < now, invoice-aging isOverdue), so the export must
+// derive it. `now` is passed in the row context AND pinned as the clock.
+describe("REQ-966 q1-64 invoice export Status column — the display status, not the stored enum", () => {
+  const NOW = new Date("2026-11-18T12:00:00.000Z");
+  const ctx = { changeOrders: [], link: "", now: NOW };
+  beforeEach(() => {
+    jest.useFakeTimers({ now: NOW });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+  const partlyPaid = {
+    id: "i2",
+    number: "INV-002",
+    status: "pending",
+    amount: 120000,
+    paidCents: 40000,
+    issuedDate: "2026-10-01",
+    dueDate: "2026-11-01",
+    createdAt: "2026-10-01",
+  };
+  it("REQ-966 a partly-paid 'pending' invoice past its due date exports as 'overdue'", () => {
+    const { invoiceExportRow } = exportsMod();
+    expect(invoiceExportRow(partlyPaid, ctx)[2]).toBe("overdue");
+  });
+  it("REQ-966 the same invoice with a future due date exports as 'partly paid', never the raw 'pending'", () => {
+    const { invoiceExportRow } = exportsMod();
+    expect(
+      invoiceExportRow({ ...partlyPaid, dueDate: "2026-12-15" }, ctx)[2],
+    ).toBe("partly paid");
+  });
+  it("REQ-966 an unpaid 'sent' or 'viewed' invoice past its due date exports as 'overdue'", () => {
+    const { invoiceExportRow } = exportsMod();
+    for (const status of ["sent", "viewed"]) {
+      expect(
+        invoiceExportRow(
+          { ...partlyPaid, status, paidCents: 0 },
+          ctx,
+        )[2],
+      ).toBe("overdue");
+    }
+  });
+  it("REQ-966 paid, void and draft keep their status even when the due date is past; a sent invoice not yet due stays 'sent'", () => {
+    const { invoiceExportRow } = exportsMod();
+    const past = { ...partlyPaid, paidCents: 0 };
+    expect(
+      invoiceExportRow(
+        { ...past, status: "paid", paidCents: 120000, paidAt: "2026-11-05" },
+        ctx,
+      )[2],
+    ).toBe("paid");
+    expect(invoiceExportRow({ ...past, status: "void" }, ctx)[2]).toBe("void");
+    expect(invoiceExportRow({ ...past, status: "draft" }, ctx)[2]).toBe(
+      "draft",
+    );
+    expect(
+      invoiceExportRow({ ...past, status: "sent", dueDate: "2026-12-15" }, ctx)[2],
+    ).toBe("sent");
+  });
+});
