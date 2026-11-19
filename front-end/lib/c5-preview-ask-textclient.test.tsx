@@ -119,3 +119,91 @@ for (const lang of ["en", "es"] as const) {
     assert(typeof v === "string" && v.length > 0, `${lang} addPhone: ${v}`);
   });
 }
+
+/**
+ * REQ-982 (LOOP-007 cycle 1, q1-65; AMENDMENT to REQ-691): a customer whose
+ * phone is on file but can't take a text (Dana, (843) 555-0142, the reserved
+ * 555-01XX block) is told "Add a phone" — as if she had none. The card must
+ * tell the three reasons apart: missing, invalid, can't receive texts.
+ */
+type TextClientState = "ok" | "missing" | "invalid" | "cantText";
+async function textClientStateFn(): Promise<
+  (phone: string | null | undefined) => TextClientState
+> {
+  const mod = await import("./invoice-text-client.ts") as Record<
+    string,
+    unknown
+  >;
+  const fn = mod.textClientState;
+  assert(
+    typeof fn === "function",
+    "invoice-text-client.ts exports textClientState(phone) — the reason Text client is or isn't offered",
+  );
+  return fn as (phone: string | null | undefined) => TextClientState;
+}
+
+Deno.test("REQ-982 (LOOP-007 q1-65): textClientState tells a missing phone from one that can't receive texts", async () => {
+  const textClientState = await textClientStateFn();
+  assertEquals(
+    textClientState("(843) 555-0142"),
+    "cantText",
+    "Dana's 555-01XX",
+  );
+  assertEquals(textClientState("+15555550123"), "cantText", "area code 555");
+  assertEquals(textClientState(""), "missing", "blank");
+  assertEquals(textClientState(null), "missing", "none");
+  assertEquals(textClientState("   "), "missing", "whitespace");
+  assertEquals(textClientState("12"), "invalid", "malformed");
+  assertEquals(textClientState("(512) 867-5309"), "ok");
+  assertEquals(textClientState("+15125551234"), "ok");
+});
+
+const CANT_TEXT_KEYS = [
+  "invoicesPage.back.cantText",
+  "asstChat.send.cantText",
+  "sms.fictionalNumber",
+];
+
+async function cardFallbackSource(): Promise<string> {
+  const src = await Deno.readTextFile(
+    new URL("../islands/InvoicesPage.tsx", import.meta.url),
+  );
+  const at = src.indexOf('tFor(lang, "invoicesPage.back.textClient")');
+  assert(at > 0, "the Text client button is still on the card back");
+  // the branch that decides Text client, and the fallbacks after it
+  return src.slice(Math.max(0, at - 900), at + 2500);
+}
+
+Deno.test("REQ-982 (LOOP-007 q1-65): a phone that can't receive texts gets a can't-text note on the invoice card, not Add a phone", async () => {
+  const around = await cardFallbackSource();
+  assert(
+    /textClientState\(|phoneCantReceiveTexts\(/.test(around),
+    "the card back tells a can't-text phone apart from a missing one (textClientState / phoneCantReceiveTexts) — today it only asks canTextClient()",
+  );
+  const used = CANT_TEXT_KEYS.filter((k) => around.includes(`"${k}"`));
+  assert(
+    used.length > 0,
+    `the card back renders a can't-text label (one of ${
+      CANT_TEXT_KEYS.join(", ")
+    }) — today its only fallback is invoicesPage.back.addPhone`,
+  );
+});
+
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-982 (LOOP-007 q1-65) [${lang}]: the card's can't-text label exists and is not "Add a phone"`, async () => {
+    const dict = JSON.parse(
+      await Deno.readTextFile(
+        new URL(`../../lang/${lang}.json`, import.meta.url),
+      ),
+    );
+    const around = await cardFallbackSource();
+    const key = CANT_TEXT_KEYS.find((k) => around.includes(`"${k}"`));
+    assert(key, "the card back names a can't-text label key");
+    const v = dict[key];
+    assert(typeof v === "string" && v.length > 0, `${lang} ${key}: ${v}`);
+    assert(
+      v !== dict["invoicesPage.back.addPhone"],
+      `${lang} ${key} differs from Add a phone`,
+    );
+  });
+}
