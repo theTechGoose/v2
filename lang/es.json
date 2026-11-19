@@ -1880,6 +1880,7 @@
   "invoicesPage.new.errDueBeforeIssued": "La fecha de vencimiento no puede ser anterior a la fecha de emisión.",
   "invoicesPage.new.errRecipient": "Elige un cliente o escribe a quién va facturada antes de emitirla.",
   "invoicesPage.new.errAmountMax": "Ese monto es demasiado grande — una factura puede cobrar como máximo $1,000,000,000.",
+  "invoicesPage.new.discountCapped": "El descuento no puede ser mayor que el subtotal ({max}) — solo se descuentan {max}.",
   "invoicesPage.new.confirmLarge": "Esta factura es por {amount}. ¿Es correcto? Pulsa Emitir factura otra vez para confirmar.",
   "invoicesPage.new.intro": "Cobra a un cliente directamente, sin cotización. Envíala ahora o guárdala como borrador.",
   "invoicesPage.new.introFromQuote": "Factura la cotización {number}. Envíala ahora o guárdala como borrador.",

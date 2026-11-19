@@ -1880,6 +1880,7 @@
   "invoicesPage.new.errDueBeforeIssued": "The due date can't be before the issue date.",
   "invoicesPage.new.errRecipient": "Choose a client or type who it's billed to before you issue it.",
   "invoicesPage.new.errAmountMax": "That amount is too large — an invoice can bill at most $1,000,000,000.",
+  "invoicesPage.new.discountCapped": "A discount can't be more than the subtotal ({max}) — only {max} comes off.",
   "invoicesPage.new.confirmLarge": "This invoice is for {amount}. Is that right? Press Issue invoice again to confirm.",
   "invoicesPage.new.intro": "Bill a client directly — no quote needed. Send it now, or save it as a draft.",
   "invoicesPage.new.introFromQuote": "Bill quote {number}. Send it now, or save it as a draft.",
