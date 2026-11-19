@@ -1,9 +1,12 @@
 /**
  * REQ-626 — what each card button does. Pure; the islands wire these.
  */
+import { phoneCantReceiveTexts } from "../quote-flow/sms-number.ts";
 
-/** "sms:+15125550101" (the phone first), "mailto:…" otherwise, null with no
- *  contact. A body pre-fills the message (RFC 5724 / RFC 6068 `?body=`). */
+/** "sms:+15125553150" (the phone first), "mailto:…" otherwise, null with no
+ *  contact. A body pre-fills the message (RFC 5724 / RFC 6068 `?body=`).
+ *  REQ-1029: a phone the REQ-569 rule says can't take a text (the fictional
+ *  555-01xx block) is skipped — the email, else nothing (the card opens). */
 export function messageHref(
   c: { phoneNumber?: string | null; email?: string | null },
   body?: string,
@@ -11,7 +14,7 @@ export function messageHref(
   const q = body ? `?body=${encodeURIComponent(body)}` : "";
   const phone = (c.phoneNumber ?? "").trim();
   const digits = phone.replace(/\D/g, "");
-  if (digits) {
+  if (digits && !phoneCantReceiveTexts(phone)) {
     const e164 = phone.startsWith("+")
       ? `+${digits}`
       : digits.length === 10

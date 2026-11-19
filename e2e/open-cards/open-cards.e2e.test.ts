@@ -83,7 +83,8 @@ async function seed(http: StoryTools["http"], auth: Record<string, string>) {
     headers: auth,
     body: JSON.stringify({
       name: "Ana Torres",
-      phoneNumber: "(512) 555-0142",
+      // REQ-1029: a textable number — 555-01xx is never texted (REQ-569)
+      phoneNumber: "(512) 555-3142",
       street: "725 Frederick Rd",
       city: "Rockingham",
       state: "VA",
@@ -141,7 +142,7 @@ Deno.test("REQ-626: client card → Open card opens the client's sheet with Edit
     const msg = page.locator(".ccard2--open [data-cy='ccard2-message']");
     expect.eq(
       await msg.getAttribute("href"),
-      "sms:+15125550142",
+      "sms:+15125553142",
       "Message texts the client",
     );
     await clickUntil(
@@ -158,7 +159,7 @@ Deno.test("REQ-626: client card → Open card opens the client's sheet with Edit
       await page.locator("[data-cy='client-sheet-message']").getAttribute(
         "href",
       ),
-      "sms:+15125550142",
+      "sms:+15125553142",
       "the sheet's Message texts the client",
     );
     await page.locator("[data-cy='client-sheet-edit']").click();

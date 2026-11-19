@@ -19,17 +19,19 @@ const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 describe("REQ-626 the card actions' rules", () => {
+  // REQ-1029: the textable 555-3150 — 555-0101 is in the fictional block
+  // REQ-569 refuses to text (board-reminder-untextable-q210.test.ts)
   test("Message: a text to the customer's phone first, an email otherwise, nothing without a contact", () => {
-    expect(messageHref({ phoneNumber: "(512) 555-0101" })).toBe(
-      "sms:+15125550101",
+    expect(messageHref({ phoneNumber: "(512) 555-3150" })).toBe(
+      "sms:+15125553150",
     );
     expect(messageHref({ phoneNumber: "+44 20 7946 0958", email: "a@b.co" }))
       .toBe("sms:+442079460958");
     expect(messageHref({ email: "maria@lopez.example" })).toBe(
       "mailto:maria@lopez.example",
     );
-    expect(messageHref({ phoneNumber: "5125550101" }, "Hi Maria & co"))
-      .toBe("sms:+15125550101?body=Hi%20Maria%20%26%20co");
+    expect(messageHref({ phoneNumber: "5125553150" }, "Hi Maria & co"))
+      .toBe("sms:+15125553150?body=Hi%20Maria%20%26%20co");
     expect(messageHref({ email: "m@l.example" }, "Hi")).toBe(
       "mailto:m@l.example?body=Hi",
     );
