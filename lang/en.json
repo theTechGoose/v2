@@ -6156,6 +6156,7 @@
   "customerWs.visits.none": "No visits yet.",
   "customerWs.visits.title": "Visit history",
   "chatCoordinator.alternativesDrafted": "You gave {count} options, so I drafted {first} ({firstPrice}) on its own — a quote never adds options together. {others} needs its own quote: start a new chat for it.",
+  "paperworkEmail.quote.paymentSchedule": "Payment schedule",
   "comms.a2p.title": "Texting registration",
   "comms.a2p.sub": "Carriers only deliver business texts from a registered number (A2P 10DLC). Fill this in once and we file it with Twilio for this number.",
   "comms.a2p.state.none": "Not registered",

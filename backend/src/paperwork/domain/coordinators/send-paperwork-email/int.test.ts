@@ -902,3 +902,52 @@ Deno.test("REQ-928 send-paperwork-email: the paid email says 'PAID <date> · Ele
   assertStringIncludes(sent[1].htmlBody, "Other (Cash)");
   await resetKv();
 });
+
+// REQ-945 (LOOP-007 cycle 1, q1-20) — "Quote email never mentions the deposit
+// and has no PDF": the quote send must carry the quote PDF (the signed
+// confirmation already attaches the agreement PDF) and the email body must
+// state the deposit the /q page and the PDF show.
+Deno.test("REQ-945 q1-20 send-paperwork-email: a deposit quote's email attaches the quote PDF and states the $1,200.00 deposit", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const { flow, customers, quotes, sent } = fresh();
+  await seedContractor("u-1");
+  const customer = await customers.create("u-1", {
+    name: "Pat Doe",
+    email: "pat@acme.test",
+  });
+  const quote = await quotes.create("u-1", {
+    customerId: customer.id,
+    summary: "Panel upgrade",
+    lineItems: [
+      { description: "Panel upgrade", quantity: 1, unit: "job", price: 240000 },
+    ],
+    estimatedTotal: 240000,
+    terms: [{
+      stepId: "payment_terms",
+      label: "Payment terms",
+      value: "Deposit 50% + balance",
+    }],
+  });
+
+  const res = await flow.run("u-1", { kind: "quote", resourceId: quote.id });
+  assertEquals(res.ok, true);
+  assertEquals(sent.length, 1, "one email went");
+  const attachments = sent[0].attachments ?? [];
+  assertEquals(
+    attachments.length,
+    1,
+    `the quote email carries one attachment (got ${attachments.length})`,
+  );
+  assertEquals(attachments[0].contentType, "application/pdf");
+  assert(/\.pdf$/i.test(attachments[0].name), `a .pdf filename: ${attachments[0].name}`);
+  assertEquals(
+    new TextDecoder().decode(attachments[0].content.slice(0, 5)),
+    "%PDF-",
+    "the attachment is a real PDF",
+  );
+  assertStringIncludes(sent[0].htmlBody, "$1,200.00", "the deposit amount is in the body");
+  assertStringIncludes(sent[0].htmlBody, "Before work starts");
+
+  await resetKv();
+});

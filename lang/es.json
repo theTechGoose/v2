@@ -6156,6 +6156,7 @@
   "customerWs.visits.none": "Todavía no hay visitas.",
   "customerWs.visits.title": "Historial de visitas",
   "chatCoordinator.alternativesDrafted": "Diste {count} opciones, así que preparé {first} ({firstPrice}) sola — una cotización nunca suma opciones. {others} necesita su propia cotización: abre un chat nuevo para ella.",
+  "paperworkEmail.quote.paymentSchedule": "Calendario de pagos",
   "comms.a2p.title": "Registro para mensajes de texto",
   "comms.a2p.sub": "Las operadoras solo entregan mensajes de empresas desde un número registrado (A2P 10DLC). Complétalo una vez y lo presentamos a Twilio para este número.",
   "comms.a2p.state.none": "Sin registrar",

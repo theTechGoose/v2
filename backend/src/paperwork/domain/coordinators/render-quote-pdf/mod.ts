@@ -1091,7 +1091,10 @@ export function paymentTermText(
   return localizeTermValue(value, lang);
 }
 
-function computeMilestones(
+/** REQ-945 (LOOP-007 q1-20): the quote's payment schedule rows — the PDF's
+ *  "Payment schedule" section, and the quote email's (one builder, so the
+ *  two cannot drift). */
+export function computeMilestones(
   total: number,
   terms: QuoteTerm[] | undefined,
   lang: "en" | "es" = "en",
