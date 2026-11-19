@@ -30,7 +30,7 @@ Deno.test("REQ-587 M27: the invoice number leads the label, then the job name", 
     { ...base, number: "INV-001", jobName: "Back fence" },
     "María González",
   );
-  assertEquals(label, "INV-001 — Back fence · María González · $450");
+  assertEquals(label, "INV-001 — Back fence · María González · $450.00");
 });
 
 Deno.test("REQ-587 M27: the job name is shown in the app's language (jobNameByLang[lang])", () => {
@@ -58,7 +58,7 @@ Deno.test("REQ-587 M27: a stale translation (base entry no longer the jobName) i
 Deno.test("REQ-587 M27: no customer → an em dash in its slot", () => {
   assertEquals(
     recordOptionLabel("en", { ...base, number: "INV-003" }, undefined),
-    "INV-003 · — · $450",
+    "INV-003 · — · $450.00", // REQ-1081: to the cent
   );
 });
 

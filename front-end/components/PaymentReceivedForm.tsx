@@ -21,6 +21,7 @@ import { type PaymentMethod, paymentsClient } from "../clients/payments.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { localIsoDay } from "../../shared/documents/received-day.ts"; // REQ-943
+import { recordBalanceCents } from "../lib/payment-record-option.ts"; // REQ-1081
 import {
   overpaymentFromError,
   paymentErrorText,
@@ -74,8 +75,10 @@ export default function PaymentReceivedForm(
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [dollars, setDollars] = useState(() => {
     if (amountCents == null) return "";
-    const balance = Math.max(0, amountCents - (paidCents ?? 0));
-    return String((balance > 0 ? balance : amountCents) / 100);
+    // REQ-1081: the same balance the "Which invoice?" option label shows.
+    return String(
+      recordBalanceCents({ amount: amountCents, paidCents }) / 100,
+    );
   });
   // REQ-943: today is the browser's LOCAL day — the UTC day is tomorrow every
   // evening in the Americas, which the future-date rule would then refuse.
