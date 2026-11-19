@@ -189,7 +189,11 @@ Deno.test("REQ-1005 (LOOP-007 q1, q1-91): an empty Tomorrow on /worker?date=<tom
     const tomorrow = tomorrowIso();
     const countOn = async (q: string) => {
       await page.goto(`/worker?date=${tomorrow}${q}`);
-      await page.locator("[data-cy='w-preview']").waitFor({ timeout: 15_000 });
+      // REQ-1035 — an empty future day shows no preview hint, so wait on the day + its summary
+      await page.waitForURL(new RegExp(`date=${tomorrow}`), {
+        timeout: 15_000,
+      });
+      await page.locator("[data-cy='w-summary']").waitFor({ timeout: 15_000 });
       const count = page.locator("[data-cy='w-count']");
       await count.waitFor({ timeout: 15_000 });
       return (await count.textContent())?.trim() ?? "";

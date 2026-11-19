@@ -1044,10 +1044,13 @@ export default function WorkerScreen(
         <div class="crew">
           <I d={ICN.hardhat} size={16} />
           {title}
-          <span class="count">
-            {liveRows.filter((x) => x.status === "complete").length}/
-            {liveRows.length}
-          </span>
+          {/* REQ-1035 (q2-17) — no "0/0" chip on a section with no live rows */}
+          {liveRows.length > 0 && (
+            <span class="count">
+              {liveRows.filter((x) => x.status === "complete").length}/
+              {liveRows.length}
+            </span>
+          )}
         </div>
         {rowCounts.live + rowCounts.deferred > 0
           ? (
@@ -1070,6 +1073,8 @@ export default function WorkerScreen(
   // REQ-1011 — a deferred-only day says so, not "Nothing scheduled." over a drawn card
   const dayCounts = workerDayCounts(tasks);
 
+  // REQ-1035 (q2-17, q2-50) — the summary already says an empty day is empty
+  // ("No tasks this day / Nothing scheduled."), so nothing below it says it again
   let body = null;
   if (me) {
     // REQ-785 — a job the worker is on the crew of is theirs too
@@ -1084,7 +1089,9 @@ export default function WorkerScreen(
       }
       body = (
         <>
-          {renderSection(mine, t("worker.mine"), "mine")}
+          {/* REQ-1035 (q2-17) — no empty "Mis tareas 0/0" section under an empty summary */}
+          {dayCounts.live + dayCounts.deferred > 0 &&
+            renderSection(mine, t("worker.mine"), "mine")}
           {[...byWorker.entries()].map(([name, rows]) =>
             renderSection(rows, t("worker.crew", { name }), `crew:${name}`)
           )}
@@ -1092,18 +1099,22 @@ export default function WorkerScreen(
       );
     } else {
       const mineCounts = workerDayCounts(mine);
+      // REQ-1035 (q2-50) — an empty day is stated once, by the summary; the card only
+      // remains for a day whose tasks are all someone else's, with a calm calendar icon
       body = mineCounts.live + mineCounts.deferred > 0
         ? (
           <div class="tasks" data-stagger key={date}>
             {visitsOf(mine).map(renderVisit)}
           </div>
         )
-        : (
+        : dayCounts.live + dayCounts.deferred > 0
+        ? (
           <div class="empty" data-cy="w-empty">
-            <I d={ICN.sparkle} size={28} />
-            <p>{t("worker.none")}</p>
+            <I d={ICN.cal} size={28} />
+            <p>{t("worker.noneCrew")}</p>
           </div>
-        );
+        )
+        : null;
     }
   }
 
@@ -1389,7 +1400,8 @@ export default function WorkerScreen(
               </div>
             )}
             {/* REQ-362 — a day after today is a read-only preview */}
-            {preview && (
+            {/* REQ-1035 (q2-50) — only when there is something to check off */}
+            {preview && dayCounts.live + dayCounts.deferred > 0 && (
               <div class="hint" data-cy="w-preview">
                 🔒 {t("worker.preview")}
               </div>
