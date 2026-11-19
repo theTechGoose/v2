@@ -19,7 +19,13 @@ export interface InvoiceFlowOffer {
   amountCents?: number;
   customerName?: string;
   customerEmail?: string;
+  /** REQ-935 (LOOP-007 q1-16): the typed due terms, days after the invoice
+   *  date ("net 15" → 15) — the flow's due date starts from it. */
+  dueDays?: number;
 }
+
+/** REQ-935: the longest due terms an offer carries (a year). */
+const MAX_DUE_DAYS = 365;
 
 /** The offer on a message payload, if it carries a usable one. */
 export function invoiceFlowOfferOf(
@@ -28,10 +34,8 @@ export function invoiceFlowOfferOf(
   if (!payload || typeof payload !== "object") return undefined;
   const raw = (payload as { invoiceFlow?: unknown }).invoiceFlow;
   if (!raw || typeof raw !== "object") return undefined;
-  const { details, amountCents, customerName, customerEmail } = raw as Record<
-    string,
-    unknown
-  >;
+  const { details, amountCents, customerName, customerEmail, dueDays } =
+    raw as Record<string, unknown>;
   if (typeof details !== "string" || !details.trim()) return undefined;
   const out: InvoiceFlowOffer = { details: details.trim() };
   if (
@@ -45,6 +49,12 @@ export function invoiceFlowOfferOf(
   }
   if (typeof customerEmail === "string" && customerEmail.trim()) {
     out.customerEmail = customerEmail.trim();
+  }
+  if (
+    typeof dueDays === "number" && Number.isInteger(dueDays) &&
+    dueDays >= 0 && dueDays <= MAX_DUE_DAYS
+  ) {
+    out.dueDays = dueDays;
   }
   return out;
 }

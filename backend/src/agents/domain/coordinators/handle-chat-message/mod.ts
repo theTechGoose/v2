@@ -2343,6 +2343,9 @@ export class HandleChatMessage {
             ...(jobDoneAsk?.amountCents
               ? { amountCents: jobDoneAsk.amountCents }
               : {}),
+            ...(jobDoneAsk?.dueDays !== undefined
+              ? { dueDays: jobDoneAsk.dueDays }
+              : {}),
           });
         if (billed) return await finishEarly(billed);
       }
@@ -2363,6 +2366,10 @@ export class HandleChatMessage {
           : {}),
         ...(jobDoneAsk.customerEmail
           ? { customerEmail: jobDoneAsk.customerEmail }
+          : {}),
+        // REQ-935 (LOOP-007 q1-16): "net 15" is kept for the flow's due date
+        ...(jobDoneAsk.dueDays !== undefined
+          ? { dueDays: jobDoneAsk.dueDays }
           : {}),
       };
       const key = offer.customerName && offer.amountCents

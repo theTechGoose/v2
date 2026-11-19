@@ -1342,6 +1342,10 @@ export default function AsstChat({
     { key: string; reason: string } | null
   >(null);
   const swapInvoiceIdRef = useRef<string | null>(null);
+  /** REQ-935 (LOOP-007 q1-16): the due terms the chat's invoice offer
+   *  carried ("net 15" → 15) — the flow's invoice is due that many days
+   *  after today, not from the wizard's payment terms. */
+  const invoiceDueDaysRef = useRef<number | null>(null);
   const [swapLinkCopied, setSwapLinkCopied] = useState(false);
   /** "Job done, need to invoice." starter (roadmap p.3): marks the pre-quote
    *  details→price capture as invoice-bound. REQ-024: from the price screen
@@ -5081,6 +5085,14 @@ export default function AsstChat({
       setAcceptedJobChips(list);
     }).catch(() => {});
     taRef.current?.focus({ preventScroll: true });
+    // REQ-935 (LOOP-007 q1-16): "net 15" typed with the ask sets the due date.
+    invoiceDueDaysRef.current = prefill?.dueDays ?? null;
+    if (prefill?.dueDays !== undefined) {
+      setInvoiceDueDate(
+        new Date(Date.now() + prefill.dueDays * 24 * 3600 * 1000)
+          .toISOString().slice(0, 10),
+      );
+    }
     if (prefill) {
       submitJobDetails(prefill.details, {
         ...(prefill.amountCents ? { priceCents: prefill.amountCents } : {}),
@@ -5309,7 +5321,11 @@ export default function AsstChat({
       // REQ-024: due date from the wizard — completion date + payment
       // terms (Due Now → that day; payment upon completion → +15;
       // anything else → +30). Never "today" by default.
-      dueDate: invoiceDueDateFromQuote(q, today),
+      // REQ-935: due terms typed with the chat's invoice ask win.
+      dueDate: invoiceFlow && invoiceDueDaysRef.current !== null
+        ? new Date(Date.now() + invoiceDueDaysRef.current * 24 * 3600 * 1000)
+          .toISOString().slice(0, 10)
+        : invoiceDueDateFromQuote(q, today),
       ...invoiceStatusFields(action, when),
       ...(q?.jobName ? { jobName: q.jobName } : {}),
       ...(q?.description ? { description: q.description } : {}),
