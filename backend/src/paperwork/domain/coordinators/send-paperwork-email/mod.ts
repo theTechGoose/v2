@@ -54,6 +54,7 @@ import {
   formatPhoneDisplay,
   formatTermDate,
   isUsPhone,
+  isValidWebsiteUrl,
   termDateIso,
   websiteLabel,
 } from "#quote-flow/format-helpers.ts";
@@ -1454,7 +1455,7 @@ ${scheduleBlock}
       : ""
   }
                 ${
-    senderBiz?.websiteUrl?.trim()
+    senderBiz?.websiteUrl?.trim() && isValidWebsiteUrl(senderBiz.websiteUrl)
       ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="${
         escapeAttr(senderBiz.websiteUrl.trim())
       }" style="color:${COLOR_INK};text-decoration:none">${
@@ -1966,7 +1967,7 @@ export function renderInvoiceHtml(
       : ""
   }
                 ${
-    senderBiz?.websiteUrl?.trim()
+    senderBiz?.websiteUrl?.trim() && isValidWebsiteUrl(senderBiz.websiteUrl)
       ? `<div style="margin-top:1px;color:${COLOR_INK};font-size:13px"><a href="${
         escapeAttr(senderBiz.websiteUrl.trim())
       }" style="color:${COLOR_INK};text-decoration:none">${

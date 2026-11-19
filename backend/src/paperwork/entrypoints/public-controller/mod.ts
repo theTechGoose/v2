@@ -35,6 +35,7 @@ import { groupVisits, visitPeriodOf } from "#quote-flow/visit-groups.ts";
 import { invoiceLineItemsByLang } from "#documents/invoice-lang.ts"; // REQ-710
 import { sniffLogoImage } from "#quote-flow/logo-image.ts";
 import { logoVersion } from "#quote-flow/public-logo-url.ts";
+import { isValidWebsiteUrl } from "#quote-flow/format-helpers.ts"; // REQ-1043
 import {
   isValidSignerName,
   normalizeSignerName,
@@ -387,7 +388,8 @@ export class PaperworkPublicController {
         contractor,
         ...(businessName ? { businessName } : {}),
         // REQ-038 (NW-06b): the website joins the PDF's From lines.
-        ...(ident?.websiteUrl?.trim()
+        // REQ-1043: a stored website that would not link (saved before the check) is left out
+        ...(ident?.websiteUrl?.trim() && isValidWebsiteUrl(ident.websiteUrl)
           ? { websiteUrl: ident.websiteUrl.trim() }
           : {}),
         ...(ident?.commsLanguage ? { commsLanguage: ident.commsLanguage } : {}),
@@ -2118,7 +2120,8 @@ async function loadContractor(
       businessName: ident?.businessName ?? ident?.legalName,
       phoneNumber: user?.phoneNumber,
       email: user?.email,
-      ...(ident?.websiteUrl?.trim()
+      // REQ-1043: a stored website that would not link (saved before the check) is left out
+        ...(ident?.websiteUrl?.trim() && isValidWebsiteUrl(ident.websiteUrl)
         ? { websiteUrl: ident.websiteUrl.trim() }
         : {}),
       addressLine: composeAddressLine(addr),

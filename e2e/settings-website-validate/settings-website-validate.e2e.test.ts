@@ -132,7 +132,12 @@ Deno.test("REQ-1043 (q2-27): Settings refuses 'reyes tile dot com' on blur — i
     }
     await page.waitForTimeout(500);
 
-    expect.eq(websitePuts, [], "no PUT /profile/identity carries the junk website");
+    // shots' expect.eq is strict (!==): compare the list's JSON, an array is never === []
+    expect.eq(
+      JSON.stringify(websitePuts),
+      "[]",
+      "no PUT /profile/identity carries the junk website",
+    );
     const stored = await (await http("/api/profile/identity", { headers: auth }))
       .json();
     expect.eq(stored?.websiteUrl, GOOD, "the stored website stays the previous valid one");

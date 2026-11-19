@@ -329,6 +329,29 @@ export function normalizeWebsiteUrl(input: string | undefined): string {
   return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^\/+/, "")}`;
 }
 
+/**
+ * REQ-1043 (LOOP-007 q2, q2-27): a website that would link. Blank is valid (it clears the
+ * field). Otherwise the raw text has no whitespace, and once normalizeWebsiteUrl gives it a
+ * scheme it parses as an http(s) URL whose host has a dot and a TLD of 2+ letters — so
+ * "reyes tile dot com", "asdf" and "http://" are refused, "reyestile.com" is accepted.
+ */
+export function isValidWebsiteUrl(input: string | null | undefined): boolean {
+  const s = (input ?? "").trim();
+  if (!s) return true;
+  if (/\s/.test(s)) return false;
+  let url: URL;
+  try {
+    url = new URL(normalizeWebsiteUrl(s));
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const labels = url.hostname.split(".");
+  if (labels.length < 2 || labels.some((l) => !l)) return false;
+  const tld = labels[labels.length - 1];
+  return /^[a-z]{2,}$/i.test(tld) || /^xn--[a-z0-9-]+$/i.test(tld);
+}
+
 /** The website as people read it: no scheme, no trailing slash. */
 export function websiteLabel(url: string | undefined): string {
   const s = (url ?? "").trim();
