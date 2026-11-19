@@ -419,3 +419,55 @@ Deno.test("REQ-1135 (LOOP-007 q3, q3-60): voiding an emailed invoice with 'let t
       timeout: 15_000,
     });
   }));
+
+// REQ-1136 (LOOP-007 cycle 3, q3-62) — the cancelled invoice's Download PDF
+// agrees with /i: "Cancelled — nothing due" and $0.00, never "AMOUNT DUE ·
+// Due <date> · $225.30", and no payment instructions on a bill not to pay.
+Deno.test("REQ-1136 q3-62: a voided invoice's Download PDF on /i says 'Cancelled — nothing due' and $0.00 — not 'AMOUNT DUE', 'Due October 8', $225.30 or the payment instructions", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await seedBusiness(http, auth);
+    const inv = await mkInvoice(http, auth, {
+      status: "sent",
+      customerId: customer.id,
+      jobName: "Spring cleanup",
+      amount: 22530,
+      issuedDate: "2026-09-23",
+      dueDate: "2026-10-08",
+      paymentInstructions: "Mail a check to PO Box 7731",
+    });
+    await call(http, auth, "POST", `/api/invoices/${inv.id}/void`, {
+      reason: "Wrong address",
+    });
+    await page.goto(`/i/${inv.id}`);
+    await page.locator("[data-cy='invoice-cancelled-note']").waitFor({
+      timeout: 15_000,
+    });
+    await expect.see("please don't pay it");
+    const link = page.locator(`a[href$='/api/invoices/${inv.id}/pdf']`);
+    expect.eq(await link.count(), 1, "/i offers Download PDF");
+    const href = await link.getAttribute("href");
+    // the customer's link — no session needed
+    const r = await http(href!);
+    expect.eq(r.status, 200, "the PDF downloads");
+    const f = await pdfFacts(new Uint8Array(await r.arrayBuffer()));
+    const lines = f.text.replaceAll("\u0097", "—").split("\n")
+      .map((s) => s.trim()).filter(Boolean);
+    const low = lines.map((l) => l.toLowerCase());
+    const drawn = JSON.stringify(lines);
+    expect(
+      low.includes("cancelled — nothing due"),
+      `the PDF reads 'Cancelled — nothing due', as /i does: ${drawn}`,
+    );
+    expect(lines.includes("$0.00"), `the PDF's figure is $0.00: ${drawn}`);
+    expect(!low.includes("amount due"), `no 'AMOUNT DUE': ${drawn}`);
+    expect(
+      !lines.some((l) => l.startsWith("Due October")),
+      `no 'Due October 8, 2026': ${drawn}`,
+    );
+    expect(!lines.includes("$225.30"), `no $225.30 owed: ${drawn}`);
+    expect(
+      !lines.some((l) => l.includes("PO Box 7731")),
+      `no payment instructions on a cancelled bill: ${drawn}`,
+    );
+  }));
