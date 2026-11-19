@@ -867,6 +867,7 @@ export default function FieldSubscriptionsPage(
                   options={customerChoices}
                   value={form.customerId}
                   placeholder={t("field.subs.pickCustomer")}
+                  lang={lang}
                   disabled={form.editId !== null}
                   onSelect={(o) => {
                     // REQ-144: the pick fills the service address, never over a typed one —

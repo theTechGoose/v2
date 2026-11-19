@@ -3,6 +3,7 @@
  * Arrow keys move the highlight, Enter or a click picks, Escape closes; the pick's
  * label fills the box. Draws at most SEARCH_SELECT_LIMIT rows and says how many
  * more there are, so a thousand options stay instant. Styles: /search-select.css.
+ * REQ-987 — every word it shows comes from the dictionaries, in the caller's `lang`.
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
@@ -12,6 +13,7 @@ import {
   SEARCH_SELECT_LIMIT,
   type SearchOption,
 } from "../lib/search-select.ts";
+import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 
 export interface SearchSelectProps<T extends SearchOption = SearchOption> {
   options: T[];
@@ -28,10 +30,13 @@ export interface SearchSelectProps<T extends SearchOption = SearchOption> {
   disabled?: boolean;
   /** REQ-283 — offer to create the typed text when no option carries it ("+ Add …"). */
   onCreate?: (query: string) => void;
-  /** REQ-283 — the create row's text for a name (default `+ Add "<name>"`). */
+  /** REQ-283 — the create row's text for a name (default `searchSelect.add`). */
   createLabel?: (name: string) => string;
   /** REQ-283 — the owner's check failed on this field: the box is aria-invalid. */
   invalid?: boolean;
+  /** REQ-987 — the language of its copy (empty row, clear button, footer, create row);
+   *  defaults to the UI language signal. */
+  lang?: Lang;
 }
 
 export default function SearchSelect<T extends SearchOption = SearchOption>(
@@ -45,10 +50,13 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
     onQuery,
     disabled = false,
     onCreate,
-    createLabel = (n) => `+ Add "${n}"`,
+    createLabel,
     invalid = false,
+    lang = langSignal.value,
   }: SearchSelectProps<T>,
 ) {
+  const label = createLabel ??
+    ((n: string) => tFor(lang, "searchSelect.add", { name: n }));
   const initial = value ? options.find((o) => o.id === value) ?? null : null;
   const [picked, setPicked] = useState<T | null>(initial);
   const [query, setQuery] = useState(initial?.label ?? "");
@@ -195,7 +203,7 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
           <button
             type="button"
             class="ss__clear"
-            aria-label="Clear"
+            aria-label={tFor(lang, "searchSelect.clear")}
             onClick={() => {
               setQuery("");
               setPicked(null);
@@ -249,19 +257,20 @@ export default function SearchSelect<T extends SearchOption = SearchOption>(
                 onClick={() => create(offer)}
                 data-cy="search-select-create"
               >
-                {createLabel(offer)}
+                {label(offer)}
               </li>
             )}
             {rows.length === 0 && !offer && (
               <li class="ss__empty" data-cy="search-select-empty">
-                No matches
+                {tFor(lang, "common.noMatches")}
               </li>
             )}
           </ul>
           {more > 0 && (
             <div class="ss__more" data-cy="search-select-more">
-              {more.toLocaleString("en-US")}{" "}
-              more — keep typing to narrow it down
+              {tFor(lang, "searchSelect.more", {
+                n: more.toLocaleString(lang === "es" ? "es-US" : "en-US"),
+              })}
             </div>
           )}
         </div>

@@ -755,6 +755,7 @@ function PaymentsHero(
                     }))}
                     value={recordId}
                     placeholder={tFor(lang, "paymentsPage.record.search")}
+                    lang={lang}
                     onSelect={(o) => setRecordId(o.id)}
                     onQuery={(q) => {
                       // the box was cleared or retyped: no invoice until the next pick

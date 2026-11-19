@@ -92,6 +92,7 @@ export default function ServiceSelect(
         options={options}
         value={value || undefined}
         placeholder={tFor(lang, "serviceLines.pick")}
+        lang={lang}
         disabled={disabled}
         onSelect={(o) => {
           if (o.id !== KEEP_NAME) onPick(o.id);
