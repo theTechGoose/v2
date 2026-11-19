@@ -107,6 +107,7 @@ import {
   type ChangeOrderTarget,
   correctionForChange, // REQ-755
   isNewQuoteRequest,
+  namesLineRemoval, // REQ-1027
   parseChangeOrderEdit, // REQ-462
   parseChangeOrderRequest,
   parseNamedQuoteChange,
@@ -160,6 +161,7 @@ import {
 // checks a chat-drafted quote gets before it is saved.
 import {
   draftTotalCents,
+  revisionTotalNote, // REQ-1027
   settleCreateQuote,
   statedTotalCents,
   statedTotalNote,
@@ -1162,7 +1164,7 @@ export class HandleChatMessage {
     const revise = (
       p: Pick<
         ReviseQuoteInput,
-        "customerName" | "quoteNumber" | "lines" | "remove"
+        "customerName" | "quoteNumber" | "lines" | "remove" | "targetTotalCents"
       >,
     ) =>
       this.reviseQuote.run({
@@ -1176,6 +1178,9 @@ export class HandleChatMessage {
         userText,
         jobDetails,
         jobDetailsUpdated: detailsUpdated,
+        // REQ-1027: the job's new total the model sent (else ReviseQuote
+        // reads it from the words).
+        targetTotalCents: p.targetTotalCents,
       });
     // REQ-755: lines a revise repriced this turn, so a change order the
     // model sent for the same correction is not applied twice.
@@ -2029,7 +2034,11 @@ export class HandleChatMessage {
     const targetAsk = !llmResponse && typeof input.content === "string"
       ? parseTargetTotalChange(input.content)
       : undefined;
-    if (targetAsk) {
+    // REQ-1027 (LOOP-007 cycle 2, q2-4): "sin la cerca, solo la pintura,
+    // total 5,550" takes a line OFF as well — a revision of the lines, which a
+    // change order (append-only) can't make. The model reads it and its
+    // revise_quote lands the total (ReviseQuote reads it from the words).
+    if (targetAsk && !namesLineRemoval(input.content as string)) {
       let onExistingJob = !!targetAsk.quoteNumber;
       if (!onExistingJob && conv.quoteId) {
         const bound = await this.quotes.getOwned(conv.quoteId, input.userId)
@@ -2853,6 +2862,15 @@ export class HandleChatMessage {
         businessContext = [businessContext, statedTotalNote(statedCents)]
           .filter(Boolean).join("\n\n");
       }
+      // REQ-1027 (LOOP-007 cycle 2, q2-4): a new total for an issued quote's
+      // revision ("sin la cerca, total 5,550") — the model is told it goes in
+      // newTotalDollars, never on a line; ReviseQuote lands it in code.
+      if (targetAsk && !statedCents && tools.includes("revise_quote")) {
+        businessContext = [
+          businessContext,
+          revisionTotalNote(targetAsk.targetTotalCents),
+        ].filter(Boolean).join("\n\n");
+      }
       if (typedNow && tools.includes("create_quote")) {
         businessContext = [businessContext, alternativesNote(typedNow)]
           .filter(Boolean).join("\n\n");
@@ -3418,6 +3436,8 @@ export class HandleChatMessage {
           lines: p.lines,
           remove: p.remove,
           userText,
+          // REQ-1027 (q2-4): the job's new total, landed in code.
+          targetTotalCents: p.targetTotalCents,
           // REQ-585 (M4): a job-details bullet is said to be one.
           jobDetails: boundQuote
             ? [

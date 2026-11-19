@@ -1009,6 +1009,31 @@ export function changeOrderAmountsCents(text: string): number[] {
     .filter((c, i, all) => all.indexOf(c) === i);
 }
 
+/**
+ * REQ-1027 (LOOP-007 cycle 2, q2-4): a total word next to a BARE number is
+ * the job's new total too — "total 5,550", "total de 5550", "en total
+ * 5,550", "new total 5550", "5,550 total". The tester's "…sin la cerca,
+ * solo la pintura, total 5,550" had no "$", so nothing read it and the model
+ * put $5,550 on the painting line. Only when no "$" amount is typed at all,
+ * the number ends there (no "5 rooms", no "64 sqft") and exactly one reads.
+ */
+const BARE_TOTAL_NUM = String
+  .raw`(?<![\p{L}\d$.,-])((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)(?![\d,.]?\d)`;
+const BARE_TOTAL_RES: RegExp[] = [
+  // "total 5,550", "new total 5550", "total de 5550", "nuevo total: 5,550"
+  new RegExp(
+    String
+      .raw`(?<!\p{L})(?:(?:new|nuevo)\s+)?total\s*(?:(?:should\s+be|will\s+be|is\s+now|is|of|to|de|es|ser[aá]|a|=|:)\s*)?${BARE_TOTAL_NUM}(?=${BARE_END})`,
+    "iu",
+  ),
+  // "5,550 total", "5550 en total"
+  new RegExp(
+    String
+      .raw`${BARE_TOTAL_NUM}\s+(?:en\s+|in\s+)?total(?![\p{L}])(?!\s+(?:de|of)\s)`,
+    "iu",
+  ),
+];
+
 export interface TargetTotalChange {
   /** "Q-001" when the sentence names one. */
   quoteNumber?: string;
@@ -1028,8 +1053,18 @@ export interface TargetTotalChange {
 export function parseTargetTotalChange(
   text: string,
 ): TargetTotalChange | undefined {
-  if (!text || typedAmountsCents(text).length !== 1) return undefined;
-  for (const re of TARGET_RES) {
+  if (!text) return undefined;
+  const typed = typedAmountsCents(text).length;
+  if (typed > 1) return undefined;
+  // REQ-1027: with no "$" typed, a total word next to a bare number.
+  const res = typed === 1 ? TARGET_RES : BARE_TOTAL_RES;
+  if (typed === 0) {
+    const hits = BARE_TOTAL_RES.flatMap((re) =>
+      [...text.matchAll(new RegExp(re.source, "giu"))].map((m) => m.index)
+    );
+    if (new Set(hits).size !== 1) return undefined;
+  }
+  for (const re of res) {
     const m = text.match(re);
     if (!m || m.index === undefined) continue;
     const out: TargetTotalChange = { targetTotalCents: centsOf(m[1]) };
@@ -1055,6 +1090,29 @@ export function parseTargetTotalChange(
     return out;
   }
   return undefined;
+}
+
+/**
+ * REQ-1027 (LOOP-007 cycle 2, q2-4): the message takes a line OFF the job
+ * ("sin la cerca", "quita la cerca", "drop the fence", "without the fence").
+ * A new total said with it is a revision of the lines (revise_quote), never
+ * a change order — a change order can only append a line.
+ */
+const LINE_REMOVAL_RE =
+  /(?<!\p{L})(?:sin|quita(?:r|le|la|lo|las|los)?|qu[ií]ta(?:le|la|lo|las|los)|saca(?:r|le)?|s[aá]ca(?:le|la|lo)|elimina(?:r|le)?|elim[ií]na(?:le|la|lo)|without|remove|drop|take\s+(?:out|off)|leave\s+out|minus)(?!\p{L})/iu;
+export function namesLineRemoval(text: string): boolean {
+  return LINE_REMOVAL_RE.test(text ?? "");
+}
+
+/**
+ * REQ-1027: the contractor says the price is too high — "jorge dijo que es
+ * mucho", "más barata", "too expensive", "cheaper". A revision that would
+ * RAISE the total is then never written.
+ */
+const TOO_EXPENSIVE_RE =
+  /(?<!\p{L})(?:es\s+(?:mucho|demasiado)|(?:muy|demasiado|bien)\s+car[oa]s?|m[aá]s\s+barat[oa]s?|baj(?:a|ar|ale|arle)\s+(?:el\s+)?precio|reb[aá]ja(?:la|le)?|descuento|too\s+(?:much|expensive|high|pricey|steep)|cheaper|less\s+expensive|lower\s+(?:the\s+)?price|over\s+(?:his|her|their|the|my)?\s*budget|fuera\s+de(?:l|\s+su)?\s+presupuesto)(?!\p{L})/iu;
+export function saysTooExpensive(text: string): boolean {
+  return TOO_EXPENSIVE_RE.test(text ?? "");
 }
 
 export type DeltaCheck =

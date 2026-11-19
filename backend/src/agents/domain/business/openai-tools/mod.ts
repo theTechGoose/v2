@@ -173,6 +173,9 @@ export const TOOL_DEFS = [
             description: t("en", "prompts.tools.reviseQuote.remove"),
             items: { type: "string" },
           },
+          // REQ-1027 (LOOP-007 cycle 2, q2-4): "sin la cerca, total 5,550" — the
+          // job's new total has its own field, never a line's amountCents.
+          newTotalDollars: { type: "number", description: t("en", "prompts.tools.reviseQuote.newTotalDollars") },
         },
         required: ["lines"],
         additionalProperties: false,
@@ -402,7 +405,12 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
         .filter((x): x is string => typeof x === "string")
         .map((x) => x.trim())
         .filter(Boolean);
-      if (lines.length === 0 && remove.length === 0) return undefined;
+      // REQ-1027: the job's new total, dollars → integer cents here, in code.
+      const total = args.newTotalDollars;
+      const targetTotalCents = typeof total === "number" && Number.isFinite(total) && total > 0
+        ? Math.round(total * 100)
+        : undefined;
+      if (lines.length === 0 && remove.length === 0 && targetTotalCents === undefined) return undefined;
       const customerName = typeof args.customerName === "string" ? args.customerName.trim() : "";
       const quoteNumber = docNumber(args.quoteNumber);
       return {
@@ -412,6 +420,7 @@ export function parseToolCall(call: { function: { name: string; arguments: strin
           ...(quoteNumber ? { quoteNumber } : {}),
           lines,
           remove,
+          ...(targetTotalCents !== undefined ? { targetTotalCents } : {}),
         },
       };
     }

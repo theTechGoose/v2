@@ -151,6 +151,9 @@ export type LLMAction =
       quoteNumber?: string;
       lines: { match: string; description?: string; amountCents?: number }[];
       remove: string[];
+      /** REQ-1027 (LOOP-007 cycle 2, q2-4): the job's NEW total in cents
+       *  (the tool's newTotalDollars); the coordinator lands it. */
+      targetTotalCents?: number;
     };
   }
   /** REQ-462 (demo-loop cycle 3, M26): edit or withdraw an EXISTING change

@@ -164,6 +164,78 @@ export function reviseLineItems<T extends RevisableLine>(
   return { lineItems, estimatedTotal: totalOf(lineItems), unmatched: [] };
 }
 
+/**
+ * REQ-1027 (LOOP-007 cycle 2, q2-4): land a revision on the job's stated NEW
+ * total. "haz una version 2 de Q-002 sin la cerca, solo la pintura, total
+ * 5,550": the model, with no total field, put 555000 on "Pintura exterior"
+ * and removed the fence; applied as sent, Materiales $1,350 stayed and
+ * Version 2 was $6,900.
+ *
+ *   1. A line repriced to exactly the target is the model's slip (the total
+ *      put on a line): that line keeps its price (a rewording stays).
+ *   2. Still off: the one repriced line — or, with none, the largest line
+ *      left — takes up the difference (target − every other line).
+ *
+ * Undefined when it cannot be landed: a name matches nothing, more than one
+ * line was repriced, the repriced line's price is one the user typed
+ * (`typedCents` — his words are never overridden), or the absorbing line
+ * would be ≤ 0. The caller then writes nothing and asks.
+ */
+export function settleToTotal<T extends RevisableLine>(
+  base: readonly T[],
+  changes: readonly LineChange[],
+  remove: readonly string[],
+  targetCents: number,
+  typedCents: readonly number[] = [],
+): LineRevision<T> | undefined {
+  if (!Number.isFinite(targetCents) || targetCents <= 0) return undefined;
+  const fixed: LineChange[] = [];
+  for (const c of changes) {
+    if (c.amountCents === targetCents) {
+      if ((c.description ?? "").trim()) {
+        fixed.push({ match: c.match, description: c.description });
+      }
+    } else fixed.push({ ...c });
+  }
+  const rev = reviseLineItems(base, fixed, remove);
+  if (rev.unmatched.length > 0) return undefined;
+  if (rev.estimatedTotal === targetCents) return rev;
+
+  const repriced = fixed.filter((c) =>
+    typeof c.amountCents === "number" && Number.isFinite(c.amountCents)
+  );
+  if (repriced.length > 1) return undefined;
+  const dropped = new Set(remove.map((r) => findLine(base, r)));
+  const lineTotal = (l: RevisableLine) => (l.price ?? 0) * (l.quantity ?? 1);
+  let at: number;
+  let current: number;
+  if (repriced.length === 1) {
+    if (typedCents.includes(Math.trunc(repriced[0].amountCents!))) {
+      return undefined;
+    }
+    at = findLine(base, repriced[0].match);
+    current = Math.trunc(repriced[0].amountCents!);
+  } else {
+    at = -1;
+    base.forEach((l, i) => {
+      if (dropped.has(i)) return;
+      if (at < 0 || lineTotal(l) > lineTotal(base[at])) at = i;
+    });
+    if (at < 0) return undefined;
+    current = lineTotal(base[at]);
+  }
+  if (at < 0 || dropped.has(at)) return undefined;
+  const amountCents = targetCents - (rev.estimatedTotal - current);
+  if (amountCents <= 0) return undefined;
+  const settled = repriced.length === 1
+    ? fixed.map((c) => c === repriced[0] ? { ...c, amountCents } : c)
+    : [...fixed, { match: base[at].description, amountCents }];
+  const out = reviseLineItems(base, settled, remove);
+  return out.unmatched.length === 0 && out.estimatedTotal === targetCents
+    ? out
+    : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Reading a reprice out of plain words ("change plumbing fixtures to $1,300").
 // The demo's model sent exactly that sentence to change_order as "Adjust
