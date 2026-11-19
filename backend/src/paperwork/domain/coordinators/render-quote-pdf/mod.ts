@@ -29,6 +29,7 @@ import {
   websiteLabel,
 } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
+import { titleCaseJobName } from "#quote-flow/email-format.ts"; // REQ-1132
 import { lineItemDescription } from "#quote-flow/quote-translations.ts";
 import {
   customerLines,
@@ -202,11 +203,16 @@ export class RenderQuotePdf {
     y -= 36;
     const cust = customer?.name?.trim() ?? quote.acceptedName?.trim();
     const pdfJobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
+    // REQ-1132 (q3-64): the summary fallback is cased by the Unicode-aware
+    // titleCaseJobName (REQ-720), as quote-doc does — never `\b\w`, which
+    // mangles accents ("InstalacióN De BañO").
     const jobTitle = pdfJobName ||
-      (quote.summaryByLang?.[lang] ?? quote.summary ??
-        t(lang, "renderQuotePdf.heroFallback"))
-        .replace(/^\s*quote\s*:\s*/i, "")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+      titleCaseJobName(
+        (quote.summaryByLang?.[lang] ?? quote.summary ??
+          t(lang, "renderQuotePdf.heroFallback"))
+          .replace(/^\s*quote\s*:\s*/i, ""),
+        lang,
+      );
     const heroTitle = agreementTitle({
       customer: cust,
       job: jobTitle,

@@ -23,6 +23,7 @@ import PublicSignQuote from "../islands/PublicSignQuote.tsx";
 import PublicQuoteActions from "../islands/PublicQuoteActions.tsx";
 import { buildSignatureBlock } from "../../shared/quote-flow/signature-block.ts";
 import { agreementTitle } from "../../shared/quote-flow/agreement-title.ts";
+import { titleCaseJobName } from "../../shared/quote-flow/email-format.ts"; // REQ-1132
 import { publicLogoUrl } from "../../shared/quote-flow/public-logo-url.ts";
 import { senderInitials as senderInitialsOf } from "../../shared/identity/initials.ts";
 import {
@@ -406,7 +407,9 @@ export function QuoteDoc(
   const jobNameRaw = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
   const jobTitle = (jobNameRaw && jobNameRaw.length > 0)
     ? jobNameRaw
-    : summary.replace(/\b\w/g, (c) => c.toUpperCase());
+    // REQ-1132 (q3-64): Unicode-aware (REQ-720), as the quote PDF — never
+    // `\b\w`, which mangles accents ("InstalacióN De BañO")
+    : titleCaseJobName(summary, lang);
   // REQ-036 (NW-57): "<Customer>'s <Job> Agreement" — never a bare job name
   // (or a leaked "New job") once a customer is known.
   const heroTitle = agreementTitle({

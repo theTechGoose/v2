@@ -282,8 +282,11 @@ export class RenderInvoicePdf {
         },
         lang,
       ))
+      // REQ-1132 (q3-64): drawn as stored — exactly /i's title, never
+      // re-cased (the old `\b\w` upper-casing gave "Gate Repair, Hinge
+      // Hardware" and mangled Spanish: "InstalacióN De BañO", REQ-720)
       .replace(/^\s*quote\s*:\s*/i, "")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+      .trim();
     page.drawText(heroTitle, { x: M, y, size: 24, font: bold, color: TEAL });
     y -= 24;
 
