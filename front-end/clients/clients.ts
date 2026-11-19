@@ -81,6 +81,8 @@ export interface CustomerCard {
   vip?: boolean;
   createdAt: string;
   updatedAt: string;
+  /** REQ-1144: bumped by every edit — the Edit form sends it back */
+  version?: number;
 
   /** REQ-367: the timestamp — clients-display words "how long ago" in the live language */
   lastWhen: string | null;
@@ -174,7 +176,8 @@ export const clientsClient = {
   /** REQ-626 — one customer (the client sheet opens by id, any page) */
   get: (id: string, opts: ApiOptions = {}) =>
     api.get<CustomerCard>(`/customers/${encodeURIComponent(id)}`, opts),
-  /** REQ-625 — PUT /customers/:id (the edit form sends every field) */
+  /** REQ-625 — PUT /customers/:id (the edit form sends every field);
+   *  REQ-1144 — with the `version` it loaded: 409 stale_version if it moved on */
   update: (id: string, patch: Record<string, unknown>, opts: ApiOptions = {}) =>
     api.put<CustomerCard>(`/customers/${encodeURIComponent(id)}`, patch, opts),
   /** REQ-802 — the card's Delete customer: REQ-039's soft delete (`deletedAt`), the row is kept */

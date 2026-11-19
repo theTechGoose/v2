@@ -15,7 +15,11 @@ import {
   sortByName,
 } from "@analytics/domain/business/clients-page/mod.ts"; // REQ-135 — the one set of paging rules
 import type { ExecutionContext } from "#danet/core";
-import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
+import {
+  CustomerStore,
+  StaleCustomerVersionError,
+} from "@crm/domain/data/customer-store/mod.ts";
+import { versionOf } from "#documents/versions.ts"; // REQ-1144
 import { parseCreateCustomer, parseUpdateCustomer } from "@crm/dto/customer.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { SessionStore } from "@users/domain/data/session-store/mod.ts";
@@ -125,7 +129,21 @@ export class CustomerController {
     @Body() body: unknown,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    return await this.store.update(id, user.id, parseUpdateCustomer(body));
+    try {
+      return await this.store.update(id, user.id, parseUpdateCustomer(body));
+    } catch (e) {
+      // REQ-1144 (LOOP-007 q3, q3-74): an edit made on an older version is
+      // refused, never silently written over the newer one — the reply
+      // carries the latest customer so the form can show it
+      if (e instanceof StaleCustomerVersionError) {
+        return ctx.json({
+          error: "stale_version",
+          currentVersion: versionOf(e.current),
+          customer: e.current,
+        }, 409);
+      }
+      throw e;
+    }
   }
 
   /**
