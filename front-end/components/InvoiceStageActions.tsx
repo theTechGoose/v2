@@ -29,6 +29,7 @@ export function InvoiceStageActions(
     busy,
     cyPrefix,
     showStageCta,
+    showViewLink = true,
     onStageAction,
     primaryStyle,
     secondaryStyle,
@@ -43,6 +44,9 @@ export function InvoiceStageActions(
     cyPrefix: string;
     /** the card keeps its own stage CTA; the panel renders this one. */
     showStageCta: boolean;
+    /** REQ-985: the card back has its own "View as customer" (REQ-626), so
+     *  it turns this one off; the detail panel keeps it. */
+    showViewLink?: boolean;
     onStageAction?: (kind: StageActionKind, e: Event) => unknown;
     primaryStyle?: string;
     secondaryStyle?: string;
@@ -80,18 +84,20 @@ export function InvoiceStageActions(
           {busy ? "…" : tFor(lang, action.labelKey)}
         </button>
       )}
-      <a
-        data-cy={`${cyPrefix}-open`}
-        href={path}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        style={secondaryStyle
-          ? `${secondaryStyle};text-decoration:none;display:inline-block`
-          : undefined}
-      >
-        {tFor(lang, "invoicesPage.detail.viewAsCustomer")}
-      </a>
+      {showViewLink && (
+        <a
+          data-cy={`${cyPrefix}-open`}
+          href={path}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          style={secondaryStyle
+            ? `${secondaryStyle};text-decoration:none;display:inline-block`
+            : undefined}
+        >
+          {tFor(lang, "invoicesPage.detail.viewAsCustomer")}
+        </a>
+      )}
       <button
         type="button"
         data-cy={`${cyPrefix}-copy-link`}
