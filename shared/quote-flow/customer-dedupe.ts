@@ -201,6 +201,20 @@ export function customerNameFromSummary(
 }
 
 /**
+ * REQ-1046 (LOOP-007 q2-31/q2-45) — the summary without REQ-576's
+ * "— <Name>" tail ("Master bath redo — Maria Gonzalez" → "Master bath redo").
+ * The tail is a binding hint for the assistant, never part of the job's
+ * title; a tail that is not name-shaped stays ("Deck — 2 lines of work").
+ */
+export function summaryWithoutCustomerTail(
+  summary: string | null | undefined,
+): string {
+  const s = (summary ?? "").trim();
+  if (!customerNameFromSummary(s)) return s;
+  return s.replace(/\s[—–-]\s+[^—–]+?\s*$/u, "").trim() || s;
+}
+
+/**
  * REQ-576 (m26) — the ONE same-owner customer whose whole name is the
  * summary's "— <Name>" tail, accent- and case-blind; null when nobody or more
  * than one customer has that name (never a guess). `customers` must be the
