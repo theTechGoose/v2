@@ -1,6 +1,7 @@
 import { Injectable } from "#danet/core";
 import { paidHow } from "#documents/paid-how.ts"; // REQ-928
 import { invoiceTitle } from "#documents/linked-view.ts"; // REQ-984
+import { fmtServiceDates } from "#documents/service-dates.ts"; // REQ-1064
 import { EventBus } from "@core/business/events/mod.ts";
 import { invoiceIssuedEvent } from "@paperwork/domain/business/owner-activity/mod.ts"; // REQ-566
 import { asDelivered, isUnissuedInvoice, publishPendingInvoice, publishPendingQuote, senderAsPublisher, stampInvoiceDelivered } from "@paperwork/domain/business/publish-pending/mod.ts";
@@ -675,11 +676,9 @@ function revisedBanner(kind: "invoice" | "quote", doc: { version?: number }, lan
 function invoiceFactsHtml(i: Invoice, quote: Quote | undefined, lang: Lang, tz?: string): string {
   const rows: Array<[string, string]> = [];
   if (i.serviceAddress?.trim()) rows.push([renderWord(lang, "serviceAddress"), i.serviceAddress.trim()]);
-  if (i.serviceDateFrom || i.serviceDateTo) {
-    const from = i.serviceDateFrom ? fmtDate(i.serviceDateFrom, lang, tz) : "";
-    const to = i.serviceDateTo ? fmtDate(i.serviceDateTo, lang, tz) : "";
-    rows.push([renderWord(lang, "serviceDates"), from && to && from !== to ? `${from} – ${to}` : from || to]);
-  }
+  // REQ-1064: one helper with /i/:id and the PDF — a one-day window is that one day
+  const serviceDates = fmtServiceDates(i.serviceDateFrom, i.serviceDateTo, (d) => fmtDate(d, lang, tz));
+  if (serviceDates) rows.push([renderWord(lang, "serviceDates"), serviceDates]);
   if (typeof i.subtotalCents === "number") rows.push([renderWord(lang, "subtotal"), fmtUSD(i.subtotalCents)]);
   if (i.discountCents) {
     const reason = i.discountReason?.trim();

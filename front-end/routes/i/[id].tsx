@@ -21,6 +21,7 @@ import {
   resolvePublicLang,
 } from "../../../shared/quote-flow/public-lang.ts";
 import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts";
+import { fmtServiceDates } from "../../../shared/documents/service-dates.ts"; // REQ-1064
 import { publicLogoUrl } from "../../../shared/quote-flow/public-logo-url.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
 import { localizePaymentInstructions } from "../../../shared/documents/invoice-form.ts";
@@ -452,12 +453,12 @@ function InvoiceDoc(
     methods: invoice.acceptedMethods ?? [],
     lang,
   });
-  const serviceDates = invoice.serviceDateFrom || invoice.serviceDateTo
-    ? [invoice.serviceDateFrom, invoice.serviceDateTo]
-      .filter((d): d is string => !!d)
-      .map((d) => fmtDate(d, lang, tz))
-      .join(" → ")
-    : undefined;
+  // REQ-1064: a one-day window (from == to) reads as that one day, as in the email/PDF
+  const serviceDates = fmtServiceDates(
+    invoice.serviceDateFrom,
+    invoice.serviceDateTo,
+    (d) => fmtDate(d, lang, tz),
+  );
   const hasExtras = !!(invoice.serviceAddress || serviceDates ||
     invoice.paymentInstructions || invoice.taxCents || invoice.discountCents ||
     invoice.subtotalCents);

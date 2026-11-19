@@ -20,6 +20,7 @@ import { BusinessIdentityStore } from "@profile/domain/data/business-identity-st
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
 import { localizePaymentInstructions } from "#documents/invoice-form.ts"; // REQ-710
+import { fmtServiceDates } from "#documents/service-dates.ts"; // REQ-1064
 import {
   invoiceLineItemsByLang,
   invoiceTextByLang,
@@ -449,17 +450,14 @@ export class RenderInvoicePdf {
           invoice.serviceAddress.trim(),
         ]);
       }
-      if (invoice.serviceDateFrom || invoice.serviceDateTo) {
-        const from = invoice.serviceDateFrom
-          ? fmtDate(invoice.serviceDateFrom, tz)
-          : "";
-        const to = invoice.serviceDateTo
-          ? fmtDate(invoice.serviceDateTo, tz)
-          : "";
-        rows.push([
-          renderWord(lang, "serviceDates"),
-          from && to && from !== to ? `${from} – ${to}` : from || to,
-        ]);
+      // REQ-1064: one helper with /i/:id and the email — a one-day window is that one day
+      const serviceDates = fmtServiceDates(
+        invoice.serviceDateFrom,
+        invoice.serviceDateTo,
+        (d) => fmtDate(d, tz),
+      );
+      if (serviceDates) {
+        rows.push([renderWord(lang, "serviceDates"), serviceDates]);
       }
       if (typeof invoice.subtotalCents === "number") {
         rows.push([

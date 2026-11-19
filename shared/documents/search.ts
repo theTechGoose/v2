@@ -29,6 +29,7 @@ import {
 } from "../quote-flow/customer-search.ts";
 import { docNumberOf, matchesDocNumber } from "./numbering.ts";
 import { formatShortDate } from "../quote-flow/format-helpers.ts";
+import { fmtServiceDates } from "./service-dates.ts"; // REQ-1064
 import {
   invoiceBalance,
   invoiceState,
@@ -750,10 +751,13 @@ export function searchHitDates(
   h: SearchHit,
   lang: "en" | "es",
 ): string | undefined {
-  const service = [h.serviceFrom, h.serviceTo]
-    .filter((d): d is string => !!d)
-    .map((d) => formatShortDate(d, lang))
-    .join(" → ");
+  // REQ-1064: a one-day window reads as that one day (REQ-713 keeps its "→")
+  const service = fmtServiceDates(
+    h.serviceFrom,
+    h.serviceTo,
+    (d) => formatShortDate(d, lang),
+    " → ",
+  );
   if (service) return service;
   const day = h.dueDate ?? h.scheduledFor;
   return day ? formatShortDate(day, lang) : undefined;
