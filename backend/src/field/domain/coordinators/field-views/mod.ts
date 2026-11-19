@@ -27,6 +27,8 @@ export const safeWorker = ({ pin: _p, ...w }: FieldWorker) => w;
 
 /** REQ-785: the names of a job's other workers, in crewIds' order */
 const crewNames = (t: FieldTask, n: Names) => (t.crewIds?.length ? { crewNames: t.crewIds.map((id) => n.worker(id)) } : {});
+/** REQ-1162 (q3-94): a task whose worker record is gone (or that has none) is `unassigned` — never Worker "—" beside ASSIGNED */
+const orphaned = (t: FieldTask, n: Names) => (n.worker(t.workerId) === "—" ? { unassigned: true as const } : {});
 /** REQ-841/842: the crew doing the task, and who it covers for (a crew or a worker) */
 const crewLine = (t: FieldTask, n: Names) => ({
   ...(t.crewId && n.crew(t.crewId) ? { crewName: n.crew(t.crewId)!.name } : {}),
@@ -126,7 +128,7 @@ export class FieldViews {
   }
 
   task(t: FieldTask, n: Names) {
-    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), regionName: n.region(t.regionId)?.name ?? "", ...crewNames(t, n), ...crewLine(t, n) }; // REQ-365: no zone (a one-off) is "", not "—"
+    return { ...t, customerName: n.customer(t.customerId), taskTypeName: n.type(t.taskTypeId), workerName: n.worker(t.workerId), ...orphaned(t, n), regionName: n.region(t.regionId)?.name ?? "", ...crewNames(t, n), ...crewLine(t, n) }; // REQ-365: no zone (a one-off) is "", not "—"
   }
 
   workerTask(t: FieldTask, n: Names) {

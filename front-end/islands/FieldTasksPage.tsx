@@ -621,7 +621,7 @@ export default function FieldTasksPage(
 
   // REQ-365 — group by worker + zone id, in first-seen order; a one-off with no zone
   // is titled with the worker alone
-  const groups = groupTasks(tasks, lang);
+  const groups = groupTasks(tasks, lang, t("field.tk.unassigned")); // REQ-1162
 
   // the worker's note belongs to the visit — show it once per subscription+day
   const seenNote = new Set<string>();
@@ -637,6 +637,14 @@ export default function FieldTasksPage(
       return (
         <span class="chip chip--amber">
           {t("field.tk.deferred", { date: (x.deferredTo ?? "").slice(5) })}
+        </span>
+      );
+    }
+    // REQ-1162 (q3-94): its worker was removed — nobody will see it, so never "Assigned"
+    if (x.unassigned) {
+      return (
+        <span class="chip chip--amber" data-cy="tk-unassigned">
+          {t("field.tk.unassigned")}
         </span>
       );
     }
@@ -761,7 +769,7 @@ export default function FieldTasksPage(
           <div class="task__client">{x.customerName}</div>
           {x.address && <div class="task__addr">{x.address}</div>}
           <div class="hint">
-            {workerZoneLabel(x, lang)}
+            {workerZoneLabel(x, lang, t("field.tk.unassigned"))}
           </div>
           {!!x.crewNames?.length && (
             <div class="hint" data-cy="tk-crew">

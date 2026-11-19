@@ -26,6 +26,8 @@ export interface FieldWorker {
   /** REQ-840 — the ONE crew the worker is in, and its name */
   crewId?: string;
   crewName?: string;
+  /** REQ-1162 (q3-94) — GET /field/workers: the upcoming tasks still assigned to them (absent when none) */
+  upcomingTasks?: { count: number; dates: string[]; customers: string[] };
   createdAt: string;
   updatedAt: string;
 }
@@ -277,6 +279,8 @@ export interface TaskView {
   regionName: string;
   workerId: string;
   workerName: string;
+  /** REQ-1162 (q3-94): the task's worker no longer exists */
+  unassigned?: boolean;
   /** the day — a job of several days' FIRST day */
   date: string;
   /** REQ-785: a job of several days — its last day; it shows on every day between */

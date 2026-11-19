@@ -407,9 +407,10 @@ Deno.test("REQ-1162 (LOOP-007 q3-94): Remove access on a worker with an upcoming
       warned,
       `the row names Maya's upcoming task before removing her (row: ${seen.text})`,
     );
+    // expect.eq is strict (!==) — an array is compared by its JSON (REQ-1162 note)
     expect.eq(
-      orphans.map((x) => x.customerName),
-      [],
+      JSON.stringify(orphans.map((x) => x.customerName)),
+      "[]",
       `no task on ${day} is left under Worker "—" with status assigned`,
     );
   }));
