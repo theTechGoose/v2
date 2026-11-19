@@ -712,3 +712,74 @@ Deno.test("REQ-966 q1-64 GET /invoices/export.csv?status=all: a past-due invoice
     await server.stop();
   }
 });
+
+// REQ-1128 (LOOP-007 q3, q3-56): an invoice due TODAY is not overdue. The CSV
+// printed "overdue" for INV-002 (due 2026-11-19, part-paid) at 12:34 UTC on its
+// due day, while /i (isPastDue: end of the due day) and the /invoices card
+// (due < today) both said it was not. GET /invoices `urgency` shares the CSV's
+// start-of-day rule (invoice-aging isOverdue → isInvoiceOverdue), so it must
+// not call the due-today invoice overdue either.
+Deno.test("REQ-1128 q3-56 GET /invoices/export.csv?status=all: an invoice due today (part-paid and unpaid) is NOT 'overdue' — the Status reads 'partly paid' / 'sent', and GET /invoices urgency is not overdue*", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const { sid, userId } = await login("+15125551128");
+    const today = new Date().toISOString().slice(0, 10);
+    const customer = await new CustomerStore().create(userId, {
+      name: "Due Today",
+    });
+    const invoices = new InvoiceStore();
+    const partly = await invoices.create(userId, {
+      customerId: customer.id,
+      amount: 120000,
+      status: "sent",
+      issuedDate: today,
+      dueDate: today,
+    } as CreateInvoiceDto);
+    const unpaid = await invoices.create(userId, {
+      customerId: customer.id,
+      amount: 50000,
+      status: "sent",
+      issuedDate: today,
+      dueDate: today,
+    } as CreateInvoiceDto);
+
+    const pay = await fetch(`${BASE}/payments`, {
+      method: "POST",
+      headers: { "x-session-id": sid, "content-type": "application/json" },
+      body: JSON.stringify({
+        invoiceId: partly.id,
+        amount: 50000,
+        method: "check",
+        receivedAt: new Date().toISOString(),
+      }),
+    });
+    assert(pay.ok, `the payment is recorded (${pay.status})`);
+    await drain(pay);
+
+    const all = await csv(sid, "/invoices/export.csv?status=all");
+    assertEquals(all.status, 200);
+    const statusOf = (number: string) =>
+      cells(all.lines.find((l) => l.startsWith(`${number},`))!)[2];
+    assertEquals(
+      [statusOf(partly.number!), statusOf(unpaid.number!)],
+      ["partly paid", "sent"],
+      `due today (${today}) is not overdue in the CSV — /i and /invoices say it isn't (${partly.number} part-paid, ${unpaid.number} unpaid)`,
+    );
+
+    const list = await fetch(`${BASE}/invoices`, {
+      headers: { "x-session-id": sid },
+    }).then((r) => r.json()) as Array<{ id: string; urgency?: string }>;
+    const urgencies = [partly.id, unpaid.id].map((id) =>
+      list.find((i) => i.id === id)?.urgency
+    );
+    assert(
+      urgencies.every((u) => !u?.startsWith("overdue")),
+      `GET /invoices urgency for invoices due today is not overdue* (got ${JSON.stringify(urgencies)})`,
+    );
+  } finally {
+    await server.stop();
+  }
+});

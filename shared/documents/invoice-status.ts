@@ -187,8 +187,12 @@ export function invoicePillFlags(
 }
 
 /**
- * REQ-966: the backend's overdue rule (invoice-aging `isOverdue`, behind
- * GET /invoices' `urgency`): unpaid and the due date's instant has passed.
+ * REQ-966 / REQ-1128 (LOOP-007 q3-56): the one overdue rule — the CSV Status,
+ * the backend's invoice-aging `isOverdue` (GET /invoices' `urgency`, the aging
+ * buckets), /i's pill and the /invoices card. Unpaid and its due day has
+ * ENDED (`isPastDue`): a due date is due through its whole day. It used to
+ * compare `new Date(dueDate)` — midnight at the START of the due day — so an
+ * invoice read "overdue" in the CSV all through the day /i said it was due.
  */
 export function isInvoiceOverdue(
   invoice: Pick<InvoiceStatusInput, "dueDate" | "status" | "paidAt">,
@@ -196,7 +200,7 @@ export function isInvoiceOverdue(
 ): boolean {
   if (invoice.paidAt) return false;
   if (invoice.status === "paid") return false;
-  return new Date(invoice.dueDate ?? "").getTime() < now.getTime();
+  return isPastDue(invoice.dueDate, now);
 }
 
 /** Statuses a person reads as they are stored. */
@@ -205,10 +209,10 @@ const KEPT = new Set(["void", "draft", "scheduled", "claimed"]);
 /**
  * REQ-966 (AMENDMENT to REQ-208): the status the CSV export prints — what
  * GET /invoices says, never the internal "pending". void / draft / scheduled
- * / claimed as stored; paid; "overdue" for an open invoice past due (the
- * `isOverdue` rule, so it agrees with `urgency`); "partly paid" for an open
- * one not yet due with money on it (REQ-1073: `isPartlyPaid`); otherwise the
- * stored status ("sent") — a "pending" with nothing paid on it (every payment
+ * / claimed as stored; paid; "overdue" for an open invoice whose due day has
+ * ended (`isInvoiceOverdue`, so it agrees with `urgency`, /i and /invoices);
+ * "partly paid" for an open one not yet due with money on it (REQ-1073:
+ * `isPartlyPaid`); otherwise the stored status ("sent") — a "pending" with nothing paid on it (every payment
  * deleted) is an open, sent bill.
  */
 export function invoiceDisplayStatus(
