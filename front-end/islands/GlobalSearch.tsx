@@ -96,6 +96,9 @@ export default function GlobalSearch(
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
+  // REQ-976: a press inside the island (panel padding, scrollbar) blurs the box
+  // with no relatedTarget — that is not "focus left", so keep the panel open
+  const pressInside = useRef(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -147,7 +150,8 @@ export default function GlobalSearch(
         setState("ready");
         const best = bestHit(ordered);
         setActive(best ? ordered.indexOf(best) : -1);
-        setOpen(true);
+        // REQ-976: never re-open here — an answer that lands after focus left
+        // the box (click or Tab away) must not pop the panel back up
       } catch {
         if (seq.current === id) setState("error");
       }
@@ -190,6 +194,18 @@ export default function GlobalSearch(
       ref={rootRef}
       class="topbar__search gsearch"
       data-cy={mounted ? "global-search" : undefined}
+      onMouseDown={() => {
+        pressInside.current = true;
+        setTimeout(() => pressInside.current = false, 0);
+      }}
+      onFocusOut={(e) => {
+        // REQ-976: focus moved out of the island (Tab, a programmatic focus,
+        // a click elsewhere) — close the panel
+        const to = (e as FocusEvent).relatedTarget as Node | null;
+        if (to && rootRef.current?.contains(to)) return;
+        if (!to && pressInside.current) return;
+        setOpen(false);
+      }}
     >
       <style>{CSS}</style>
       <svg
