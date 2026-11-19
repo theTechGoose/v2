@@ -657,6 +657,69 @@ Deno.test("REQ-157: Cadence offers weekly and monthly only; Monthly shows 31 cli
     await expect.see("Monthly · days 15, 31");
   }));
 
+Deno.test("REQ-1166 (LOOP-007 q3-97, REQ-157 amendment): New repeat visit, First visit typed on a later day, then Monthly — that day's chip is on, not today's, and the saved card and subscription carry it", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Ana Torres",
+        address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+        email: "ana.torres@blackhole.postmarkapp.com",
+      }),
+    });
+    await r.body?.cancel();
+    // the First visit: next month, on a day of the month that is not today's
+    const today = todayIso();
+    const todayDay = Number(today.slice(8));
+    const firstDay = todayDay === 1 ? 2 : 1;
+    const [y, m] = today.slice(0, 7).split("-").map(Number);
+    const next = new Date(Date.UTC(y, m, firstDay)); // month m is next month (0-based)
+    const first = next.toISOString().slice(0, 10);
+    await page.goto("/field/subscriptions");
+    const svc = await ensureService(http, auth, "Lawn mowing");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    await page.locator("[data-cy='subs-days']").waitFor();
+    await page.locator("[data-cy='subs-start']").fill(first);
+    await page.locator("[data-cy='subs-cadence']").selectOption("monthly");
+    await page.locator("[data-cy='subs-dom-day']").first().waitFor();
+    const onDays = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-cy='subs-dom-day'].on")].map((e) =>
+        e.getAttribute("data-dom")
+      ).join("|")
+    );
+    expect.eq(
+      onDays,
+      String(firstDay),
+      `the typed First visit's day (${first}) is the one on, not today's (${todayDay})`,
+    );
+    await addVisitService(page, svc, "65");
+    await page.locator("[data-cy='subs-submit']").click();
+    await page.locator("[data-cy='subs-card']").first().waitFor({
+      timeout: 20_000,
+    });
+    const card = await page.locator("[data-cy='subs-card']").first()
+      .innerText();
+    expect.eq(
+      card.match(/Monthly · days? [\d, ]+/)?.[0]?.trim(),
+      `Monthly · day ${firstDay}`,
+      "the card reads the First visit's day",
+    );
+    const subs = await (await http("/api/field/subscriptions", {
+      headers: auth,
+    })).json();
+    const list = Array.isArray(subs) ? subs : subs.items ?? subs.subscriptions;
+    expect.eq(list.length, 1, "one subscription saved");
+    expect.eq(list[0].startDate?.slice(0, 10), first, "its First visit");
+    expect.eq(
+      JSON.stringify(list[0].daysOfMonth ?? [firstDay]),
+      JSON.stringify([firstDay]),
+      "the saved monthly day is the First visit's",
+    );
+  }));
+
 Deno.test("REQ-159: the office clicks the circle on /field/tasks — the task reads Complete and the count says 1 of 1; a second click re-opens it", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
