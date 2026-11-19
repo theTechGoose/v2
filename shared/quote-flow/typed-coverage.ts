@@ -21,7 +21,6 @@
  */
 import {
   type CustomerFacts,
-  distinctScopeItems,
   sameTerm,
   scopeTerms,
   stripCustomerDetails,
@@ -42,7 +41,54 @@ export function typedScopeItems(
     .flatMap((line) => line.split(/\s*,\s+/))
     .map((part) => stripCustomerDetails(part, facts))
     .filter((part): part is string => !!part);
-  return distinctScopeItems(parts);
+  return distinctTypedParts(parts);
+}
+
+/** REQ-951: what a typed part does to its thing. The filler list (REQ-400)
+ *  drops the verbs so rewordings match, which made "quitar el piso viejo"
+ *  look like a repeat of "cambiar piso de cocina" — tearing out the old
+ *  floor is its own item. */
+export type ScopeOperation = "remove" | "install" | "repair";
+
+const REMOVE_OP =
+  /\b(?:quit(?:ar|a|an|en|ando|ad[oa]s?|amos)(?:l[oa]s?)?|retir\w*|remov\w*|remocion|demol\w*|demo|desmont\w*|arranc\w*|derrib\w*|tumb\w*|desech\w*|tear\w*\s+(?:out|off|down)|tore\s+(?:out|off)|torn\s+(?:out|off)|rip\w*\s+(?:out|up|off)|haul\w*\s+(?:away|off)|take\s+out|dispos\w*|gut(?:ted|ting)?)\b/;
+const INSTALL_OP =
+  /\b(?:cambi\w*|instal\w*|reemplaz\w*|sustitu\w*|coloc\w*|poner|pongan?|replac\w*|install\w*|put\s+in|swap\w*)\b/;
+const REPAIR_OP =
+  /\b(?:repar\w*|arregl\w*|parch\w*|repair\w*|fix(?:ed|es|ing)?|patch\w*)\b/;
+
+/** The operation a typed part or a draft line names, removal first ("cambiar
+ *  y quitar" still promises the removal). */
+export function scopeOperation(text: string): ScopeOperation | null {
+  const p = plain(text);
+  if (REMOVE_OP.test(p)) return "remove";
+  if (INSTALL_OP.test(p)) return "install";
+  if (REPAIR_OP.test(p)) return "repair";
+  return null;
+}
+
+/** REQ-951: the distinct typed parts, in order. A part is a reworded repeat
+ *  only when an earlier kept part already had all its terms AND its
+ *  operation on those terms — "quitar el piso viejo" after "cambiar piso de
+ *  cocina" stays. */
+function distinctTypedParts(parts: readonly string[]): string[] {
+  const kept: { terms: string[]; op: ScopeOperation | null }[] = [];
+  const out: string[] = [];
+  for (const part of parts) {
+    const terms = scopeTerms(part);
+    const op = scopeOperation(part);
+    const seen = kept.flatMap((k) => k.terms);
+    const fresh = terms.some((t) => !seen.some((s) => sameTerm(s, t)));
+    const newOp = op !== null &&
+      !kept.some((k) =>
+        k.op === op && k.terms.some((s) => terms.some((t) => sameTerm(s, t)))
+      );
+    if (!fresh && !newOp) continue;
+    if (terms.length === 0) continue;
+    out.push(part);
+    kept.push({ terms, op });
+  }
+  return out;
 }
 
 function plain(s: string): string {
@@ -92,7 +138,7 @@ function isWorkItem(item: string): boolean {
   const p = plain(item);
   if (
     p.includes("?") || MONEY_TALK.test(p) || SCHEDULE_TALK.test(p) ||
-    TERMS_TALK.test(p) || NAME_ONLY.test(item.trim())
+    TERMS_TALK.test(p) || NAME_ONLY.test(item.trim()) || isStreetAddress(p)
   ) {
     return false;
   }
@@ -198,6 +244,21 @@ const NOT_QTY_AFTER =
 /** A street number: "412 Oak St", "1200 Barton Hills Dr". */
 const STREET_AFTER =
   /^\s+(?:[\p{L}.'-]+\s+){1,3}(?:st|street|ave|avenue|dr|drive|rd|road|blvd|ln|lane|way|ct|court|pl|place|cir|circle|pkwy|hwy|trl|calle|avenida)\b/u;
+/** REQ-951: what may follow the street on a typed address — a unit, a
+ *  city, a state, a zip ("1820 Elm St Austin TX 78702"). */
+const ADDRESS_TAIL =
+  /^\.?\s*(?:(?:apt|unit|suite|ste|#)\s*\w+\s*)?(?:[,\s]+[\p{L}.'-]+){0,3}?(?:[,\s]+(?:tx|ca|fl|ny|az|nm|co|nv|ga|nc|sc|il|wa|or|ut|ok|la|ar|tn|al|ms|va|md|nj|pa|oh|mi|in|ky|wi|mn|mo|ia|ks|ne|ma|ct|ri|nh|vt|me|de|dc|wv|nd|sd|mt|wy|id|ak|hi|texas))?(?:[,\s]+\d{5}(?:-\d{4})?)?[\s.]*$/u;
+
+/** REQ-951: a typed part that is the job's street address and nothing else
+ *  ("1820 Elm St Austin TX 78702") — the address has its own field, so a
+ *  first draft never owes it a line. Matched on the plain text. */
+function isStreetAddress(p: string): boolean {
+  const num = /^\s*\d{1,6}[a-z]?(?=\s)/.exec(p);
+  if (!num) return false;
+  const street = STREET_AFTER.exec(p.slice(num[0].length));
+  if (!street) return false;
+  return ADDRESS_TAIL.test(p.slice(num[0].length + street[0].length));
+}
 const NUMBER =
   /(?<![\p{L}\p{N}$.,/:#-])(\d+(?:[.,]\d+)?(?:\s*[x×]\s*\d+(?:[.,]\d+)?)*)(?![\d/]|[.,]\d)/gu;
 /** Words that end a counted phrase ("5 LED strips for the island"). */
@@ -351,8 +412,15 @@ function keyTerms(items: readonly string[]): string[][] {
 }
 
 /** True when one line names the item: it holds a third (at least one) of
- *  the item's own terms. */
-function names(line: string, key: readonly string[]): boolean {
+ *  the item's own terms — and, for a removal (REQ-951), says it removes
+ *  something too ("Cambio de piso" does not cover "quitar el piso viejo";
+ *  "… y retiro del piso viejo" does). */
+function names(
+  line: string,
+  key: readonly string[],
+  removal = false,
+): boolean {
+  if (removal && !REMOVE_OP.test(plain(line))) return false;
   if (key.length === 0) return true;
   return shared(key, scopeTerms(line)) >=
     Math.max(1, Math.ceil(key.length / 3));
@@ -364,7 +432,10 @@ export function missedTypedItems(
   items: readonly string[],
 ): string[] {
   const keys = keyTerms(items);
-  return items.filter((_, i) => !lines.some((l) => names(l, keys[i])));
+  const removal = items.map((item) => scopeOperation(item) === "remove");
+  return items.filter((_, i) =>
+    !lines.some((l) => names(l, keys[i], removal[i]))
+  );
 }
 
 /** The index of the line that best names the quantity's item, or -1. */
