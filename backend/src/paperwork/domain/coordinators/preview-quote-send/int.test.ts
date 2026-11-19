@@ -254,7 +254,9 @@ Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: an English preview of a Sp
     }`,
   );
 
-  // With an English summary cached, the hero is that summary.
+  // REQ-1087 (amends REQ-591): with an English summary cached, the hero still
+  // names the job as the subject does — the English job name, never the
+  // summary title-cased ("Faucet And Interior Door Repair").
   await ctx.quotes.update(
     quote.id,
     "u-1",
@@ -270,20 +272,19 @@ Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: an English preview of a Sp
     channel: "email",
     lang: "en",
   });
-  assertStringIncludes(p2.email!.html, "Faucet And Interior Door Repair");
+  assertStringIncludes(p2.email!.html, ">Faucet Repair</h1>");
+  assert(!p2.email!.html.includes("Faucet And"), "no capital 'And'");
   assert(!SPANISH_HERO.test(p2.email!.html), "no Spanish hero");
 
-  // The Spanish preview still leads with the typed Spanish summary — in
-  // sentence case (REQ-720: a Spanish email hero is never Title Case).
+  // REQ-1087: the Spanish preview leads with the Spanish job name, as its
+  // subject does — in sentence case (REQ-720).
   const es = await ctx.flow.run("u-1", {
     quoteId: quote.id,
     channel: "email",
     lang: "es",
   });
-  assertStringIncludes(
-    es.email!.html,
-    "Reparación de grifo y puertas interiores",
-  );
+  assertStringIncludes(es.email!.html, ">Reparación de grifo</h1>");
+  assertStringIncludes(es.email!.subject, "Reparación de grifo");
   await resetKv();
 });
 
@@ -318,7 +319,8 @@ Deno.test("REQ-591 (cycle 4, M32) preview-quote-send: a quote with no heading in
   assertEquals(calls.length, 1, "translated once before rendering");
   assertEquals(calls[0].langs, ["en"]);
   assertStringIncludes(p.email!.subject, "Faucet Repair");
-  assertStringIncludes(p.email!.html, "Faucet And Interior Door Repair");
+  // REQ-1087: the hero is the translated job name, as in the subject
+  assertStringIncludes(p.email!.html, ">Faucet Repair</h1>");
   assert(!SPANISH_HERO.test(p.email!.html), "no Spanish hero");
 
   // Everything cached now: a second preview does not call the model again.

@@ -1,3 +1,4 @@
+import { summaryWithoutCustomerTail } from "#quote-flow/customer-dedupe.ts"; // REQ-1087
 import { Injectable } from "#danet/core";
 import { paidHow } from "#documents/paid-how.ts"; // REQ-928
 import { invoiceTitle } from "#documents/linked-view.ts"; // REQ-984
@@ -926,6 +927,26 @@ export function quoteSendTexts(
 const COLOR_PINK = "#FF6B6B";
 const COLOR_PINK_DARK = "#d94e4e";
 
+/**
+ * REQ-1087 (LOOP-007 q3, q3-4) — the quote email's job label, shared by the
+ * subject, the hero and the preheader: the job name in the send language as
+ * typed (empty when the quote has none).
+ */
+function quoteJobName(q: Quote, lang: Lang): string {
+  return (q.jobNameByLang?.[lang] ?? q.jobName)?.trim() ?? "";
+}
+
+/**
+ * REQ-1087 — the label when a quote has no job name: REQ-591's summary in the
+ * send language, without a leading "Quote:" and without the chat's
+ * "— <customer>" tail (REQ-576), as REQ-1046 strips it on the signed email.
+ */
+function quoteSummaryLabel(q: Quote, lang: Lang): string {
+  return summaryWithoutCustomerTail(
+    (quoteSummary(q, lang) ?? "").replace(/^\s*quote\s*:\s*/i, ""),
+  ).trim();
+}
+
 export function renderQuoteSubject(
   q: Quote,
   sender: User | undefined,
@@ -943,9 +964,8 @@ export function renderQuoteSubject(
       .map((n) => (isPlaceholderName(n) ? undefined : n?.trim()))
       .find((n): n is string => Boolean(n)) ??
     t(lang, "paperworkEmail.senderFallback");
-  const jobName = (q.jobNameByLang?.[lang] ?? q.jobName)?.trim() ||
-    (q.summaryByLang?.[lang] ?? q.summary)?.replace(/^\s*quote\s*:\s*/i, "")
-      .trim() ||
+  // REQ-1087: the same job label the email's hero and preheader carry
+  const jobName = quoteJobName(q, lang) || quoteSummaryLabel(q, lang) ||
     t(lang, "paperworkEmail.subject.jobFallback");
   // REQ-204 / REQ-201: "Quote Q-001 from <Business> — <job>", and the
   // version once revised ("… — Version 2 — <job>"); es "Cotización Q-001 de …".
@@ -1158,18 +1178,19 @@ export function renderQuoteHtml(
     "PM",
   );
 
-  // REQ-591 (cycle 4, M32): the hero (and the preheader) in the send
-  // language — summaryByLang, else the job name in that language, else the
-  // typed summary — never the raw summary under a translated subject.
-  const summaryClean =
-    (quoteSummary(q, lang) ?? t(lang, "paperworkEmail.quote.summaryFallback"))
-      .replace(/^\s*quote\s*:\s*/i, "")
-      .trim();
-  // Title case for visual weight in the hero. P-07: Unicode-aware (the old
-  // `\b\w` approach re-fired after accents: "InstalacióN De BañO") with es
-  // stopwords kept lowercase.
+  // REQ-1087 (amends REQ-591 / REQ-1046): the hero and the preheader name the
+  // job the way the subject does — the job name in the send language,
+  // verbatim (jobNameCase already cased it). Only without one does it fall
+  // back to REQ-591's summary in the send language, with the chat's
+  // "— <customer>" tail removed, so the customer is never named in the job.
+  const jobName = quoteJobName(q, lang);
+  const summaryClean = jobName || quoteSummaryLabel(q, lang) ||
+    t(lang, "paperworkEmail.quote.summaryFallback");
+  // Title case for visual weight in the summary fallback hero. P-07:
+  // Unicode-aware (the old `\b\w` approach re-fired after accents:
+  // "InstalacióN De BañO") with es stopwords kept lowercase.
   // REQ-756: Spanish sentence case never lowercases the customer's name.
-  const heroTitle = titleCaseJobName(summaryClean, lang, {
+  const heroTitle = jobName || titleCaseJobName(summaryClean, lang, {
     keep: [customer?.name],
   });
 
@@ -1177,7 +1198,7 @@ export function renderQuoteHtml(
     customerFirst
       ? `${t(lang, "paperworkEmail.quote.preheaderFor")} ${customerFirst} — `
       : ""
-  }${summaryClean} · ${fmtUSD(total)}`;
+  }${heroTitle} · ${fmtUSD(total)}`;
 
   // Line items rendered as visual rows (not a generic header-table) — each
   // line gets a small pink dot and right-aligned amount. Reads more like a
@@ -1668,8 +1689,10 @@ export function renderInvoiceHtml(
   };
 
   const jobName = (quote?.jobNameByLang?.[lang] ?? quote?.jobName)?.trim();
-  const summaryClean = ((quote?.summaryByLang?.[lang] ?? quote?.summary) ?? "")
-    .replace(/^\s*quote\s*:\s*/i, "").trim();
+  // REQ-1087: never the summary's "— <customer>" tail in the invoice hero
+  const summaryClean = summaryWithoutCustomerTail(
+    (quote?.summaryByLang?.[lang] ?? quote?.summary) ?? "",
+  ).replace(/^\s*quote\s*:\s*/i, "").trim();
   // REQ-984 (LOOP-007 q1-60): named like the /i page — the job, else its first
   // line, else "Invoice INV-001" — never the placeholder "Project".
   const heroRaw = invoiceTitle({

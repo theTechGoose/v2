@@ -297,6 +297,9 @@ Deno.test("send-paperwork-email integration: quote html escapes user-supplied su
   const quote = await quotes.create("u-1", {
     customerId: customer.id,
     summary: `<script>alert("xss")</script>`,
+    // REQ-1087: the hero names the job by jobName (as the subject does), so
+    // the hostile text rides there too — it must be escaped in the hero.
+    jobName: `<script>alert("xss")</script>`,
     // Two line items so the breakdown table renders; the first has qty>1 so
     // its (malicious) unit is shown and we can assert it's escaped.
     lineItems: [
@@ -838,9 +841,12 @@ Deno.test("REQ-720 send-paperwork-email: a Spanish quote email's hero is sentenc
     language: "es",
   });
   assertEquals(es.ok, true);
-  assertStringIncludes(sent[0].htmlBody, "Corte de césped y poda de setos");
+  // REQ-1087: the hero is the job name (the subject's label), so assert the
+  // sentence case on the hero itself rather than on the typed summary.
+  const esHero = sent[0].htmlBody.match(/<h1[^>]*>([^<]*)<\/h1>/)?.[1] ?? "";
+  assert(esHero.startsWith("Corte de césped"), `es hero: ${esHero}`);
   assert(
-    !sent[0].htmlBody.includes("Corte de Césped y Poda de Setos"),
+    !/Corte de Césped|Poda de Setos/.test(sent[0].htmlBody),
     "the Spanish hero is never English Title Case",
   );
 
@@ -884,10 +890,11 @@ Deno.test("REQ-756 send-paperwork-email: a Spanish quote email's hero never lowe
     language: "es",
   });
   assertEquals(es.ok, true);
-  assertStringIncludes(
-    sent[0].htmlBody,
-    "Corte de césped y poda de setos — Ana Pérez",
-  );
+  // REQ-1087 supersedes the "— Ana Pérez" hero tail: the hero names the job
+  // only (the subject's label); the customer's name is never lowercased.
+  const hero = sent[0].htmlBody.match(/<h1[^>]*>([^<]*)<\/h1>/)?.[1] ?? "";
+  assert(hero.startsWith("Corte de césped"), `hero: ${hero}`);
+  assert(!hero.includes("Pérez"), `the hero carries no customer tail: ${hero}`);
   assert(
     !sent[0].htmlBody.includes("ana pérez"),
     "the customer's name is never lowercased in the Spanish hero",

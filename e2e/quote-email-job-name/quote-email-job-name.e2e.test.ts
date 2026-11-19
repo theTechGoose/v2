@@ -176,8 +176,13 @@ for (const c of CASES) {
       const qTitle = page.locator("h1.ctr__title");
       await qTitle.waitFor({ timeout: 20_000 });
       const qHeading = (await qTitle.innerText()).trim();
+      // Spanish /q embeds the job mid-sentence ("Acuerdo de pintura exterior
+      // … para Lupe Garza"), where Spanish lowercases its first letter — the
+      // same words, so compare case-blind (REQ-1087 note).
       expect(
-        qHeading.includes(h1),
+        qHeading.toLocaleLowerCase(c.lang).includes(
+          h1.toLocaleLowerCase(c.lang),
+        ),
         `/q's heading ${
           JSON.stringify(qHeading)
         } names the same job as the email heading ${JSON.stringify(h1)}`,
