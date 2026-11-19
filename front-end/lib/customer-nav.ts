@@ -109,3 +109,15 @@ export function shortMoney(cents: number): string {
   const s = k >= 10 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, "");
   return `$${s}k`;
 }
+
+/**
+ * REQ-993 — Send invoice re-reads the customer list; "open" the new-invoice form with her chosen
+ * when she is still in it, "missing" when she was deleted (e.g. in another tab), so the page shows
+ * "Customer not found" instead of a blank form.
+ */
+export function invoiceFormTarget(
+  customers: readonly { id: string }[],
+  customerId: string,
+): "open" | "missing" {
+  return customers.some((x) => x.id === customerId) ? "open" : "missing";
+}

@@ -36,7 +36,7 @@ import {
 import { toE164 } from "../lib/communications.ts";
 import { assistantThreadPath } from "../lib/quote-panel-send.ts";
 import { invoiceSendContact } from "../lib/invoice-send-sheet.ts";
-import { initialsOf } from "../lib/customer-nav.ts";
+import { initialsOf, invoiceFormTarget } from "../lib/customer-nav.ts";
 import { isIssuedState, zeroBalanceKey } from "../lib/clients-display.ts";
 import { CUSTOMERS_CHANGED } from "../components/CustomersNav.tsx";
 import Backdrop from "../components/Backdrop.tsx";
@@ -179,6 +179,13 @@ export default function CustomerWorkspace(
   }
   useEffect(() => {
     load();
+    // REQ-993: a tab you come back to re-checks she still exists (deleted in another tab →
+    // "Customer not found" before any click)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [customerId]);
   useEffect(() => {
     if (!toast) return;
@@ -267,6 +274,12 @@ export default function CustomerWorkspace(
         dashboardClient.customers(),
         dashboardClient.invoices(),
       ]);
+      if (invoiceFormTarget(customers, c.id) === "missing") {
+        // REQ-993: she was deleted elsewhere — re-read (404 → "Customer not found"), drop her
+        // sidebar row, never open a blank form
+        await changed();
+        return;
+      }
       setModal({ kind: "invoice", customers, invoices });
     } catch {
       setToast({ text: tFor(lang, "customerWs.err.generic"), err: true });
@@ -292,6 +305,7 @@ export default function CustomerWorkspace(
       });
       globalThis.location.assign(assistantThreadPath(conv.id));
     } catch {
+      await load(); // REQ-993: deleted elsewhere → "Customer not found"
       setBusy(null);
       setToast({ text: tFor(lang, "customerWs.err.generic"), err: true });
     }
