@@ -82,8 +82,13 @@ export class PreviewInvoiceSend {
       | User
       | undefined;
     const rawBiz = await this.identity.get(userId).catch(() => null);
+    // REQ-715 / REQ-934: the customer reads in her own language — load her
+    // BEFORE the language is decided so no pick starts in it, not the
+    // account's default.
+    const customer = await this.tryGetCustomer(userId, stored.customerId);
     const lang = resolveCommsLanguage({
-      override: input.lang ?? invoiceDocLang(stored, quote),
+      override: input.lang ?? invoiceDocLang(stored, quote, customer),
+      customerLanguage: customer?.language,
       identityCommsLanguage: rawBiz?.commsLanguage,
       sendLanguages: rawBiz?.commsLanguages, // REQ-925
     });
@@ -99,7 +104,6 @@ export class PreviewInvoiceSend {
     } as BusinessIdentity;
     const safeSender = sender ? { ...sender, name: displayName } : sender;
     const invoice = asSent(stored, userId, sender?.name, input);
-    const customer = await this.tryGetCustomer(userId, invoice.customerId);
     const onDoc = customerOnDocument(invoice, customer);
     const want = sendPreviewSections(input.channel);
     const out: QuoteSendPreview = { lang };

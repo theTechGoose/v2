@@ -806,6 +806,7 @@ function shell(opts: {
     }</a></div>`
     : "";
 
+  // REQ-934: the document's language, not a hard-coded "en"
   return `<!doctype html>
 <html lang="${lang}">
 <head>

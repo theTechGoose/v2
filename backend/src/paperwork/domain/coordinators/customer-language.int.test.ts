@@ -21,6 +21,7 @@ import { assert, assertEquals, assertStringIncludes } from "#std/assert";
 import { SendPaperworkEmail } from "./send-paperwork-email/mod.ts";
 import { SendPaperworkSms } from "./send-paperwork-sms/mod.ts";
 import { PreviewQuoteSend } from "./preview-quote-send/mod.ts";
+import { PreviewInvoiceSend } from "./preview-invoice-send/mod.ts";
 import { SendPaymentReminder } from "./send-payment-reminder/mod.ts";
 import { SendChangeOrderAlert } from "./send-change-order-alert/mod.ts";
 import { SendSignedConfirmation } from "./send-signed-confirmation/mod.ts";
@@ -470,6 +471,77 @@ Deno.test("REQ-715: the confirmation she gets after signing — email and its PD
       pdfLangs,
       ["es"],
       "the countersigned PDF is her copy, in Spanish",
+    );
+  } finally {
+    await resetKv();
+  }
+});
+
+/**
+ * REQ-934 (LOOP-007 q1, q1-5; amends REQ-715) — "Customer set to Español is
+ * invoiced in English from her own page". PreviewInvoiceSend resolved its
+ * language from the pick → the invoice's typed lang → the account's
+ * Settings default, never the customer: an amount-only invoice for Carmen
+ * previews (and so the send sheet flips to) English.
+ */
+Deno.test("REQ-934 q1-5 (REQ-715): the invoice send preview with no pick starts in the customer's language, even with an English account default", async () => {
+  const r = rig();
+  try {
+    const { carmen, bob } = await seed(r);
+    await r.identity.upsert(USER, {
+      businessName: "Ortega Handyman Services",
+      commsLanguage: "en",
+      commsLanguages: ["en", "es"],
+    } as never);
+    const inv = await r.invoices.create(USER, {
+      customerId: carmen.id,
+      amount: 1250_00,
+      dueDate: "2026-12-01",
+      status: "draft",
+    } as never);
+    assertEquals(inv.lang, undefined, "an amount-only invoice has no lang");
+
+    const preview = new PreviewInvoiceSend(
+      r.invoices,
+      r.quotes,
+      r.customers,
+      r.users,
+      r.identity,
+      r.shortlinks,
+    );
+    const p = await preview.run(USER, { invoiceId: inv.id, channel: "both" });
+    assertEquals(
+      p.lang,
+      "es",
+      "no pick → Carmen's language, not the account's",
+    );
+    assert(
+      p.email?.subject.startsWith("Factura "),
+      `the preview shows what she gets: ${p.email?.subject}`,
+    );
+    assertStringIncludes(p.sms?.body ?? "", "?lang=es");
+
+    const picked = await preview.run(USER, {
+      invoiceId: inv.id,
+      channel: "email",
+      lang: "en",
+    });
+    assertEquals(picked.lang, "en", "the per-send pick still wins");
+
+    const bobs = await r.invoices.create(USER, {
+      customerId: bob.id,
+      amount: 300_00,
+      dueDate: "2026-12-01",
+      status: "draft",
+    } as never);
+    const pb = await preview.run(USER, {
+      invoiceId: bobs.id,
+      channel: "email",
+    });
+    assertEquals(
+      pb.lang,
+      "en",
+      "a customer with no language → the account default",
     );
   } finally {
     await resetKv();
