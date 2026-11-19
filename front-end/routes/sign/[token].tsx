@@ -1,8 +1,9 @@
 /**
  * REQ-885 / REQ-883c — /sign/:token: the hire's phone page. PUBLIC (no owner session, no
  * dashboard chrome): the token is the hire's identity; the HrSignPacket island opens the packet
- * at /api/hr/sign/:token. The language is the pm_lang cookie's, else ?lang=, else Spanish
- * (the app's default) — the page's EN/ES switch persists it.
+ * at /api/hr/sign/:token. The language is ?lang= (the text/email link carries the message's,
+ * REQ-1157), else the pm_lang cookie's, else Spanish (the app's default) — the page's EN/ES
+ * switch persists it.
  */
 import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";

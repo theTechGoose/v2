@@ -17,7 +17,11 @@ import {
   HireStore,
   HrSettingsStore,
 } from "@hr/domain/data/hr-stores/mod.ts";
-import { fullName, newHireSender, reminderDue } from "@hr/domain/business/onboarding/mod.ts";
+import {
+  fullName,
+  newHireSender,
+  reminderDue,
+} from "@hr/domain/business/onboarding/mod.ts";
 import type { Hire, HrSettings } from "@hr/dto/hr.ts";
 
 const EVERY_MINUTE_MS = 60_000;
@@ -35,6 +39,13 @@ export function escapeHtml(s: string): string {
   );
 }
 
+/** the owner's language: their users.language, English unless it is Spanish */
+export function ownerLang(
+  user: { language?: string } | null | undefined,
+): Lang {
+  return user?.language === "es" ? "es" : "en";
+}
+
 @Injectable()
 export class HrNotices {
   constructor(
@@ -46,9 +57,11 @@ export class HrNotices {
     private email: EmailService,
   ) {}
 
-  /** the link the hire opens: the app's origin, /sign/<token> */
-  signUrl(token: string): string {
-    return `${appUrl()}/sign/${token}`;
+  /** the link the hire opens: the app's origin, /sign/<token>?lang=<the message's language>.
+   *  REQ-1157 — /sign/:token reads ?lang first, so the page opens in the language the text and
+   *  the email were written in, never the phone's last pm_lang cookie or the Spanish fallback. */
+  signUrl(token: string, lang: Lang): string {
+    return `${appUrl()}/sign/${token}?lang=${lang}`;
   }
 
   /** REQ-889a — the account's settings; the business's name and the owner's email stand in until set */
@@ -72,9 +85,10 @@ export class HrNotices {
     };
   }
 
-  private async lang(userId: string): Promise<Lang> {
+  /** the owner's language — what the hire's text and email are written in */
+  async lang(userId: string): Promise<Lang> {
     const u = await this.users.get(userId).catch(() => null);
-    return u?.language === "es" ? "es" : "en";
+    return ownerLang(u);
   }
 
   private async text(
@@ -97,7 +111,8 @@ export class HrNotices {
    *  address, so the hire's inbox names who is hiring them, never DocuMonster */
   private async fromFor(userId: string, companyName: string): Promise<string> {
     const identity = await this.identities.get(userId).catch(() => null);
-    return newHireSender({ alias: identity?.emailAlias, company: companyName }).from;
+    return newHireSender({ alias: identity?.emailAlias, company: companyName })
+      .from;
   }
 
   private async mail(
@@ -136,7 +151,7 @@ export class HrNotices {
     const v = {
       first: hire.firstName,
       company: s.companyName || "the team",
-      url: this.signUrl(hire.token),
+      url: this.signUrl(hire.token, lang),
     };
     const smsKey = kind === "invite" ? "hr.sms.invite" : "hr.sms.reminder";
     const sms = await this.text(
