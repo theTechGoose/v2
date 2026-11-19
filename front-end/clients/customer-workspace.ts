@@ -104,9 +104,24 @@ export interface WorkspaceWorkOrder {
   number: string;
   description: string;
   status: string;
+  /** REQ-1140: the signed job (quote) it belongs to */
+  quoteId?: string;
   scheduledFor?: string;
   url: string;
   updatedAt: string;
+}
+
+/** REQ-1140 (AMENDMENT of REQ-924(c)) — one signed job (a won quote), by the card's activeJobs rule */
+export interface WorkspaceJob {
+  id: string;
+  number: string;
+  title: string;
+  active: boolean;
+  signedAt?: string;
+  agreedCents: number;
+  paidCents: number;
+  url: string;
+  workOrders: { id: string; number: string; status: string; url: string }[];
 }
 
 export interface CustomerWorkspace {
@@ -119,6 +134,8 @@ export interface CustomerWorkspace {
   services: WorkspaceService[];
   visits: WorkspaceVisit[];
   workOrders: WorkspaceWorkOrder[];
+  /** REQ-1140: her signed jobs, in flight first */
+  jobs: WorkspaceJob[];
 }
 
 export const customerWorkspaceClient = {

@@ -158,3 +158,42 @@ Deno.test("REQ-1063 (LOOP-007 q2, q2-52) GET /customers/:id/workspace — a repe
     assertEquals(ws.summary.recurringEndsOn, undefined);
   });
 });
+
+// REQ-1140 (LOOP-007 q3, q3-71) — a signed job leaves the customer's Jobs tab at 0. The customer signs
+// her quote through the public accept endpoint (which bills it: an unpaid invoice), then her workspace
+// must list that signed quote as one active job — the same count the board's card shows as activeJobs.
+Deno.test("REQ-1140 (LOOP-007 q3, q3-71) GET /customers/:id/workspace — after the customer signs Q-001 the workspace lists one active job (that quote), matching the card's activeJobs", async () => {
+  await withServer(async (base) => {
+    const H = await login(base, "+15125551140");
+    const c = await fetch(`${base}/customers`, { method: "POST", headers: H, body: JSON.stringify({ name: "Lucia Herrera" }) }).then((r) => r.json());
+    const q = await fetch(`${base}/quotes`, {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({
+        customerId: c.id,
+        summary: "Kitchen backsplash",
+        jobName: "Kitchen backsplash",
+        lineItems: [{ description: "Kitchen backsplash", quantity: 1, unit: "job", price: 240000 }],
+        estimatedTotal: 240000,
+      }),
+    }).then((r) => r.json());
+    await new QuoteStore().update(q.id, c.userId, { status: "sent", sentAt: new Date().toISOString() } as never);
+    const signed = await fetch(`${base}/quotes/${q.id}/accept`, {
+      method: "POST",
+      headers: J,
+      body: JSON.stringify({ name: "Lucia Herrera", signature: "Lucia Herrera" }),
+    });
+    assertEquals(signed.status, 200, await signed.text());
+
+    const ws = await fetch(`${base}/customers/${c.id}/workspace`, { headers: H }).then((r) => r.json());
+    assertEquals(ws.customer.activeJobs, 1, "the board's card: one signed job in flight (REQ-562)");
+    assertEquals(ws.workOrders.length, 0, "signing creates no work order (REQ-210)");
+    assert(Array.isArray(ws.jobs), `the workspace carries the customer's signed jobs — got jobs=${JSON.stringify(ws.jobs)}`);
+    assertEquals(ws.jobs.length, 1, "one signed quote → one job");
+    assertEquals(ws.jobs[0].id, q.id, "the job is the signed quote");
+    assertEquals(ws.jobs[0].number, "Q-001");
+    assertEquals(ws.jobs[0].active, true, "its invoice is unpaid: the job is in flight");
+    assertEquals(ws.jobs[0].url, `/quotes?open=${q.id}`);
+    assertEquals(ws.jobs.filter((j: { active: boolean }) => j.active).length, ws.customer.activeJobs, "the Jobs tab and the board count the same jobs");
+  });
+});
