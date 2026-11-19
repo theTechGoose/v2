@@ -41,6 +41,9 @@ describe("REQ-237 M17 review card job details", () => {
     ]);
   });
 
+  // REQ-1049 (q2-34) amended this case: the description still fills the
+  // scope text (preview language first), but the priced line now follows it
+  // with its amount, as on the customer /q.
   it("REQ-237: a description still wins (the 'I know my price' flow), in the preview language first", () => {
     const items = [{ description: "Line", amountCents: 100 }];
     expect(
@@ -50,7 +53,11 @@ describe("REQ-237 M17 review card job details", () => {
         description: "• Remove tile\n• Paint",
         lineItems: items,
       }),
-    ).toEqual([{ text: "Quitar azulejo" }, { text: "Pintar" }]);
+    ).toEqual([
+      { text: "Quitar azulejo" },
+      { text: "Pintar" },
+      { text: "Line", amountCents: 100 },
+    ]);
     expect(
       reviewJobDetails({
         previewLang: "en",
@@ -58,7 +65,7 @@ describe("REQ-237 M17 review card job details", () => {
         description: "Stored copy",
         lineItems: items,
       }),
-    ).toEqual([{ text: "Locked copy" }]);
+    ).toEqual([{ text: "Locked copy" }, { text: "Line", amountCents: 100 }]);
   });
 
   it("REQ-237: nothing at all is still empty (the card shows 'Add the job details')", () => {
@@ -84,6 +91,16 @@ describe("REQ-237 M17 review card job details", () => {
  * priced lines too, with their amounts.
  */
 describe("REQ-1049 q2-34 review card lists priced lines alongside the description", () => {
+  it("REQ-1049: a line that only repeats a description line is not listed twice — its amount lands on that row", () => {
+    expect(
+      reviewJobDetails({
+        previewLang: "en",
+        description: "Paint bathroom",
+        lineItems: [{ description: " paint bathroom ", amountCents: 45_000 }],
+      }),
+    ).toEqual([{ text: "Paint bathroom", amountCents: 45_000 }]);
+  });
+
   const Q002_LINES = [
     { description: "Mano de obra — pintura exterior", amountCents: 420_000 },
     { description: "Pintar la cerca", amountCents: 90_000 },
