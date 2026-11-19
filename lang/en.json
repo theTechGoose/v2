@@ -4293,6 +4293,7 @@
   "field.lt.save": "Save changes",
   "field.lt.saved": "Saved",
   "field.lt.selectAll": "Select all",
+  "field.lt.clearAll": "Clear all",
   "field.lt.send": "Send selected",
   "field.lt.sent": "{n} invoice(s) sent — each client got theirs.",
   "field.lt.noRecipient": "{name} has no email or phone on file, so nothing was sent.",
