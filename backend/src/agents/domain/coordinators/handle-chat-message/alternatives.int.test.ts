@@ -208,3 +208,121 @@ Deno.test("REQ-942 (LOOP-007 q1-1): the Spanish 'dos opciones: opción A … $9,
   }
   await resetKv();
 });
+
+/**
+ * REQ-1019 (LOOP-007 cycle 2, q2-2) — the tester typed "2 options: basic
+ * porcelain tile $8,400 or upgrade with niche + glass door $11,200". The real
+ * model drafted the base line AND the upgrade line at $8,400 plus three $0
+ * lines; REQ-942's narrowing missed that shape and Q-001 was saved at
+ * $16,800 — a total equal to neither option. "total should not be 16,800"
+ * then re-saved the same lines: the correction turn has no options guard.
+ */
+const Q22 =
+  "quote for maria gonzalez 843-555-0142 maria.g@example.com, 1418 oak hollow dr austin tx 78745. master bath redo, tear out old tub put in walk in shower w/ tile surround about 60 sqft wall tile + 35 sqft floor, new 48in vanity, 2 options: basic porcelain tile $8,400 or upgrade with niche + glass door $11,200. 30% deposit";
+const Q22_LINES: Line[] = [
+  { description: "Tear out old tub", amountCents: 0 },
+  {
+    description:
+      "Install walk-in shower with tile surround (60 sqft wall, 35 sqft floor) - basic porcelain tile",
+    amountCents: 840_000,
+  },
+  { description: "Install new 48in vanity", amountCents: 0 },
+  { description: "Upgrade: tile niche and glass door", amountCents: 840_000 },
+  { description: "Cleanup", amountCents: 0 },
+];
+const Q22_DOUBLED = 1_680_000;
+const q22Draft = (text = ""): LLMResponse => ({
+  text,
+  action: {
+    type: "create_quote",
+    payload: { summary: "Master bath redo — Maria Gonzalez", lineItems: Q22_LINES },
+  },
+});
+const totalSaved = (q: {
+  estimatedTotal?: number;
+  lineItems: { price: number; quantity?: number }[];
+}) => typeof q.estimatedTotal === "number" ? q.estimatedTotal : totalOf(q);
+
+Deno.test("REQ-1019 (LOOP-007 q2-2): '2 options: … $8,400 or upgrade … $11,200' drafted as 2×$8,400 + 3×$0 is saved at the first option's $8,400, never $16,800", async () => {
+  const ctx = await fresh();
+  always(ctx.llm, q22Draft("Drafting a quote."));
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: Q22,
+  });
+  const saved = await ctx.quotes.listByUser("u-1");
+  assert(saved.length >= 1, "no quote was drafted");
+  for (const q of saved) {
+    const lines = JSON.stringify(
+      q.lineItems.map((l) => [l.description, l.price]),
+    );
+    assert(
+      totalSaved(q) !== Q22_DOUBLED && totalOf(q) !== Q22_DOUBLED,
+      `a saved quote totals $16,800 — the first option billed twice (estimatedTotal ${q.estimatedTotal}, lines ${lines})`,
+    );
+    assert(
+      totalOf(q) === 840_000 || totalOf(q) === 1_120_000,
+      `a saved quote totals ${totalOf(q)} — neither option ($8,400 / $11,200): ${lines}`,
+    );
+  }
+  const shown = textOf(result.newMessages);
+  assert(!shown.includes("16,800"), `the reply names $16,800: ${shown}`);
+  assert(
+    !shown.includes(String(Q22_DOUBLED)),
+    `the card totals 1680000: ${shown}`,
+  );
+  assert(
+    /option/i.test(shown),
+    `the reply never says it drafted one of the two options: ${shown}`,
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-1019 (LOOP-007 q2-2): the correction 'total should not be 16,800' never re-saves the $16,800 draft", async () => {
+  const ctx = await fresh();
+  // Turn 1 is answered with the first option alone, so this test isolates
+  // the correction turn: the options were typed in an EARLIER message, and
+  // the model's next answer (the $16,800 lines) must still be narrowed.
+  always(ctx.llm, {
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Master bath redo — Maria Gonzalez",
+        lineItems: Q22_LINES.filter((l) => !/upgrade/i.test(l.description)),
+      },
+    },
+  });
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  await ctx.flow.run({ userId: "u-1", conversationId: conv.id, content: Q22 });
+  const first = await ctx.quotes.listByUser("u-1");
+  assert(
+    first.length === 1 && totalOf(first[0]) === 840_000,
+    `setup: turn 1 should save the first option at $8,400, got ${
+      JSON.stringify(first.map((q) => totalOf(q)))
+    }`,
+  );
+  // the model re-sends the doubled lines on the correction turn
+  always(ctx.llm, q22Draft("Updated the quote."));
+  const second = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: "total should not be 16,800",
+  });
+  for (const q of await ctx.quotes.listByUser("u-1")) {
+    assert(
+      totalSaved(q) !== Q22_DOUBLED && totalOf(q) !== Q22_DOUBLED,
+      `after "total should not be 16,800" a saved quote still totals $16,800 (estimatedTotal ${q.estimatedTotal}, lines ${
+        JSON.stringify(q.lineItems.map((l) => [l.description, l.price]))
+      })`,
+    );
+  }
+  const shown = textOf(second.newMessages);
+  assert(
+    !shown.includes(String(Q22_DOUBLED)),
+    `the correction's card still totals 1680000: ${shown}`,
+  );
+  await resetKv();
+});

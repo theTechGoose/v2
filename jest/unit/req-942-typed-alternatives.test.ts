@@ -92,3 +92,57 @@ describe("REQ-942 firstAlternativeLines", () => {
     ], found())).toBeUndefined();
   });
 });
+
+/**
+ * REQ-1019 (LOOP-007 cycle 2, q2-2) — "2 options: basic porcelain tile $8,400
+ * or upgrade with niche + glass door $11,200". The real model put $8,400 on
+ * the base line AND on the upgrade line (plus three $0 lines), and the
+ * REQ-942 guard let the $16,800 draft through: it only knows the other option
+ * by its two-word label prefix ("upgrade with") or its exact typed price, and
+ * a line at the first option's price is never treated as another option.
+ */
+describe("REQ-1019 (LOOP-007 q2-2) firstAlternativeLines — the first option's price repeated", () => {
+  const Q22 =
+    "quote for maria gonzalez 843-555-0142 maria.g@example.com, 1418 oak hollow dr austin tx 78745. master bath redo, tear out old tub put in walk in shower w/ tile surround about 60 sqft wall tile + 35 sqft floor, new 48in vanity, 2 options: basic porcelain tile $8,400 or upgrade with niche + glass door $11,200. 30% deposit";
+  const L = (description: string, amountCents: number) => ({
+    description,
+    amountCents,
+  });
+  const sum = (ls: { amountCents: number }[]) =>
+    ls.reduce((n, l) => n + l.amountCents, 0);
+  it("REQ-1019: reads the q2-2 message as two options", () => {
+    expect(
+      alts.typedAlternatives(Q22).map((a: { cents: number }) => a.cents),
+    ).toEqual([840000, 1120000]);
+  });
+  it("REQ-1019: narrows [tear-out $0, base $8,400, 'Upgrade: tile niche and glass door' $8,400, vanity $0, cleanup $0] to $8,400", () => {
+    const out = alts.firstAlternativeLines([
+      L("Tear out old tub", 0),
+      L(
+        "Install walk-in shower with tile surround (60 sqft wall, 35 sqft floor) - basic porcelain tile",
+        840000,
+      ),
+      L("Install new 48in vanity", 0),
+      L("Upgrade: tile niche and glass door", 840000),
+      L("Cleanup", 0),
+    ], alts.typedAlternatives(Q22));
+    expect(out).toBeDefined();
+    expect(sum(out ?? [])).toBe(840000);
+    expect(
+      (out ?? []).some((l: { description: string }) =>
+        /niche|glass door/i.test(l.description)
+      ),
+    ).toBe(false);
+  });
+  it("REQ-1019: narrows ['Basic porcelain tile option' $8,400, 'Upgrade option with niche + glass door' $8,400] to $8,400", () => {
+    const out = alts.firstAlternativeLines([
+      L("Tear out old tub", 0),
+      L("Basic porcelain tile option", 840000),
+      L("Upgrade option with niche + glass door", 840000),
+      L("New 48in vanity", 0),
+      L("Walk-in shower", 0),
+    ], alts.typedAlternatives(Q22));
+    expect(out).toBeDefined();
+    expect(sum(out ?? [])).toBe(840000);
+  });
+});
