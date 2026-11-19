@@ -130,7 +130,7 @@ async function signOn(
     .then((r) => r.ok ? r.json() : {}).catch(() => ({}));
   const mail = outbox.find((m) => m.to === to);
   assert(mail, `the signed-confirmation email went out (${outbox.length})`);
-  return { q, inv, card, text: emailText(mail.htmlBody) };
+  return { q, inv, card, text: emailText(mail.htmlBody), html: mail.htmlBody };
 }
 
 Deno.test("REQ-1054 (LOOP-007 q2-37): sign on an account with no online pay way — /i falls back to 'contact your contractor', and neither the signed email nor the signed /q promise online payment; with Venmo both do", async () => {
@@ -184,6 +184,70 @@ Deno.test("REQ-1054 (LOOP-007 q2-37): sign on an account with no online pay way 
     );
     assertEquals(venmo.q.payOnline, true, "/q: Venmo → payOnline");
   } finally {
+    await server.stop();
+    EmailService.prototype.send = realSend;
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-1168 (REQ-1054 AMENDMENT, LOOP-007 q3-102): sign over HTTP on an account with no online pay way (en and es) — the outbox HtmlBody's inbox preview never says 'ready to pay' / 'lista para pagar'; with Venmo it still says 'ready to pay'", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  Deno.env.delete("POSTMARK_API_KEY");
+  Deno.env.delete("TWILIO_ACCOUNT_SID");
+  await resetKv();
+  const outbox: SendEmailInput[] = [];
+  const realSend = EmailService.prototype.send;
+  EmailService.prototype.send = function (input: SendEmailInput) {
+    outbox.push(input);
+    return Promise.resolve({ ok: true, reason: "test_capture" });
+  };
+  const realUpsert = BusinessIdentityStore.prototype.upsert;
+  const server = await bootstrapServer(TestApp, { port: PORT, swagger: false });
+  await server.listen();
+  try {
+    const none = await signOn(outbox, "+15125551168", "dana@example.com");
+    assertEquals(none.q.payOnline, false, "/q: no online pay way");
+    assert(
+      !/ready to pay|lista para pagar/i.test(none.html),
+      `no online pay way, yet the outbox HtmlBody says: ${
+        none.text.match(/.{0,40}(ready to pay|lista para pagar).{0,10}/i)?.[0]
+      }`,
+    );
+
+    // Spanish comms: the QA5 outbox case ("primera factura lista para pagar")
+    BusinessIdentityStore.prototype.upsert = function (
+      this: BusinessIdentityStore,
+      userId: string,
+      patch: Record<string, unknown>,
+    ) {
+      return realUpsert.call(
+        this,
+        userId,
+        { ...patch, commsLanguage: "es" } as never,
+      );
+    } as typeof realUpsert;
+    const es = await signOn(outbox, "+15125551169", "rosa@example.com");
+    BusinessIdentityStore.prototype.upsert = realUpsert;
+    assertEquals(es.q.payOnline, false, "/q (es): no online pay way");
+    assert(
+      !/ready to pay|lista para pagar/i.test(es.html),
+      `sin forma de pago en línea, el HtmlBody dice: ${
+        es.text.match(/.{0,40}(ready to pay|lista para pagar).{0,10}/i)?.[0]
+      }`,
+    );
+
+    const venmo = await signOn(
+      outbox,
+      "+15125551170",
+      "lee@example.com",
+      { venmo: { enabled: true, handle: "@northside" } },
+    );
+    assert(
+      /ready to pay/i.test(venmo.html),
+      "Venmo is an online way to pay: the preview still says 'ready to pay'",
+    );
+  } finally {
+    BusinessIdentityStore.prototype.upsert = realUpsert;
     await server.stop();
     EmailService.prototype.send = realSend;
     await resetKv();

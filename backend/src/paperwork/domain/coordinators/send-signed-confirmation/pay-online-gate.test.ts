@@ -41,7 +41,7 @@ function emailText(html: string): string {
 async function signedEmail(opts: {
   methods?: AcceptedPaymentMethods;
   lang?: "en" | "es";
-}): Promise<{ text: string; due: string }> {
+}): Promise<{ text: string; due: string; preheader: string }> {
   Deno.env.set("KV_PATH", ":memory:");
   Deno.env.delete("POSTMARK_API_KEY");
   await resetKv();
@@ -93,10 +93,21 @@ async function signedEmail(opts: {
     const first = await invoices.get(result.invoiceId!);
     assert(first?.dueDate, "the first invoice has a due date");
     assert(sent.length === 1, `one signed-confirmation email (${sent.length})`);
-    return { text: emailText(sent[0].htmlBody), due: first.dueDate! };
+    return {
+      text: emailText(sent[0].htmlBody),
+      due: first.dueDate!,
+      preheader: preheaderOf(sent[0].htmlBody),
+    };
   } finally {
     await resetKv();
   }
+}
+
+/** The hidden inbox-preview span (display:none) right after <body>. */
+function preheaderOf(html: string): string {
+  const m = html.match(/<span style="display:none[^"]*">([\s\S]*?)<\/span>/);
+  assert(m, "the signed email carries a hidden preheader span");
+  return emailText(m[1]).trim();
 }
 
 function dueLine(text: string): string {
@@ -149,5 +160,38 @@ Deno.test("REQ-1054 (LOOP-007 q2-37): a business that takes Venmo — the signed
   assert(
     /pay online/i.test(text),
     `Venmo is an online way to pay: ${dueLine(text)}`,
+  );
+});
+
+// ── REQ-1168 (REQ-1054 AMENDMENT, LOOP-007 q3-102): the hidden preheader ──
+// The inbox preview text next to the subject came from
+// `signedConfirm.email.preheaderReady` ("ready to pay" / "lista para pagar")
+// whenever an invoice exists, regardless of payOnline.
+
+Deno.test("REQ-1168 (REQ-1054 AMENDMENT, LOOP-007 q3-102): no online pay way — the signed email's hidden preheader does not say the first invoice is 'ready to pay'", async () => {
+  const { preheader } = await signedEmail({});
+  assert(
+    !/ready to pay/i.test(preheader),
+    `nothing to pay with online, yet the inbox preview says: "${preheader}"`,
+  );
+});
+
+Deno.test("REQ-1168 (REQ-1054 AMENDMENT, LOOP-007 q3-102): Spanish, no online pay way — the preheader does not say 'lista para pagar'", async () => {
+  const { preheader } = await signedEmail({ lang: "es" });
+  assert(
+    !/lista para pagar/i.test(preheader),
+    `sin forma de pago en línea, la vista previa dice: "${preheader}"`,
+  );
+});
+
+Deno.test("REQ-1168 (REQ-1054 AMENDMENT, LOOP-007 q3-102): a business that takes Venmo — the preheader still says 'ready to pay'", async () => {
+  const { preheader } = await signedEmail({
+    methods: {
+      venmo: { enabled: true, handle: "@northside" },
+    } as AcceptedPaymentMethods,
+  });
+  assert(
+    /ready to pay/i.test(preheader),
+    `Venmo is an online way to pay: "${preheader}"`,
   );
 });
