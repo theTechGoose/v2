@@ -14,6 +14,7 @@ import { emailRoot } from "@paperwork/domain/business/email-root/mod.ts"; // REQ
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { invoiceBalance } from "#documents/versions.ts"; // REQ-1028
+import { formatUsdCents } from "#quote-flow/money-text.ts"; // REQ-1109
 import {
   customerOnDocument,
   docRef,
@@ -471,7 +472,7 @@ export function composeReminderCopy(opts: {
   const open = invoice.status === "paid" || invoice.paidAt
     ? (invoice.amount ?? 0)
     : invoiceBalance(invoice.amount, invoice.paidCents).balanceCents;
-  const amount = `$${(open / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const amount = formatUsdCents(open); // REQ-1109: "$1,035.50", never "$1,035.5"
   const tone = day < 0
     ? t(lang, "paymentReminder.tone.beforeDue", { businessName })
     : day === 0
