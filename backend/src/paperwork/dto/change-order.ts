@@ -32,6 +32,9 @@ export interface ChangeOrder extends NumberedFields {
   decidedAt?: string;
   /** REQ-202: who approved it, as typed on the public page. */
   approvedName?: string;
+  /** REQ-948: the decision alerts (contractor text + email, the customer's
+   *  receipt) already went for the decision stamped at `decidedAt`. */
+  decisionNotifiedAt?: string;
 }
 
 export class CreateChangeOrderDto {

@@ -201,6 +201,33 @@ export class ChangeOrderStore {
     throw new Error(`change order ${id}: decision kept losing the race`);
   }
 
+  /**
+   * REQ-948 replay guard for the decision alerts: stamps `decisionNotifiedAt`
+   * and returns the order when this decision has not been announced yet;
+   * null when it already was (or the order is not decided). Compare-and-set,
+   * so two concurrent callers cannot both send.
+   */
+  async claimDecisionNotice(id: string): Promise<ChangeOrder | null> {
+    const kv = await getKv();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const entry = await kv.get<ChangeOrder>([PREFIX, id]);
+      if (!entry.value) throw new NotFoundError(PREFIX, id);
+      const co = entry.value;
+      if (co.status === "pending" || !co.decidedAt) return null;
+      if (co.decisionNotifiedAt && co.decisionNotifiedAt >= co.decidedAt) {
+        return null;
+      }
+      const next: ChangeOrder = {
+        ...co,
+        decisionNotifiedAt: new Date().toISOString(),
+      };
+      const result = await kv.atomic().check(entry).set([PREFIX, id], next)
+        .commit();
+      if (result.ok) return next;
+    }
+    throw new Error(`change order ${id}: decision notice kept losing the race`);
+  }
+
   /** @deprecated REQ-200: use `decide` — kept for callers that do not care about the race. */
   async setStatus(id: string, status: ChangeOrderStatus): Promise<ChangeOrder> {
     if (status === "pending") {

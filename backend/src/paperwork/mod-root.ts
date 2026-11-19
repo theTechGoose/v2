@@ -35,6 +35,7 @@ import { RenderInvoicePrintPdf } from "@paperwork/domain/coordinators/render-inv
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts";
 import { SendSignedConfirmation } from "@paperwork/domain/coordinators/send-signed-confirmation/mod.ts";
 import { SendAcceptedAlert } from "@paperwork/domain/coordinators/send-accepted-alert/mod.ts";
+import { SendDecisionAlert } from "@paperwork/domain/coordinators/send-decision-alert/mod.ts"; // REQ-948
 import { SendInquiryAlert } from "@paperwork/domain/coordinators/send-inquiry-alert/mod.ts";
 import { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-change-order-alert/mod.ts";
 import { ConfirmPayment } from "@paperwork/domain/coordinators/confirm-payment/mod.ts";
@@ -100,6 +101,7 @@ import { QuoteAllowance } from "@paperwork/domain/coordinators/quote-allowance/m
     SendAcceptedAlert,
     SendInquiryAlert,
     SendChangeOrderAlert,
+    SendDecisionAlert, // REQ-948
     ConfirmPayment,
     RecordCardPayment, // REQ-213
     SquareCheckoutStore, // REQ-803
