@@ -13,6 +13,7 @@ import type {
   CustomerJobsSub,
 } from "../clients/clients.ts";
 import { type Lang, tFor } from "./i18n.ts";
+import { fmtMoneyTotal } from "./format.ts";
 import {
   hasAddress,
   relativeTime,
@@ -165,12 +166,12 @@ export function sinceBadge(days: number, lang: Lang = "en"): SinceBadgeData {
   };
 }
 
+/** A customer's balance — REQ-1072 (q2-61) follows REQ-961's fmtMoneyTotal
+ *  rule: whole dollars only when the amount is whole ("$2,400"), to the cent
+ *  otherwise ("$690.75"), so the board card agrees with the customer page. */
 export function dollars(cents: number): string {
   const sign = cents < 0 ? "-" : "";
-  const abs = Math.abs(cents);
-  return `${sign}$${
-    (abs / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })
-  }`;
+  return `${sign}${fmtMoneyTotal(Math.abs(cents))}`;
 }
 
 export interface BalanceDisplay {
