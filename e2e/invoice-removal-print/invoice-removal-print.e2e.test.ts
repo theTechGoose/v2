@@ -444,7 +444,8 @@ Deno.test("REQ-1136 q3-62: a voided invoice's Download PDF on /i says 'Cancelled
       timeout: 15_000,
     });
     await expect.see("please don't pay it");
-    const link = page.locator(`a[href$='/api/invoices/${inv.id}/pdf']`);
+    // REQ-1133 (q3-65): the link carries the page's language (…/pdf?lang=en)
+    const link = page.locator(`a[href*='/api/invoices/${inv.id}/pdf']`);
     expect.eq(await link.count(), 1, "/i offers Download PDF");
     const href = await link.getAttribute("href");
     // the customer's link — no session needed
