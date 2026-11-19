@@ -1,3 +1,4 @@
+import { summaryWithoutCustomerTail } from "#quote-flow/customer-dedupe.ts"; // REQ-1046
 import { Injectable } from "#danet/core";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -76,7 +77,7 @@ export class SendAcceptedAlert {
     // P-50/P-27: project the job name in the CONTRACTOR's language for the
     // email body headline (subject + SMS use the shared builders below).
     const jobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim() ||
-      quote.summary?.trim() || "";
+      summaryWithoutCustomerTail(quote.summary) || "";
     const url = `${APP_URL}/quotes`;
     // P-50: with-job variant keeps the celebratory tone (es ¡…! 🎉 / en 🎉)
     // and the localized job name — shared source of truth in sms-i18n.ts.

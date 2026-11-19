@@ -60,6 +60,7 @@ import {
 } from "../components/Skeletons.tsx";
 import { langSignal, tFor } from "../lib/i18n.ts";
 import { quoteJobTitle } from "../../shared/quote-flow/job-name.ts";
+import { summaryWithoutCustomerTail } from "../../shared/quote-flow/customer-dedupe.ts"; // REQ-1046
 import { quoteSendLang } from "../../shared/quote-flow/share-link.ts"; // REQ-586
 import { customerLinkPath, customerLinkUrl } from "../lib/customer-link.ts"; // REQ-570 + REQ-586
 import { changeOrdersClient } from "../clients/change-orders.ts"; // REQ-462
@@ -1686,7 +1687,14 @@ function OpenQuotePanel(
   // REQ-394 (cycle 2, p9): the title and summary in the app's language.
   const title = quoteJobTitle(q, lang) ??
     tFor(lang, "quotesPage.untitledQuote");
-  const summaryText = q.summaryByLang?.[lang]?.trim() || q.summary;
+  // REQ-1046 (LOOP-007 q2-45): the line under the title never carries
+  // REQ-576's "— <customer>" tail, and it is dropped when all it says is the
+  // title again — one quote, one name (REQ-579).
+  const summaryText = summaryWithoutCustomerTail(
+    q.summaryByLang?.[lang]?.trim() || q.summary,
+  );
+  const summaryRepeatsTitle =
+    summaryText.toLocaleLowerCase() === title.trim().toLocaleLowerCase();
   // REQ-315: while a revision waits, "Publish revision" is the one primary.
   const hasPending = Boolean(
     q.pendingRevision && Object.keys(q.pendingRevision).length > 0,
@@ -1729,7 +1737,7 @@ function OpenQuotePanel(
           <I d={ICN.x} size={16} sw={2.5} />
         </button>
       </div>
-      {summaryText && q.jobName?.trim() && (
+      {summaryText && !summaryRepeatsTitle && q.jobName?.trim() && (
         <p class="qopen__summary">{summaryText}</p>
       )}
       {q.isSample && (

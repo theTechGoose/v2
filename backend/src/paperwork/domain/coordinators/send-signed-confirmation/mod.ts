@@ -1,3 +1,4 @@
+import { summaryWithoutCustomerTail } from "#quote-flow/customer-dedupe.ts"; // REQ-1046
 import { fmtPhone } from "#identity/phone.ts"; // REQ-965
 import { isDueNowTermValue } from "#quote-flow/terms-i18n.ts";
 import { shortDate, SIGNING_NET_DAYS } from "#documents/linked-view.ts"; // REQ-954
@@ -13,7 +14,11 @@ import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // RE
 import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { businessFrom } from "@communication/domain/business/sender/mod.ts";
-import { type EmailLogo, emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/mod.ts";
+import {
+  type EmailLogo,
+  emailLogo,
+  emailLogoHtml,
+} from "@paperwork/domain/business/email-logo/mod.ts";
 import { RenderQuotePdf } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { customerLabel } from "@communication/domain/business/outbox-entry/mod.ts"; // REQ-784
@@ -376,7 +381,11 @@ export class SendSignedConfirmation {
       // REQ-204: the subject and the attachment name the agreement by number
       const subject = `${
         t(lang, "signedConfirm.email.subject", {
-          summary: quote.summary ?? t(lang, "signedConfirm.fallback.contract"),
+          summary: signedJobLabel(
+            quote,
+            lang,
+            "signedConfirm.fallback.contract",
+          ),
         })
       } · ${docRefWithVersion(quote, lang)}`;
       const html = renderSignedConfirmationHtml({
@@ -773,6 +782,28 @@ function invoiceDueLine(opts: SignedHtmlOpts): string {
   });
 }
 
+/**
+ * REQ-1046 (LOOP-007 q2-31/q2-45): the signed email names the job the way
+ * every sibling email does — its job name in the reader's language — and
+ * falls back to the summary only without REQ-576's "— <customer>" tail (and
+ * without a leading "Quote:"), so the customer's name never sits inside the
+ * job's title.
+ */
+function signedJobLabel(
+  quote: Quote,
+  lang: Lang,
+  fallbackKey:
+    | "signedConfirm.fallback.contract"
+    | "signedConfirm.fallback.project",
+): string {
+  const jobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim();
+  if (jobName) return jobName;
+  const summary = summaryWithoutCustomerTail(
+    quote.summaryByLang?.[lang]?.trim() || quote.summary,
+  ).replace(/^\s*quote\s*:\s*/i, "").trim();
+  return summary || t(lang, fallbackKey);
+}
+
 function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   const {
     quote,
@@ -789,11 +820,7 @@ function renderSignedConfirmationHtml(opts: SignedHtmlOpts): string {
   const contractorFirst = contractor?.name?.trim()?.split(/\s+/)[0];
   const biz = businessName ?? contractor?.name ??
     t(lang, "signedConfirm.email.bizFallback");
-  const summary = (quote.summary ?? t(lang, "signedConfirm.fallback.project"))
-    .replace(
-      /^\s*quote\s*:\s*/i,
-      "",
-    );
+  const summary = signedJobLabel(quote, lang, "signedConfirm.fallback.project");
   // REQ-204 / REQ-201: "Q-001 · Version 2", never an id slice
   const docNumber = docRefWithVersion(quote, lang);
   const invoiceUrl = invoiceId ? `${APP_URL}/i/${invoiceId}` : undefined;

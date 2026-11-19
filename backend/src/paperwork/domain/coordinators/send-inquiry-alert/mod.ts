@@ -1,3 +1,4 @@
+import { summaryWithoutCustomerTail } from "#quote-flow/customer-dedupe.ts"; // REQ-1046
 import { Injectable } from "#danet/core";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -81,7 +82,7 @@ export class SendInquiryAlert {
     const name = input.name?.trim() || customer?.name?.trim() ||
       t(lang, "notify.fallbackClient");
     const jobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim() ||
-      quote.summary?.trim() || "";
+      summaryWithoutCustomerTail(quote.summary) || "";
     const contactBack = input.contactBack?.trim() || undefined;
     // REQ-947 (LOOP-007 q1-23): the panel's rule (REQ-701) — the phone or
     // email the customer typed wins, the customer's contact on file fills in

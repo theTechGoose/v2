@@ -1,3 +1,4 @@
+import { summaryWithoutCustomerTail } from "#quote-flow/customer-dedupe.ts"; // REQ-1046
 import { Injectable } from "#danet/core";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
@@ -115,7 +116,7 @@ export class SendDecisionAlert {
     const customerName = quote.declinedName?.trim() ||
       customerLabel(shown) || t(lang, "notify.fallbackClient");
     const jobName = (quote.jobNameByLang?.[lang] ?? quote.jobName)?.trim() ||
-      quote.summary?.trim() || undefined;
+      summaryWithoutCustomerTail(quote.summary) || undefined;
     const copy = buildQuoteDeclinedAlert({
       lang,
       customerName,
