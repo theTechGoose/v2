@@ -4,7 +4,7 @@
  * The interactive Track collapse + QuoteCard flip live in islands/.
  */
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoney, fmtMoneyExact } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { type Quote } from "../lib/quotes-seed.ts";
 import {
@@ -411,7 +411,7 @@ export function DecidedRow(
         <div class="qdone__client">{q.client}</div>
       </div>
       <div class={`qdone__amt ${q.stage === "lost" ? "qdone__amt--lost" : ""}`}>
-        {fmtMoney(q.value)}
+        {fmtMoneyExact(q.value)}
       </div>
       <div class="qdone__when">{when}</div>
       {/* REQ-485 (m22): a signed quote is the agreement — no Delete. */}
@@ -462,7 +462,7 @@ export function QSideBig(
                 <div class="qbig__name">{q.client}</div>
                 <div class="qbig__sub">{q.title}</div>
               </div>
-              <span class="qbig__amt">{fmtMoney(q.value)}</span>
+              <span class="qbig__amt">{fmtMoneyExact(q.value)}</span>
             </div>
             <div class="qbar">
               <div

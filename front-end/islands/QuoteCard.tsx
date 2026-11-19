@@ -5,7 +5,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtMoney } from "../lib/format.ts";
+import { fmtMoneyExact } from "../lib/format.ts";
 import { tFor } from "../lib/i18n.ts";
 import {
   moodForQuote,
@@ -347,7 +347,7 @@ export default function QuoteCard(
               its value cell carries the sample marker instead. */
           }
           <div class="qcard__val-num">
-            {q.isSample ? "—" : fmtMoney(q.value)}
+            {q.isSample ? "—" : fmtMoneyExact(q.value)}
           </div>
         </div>
       </div>
