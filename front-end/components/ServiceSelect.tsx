@@ -55,6 +55,7 @@ export default function ServiceSelect(
     disabled,
     onPick,
     onCreate,
+    onQuery,
     style,
     ...rest
   }: {
@@ -68,6 +69,8 @@ export default function ServiceSelect(
     /** REQ-979 — offer to add a typed name that is no service; the owner
      *  creates it in the catalogue and picks it */
     onCreate?: (name: string) => void;
+    /** REQ-1143 — the box's text as it is typed (a caller can add it without a pick) */
+    onQuery?: (query: string) => void;
     /** the wrapper's style (the picker fills it) */
     style?: string;
     "data-cy"?: string;
@@ -98,6 +101,7 @@ export default function ServiceSelect(
           if (o.id !== KEEP_NAME) onPick(o.id);
         }}
         onCreate={onCreate}
+        onQuery={onQuery}
         createLabel={(n) => tFor(lang, "serviceLines.create", { name: n })}
       />
     </div>
