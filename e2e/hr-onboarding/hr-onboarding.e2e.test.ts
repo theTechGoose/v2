@@ -353,3 +353,63 @@ Deno.test("REQ-883..889: document → system → department → new hire → the
     );
     await expect.see("Dani Reyes");
   }));
+
+Deno.test("REQ-1034 (q2-18): Settings › Sistemas in Spanish — the HR catalog card and the attached built-in read in Spanish, not English", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const owner = await signIn(http, page, baseUrl);
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: owner.auth,
+      body: JSON.stringify({ language: "es" }),
+    })).body?.cancel();
+    await page.goto("/settings?tab=systems&lang=es");
+    const card = "[data-cy='hr-catalog-card'][data-key='dm-worker']";
+    await page.locator(card).waitFor({ timeout: 15_000 });
+    // the chrome is Spanish (the kind line goes through t()) …
+    await page.waitForFunction(
+      () => document.body.textContent?.includes("Agregar"),
+      undefined,
+      { timeout: 15_000 },
+    );
+    // … and so must the catalog card's own name and description be
+    const [catName, catDesc] = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return [
+        el?.querySelector(".hr-sys__name")?.textContent?.trim() ?? "",
+        el?.querySelector(".hr-sys__desc")?.textContent?.trim() ?? "",
+      ];
+    }, card);
+    expect(
+      !/worker account/i.test(catName),
+      `the catalog card name is Spanish (got "${catName}")`,
+    );
+    expect(
+      !/becomes a Worker|texted their PIN/i.test(catDesc),
+      `the catalog card description is Spanish (got "${catDesc}")`,
+    );
+    const catTexts = await page.locator(
+      "[data-cy='hr-catalog-card'] .hr-sys__name",
+    ).allTextContents();
+    expect(
+      !catTexts.some((s) =>
+        /DocuMonster editor|Welcome email|Welcome text/i.test(s)
+      ),
+      `no catalog card name is English (got ${JSON.stringify(catTexts)})`,
+    );
+
+    // attach it: the stored copy must render in Spanish too
+    await clickUntil(
+      page,
+      `${card} [data-cy='hr-attach']`,
+      async () =>
+        await page.locator("[data-cy='hr-sys-card'][data-key='dm-worker']")
+          .isVisible(),
+    );
+    const attached = await page.locator(
+      "[data-cy='hr-sys-card'][data-key='dm-worker'] [data-cy='hr-sys-name']",
+    ).textContent() ?? "";
+    expect(
+      !/worker account/i.test(attached),
+      `the attached built-in's name is Spanish (got "${attached.trim()}")`,
+    );
+  }));
