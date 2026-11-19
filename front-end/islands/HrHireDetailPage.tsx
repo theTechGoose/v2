@@ -215,7 +215,7 @@ export default function HrHireDetailPage({ id }: { id: string }) {
         <section class="panel">
           <h2 class="panel__title">{t("hr.detail.preview.sms")}</h2>
           <div class="hr-sms" data-cy="hr-sms-preview">
-            {inviteText(h.firstName, company || "the team", h.signUrl)}
+            {inviteText(h.firstName, company || "the team", h.signUrl, lang)}
           </div>
         </section>
         <section class="panel">
@@ -364,7 +364,7 @@ export default function HrHireDetailPage({ id }: { id: string }) {
               })}
             </p>
             <div class="hr-sms">
-              {inviteText(h.firstName, company || "the team", h.signUrl)}
+              {inviteText(h.firstName, company || "the team", h.signUrl, lang)}
             </div>
             <div class="modal__foot">
               <button
