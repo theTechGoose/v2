@@ -421,6 +421,76 @@ Deno.test('REQ-1016 (LOOP-007 q1, q1-102): the Spanish paid email of an amount-o
   }));
 
 /**
+ * REQ-1033 (LOOP-007 cycle 2, q2-16): "Non-shell emails (owner approval, CO
+ * receipt, payment receipt) still have bare <html> with no lang". QA5's
+ * receipt 003: a Spanish account records a PART payment, which sends the
+ * payment receipt (not the paid email). Opened from the Outbox, the
+ * receipt's document must declare Spanish, like the paid email (REQ-1016).
+ */
+Deno.test('REQ-1033 (LOOP-007 q2, q2-16): the Spanish payment receipt of a part payment opens in the Outbox as <html lang="es">', (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const idRes = await http("/api/profile/identity", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        businessName: "Ortega Handyman Services",
+        commsLanguage: "es",
+        commsLanguages: ["es"],
+      }),
+    });
+    const idBody = await idRes.text();
+    expect(idRes.ok, `the account writes in Spanish: ${idRes.status} ${idBody}`);
+    const maria = await post(http, auth, "/api/customers", {
+      name: "María López",
+      email: "maria@blackhole.postmarkapp.com",
+      language: "es",
+    });
+    const invoice = await post(http, auth, "/api/invoices", {
+      customerId: maria.id,
+      jobName: "Reparación de cerca",
+      amount: 45000,
+      status: "sent",
+      dueDate: "2026-12-30",
+    });
+    await post(http, auth, "/api/payments", {
+      invoiceId: invoice.id,
+      amount: 20000,
+      method: "zelle",
+      receivedAt: new Date().toISOString(),
+    });
+
+    let receipt: (Row & { docId?: string; preview?: string }) | undefined;
+    let seen = "";
+    for (let i = 0; i < 40 && !receipt; i++) {
+      const listed = await (await http("/api/outbox", { headers: auth }))
+        .json() as (Row & { docId?: string; preview?: string })[];
+      receipt = listed.find((r) =>
+        r.kind === "receipt" && r.channel === "email" &&
+        r.docId === invoice.id
+      );
+      seen = JSON.stringify(listed);
+      if (!receipt) await page.waitForTimeout(250);
+    }
+    expect(!!receipt, `the receipt email is in the Outbox: ${seen}`);
+
+    await page.goto("/messages");
+    const frame = page.locator("iframe[data-cy='outbox-email-frame']");
+    await page.locator(`[data-cy='outbox-row'][data-id='${receipt!.id}']`)
+      .waitFor({ timeout: 20_000 });
+    await clickUntil(
+      page,
+      `[data-cy='outbox-row'][data-id='${receipt!.id}'] [data-cy='outbox-open']`,
+      async () => (await frame.count()) > 0,
+    );
+    const docLang = await page.frameLocator(
+      "iframe[data-cy='outbox-email-frame']",
+    ).locator("html").getAttribute("lang");
+    expect.eq(docLang, "es", "the opened receipt's <html lang>");
+  }));
+
+/**
  * REQ-991 (LOOP-007 cycle 1, q1-73): "Outbox table shows only 3 of 8
  * columns at 390px" — on a phone every column, the status chip and the
  * row's Open button are on screen, with no hidden sideways scroller.
