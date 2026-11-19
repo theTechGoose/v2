@@ -81,7 +81,10 @@ import {
   sendNowDates,
   type StageActionKind,
 } from "../lib/invoice-card.ts";
-import { isPartlyPaid } from "../../shared/documents/invoice-status.ts"; // REQ-1073
+import {
+  isInvoiceOverdue, // REQ-1128
+  isPartlyPaid, // REQ-1073
+} from "../../shared/documents/invoice-status.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { sendInvoiceNudge } from "../lib/invoice-nudge.ts";
@@ -415,7 +418,6 @@ function enrich(
 ): EnrichedInvoice {
   // REQ-696 (cycle 5, M22): no customer on file → the typed bill-to name
   const client = invoiceClientName(inv, customers);
-  const today = now.toISOString().slice(0, 10);
   const due = inv.dueDate ?? "";
   const issued = inv.issuedDate ?? inv.createdAt ?? "";
   const rawStatus = (inv.status ?? "").toLowerCase();
@@ -423,13 +425,19 @@ function enrich(
   const isClaimed = rawStatus === "claimed";
   const isScheduled = rawStatus === "scheduled";
   const draft = !isPaid && !isClaimed && !isScheduled && isDraft(inv);
-  const daysOverdue =
-    (!isPaid && !isClaimed && !isScheduled && !draft && due && due < today)
-      ? Math.floor(
+  // REQ-1128 (LOOP-007 q3-56): the shared overdue rule the CSV, GET /invoices
+  // urgency and /i read — overdue once the due day has ended; then at least 1
+  // day, so a browser west of UTC never reads 0 (and "out") that first night
+  const daysOverdue = (!isPaid && !isClaimed && !isScheduled && !draft &&
+      isInvoiceOverdue(inv, now))
+    ? Math.max(
+      1,
+      Math.floor(
         (now.getTime() - new Date(due + "T00:00:00").getTime()) /
           (24 * 3600 * 1000),
-      )
-      : 0;
+      ),
+    )
+    : 0;
   const daysIn = issued
     ? Math.max(
       0,
