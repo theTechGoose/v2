@@ -753,6 +753,97 @@ Deno.test("REQ-204 change-order alert: every email and text names 'CO-001 on INV
   });
 });
 
+// REQ-949 (LOOP-007 q1, q1-25): after a deposit + balance signing, the
+// deposit INV-001 went to the customer and the balance INV-002 is only
+// SCHEDULED. A change order attached to INV-002 must not tell the customer
+// about "INV-002" or "a change to your invoice" — they never received it.
+// It names the job (Q-001) instead.
+Deno.test("REQ-949 change-order alert: on an unsent (scheduled) balance invoice the customer's email + text name the job Q-001, never INV-002 or 'your invoice'", async () => {
+  await withKv(async () => {
+    const quotes = new QuoteStore();
+    const invoices = new InvoiceStore();
+    const changeOrders = new ChangeOrderStore();
+    const customers = new CustomerStore();
+    const identities = new BusinessIdentityStore();
+    await seedContractor();
+    await identities.upsert(USER, { businessName: BIZ });
+    const customer = await customers.create(USER, {
+      name: SNAPSHOT_NAME,
+      email: "rb@acme.test",
+      phoneNumber: "+15125550222",
+    });
+    const quote = await quotes.create(USER, {
+      customerId: customer.id,
+      summary: "Patio",
+      jobName: "Patio",
+      lineItems: [],
+      status: "accepted",
+      acceptedAt: "2026-11-01T15:00:00Z",
+    });
+    assertEquals(quote.number, "Q-001");
+    const deposit = await invoices.create(USER, {
+      customerId: customer.id,
+      quoteId: quote.id,
+      status: "sent",
+      sentAt: "2026-11-01T15:00:01Z",
+      amount: 4_650_00,
+      jobName: "Patio",
+    });
+    assertEquals(deposit.number, "INV-001");
+    const balance = await invoices.create(USER, {
+      customerId: customer.id,
+      quoteId: quote.id,
+      status: "scheduled",
+      amount: 18_600_00,
+      jobName: "Patio",
+    });
+    assertEquals(balance.number, "INV-002");
+    assertEquals(balance.sentAt, undefined, "the balance was never sent");
+    const co = await changeOrders.create(USER, balance.id, {
+      description: "Extra pavers",
+      deltaAmountCents: 1_250_00,
+      customerId: customer.id,
+      quoteId: quote.id,
+    });
+    assertEquals(co.number, "CO-001");
+    const { email, sms, emails, texts } = capture();
+    const res = await new SendChangeOrderAlert(
+      changeOrders,
+      customers,
+      new UserStore(),
+      identities,
+      email,
+      sms,
+      invoices,
+    ).run(co.id);
+    assertEquals(res.ok, true);
+    const cxEmail = emails.find((e) => e.to === "rb@acme.test");
+    assert(cxEmail, "the customer got an email");
+    const cxText = texts.find((s) => s.to.includes("5125550222"));
+    assert(cxText, "the customer got a text");
+    for (
+      const [what, text] of [
+        ["subject", cxEmail.subject],
+        ["htmlBody", cxEmail.htmlBody],
+        ["sms", cxText.body],
+      ] as const
+    ) {
+      assert(
+        !text.includes("INV-002"),
+        `customer ${what} cites INV-002, an invoice they never received: ${text}`,
+      );
+      assert(
+        !/your invoice/i.test(text),
+        `customer ${what} says "your invoice" for an unsent invoice: ${text}`,
+      );
+      assertStringIncludes(text, "CO-001", `customer ${what} names CO-001`);
+    }
+    assertStringIncludes(cxEmail.subject, "Q-001", "subject names the job");
+    assertStringIncludes(cxEmail.htmlBody, "Q-001", "body names the job");
+    assertStringIncludes(cxText.body, "Q-001", "text names the job");
+  });
+});
+
 Deno.test("REQ-204 accepted alert: the contractor's email and text name the quote Q-001 and the customer as snapshotted", async () => {
   await withKv(async () => {
     const quotes = new QuoteStore();
