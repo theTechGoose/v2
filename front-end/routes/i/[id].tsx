@@ -469,8 +469,11 @@ function InvoiceDoc(
     invoice.serviceDateTo,
     (d) => fmtDate(d, lang, tz),
   );
+  // REQ-1131: a cancelled invoice tells the customer not to pay it — no
+  // How-to-pay instructions on it (REQ-627 "offers no pay UI"; REQ-629 PDF rule)
+  const showPaymentInstructions = !!invoice.paymentInstructions && !voided;
   const hasExtras = !!(invoice.serviceAddress || serviceDates ||
-    invoice.paymentInstructions || invoice.taxCents || invoice.discountCents ||
+    showPaymentInstructions || invoice.taxCents || invoice.discountCents ||
     invoice.subtotalCents);
 
   // Agreement mirror — for quote-linked invoices getInvoicePublic projects the
@@ -799,7 +802,7 @@ function InvoiceDoc(
                     </div>
                   )
                   : null}
-                {invoice.paymentInstructions
+                {showPaymentInstructions && invoice.paymentInstructions
                   ? (
                     <div
                       data-cy="invoice-payment-instructions"
