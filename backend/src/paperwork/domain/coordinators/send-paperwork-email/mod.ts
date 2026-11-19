@@ -87,7 +87,7 @@ import {
 } from "#quote-flow/quote-translations.ts";
 import type { Quote } from "@paperwork/dto/quote.ts";
 import { ChangeOrderStore } from "@paperwork/domain/data/change-order-store/mod.ts";
-import { agreedTotalCents } from "#documents/ledger.ts"; // REQ-679
+import { agreedTotalCents, agreementLineItems } from "#documents/ledger.ts"; // REQ-679, REQ-950
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import type { Customer } from "@crm/dto/customer.ts";
 import type { User } from "@users/dto/user.ts";
@@ -1529,7 +1529,7 @@ export function renderInvoiceHtml(
   quote?: Quote,
   paid = false,
   /** REQ-679: the quote's change orders — the approved ones join the agreement */
-  changeOrders: readonly { status?: string; deltaAmountCents: number }[] = [],
+  changeOrders: Parameters<typeof agreementLineItems>[1] = [],
   /** REQ-630 — the pre-rendered "Ways to pay" block (payWaysEmailHtml) */
   payWays = "",
 ): string {
@@ -1538,14 +1538,24 @@ export function renderInvoiceHtml(
   // REQ-204: an issued bill shows the customer as snapshotted (billTo first)
   const customer = customerOnDocument(i, liveCustomer);
   // REQ-264 (M15): the agreement's line items in the email's language.
-  const items = localizeLineItems(quote?.lineItems, lang, quote?.lang); // REQ-333
+  const quoteItems = localizeLineItems(quote?.lineItems, lang, quote?.lang); // REQ-333
   const agreementTotal = quote &&
-      (typeof quote.estimatedTotal === "number" || items.length)
+      (typeof quote.estimatedTotal === "number" || quoteItems.length)
     ? agreedTotalCents(
-      { estimatedTotal: quote.estimatedTotal, lineItems: items },
+      { estimatedTotal: quote.estimatedTotal, lineItems: quoteItems },
       changeOrders,
     )
     : undefined;
+  // REQ-950 (q1-24): the approved change orders are itemized after the
+  // quote's lines, so the rows add up to the agreement value.
+  const items: (typeof quoteItems[number] | {
+    description: string;
+    quantity: number;
+    price: number;
+    unit?: string;
+  })[] = quoteItems.length
+    ? agreementLineItems(quoteItems, changeOrders)
+    : quoteItems;
   // Standalone invoice → lightweight amount-only email (unchanged behavior).
   if (items.length === 0 && agreementTotal == null) {
     return renderInvoiceBasicHtml(i, customer, sender, senderBiz, lang, paid, payWays);

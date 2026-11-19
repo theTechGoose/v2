@@ -189,6 +189,40 @@ export function agreedTotalCents(
   );
 }
 
+/**
+ * REQ-950 (LOOP-007 q1-24): the agreement ITEMIZED — the quote's own lines
+ * followed by one line per APPROVED change order ("CO-001 · Heated floor",
+ * quantity 1, price = its delta), so the rows every document draws under the
+ * agreement value (/i, the invoice PDF, the invoice email) add up to
+ * agreedTotalCents — on every invoice of the job, not only the one the
+ * change order revised. Pending and declined orders are not agreed.
+ */
+export function agreementLineItems<
+  L extends { description: string; quantity?: number; price?: number },
+>(
+  lineItems: readonly L[] | undefined,
+  changeOrders: readonly {
+    id: string;
+    number?: string;
+    status?: string;
+    description?: string;
+    deltaAmountCents: number;
+    createdAt?: string;
+  }[],
+): (L | { description: string; quantity: number; price: number })[] {
+  const cos = changeOrders
+    .filter((c) => c.status === "approved")
+    .slice()
+    .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))
+    .map((c) => ({
+      description: [docNumberOf(c), (c.description ?? "").trim()]
+        .filter(Boolean).join(" · "),
+      quantity: 1,
+      price: Math.round(c.deltaAmountCents),
+    }));
+  return [...(lineItems ?? []), ...cos];
+}
+
 /** REQ-679: one installment of the agreement, as the schedule reads it. */
 export interface ScheduleInstallment {
   id?: string;
