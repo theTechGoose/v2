@@ -343,10 +343,16 @@ export class SendPaymentReceipt {
       const current = await this.invoices.getOwned(invoice.id, userId);
       const keptEmail = current.status === "paid" &&
         current.receiptSentVia === "email";
+      // REQ-941 (q1-7): a delivered PAID-invoice email without the PDF
+      // ("paid_email") still beats "none".
+      const keptPaidEmail = current.status === "paid" &&
+        current.receiptSentVia === "paid_email";
       const via = receiptEmailed || keptEmail
         ? "email"
         : receiptTexted
         ? "text"
+        : keptPaidEmail
+        ? "paid_email"
         : "none";
       if (current.receiptSentVia !== via) {
         await this.invoices.update(invoice.id, userId, {

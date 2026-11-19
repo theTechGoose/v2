@@ -107,7 +107,9 @@ export class ConfirmPayment {
     // the invoice stamped PAID, REQ-020) or leaves a balance (a partial
     // payment: the invoice reopens for the rest). The claim is consumed
     // either way.
-    await this.balance.run(invoice.id, userId);
+    // REQ-941: the receipt email below carries the PDF, so the paid
+    // invoice email does not attach a second one.
+    await this.balance.run(invoice.id, userId, { receiptPdf: false });
     const paidAt = new Date().toISOString();
     await this.invoices.update(invoice.id, userId, { paymentIntent: null });
 

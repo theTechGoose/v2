@@ -217,3 +217,41 @@ describe("REQ-556 (cycle 4, M7) an invoice signing billed but nobody received sa
     ).toBe("Emitida hoy · vence 19 nov");
   });
 });
+
+describe("REQ-941 (LOOP-007 q1-7) the paid invoice emailed WITHOUT the PDF receipt never promises a PDF", () => {
+  test("receiptSentViaOf keeps 'paid_email'", () => {
+    expect(receiptSentViaOf("paid_email")).toBe("paid_email");
+  });
+
+  test("paid_email → /i says the paid invoice was emailed, never 'PDF' (en + es)", () => {
+    for (const lang of ["en", "es"] as const) {
+      const s = receivedNoteBody(tr(lang), lang, {
+        who: "Rosa",
+        paidAt: "2026-11-17T15:00:00.000Z",
+        channel: "paid_email",
+      });
+      expect(s).not.toMatch(/PDF/);
+      expect(s).toContain("Rosa");
+      expect(s).toMatch(lang === "en" ? /emailed/i : /por correo/i);
+    }
+  });
+
+  test("email (a PDF receipt went) keeps the PDF sentence in es", () => {
+    expect(
+      receivedNoteBody(tr("es"), "es", { who: "Rosa", channel: "email" }),
+    ).toBe(
+      "¡Gracias! Rosa confirmó tu pago. Un recibo en PDF está en tu correo.",
+    );
+  });
+
+  test("the paid card still reads 'sent automatically' for a delivered paid email", () => {
+    expect(paidReadKey({ receiptSentVia: "paid_email" })).toBe(
+      "invoicesPage.read.paid",
+    );
+  });
+
+  test("the attached-receipt line exists in both dictionaries", () => {
+    expect(tr("en")("paperworkEmail.invoice.receiptAttached")).toMatch(/PDF/);
+    expect(tr("es")("paperworkEmail.invoice.receiptAttached")).toMatch(/PDF/);
+  });
+});

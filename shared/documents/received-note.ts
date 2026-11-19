@@ -13,7 +13,7 @@
  * language on /i; the raw lang/*.json in the unit test).
  */
 import { formatLongDate } from "../quote-flow/format-helpers.ts";
-import type { ReceiptChannel } from "./receipt-note.ts";
+import type { ReceiptSentVia } from "./delivery-truth.ts";
 
 export type Translate = (
   key: string,
@@ -23,7 +23,8 @@ export type Translate = (
 /**
  * REQ-556 (demo-loop cycle 4, M7): the last sentence follows where the
  * receipt actually went (`channel`, the invoice's recorded receiptSentVia) —
- * "A PDF receipt is in your inbox" only when it was emailed. No channel keeps
+ * "A PDF receipt is in your inbox" only when it was emailed (REQ-941: the
+ * PDF itself — "paid_email" says the paid invoice was emailed). No channel keeps
  * the emailed sentence (the caller falls back to REQ-523's receiptChannel).
  */
 export function receivedNoteBody(
@@ -32,7 +33,7 @@ export function receivedNoteBody(
   { paidAt, who, channel, tz }: {
     paidAt?: string;
     who: string;
-    channel?: ReceiptChannel;
+    channel?: ReceiptSentVia;
     /** REQ-944: the business's zone — the paid instant prints as its day there */
     tz?: string;
   },
@@ -43,6 +44,8 @@ export function receivedNoteBody(
     ? "publicInvoice.received.bodyNone"
     : channel === "text"
     ? "publicInvoice.received.bodyText"
+    : channel === "paid_email" // REQ-941: emailed, but no PDF went with it
+    ? "publicInvoice.received.bodyPaidEmail"
     : "publicInvoice.received.body";
   return t(key, { who, when });
 }
