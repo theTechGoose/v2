@@ -235,7 +235,10 @@ const q22Draft = (text = ""): LLMResponse => ({
   text,
   action: {
     type: "create_quote",
-    payload: { summary: "Master bath redo — Maria Gonzalez", lineItems: Q22_LINES },
+    payload: {
+      summary: "Master bath redo — Maria Gonzalez",
+      lineItems: Q22_LINES,
+    },
   },
 });
 const totalSaved = (q: {
@@ -264,7 +267,9 @@ Deno.test("REQ-1019 (LOOP-007 q2-2): '2 options: … $8,400 or upgrade … $11,2
     );
     assert(
       totalOf(q) === 840_000 || totalOf(q) === 1_120_000,
-      `a saved quote totals ${totalOf(q)} — neither option ($8,400 / $11,200): ${lines}`,
+      `a saved quote totals ${
+        totalOf(q)
+      } — neither option ($8,400 / $11,200): ${lines}`,
     );
   }
   const shown = textOf(result.newMessages);
@@ -323,6 +328,145 @@ Deno.test("REQ-1019 (LOOP-007 q2-2): the correction 'total should not be 16,800'
   assert(
     !shown.includes(String(Q22_DOUBLED)),
     `the correction's card still totals 1680000: ${shown}`,
+  );
+  await resetKv();
+});
+
+/**
+ * REQ-1096 (LOOP-007 cycle 3, q3-21; amends REQ-942 / REQ-1019) — two option
+ * phrasings `typedAlternatives` never read, so neither the "customer picks
+ * ONE" note nor `firstAlternativeLines` ran, and the model's summed lines were
+ * saved: "option 2: also pressure wash driveway $325" after priced lines
+ * (saved at $6,450.50 with the driveway required) and "good/better: good =
+ * deck only, better = deck + gutters" (saved at $3,575 with the gutters).
+ * The stub LLM replays the real model's create_quote lines; the coordinator
+ * and stores are real.
+ */
+const Q321_ADD_ON =
+  "new quote for maria lopez, 412 oak st austin. exterior house paint and stain the fence. exterior $4,850, fence $1,275.50. option 2: also pressure wash driveway $325. 30% deposit";
+const Q321_ADD_ON_LINES: Line[] = [
+  { description: "Exterior house painting", amountCents: 485_000 },
+  { description: "Fence staining", amountCents: 127_550 },
+  { description: "Pressure wash driveway", amountCents: 32_500 },
+];
+const Q321_ADD_ON_SUMMED = 645_050;
+const Q321_GOOD_BETTER =
+  "ok so maria lopez again, she also wants the back deck done. its about 14x20, sand it down, replace like 6 boards maybe 8, then 2 coats of semi transparent stain. materials around 600 labor 1400. also she asked about the gutters - clean them 175. give her a good/better: good = deck only, better = deck + gutters";
+const Q321_GOOD_BETTER_LINES: Line[] = [
+  {
+    description:
+      "Deck refinishing (sand down, replace 6-8 boards, 2 coats of semi-transparent stain)",
+    amountCents: 200_000,
+  },
+  { description: "Labor for deck refinishing", amountCents: 140_000 },
+  { description: "Gutter cleaning", amountCents: 17_500 },
+];
+const Q321_GOOD_BETTER_SUMMED = 357_500;
+
+const linesOf = (q: { lineItems: { description: string; price: number }[] }) =>
+  JSON.stringify(q.lineItems.map((l) => [l.description, l.price]));
+
+Deno.test("REQ-1096 (LOOP-007 q3-21): 'exterior $4,850, fence $1,275.50. option 2: also pressure wash driveway $325' is never saved as one $6,450.50 quote with the driveway required", async () => {
+  const ctx = await fresh();
+  const seen = always(ctx.llm, {
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Exterior painting and fence staining — Maria Lopez",
+        lineItems: Q321_ADD_ON_LINES,
+      },
+    },
+  });
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: Q321_ADD_ON,
+  });
+  const saved = await ctx.quotes.listByUser("u-1");
+  assert(saved.length >= 1, "no quote was drafted");
+  for (const q of saved) {
+    assert(
+      totalSaved(q) !== Q321_ADD_ON_SUMMED &&
+        totalOf(q) !== Q321_ADD_ON_SUMMED,
+      `a saved quote totals $6,450.50 — option 2's driveway wash added into option 1 (estimatedTotal ${q.estimatedTotal}, lines ${
+        linesOf(q)
+      })`,
+    );
+    assert(
+      !q.lineItems.some((l) => /driveway/i.test(l.description)),
+      `the optional driveway wash is a required line of the quote: ${
+        linesOf(q)
+      }`,
+    );
+  }
+  const shown = textOf(result.newMessages);
+  assert(!shown.includes("6,450.50"), `the reply names $6,450.50: ${shown}`);
+  assert(
+    !shown.includes(String(Q321_ADD_ON_SUMMED)),
+    `the card totals 645050: ${shown}`,
+  );
+  assert(
+    /option/i.test(shown),
+    `the reply never says it drafted one option or names option 2: ${shown}`,
+  );
+  // the model was told the customer picks ONE option
+  assert(
+    seen.some((r) =>
+      /never add them together|picks ONE/i.test(JSON.stringify(r))
+    ),
+    "the model was never told these are options the customer picks one of",
+  );
+  await resetKv();
+});
+
+Deno.test("REQ-1096 (LOOP-007 q3-21): 'give her a good/better: good = deck only, better = deck + gutters' is never saved as one quote holding the deck AND the gutters", async () => {
+  const ctx = await fresh();
+  always(ctx.llm, {
+    text: "Drafting a quote.",
+    action: {
+      type: "create_quote",
+      payload: {
+        summary: "Deck refinishing and gutter cleaning — Maria Lopez",
+        lineItems: Q321_GOOD_BETTER_LINES,
+      },
+    },
+  });
+  const conv = await ctx.conversations.create({ userId: "u-1" });
+  const result = await ctx.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: Q321_GOOD_BETTER,
+  });
+  const saved = await ctx.quotes.listByUser("u-1");
+  assert(saved.length >= 1, "no quote was drafted");
+  for (const q of saved) {
+    assert(
+      totalSaved(q) !== Q321_GOOD_BETTER_SUMMED &&
+        totalOf(q) !== Q321_GOOD_BETTER_SUMMED,
+      `a saved quote totals $3,575 — good and better added together (estimatedTotal ${q.estimatedTotal}, lines ${
+        linesOf(q)
+      })`,
+    );
+    assert(
+      !(q.lineItems.some((l) => /gutter/i.test(l.description)) &&
+        q.lineItems.some((l) => /deck/i.test(l.description)) &&
+        totalOf(q) !== 217_500),
+      `one quote carries the deck and the gutters at neither Good $2,000 nor Better $2,175: ${
+        linesOf(q)
+      }`,
+    );
+  }
+  const shown = textOf(result.newMessages);
+  assert(!shown.includes("3,575"), `the reply names $3,575: ${shown}`);
+  assert(
+    !shown.includes(String(Q321_GOOD_BETTER_SUMMED)),
+    `the card totals 357500: ${shown}`,
+  );
+  assert(
+    /good|better|option/i.test(shown.replace(/Drafting a quote\./g, "")),
+    `the reply never names the good/better choice: ${shown}`,
   );
   await resetKv();
 });
