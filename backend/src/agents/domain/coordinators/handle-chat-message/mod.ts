@@ -3621,7 +3621,9 @@ export class HandleChatMessage {
           was,
           now,
           input.content,
-          { otherChange },
+          // REQ-1060 (q2-46): the deposit this turn saves to termsPrefill
+          // (REQ-258) is confirmed, never "isn't set in chat".
+          { otherChange, paymentTerms: payload.paymentTerms },
         );
         const answer = suppressTextBubble ? "" : proseAnswer(replyText);
         replyText = [said, answer].filter(Boolean).join(" ");

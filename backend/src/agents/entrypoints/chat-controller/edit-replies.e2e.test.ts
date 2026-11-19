@@ -356,3 +356,72 @@ Deno.test("REQ-931 q1-2 e2e: '2 options, she picks one, not both' over the same 
     StubLLMClient.prototype.respond = original;
   });
 });
+
+// REQ-1060 (LOOP-007 cycle 2, q2-46) — amends REQ-267. QA's message ended
+// "… 30% deposit"; the payment step offered "From your message: Deposit 30% +
+// balance", yet the chat reply said "The deposit isn't set in chat". Over the
+// booted app: the revision reply confirms the typed 30% deposit.
+Deno.test("REQ-1060 q2-46 e2e: a revision typed with '30% deposit' is answered with the 30% deposit confirmed, never 'The deposit isn't set in chat'", async () => {
+  const original = StubLLMClient.prototype.respond;
+  await withServer(async () => {
+    const me = await signIn("+15125551060");
+    const customer = await new CustomerStore().create(me.userId, {
+      name: "Maria Gonzalez",
+    });
+    const quote = await new QuoteStore().create(me.userId, {
+      summary: "Master bath redo — Maria Gonzalez",
+      jobName: "Master bath redo",
+      lineItems: [{
+        description: "Basic porcelain tile",
+        quantity: 1,
+        unit: "ea",
+        price: 840_000,
+      }],
+      estimatedTotal: 840_000,
+      status: "draft",
+      customerId: customer.id,
+    });
+    const conv = await new AgentConversationStore().create({
+      userId: me.userId,
+      quoteId: quote.id,
+      customerId: customer.id,
+    });
+    const redraft: LLMAction = {
+      type: "create_quote",
+      payload: {
+        summary: "Master bath redo — Maria Gonzalez",
+        lineItems: [
+          { description: "Basic porcelain tile", amountCents: 840_000 },
+        ],
+        paymentTerms: "deposit_bal",
+      },
+    };
+    stubWith({ text: "", action: redraft, actions: [redraft] });
+    const res = await call<{ newMessages: Msg[] }>(
+      me.sid,
+      "POST",
+      "/agents/chat",
+      {
+        conversationId: conv.id,
+        content:
+          "master bath redo for maria gonzalez, basic porcelain tile $8,400. 30% deposit",
+        kind: "text",
+      },
+    );
+    const texts = res.newMessages.filter((m) =>
+      m.role === "assistant" && m.kind === "text"
+    );
+    assertEquals(texts.length, 1, JSON.stringify(res.newMessages));
+    const reply = texts[0].content;
+    assert(
+      !reply.includes("isn't set in chat"),
+      `the reply contradicts the payment step's 'From your message' row: ${reply}`,
+    );
+    assertStringIncludes(reply, "30%");
+    assertStringIncludes(reply.toLowerCase(), "deposit");
+    const stored = await new AgentConversationStore().get(conv.id);
+    assertEquals(stored.termsPrefill?.payment_terms, "deposit_bal");
+  }).finally(() => {
+    StubLLMClient.prototype.respond = original;
+  });
+});

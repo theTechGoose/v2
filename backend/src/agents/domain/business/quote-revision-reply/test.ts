@@ -197,3 +197,51 @@ Deno.test("REQ-931 q1-2 describeQuoteRevision: QA2's ask over the same two lines
   assertStringIncludes(text, "can't hold options");
   assertStringIncludes(text, "payment step");
 });
+
+// REQ-1060 (LOOP-007 cycle 2, q2-46) — amends REQ-267. Since REQ-258 and
+// REQ-936 a deposit typed in chat IS picked up: the payment step offers it as
+// "From your message: Deposit 30% + balance". The revision reply must not say
+// "The deposit isn't set in chat" over that same message. When the message
+// states a readable deposit (extractPaymentTerms, shared/quote-flow/
+// quote-facts.ts) the reply confirms it, naming the figure; when it names a
+// deposit with no readable amount, the reply points at the payment step
+// without claiming the deposit "isn't set".
+const QA_MSG_46 =
+  "quote for maria gonzalez 843-555-0142 maria.g@example.com, 1418 oak hollow dr austin tx 78745. master bath redo, tear out old tub put in walk in shower w/ tile surround about 60 sqft wall tile + 35 sqft floor, new 48in vanity, 2 options: basic porcelain tile $8,400 or upgrade with niche + glass door $11,200. 30% deposit";
+const bath = [{ description: "Basic porcelain tile", priceCents: 840_000 }];
+
+Deno.test("REQ-1060 q2-46 describeQuoteRevision: QA's '… 30% deposit' revision confirms the 30% deposit and never says it 'isn't set in chat' (EN)", () => {
+  const text = describeQuoteRevision("en", bath, bath, QA_MSG_46);
+  assert(
+    !text.includes("isn't set in chat"),
+    `the payment step already holds the typed deposit; reply: ${text}`,
+  );
+  assertStringIncludes(text, "30%");
+  assertStringIncludes(text.toLowerCase(), "deposit");
+  assertStringIncludes(text, "payment step");
+});
+
+Deno.test("REQ-1060 q2-46 describeQuoteRevision: 'quiero un anticipo del 30%' confirms the 30% and never says 'no se fija en el chat' (ES)", () => {
+  const text = describeQuoteRevision(
+    "es",
+    bath,
+    bath,
+    "baño principal, quiero un anticipo del 30%",
+  );
+  assert(
+    !text.includes("no se fija en el chat"),
+    `el paso de pago ya tiene el anticipo escrito; respuesta: ${text}`,
+  );
+  assertStringIncludes(text, "30%");
+  assertStringIncludes(text.toLowerCase(), "anticipo");
+  assertStringIncludes(text, "paso de pago");
+});
+
+Deno.test("REQ-1060 q2-46 describeQuoteRevision: a deposit word with no readable amount points at the payment step without claiming the deposit 'isn't set' (EN + ES)", () => {
+  const en = describeQuoteRevision("en", bath, bath, "I want a deposit too");
+  assertStringIncludes(en, "payment step");
+  assert(!en.includes("isn't set"), en);
+  const es = describeQuoteRevision("es", bath, bath, "también quiero anticipo");
+  assertStringIncludes(es, "paso de pago");
+  assert(!es.includes("no se fija"), es);
+});

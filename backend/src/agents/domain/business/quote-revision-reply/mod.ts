@@ -10,6 +10,11 @@
  * from the old and new line items so a revision always says what changed.
  */
 import { type Lang, t } from "@core/i18n/mod.ts";
+import {
+  extractPaymentTerms,
+  type PrefillPaymentTerms,
+} from "#quote-flow/quote-facts.ts";
+import { depositAmountText } from "#quote-flow/deposit-term.ts";
 
 export interface RevisionLine {
   description: string;
@@ -17,8 +22,11 @@ export interface RevisionLine {
 }
 
 /** "deposit" / "down payment" / "upfront" (EN) or "anticipo" / "depósito" /
- *  "enganche" / "adelanto" (ES). create_quote carries no deposit field; the
- *  deposit is chosen in the terms wizard's payment step. */
+ *  "enganche" / "adelanto" (ES). REQ-1060 (amends REQ-267): a deposit typed
+ *  in chat IS picked up — create_quote.paymentTerms is saved to
+ *  conv.termsPrefill (REQ-258) and extractPaymentTerms offers the stated
+ *  figure as the payment step's "From your message" row (REQ-936). The reply
+ *  says so (depositNote), never that the deposit "isn't set in chat". */
 const DEPOSIT_RE =
   /\b(deposit|down\s*payment|up\s*front|upfront|anticipo|dep[oó]sito|enganche|adelanto)/i;
 
@@ -81,7 +89,13 @@ export function describeQuoteRevision(
   userText: string,
   /** REQ-585: something besides the lines changed (the summary, the job
    *  details) — then an unchanged set of lines is still "Updated the quote." */
-  opts: { otherChange?: boolean } = {},
+  opts: {
+    otherChange?: boolean;
+    /** REQ-1060: the payment terms this turn saved for the payment step (the
+     *  model's create_quote.paymentTerms) — read when the text itself states
+     *  no readable terms. */
+    paymentTerms?: PrefillPaymentTerms | string | null;
+  } = {},
 ): string {
   const beforeByKey = new Map(before.map((l) => [key(l.description), l]));
   const afterKeys = new Set(after.map((l) => key(l.description)));
@@ -142,7 +156,38 @@ export function describeQuoteRevision(
     parts.push(t(lang, "chatCoordinator.revision.noOptions"));
   }
   if (asksForDeposit(userText)) {
-    parts.push(t(lang, "chatCoordinator.revision.depositLater"));
+    parts.push(depositNote(lang, userText, opts.paymentTerms));
   }
   return parts.join(" ");
+}
+
+/** REQ-1060 (LOOP-007 q2-46, amends REQ-267): what the reply says about a
+ *  deposit the message mentions — agreeing with the payment step's prefill.
+ *  A readable figure ("30% deposit", "$2,000 down", "half upfront") is
+ *  confirmed by name; a stated schedule is confirmed as one; a deposit word
+ *  with no readable amount points at the payment step, where it is picked. */
+export function depositNote(
+  lang: Lang,
+  userText: string,
+  saved?: PrefillPaymentTerms | string | null,
+): string {
+  const read = extractPaymentTerms(userText ?? "") ?? saved ?? null;
+  const amount = typeof read === "object" && read?.kind === "deposit"
+    ? depositAmountText(
+      "pct" in read ? { pct: read.pct } : {
+        cents: read.cents,
+      },
+    )
+    : read === "50_50"
+    ? depositAmountText({ pct: 50 })
+    : null;
+  if (amount) {
+    return t(lang, "chatCoordinator.revision.depositNoted", { amount });
+  }
+  if (
+    read === "30_30_40" || (typeof read === "object" && read?.kind === "custom")
+  ) {
+    return t(lang, "chatCoordinator.revision.scheduleNoted");
+  }
+  return t(lang, "chatCoordinator.revision.depositLater");
 }
