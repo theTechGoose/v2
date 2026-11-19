@@ -29,6 +29,7 @@ import {
   websiteLabel,
 } from "#quote-flow/format-helpers.ts";
 import { agreementTitle } from "#quote-flow/agreement-title.ts";
+import { anchoredStartTerm } from "#quote-flow/start-term.ts"; // REQ-1104
 import { lineItemDescription } from "#quote-flow/quote-translations.ts";
 import {
   customerLines,
@@ -587,6 +588,15 @@ export class RenderQuotePdf {
         .map((term) => {
           const localized = term.stepId === "payment_terms"
             ? paymentTermText(term.value, lang, input.invoiceNetDays)
+            : term.stepId === "start_date"
+            // REQ-1104 (q3-27): a relative start names the day it means,
+            // counted from the send (the invoice schedule's anchor).
+            ? anchoredStartTerm(
+              term.value,
+              quote.sentAt ?? quote.createdAt,
+              localizeTermValue(term.value, lang),
+              lang,
+            )
             : localizeTermValue(term.value, lang);
           return {
             label: es && termLabelKey[term.stepId]

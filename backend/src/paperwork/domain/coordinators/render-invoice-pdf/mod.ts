@@ -11,6 +11,7 @@ import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { isAccepted } from "#quote-flow/quote-status.ts";
 import { isDueNowTermValue, isTbdTermValue } from "#quote-flow/terms-i18n.ts";
 import { invoiceTerms } from "#quote-flow/invoice-terms.ts";
+import { anchoredStartTerm } from "#quote-flow/start-term.ts"; // REQ-1104
 import { formatTermDate, termDateIso } from "#quote-flow/format-helpers.ts";
 import { localizeRecurringTerm } from "#quote-flow/recurring-billing.ts"; // REQ-699
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
@@ -1022,7 +1023,16 @@ export class RenderInvoicePdf {
               font: bold,
               color: MUTED,
             });
-            const localized = localizeTermValue(term.value, lang);
+            // REQ-1104 (q3-27): a relative start names the day it means,
+            // counted from the quote's send — the schedule's anchor.
+            const localized = term.stepId === "start_date"
+              ? anchoredStartTerm(
+                term.value,
+                quote?.sentAt ?? quote?.createdAt,
+                localizeTermValue(term.value, lang),
+                lang,
+              )
+              : localizeTermValue(term.value, lang);
             // REQ-047: a TBD duration is not an estimate — print it bare.
             const displayValue = term.stepId === "wraps" &&
                 !isTbdTermValue(term.value)
