@@ -27,6 +27,8 @@ const CODES: Record<string, { key: string; field: WorkerErrField }> = {
   worker_phone_taken: { key: "field.wk.err.phoneTaken", field: "phone" },
   language_invalid: { key: "field.wk.err.language", field: null },
   worker_covers_zones: { key: "field.wk.err.coversZones", field: null },
+  // REQ-1162 (q3-94) — the worker still has upcoming assigned tasks
+  worker_has_tasks: { key: "field.wk.err.hasTasks", field: null },
   // REQ-840 — /field/crews
   crew_name_taken: { key: "field.crew.nameTaken", field: null },
   foreman_not_member: { key: "field.crew.foremanNotMember", field: null },
@@ -68,7 +70,48 @@ export function workerError(err: unknown, lang: "en" | "es"): WorkerErr {
       vars: { zones: names.map((z) => zoneName(z, lang)).join(", ") },
     };
   }
+  if (code === "worker_has_tasks") {
+    return {
+      ...hit,
+      vars: hasTasksVars((body as { detail?: unknown }).detail, lang),
+    };
+  }
   return { ...hit };
+}
+
+/** "Fri, Nov 20" / "vie, 20 nov" */
+function taskDay(iso: string, lang: "en" | "es"): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * REQ-1162 (LOOP-007 q3-94) — `field.wk.err.hasTasks`'s vars from the 409's detail (or the
+ * /field/workers row's `upcomingTasks`, the same shape): `{count}` and `{tasks}` — the
+ * customers and the days, e.g. "Grace Whitfield · Fri, Nov 20".
+ */
+export function hasTasksVars(
+  detail: unknown,
+  lang: "en" | "es",
+): Record<string, string> {
+  const d = detail && typeof detail === "object"
+    ? detail as { count?: unknown; dates?: unknown; customers?: unknown }
+    : {};
+  const strs = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  const dates = strs(d.dates), customers = strs(d.customers);
+  const count = typeof d.count === "number" ? d.count : dates.length;
+  const parts = [
+    customers.join(", "),
+    dates.map((x) => taskDay(x, lang)).join(", "),
+  ].filter(Boolean);
+  return { count: String(count), tasks: parts.join(" · ") };
 }
 
 /** REQ-520 (demo cycle 3, m19) — the add form's own boxes, checked before anything is posted */

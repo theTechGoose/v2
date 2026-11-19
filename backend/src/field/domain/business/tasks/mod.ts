@@ -249,3 +249,24 @@ export function officeService(input: { task: FieldTask; visit: FieldTask[]; task
   };
   return { ok: true, task, restored: false };
 }
+
+/**
+ * REQ-1162 (LOOP-007 q3-94) — a worker's upcoming open work: tasks still "assigned" to them
+ * (as the lead or one of the job's crewIds) that end today or later. Removing the worker
+ * would leave each under Worker "—" with status ASSIGNED, so DELETE /field/workers refuses
+ * while any is left. Earliest first.
+ */
+export function upcomingTasksOf(tasks: FieldTask[], workerId: string, today: string): FieldTask[] {
+  return tasks
+    .filter((t) => !t.deleted && t.status === "assigned" && lastDayOf(t) >= today && (t.workerId === workerId || !!t.crewIds?.includes(workerId)))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** REQ-1162 — how the refusal and the /field/workers row describe that work: a count, the days, the customers */
+export function upcomingTasksDetail(tasks: FieldTask[], customer: (id: string) => string): { count: number; dates: string[]; customers: string[] } {
+  return {
+    count: tasks.length,
+    dates: [...new Set(tasks.map((t) => t.date))],
+    customers: [...new Set(tasks.map((t) => customer(t.customerId)))],
+  };
+}

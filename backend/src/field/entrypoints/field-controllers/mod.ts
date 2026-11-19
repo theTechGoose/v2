@@ -97,6 +97,8 @@ import {
   searchTaskTypes,
   taskTypeNameTaken,
   taskTypeUsage,
+  upcomingTasksDetail,
+  upcomingTasksOf,
 } from "@field/domain/business/tasks/mod.ts";
 import {
   isValidDate,
@@ -262,6 +264,9 @@ function deps(
   return { users: c.users, identities: c.identities, sms: c.sms };
 }
 
+/** REQ-1162: "from today on" — the end of a task-day range with no end */
+const LAST_DAY = "9999-12-31";
+
 @Controller("field/workers")
 export class FieldWorkersController {
   constructor(
@@ -274,17 +279,28 @@ export class FieldWorkersController {
     private crews: CrewStore, // REQ-840
     private day: FieldDay,
     private views: FieldViews,
+    private tasks: FieldTaskStore, // REQ-1162
   ) {}
 
-  /** REQ-840: each row with its crew's name */
+  /** REQ-840: each row with its crew's name; REQ-1162: and the upcoming tasks still assigned to them */
   @Get()
   async list(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const [workers, n] = await Promise.all([
+    const today = await fieldTodayFor(user.id);
+    const [workers, n, open] = await Promise.all([
       this.workers.listByUser(user.id),
       this.views.names(user.id),
+      this.tasks.listByRange(user.id, today, LAST_DAY),
     ]);
-    return workers.map((w) => this.views.worker(w, n));
+    return workers.map((w) => {
+      const mine = upcomingTasksOf(open, w.id, today);
+      return {
+        ...this.views.worker(w, n),
+        ...(mine.length
+          ? { upcomingTasks: upcomingTasksDetail(mine, n.customer) }
+          : {}),
+      };
+    });
   }
 
   /** REQ-138: name, cell (the login name, unique), a 4-digit PIN, an optional foreman role; REQ-151: the worker is texted the link and the PIN */
@@ -496,6 +512,32 @@ export class FieldWorkersController {
         { zones },
         "worker_covers_zones", // REQ-421 — the page words it and names the zones
       );
+    }
+    // REQ-1162 (q3-94): a worker with upcoming assigned tasks is refused too — deleting them
+    // would leave each task under Worker "—" with status ASSIGNED, seen by nobody
+    const today = await fieldTodayFor(user.id);
+    const open = upcomingTasksOf(
+      await this.tasks.listByRange(user.id, today, LAST_DAY),
+      id,
+      today,
+    );
+    if (open.length) {
+      const n = await this.views.names(user.id);
+      throw new FieldError(
+        "worker still has upcoming tasks — move them to another worker first",
+        409,
+        upcomingTasksDetail(open, n.customer),
+        "worker_has_tasks",
+      );
+    }
+    // a crew they led has no foreman until one is picked (as when they leave it)
+    if (w.crewId) {
+      const crew = await this.crews.find(w.crewId);
+      if (crew && crew.foremanId === w.id) {
+        delete crew.foremanId;
+        crew.updatedAt = new Date().toISOString();
+        await this.crews.put(crew);
+      }
     }
     await this.workers.delete(w);
     return { ok: true };

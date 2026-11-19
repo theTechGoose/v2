@@ -33,6 +33,7 @@ import { timesheetHref } from "../lib/timesheet-filter.ts";
 import {
   type AddFormField,
   addFormProblems,
+  hasTasksVars,
   type WorkerErr,
   workerError,
   zoneName,
@@ -469,6 +470,20 @@ export default function FieldWorkersPage(
       });
       return;
     }
+    // REQ-1162 (q3-94) — and one with upcoming tasks is refused the same way, naming them:
+    // removing the worker would leave each under Worker "—" with status ASSIGNED
+    if (w.upcomingTasks?.count) {
+      setConfirmId(null);
+      setRowErr({
+        id: w.id,
+        err: {
+          key: "field.wk.err.hasTasks",
+          field: null,
+          vars: hasTasksVars(w.upcomingTasks, lang),
+        },
+      });
+      return;
+    }
     setConfirmId(w.id);
     setRowErr(null);
   }
@@ -481,7 +496,7 @@ export default function FieldWorkersPage(
       setConfirmId(null);
       setWorkers((list) => (list ?? []).filter((x) => x.id !== w.id));
     } catch (err) {
-      // a 409 — the worker still covers zones; the server says which
+      // a 409 — the worker still covers zones or has upcoming tasks; the server says which
       setRowErr({ id: w.id, err: workerError(err, langSignal.value) });
     } finally {
       setBusyId(null);
