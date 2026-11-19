@@ -1162,9 +1162,16 @@ export class HandleChatMessage {
         .filter((d): d is string => typeof d === "string" && !!d.trim())
         .join("\n")
       : undefined;
+    // REQ-1095 (LOOP-007 q3-19): the quotes this turn already told the owner
+    // to publish the next Version of — revise_quote + change_order on one
+    // quote said "open the quote and tap Publish revision" twice.
+    const publishHintSaidFor: string[] = [];
     // A line change on the bound quote flags the reply, so an open review
     // re-reads the quote (REQ-392).
     const landed = (o: { kind: string; quoteId?: string }) => {
+      if (o.kind === "pending_revision" && o.quoteId) {
+        publishHintSaidFor.push(o.quoteId);
+      }
       if (
         (o.kind === "draft_updated" || o.kind === "pending_revision") &&
         o.quoteId === conv.quoteId
@@ -1199,6 +1206,7 @@ export class HandleChatMessage {
         // REQ-1027: the job's new total the model sent (else ReviseQuote
         // reads it from the words).
         targetTotalCents: p.targetTotalCents,
+        publishHintSaidFor: [...publishHintSaidFor],
       });
     // REQ-755: lines a revise repriced this turn, so a change order the
     // model sent for the same correction is not applied twice.
@@ -1340,6 +1348,7 @@ export class HandleChatMessage {
           ...(corr ? { setsLinePrice: true } : {}),
           targetTotalCents: p.targetTotalCents, // REQ-377: settled in code
           userText,
+          publishHintSaidFor: [...publishHintSaidFor],
         });
         // REQ-1025: once a change order was made this turn, a later call's
         // "how much / what for?" ask would contradict it and take its Send

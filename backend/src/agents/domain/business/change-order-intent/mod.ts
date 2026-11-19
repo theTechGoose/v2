@@ -1105,6 +1105,49 @@ export function parseTargetTotalChange(
 }
 
 /**
+ * REQ-1095 (LOOP-007 q3-19): the job's new total the revision must land —
+ * only one the OWNER's words carry. "add hallway painting $450 to Q-002"
+ * holds no total, yet the model sent revise_quote {remove drywall,
+ * newTotalDollars 2680} — Q-002's CURRENT total echoed back — and settling
+ * to it folded the removed drywall's $380 into the painting line.
+ *
+ * The model's total is taken when the words state it (the same total
+ * `parseTargetTotalChange` reads, or a typed amount), or when it is the
+ * current total moved by an amount he typed ("take $500 off" → current −
+ * $500). Never the current total itself: that is the model echoing it.
+ * Without a model total, the total the words state.
+ */
+export function ownerStatedTotalCents(input: {
+  userText: string;
+  modelTotalCents?: number;
+  currentTotalCents: number;
+}): number | undefined {
+  const text = input.userText ?? "";
+  const said = parseTargetTotalChange(text)?.targetTotalCents;
+  const model = input.modelTotalCents;
+  if (typeof model !== "number" || !Number.isFinite(model) || model <= 0) {
+    return said;
+  }
+  if (model === said) return model;
+  const amounts = [
+    ...typedAmountsCents(text),
+    ...changeOrderAmountsCents(text),
+  ];
+  if (model === input.currentTotalCents) {
+    // the echo — unless he typed exactly that total himself
+    return amounts.includes(model) ? model : said;
+  }
+  if (amounts.includes(model)) return model;
+  if (
+    amounts.some((a) =>
+      input.currentTotalCents - a === model ||
+      input.currentTotalCents + a === model
+    )
+  ) return model;
+  return said;
+}
+
+/**
  * REQ-1027 (LOOP-007 cycle 2, q2-4): the message takes a line OFF the job
  * ("sin la cerca", "quita la cerca", "drop the fence", "without the fence").
  * A new total said with it is a revision of the lines (revise_quote), never

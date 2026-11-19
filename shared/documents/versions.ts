@@ -430,10 +430,48 @@ function lineIdentity(l: LineLike): string {
     .trim();
 }
 
+/** Words that never make two line names related on their own. */
+const RELATED_STOP = new Set([
+  "para",
+  "with",
+  "from",
+  "that",
+  "this",
+  "como",
+  "sobre",
+  "todo",
+  "toda",
+  "line",
+  "item",
+  "partida",
+]);
+
+function nameWords(l: LineLike): string[] {
+  return lineIdentity(l).split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 4 && !RELATED_STOP.has(w));
+}
+
+/**
+ * REQ-1095 (LOOP-007 q3-19): two leftover lines read as one line renamed
+ * only when they are plausibly the same work — the same price (a reword), or
+ * a word in common ("Reparación de cerca" → "Reparación de cerca (18 pies)",
+ * "paint" ~ "painting"). "Reparación de drywall en la cocina" $380 →
+ * "Pintura del pasillo" $450 is one removed and one added.
+ */
+function relatedLines(x: LineLike, y: LineLike): boolean {
+  if (lineSummary(x).totalCents === lineSummary(y).totalCents) return true;
+  const wy = nameWords(y);
+  return nameWords(x).some((a) =>
+    wy.some((b) => a === b || a.startsWith(b) || b.startsWith(a))
+  );
+}
+
 /**
  * REQ-1024: pair the lines of two versions by identity. Same description
  * first (in `before`'s order, any position); then the leftovers in order,
  * only when both sides have the same number left (a rename in place).
+ * REQ-1095: a leftover pair that is not plausibly the same work
+ * (`relatedLines`) is one line removed and one added, never a rename.
  * Returns the [beforeIndex, afterIndex] pairs and the unpaired indexes.
  */
 function matchLines(
@@ -454,9 +492,18 @@ function matchLines(
   });
   const leftB = b.map((_, j) => j).filter((j) => !usedB.has(j));
   if (leftA.length === leftB.length) {
-    leftA.forEach((i, k) => pairs.push([i, leftB[k]]));
+    const added: number[] = [];
+    const removed: number[] = [];
+    leftA.forEach((i, k) => {
+      const j = leftB[k];
+      if (relatedLines(a[i] ?? {}, b[j] ?? {})) pairs.push([i, j]);
+      else {
+        removed.push(i);
+        added.push(j);
+      }
+    });
     pairs.sort((p, q) => p[0] - q[0]);
-    return { pairs, added: [], removed: [] };
+    return { pairs, added, removed };
   }
   pairs.sort((p, q) => p[0] - q[0]);
   return { pairs, added: leftB, removed: leftA };
