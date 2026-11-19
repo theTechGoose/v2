@@ -160,24 +160,9 @@ export function invoiceBalanceCents(
   return Math.max(0, amount - paid);
 }
 
-/** REQ-551 (demo-loop cycle 4, B2): the one definition of "paid" every
- *  money KPI uses — what was collected AGAINST the bill, min(paid, amount).
- *  An overpayment is flagged (REQ-202) but never counted as revenue, so a
- *  $999,999,999 payment on a $99,999,999 invoice counts $99,999,999 on
- *  /invoices and on /payments alike. A paid invoice from before paidCents
- *  was stored counts its amount. INTEGER CENTS. */
-export function paidKpiInvoiceCents(
-  inv: { amount?: number | null; paidCents?: number | null },
-): number {
-  const amount = typeof inv.amount === "number" && Number.isFinite(inv.amount)
-    ? Math.max(0, inv.amount)
-    : 0;
-  const paid = typeof inv.paidCents === "number" &&
-      Number.isFinite(inv.paidCents)
-    ? Math.max(0, inv.paidCents)
-    : amount;
-  return Math.min(paid, amount);
-}
+/** REQ-551: the one "paid" KPI definition, min(paid, amount) — lives in
+ *  shared/ since REQ-1137 so the dashboard money bar uses it too. */
+export { paidKpiInvoiceCents } from "../../shared/documents/invoice-form.ts";
 
 /** REQ-551: the same definition per payment, for /payments. Each invoice's
  *  payments are applied oldest first (receivedAt, then createdAt) against
