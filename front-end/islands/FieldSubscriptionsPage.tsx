@@ -83,6 +83,8 @@ interface Form {
   /** REQ-788: every visit bills the overhead cost set in Settings */
   overhead: boolean;
   err: string | null;
+  /** REQ-995: the empty-address message — it sits under the address input */
+  addressErr?: string | null;
   saving: boolean;
 }
 
@@ -447,7 +449,7 @@ export default function FieldSubscriptionsPage(
     e.preventDefault();
     if (!form || form.saving) return;
     // a picked-but-not-added row counts, as in the demo
-    let f: Form = { ...form, err: null };
+    let f: Form = { ...form, err: null, addressErr: null };
     if (form.pickId || form.price) {
       f = addItem(f);
       if (f.err) {
@@ -460,7 +462,7 @@ export default function FieldSubscriptionsPage(
       return;
     }
     if (!f.address.trim()) {
-      setForm({ ...f, err: t("field.subs.addressPh") });
+      setForm({ ...f, addressErr: t("field.subs.addressRequired") });
       return;
     }
     if (!f.items.length && !f.checklistId) { // REQ-811: a checklist stands in for the rows
@@ -827,7 +829,12 @@ export default function FieldSubscriptionsPage(
           class="modal-bg"
           onClose={() => close()}
         >
-          <form class="modal" onSubmit={submit} data-cy="subs-form">
+          <form
+            class="modal"
+            onSubmit={submit}
+            data-cy="subs-form"
+            noValidate
+          >
             {/* REQ-788: the title, and the Overhead toggle in the upper right — a weekday chip */}
             <div class="modal__head">
               <h2>
@@ -906,13 +913,28 @@ export default function FieldSubscriptionsPage(
                 name="address"
                 data-cy="subs-address"
                 required
+                aria-invalid={form.addressErr ? "true" : undefined}
+                aria-describedby={form.addressErr
+                  ? "subs-address-error"
+                  : undefined}
                 placeholder={t("field.subs.addressPh")}
                 value={form.address}
                 onInput={(e) =>
                   patch({
                     address: (e.currentTarget as HTMLInputElement).value,
+                    addressErr: null,
                   })}
               />
+              {form.addressErr && (
+                <span
+                  class="field-error"
+                  role="alert"
+                  id="subs-address-error"
+                  data-cy="subs-address-error"
+                >
+                  {form.addressErr}
+                </span>
+              )}
               <span class="hint">{t("field.subs.geo")}</span>
             </label>
 

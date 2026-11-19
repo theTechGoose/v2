@@ -3947,6 +3947,7 @@
   "field.subs.newClient": "+ New client",
   "field.subs.address": "Service address",
   "field.subs.addressPh": "E.g. 123 Main St, Springfield",
+  "field.subs.addressRequired": "Enter the service address.",
   "field.subs.cadence": "Cadence",
   "field.subs.weekly": "Weekly",
   "field.subs.biweekly": "Every two weeks",
