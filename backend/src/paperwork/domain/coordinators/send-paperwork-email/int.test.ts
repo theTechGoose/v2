@@ -511,6 +511,54 @@ for (const lang of ["en", "es"] as const) {
   }
 }
 
+// REQ-1114 — LOOP-007 cycle 3, q3-41: "Paid-invoice email still shows payment instructions".
+// MarkInvoicePaid → SendPaperworkEmail variant 'paid' on an invoice carrying frozen
+// paymentInstructions must not tell the customer how to pay (quote-linked + standalone, EN + ES).
+for (const lang of ["en", "es"] as const) {
+  for (const linked of [true, false]) {
+    Deno.test(`REQ-1114 (q3-41) send-paperwork-email integration: the paid ${linked ? "quote-linked" : "standalone"} invoice email (${lang}) shows no payment instructions`, async () => {
+      Deno.env.set("KV_PATH", ":memory:");
+      await resetKv();
+      const { flow, customers, quotes, invoices, identities, sent } = fresh();
+      await seedContractor("u-1");
+      await identities.upsert("u-1", { businessName: "Whitfield Fence LLC", commsLanguage: lang });
+      const customer = await customers.create("u-1", { name: "Acme", email: "ops@acme.test" });
+      const quote = linked
+        ? await quotes.create("u-1", {
+          summary: "Fence",
+          lineItems: [{ description: "Cedar fence", quantity: 1, unit: "job", price: 2_489_75 }],
+          estimatedTotal: 2_489_75,
+          customerId: customer.id,
+        })
+        : undefined;
+      const invoice = await invoices.create("u-1", {
+        ...(quote ? { quoteId: quote.id } : {}),
+        customerId: customer.id,
+        dueDate: "2026-12-04",
+        amount: 2_489_75,
+        status: "paid",
+        paidAt: "2026-11-18T12:00:00.000Z",
+        paymentInstructions: "Zelle: dana@whitfieldfence.com",
+      });
+      assertEquals(
+        (await invoices.getOwned(invoice.id, "u-1")).paymentInstructions,
+        "Zelle: dana@whitfieldfence.com",
+        "setup: the invoice carries payment instructions",
+      );
+      const res = await flow.run("u-1", { kind: "invoice", resourceId: invoice.id, variant: "paid" });
+      assertEquals(res.ok, true);
+      const html = sent[0].htmlBody;
+      const leaks = [
+        ...(html.includes("data-payment-instructions") ? ["data-payment-instructions block"] : []),
+        ...["Payment instructions", "Instrucciones de pago", "dana@whitfieldfence.com"]
+          .filter((s) => html.includes(s)).map((s) => `"${s}"`),
+      ];
+      assert(leaks.length === 0, `paid ${lang} email still tells the customer how to pay: ${leaks.join(" | ")}`);
+      await resetKv();
+    });
+  }
+}
+
 // REQ-160 — Raphael, previewing A2Z's October batch in his inbox: "these have the paperwork
 // monster on it not the client logo in this case a2z logo"
 Deno.test("REQ-160 REQ-628 send-paperwork-email: a standalone invoice's email carries the contractor's logo (the public-logo URL) once one is on file, and the business name as a wordmark until then — never the house logo", async () => {
