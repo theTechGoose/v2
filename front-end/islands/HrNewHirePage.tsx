@@ -179,7 +179,8 @@ export default function HrNewHirePage() {
             <button
               type="submit"
               class="btn btn--pink"
-              disabled={busy || !depts?.length}
+              disabled={busy || !depts?.length ||
+                (!!dept && packet.length === 0)}
               data-cy="hr-create"
             >
               <I d={ICN.send} size={14} /> {settings?.autoSend === false
@@ -193,7 +194,10 @@ export default function HrNewHirePage() {
           <p class="hint" style="margin:0 0 10px">{t("hr.new.packetHint")}</p>
           {dept && packet.length === 0 && (
             <p class="hint" data-cy="hr-packet-empty">
-              {t("hr.new.packetEmpty")}
+              {t("hr.new.packetEmpty")}{" "}
+              <a href="/hr/departments" data-cy="hr-packet-empty-fix">
+                {t("hr.new.packetEmptyFix")}
+              </a>
             </p>
           )}
           <ol class="hr-packet" data-cy="hr-packet">

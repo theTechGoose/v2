@@ -225,8 +225,20 @@ async function checkSystemIds(
   return [...new Set(ids)];
 }
 
+/** REQ-932 — a packet with nothing in it is never sent: the hire could never finish it */
+function assertSendable(packet: readonly unknown[]): void {
+  if (packet.length === 0) {
+    throw new HrError(
+      "packet_empty",
+      409,
+      "this department has no documents to sign yet",
+    );
+  }
+}
+
 /** REQ-884b — send the link; an expired hire gets a rotated token and returns to invited */
 async function sendTo(d: Deps, h: Hire): Promise<Hire> {
+  assertSendable(h.packet);
   const settings = await d.notices.settingsFor(h.userId);
   let next = h;
   if (h.status === "expired") {
@@ -789,6 +801,8 @@ export class HrController {
       : "";
     const settings = await this.notices.settingsFor(user.id);
     const docs = await this.docs.listByUser(user.id);
+    const packet = mintPacket(dept, docs);
+    assertSendable(packet);
     const now = nowIso();
     const hire: Hire = {
       id: newId(),
@@ -803,7 +817,7 @@ export class HrController {
       status: "invited",
       token: newToken(),
       tokenExpiresAt: expiresAt(now, settings.linkExpiryDays),
-      packet: mintPacket(dept, docs),
+      packet,
       systemIds: [...dept.systemIds],
       mail: { sentAt: null, openedAt: null, remindedAt: null },
       provisioning: [],
