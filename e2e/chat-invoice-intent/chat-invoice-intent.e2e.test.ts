@@ -491,3 +491,84 @@ for (
       await who.hover();
     }));
 }
+
+/** REQ-935 (LOOP-007 cycle 1, q1-16): the QA tester typed "Make a new
+ *  invoice for Priya Shah, …: stained her 300 sq ft deck, $1,450, net 15."
+ *  on /assistant in a new chat and got "Q-001 · QUOTE DRAFTED" (a Free-plan
+ *  quote used, net 15 lost), then "When does the job start?". No done-word,
+ *  so REQ-656's gate never fired. Now the invoice flow opens at $1,450 for
+ *  Priya Shah with net 15 kept, and no quote is drafted. */
+const SAID_PRIYA =
+  "Make a new invoice for Priya Shah, priya.shah@example.com, 77 Oak Hollow Dr, Austin TX 78745: stained her 300 sq ft deck, $1,450, net 15.";
+
+Deno.test("REQ-935 q1-16: 'Make a new invoice for Priya Shah … $1,450, net 15.' opens the invoice flow at $1,450 with net 15; no QUOTE DRAFTED card, no quote", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    const me = await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "en" }),
+    });
+    await me.body?.cancel();
+    await page.context().addCookies([{
+      name: "pm_lang",
+      value: "en",
+      domain: new URL(baseUrl).hostname,
+      path: "/",
+    }]);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/assistant");
+    await say(page, SAID_PRIYA);
+
+    const money = page.locator(".chat__price-capture input.mi__input");
+    const drafted = page.getByText(/quote drafted/i);
+    // whichever lands first: the invoice flow's pad, or the quote card
+    for (let i = 0; i < 120; i++) {
+      if (await money.count() > 0 || await drafted.count() > 0) break;
+      await page.waitForTimeout(250);
+    }
+    expect.eq(
+      await drafted.count(),
+      0,
+      "no 'QUOTE DRAFTED' card for an invoice ask",
+    );
+    expect.eq(
+      await page.locator(".action-card").count(),
+      0,
+      "no quote card was drafted",
+    );
+    await money.waitFor({ state: "visible", timeout: 30_000 });
+    await money.hover();
+    expect.eq(
+      (await money.inputValue()).trim().replace(/,/g, ""),
+      "1450",
+      "the invoice flow's pad opens at the typed $1,450",
+    );
+    const quotes = await (await http("/api/quotes", { headers: auth }))
+      .json() as { isSample?: boolean }[];
+    expect.eq(
+      quotes.filter((q) => !q.isSample).length,
+      0,
+      "no quote exists (no Free-plan quote used)",
+    );
+    const convoId = new URL(page.url()).pathname.split("/").pop() ?? "";
+    const detail = await (await http(`/api/agents/conversations/${convoId}`, {
+      headers: auth,
+    })).json() as {
+      messages?: { role: string; content: string; payload?: unknown }[];
+    };
+    const offer = (detail.messages ?? []).map((m) =>
+      (m.payload as
+        | {
+          invoiceFlow?: {
+            customerName?: string;
+            amountCents?: number;
+            dueDays?: number;
+          };
+        }
+        | undefined)?.invoiceFlow
+    ).find((o) => !!o);
+    expect.eq(offer?.customerName, "Priya Shah", "who to bill");
+    expect.eq(offer?.amountCents, 145_000, "the typed $1,450");
+    expect.eq(offer?.dueDays, 15, "net 15 is kept on the invoice flow");
+  }));

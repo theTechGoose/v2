@@ -531,3 +531,48 @@ Deno.test("REQ-752 M9 parseJobDoneInvoiceAsk: with / at / del / possessive name 
     assertEquals(parseJobDoneInvoiceAsk(s)?.customerName, name, s);
   }
 });
+
+// ---------------------------------------------------------------------------
+// REQ-935 (LOOP-007 cycle 1, q1-16) — an explicit invoice ask is an invoice
+// ask even when it never says the job is "done"
+// ---------------------------------------------------------------------------
+
+/** The QA tester's exact sentence (it drafted Q-001, a quote). */
+const Q1_16 =
+  "Make a new invoice for Priya Shah, priya.shah@example.com, 77 Oak Hollow Dr, Austin TX 78745: stained her 300 sq ft deck, $1,450, net 15.";
+
+Deno.test("REQ-935 q1-16 parseJobDoneInvoiceAsk: 'Make a new invoice for Priya Shah … $1,450, net 15.' is an invoice ask — who, email, amount and net 15", () => {
+  assertEquals(parseJobDoneInvoiceAsk(Q1_16), {
+    amountCents: 145_000,
+    customerName: "Priya Shah",
+    customerEmail: "priya.shah@example.com",
+    dueDays: 15,
+  } as unknown as ReturnType<typeof parseJobDoneInvoiceAsk>);
+});
+
+Deno.test("REQ-935 q1-16 parseJobDoneInvoiceAsk: imperative create/make/send-an-invoice asks with no done-word, en and es", () => {
+  for (
+    const s of [
+      Q1_16,
+      "Create an invoice for Tom Baker, $800",
+      "Write an invoice for Ana Gómez for the kitchen paint, $900",
+      "Invoice Mike Ross $350 for the fence repair",
+      "Hazme una factura para Ana Gómez: pintamos su cocina, $900, a 15 días.",
+    ]
+  ) {
+    assertEquals(parseJobDoneInvoiceAsk(s) !== undefined, true, s);
+  }
+});
+
+Deno.test("REQ-935 q1-16 parseJobDoneInvoiceAsk: still not an invoice ask — not done yet, a quote ask, a payment report, a question", () => {
+  for (
+    const s of [
+      "When the deck is done, invoice her",
+      "Make a quote for Priya Shah, stain her 300 sq ft deck, $1,450",
+      "Linda paid the deposit $1,425 by Zelle today. Send her the invoice",
+      "Did you make an invoice for Priya Shah?",
+    ]
+  ) {
+    assertEquals(parseJobDoneInvoiceAsk(s), undefined, s);
+  }
+});
