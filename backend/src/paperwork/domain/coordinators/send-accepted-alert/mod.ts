@@ -6,6 +6,7 @@ import { EmailService } from "@communication/domain/data/email-service/mod.ts";
 import { SmsService } from "@users/domain/data/sms/mod.ts";
 import { LogPaperworkMessage } from "@communication/domain/coordinators/log-paperwork-message/mod.ts";
 import { type Lang, t } from "@core/i18n/mod.ts";
+import { emailRoot } from "@paperwork/domain/business/email-root/mod.ts"; // REQ-1033
 import {
   buildAcceptedAlertSms,
   buildAcceptedAlertSubject,
@@ -175,8 +176,7 @@ function renderHtml(opts: {
     : t(lang, "acceptedAlert.email.headline", {
       name: escapeHtml(opts.customerName),
     });
-  return `<!doctype html>
-<html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
+  return `${emailRoot(lang)}<body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px;box-shadow:0 8px 32px rgba(20,72,82,0.08)">
     <div style="font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#d94e4e">${
     escapeHtml(t(lang, "brand.name"))

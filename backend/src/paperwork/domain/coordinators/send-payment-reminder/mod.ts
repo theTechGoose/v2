@@ -10,6 +10,7 @@ import { emailLogo, emailLogoHtml } from "@paperwork/domain/business/email-logo/
 import { ShortLinkStore } from "@paperwork/domain/data/shortlink-store/mod.ts";
 import { EventBus } from "@core/business/events/mod.ts";
 import { t } from "@core/i18n/mod.ts";
+import { emailRoot } from "@paperwork/domain/business/email-root/mod.ts"; // REQ-1033
 import type { Invoice } from "@paperwork/dto/invoice.ts";
 import { SITE_ORIGIN } from "#quote-flow/site-meta.ts";
 import { invoiceBalance } from "#documents/versions.ts"; // REQ-1028
@@ -495,8 +496,7 @@ export function composeReminderCopy(opts: {
     : t(lang, "paymentReminder.subject.day14", { sender });
   return {
     emailSubject: `${subjectBase} · ${ref}`,
-    emailHtml: (url: string) => `<!doctype html>
-<html><body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,sans-serif;color:#1c2c30">
+    emailHtml: (url: string) => `${emailRoot(lang)}<body style="margin:0;padding:32px 16px;background:#f7f6f1;font-family:-apple-system,sans-serif;color:#1c2c30">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:18px;padding:28px 32px">
     ${opts.logoHtml ? `<div style="margin:0 0 16px">${opts.logoHtml}</div>` : ""}
     <div data-doc-ref style="margin:0 0 12px;font-size:12px;font-weight:800;color:#6b7a7e">${docTitle("invoice", invoice, lang)}</div>
