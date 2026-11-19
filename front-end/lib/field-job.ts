@@ -113,10 +113,14 @@ export function crewChoices<T extends { id: string }>(
 /**
  * /worker's visit: a subscription's services that day; a one-off's — its customer's tasks with the
  * same first and last day (the backend's sameVisit), so a job of several days is its own card and
- * two customers' one-offs never merge.
+ * two customers' one-offs never merge. REQ-1010: a work order is a card of its own.
  */
 export function visitKey(
-  t: { subscriptionId: string; customerId: string } & JobDays,
+  t:
+    & { subscriptionId: string; customerId: string; workOrderId?: string }
+    & JobDays,
 ): string {
+  // REQ-1010: a work order on the worker's day is its own card, never merged into a one-off's
+  if (t.workOrderId) return `wo:${t.workOrderId}`;
   return t.subscriptionId || `job:${t.customerId}|${t.date}|${lastDay(t)}`;
 }

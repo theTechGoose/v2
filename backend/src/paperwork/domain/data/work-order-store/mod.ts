@@ -52,6 +52,7 @@ export class WorkOrderStore {
       scheduledFor: input.scheduledFor,
       completedOn: input.completedOn,
       assignee: input.assignee?.trim(),
+      assigneeWorkerId: input.assigneeWorkerId?.trim(),
       notes: input.notes,
       status: input.status ?? "open",
       createdAt: now,
@@ -120,6 +121,15 @@ export class WorkOrderStore {
       patch: content,
       by,
       read: () => this.getOwned(id, userId),
+      // REQ-1010: an edit with assigneeWorkerId "" unassigns — the worker and the name shown
+      // go (a patch only sets keys), unless the edit names someone else by text
+      finish: (next) => {
+        if (patch.assigneeWorkerId !== "") return next;
+        const { assigneeWorkerId: _w, assignee, ...rest } = next;
+        return (patch.assignee?.trim()
+          ? { ...rest, assignee }
+          : rest) as WorkOrder;
+      },
     });
   }
 

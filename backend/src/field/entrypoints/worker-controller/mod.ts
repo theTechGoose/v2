@@ -19,6 +19,8 @@ import { isValidDate, shiftDate, todayIn } from "@field/domain/business/schedule
 import { businessZoneOf, fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import { workerLang } from "@field/domain/business/worker-welcome/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
+import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts"; // REQ-1010
+import { workOrderRow, workOrdersOn } from "@field/domain/business/work-order-day/mod.ts"; // REQ-1010
 import { CAP, type Crew, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
 
 type Body_ = Record<string, unknown>;
@@ -96,6 +98,7 @@ export class FieldWorkerController {
     private users: UserStore,
     private activity: FieldActivity,
     private crews: CrewStore, // REQ-840
+    private workOrders: WorkOrderStore, // REQ-1010
   ) {}
 
   /** REQ-138: cell + PIN; five misses lock the worker for a minute */
@@ -139,10 +142,17 @@ export class FieldWorkerController {
     const everyone = all === "1" && w.role === "foreman";
     const crew = await crewOf(w, this.crews); // REQ-840: a crew's foreman asking for all gets the crew's
     const n = await this.views.workerNames(w.userId);
-    return rows
-      .filter((t) => everyone || onTask(w.id, t) || (all === "1" && canActOn(w, t, crew)))
+    const mine = (t: Pick<FieldTask, "workerId" | "crewIds" | "crewId">) => everyone || onTask(w.id, t) || (all === "1" && canActOn(w, t, crew));
+    const tasks = rows
+      .filter(mine)
       .sort((a, b) => (onTask(w.id, a) ? 0 : 1) - (onTask(w.id, b) ? 0 : 1))
       .map((t) => this.views.workerTask(t, n));
+    // REQ-1010: a work order assigned to a worker for this day is on their day too (read-only, no price)
+    const orders = workOrdersOn(await this.workOrders.listByUser(w.userId), d)
+      .filter((wo) => mine({ workerId: wo.assigneeWorkerId! }))
+      .sort((a, b) => (a.assigneeWorkerId === w.id ? 0 : 1) - (b.assigneeWorkerId === w.id ? 0 : 1))
+      .map((wo) => workOrderRow(wo, n));
+    return [...tasks, ...orders];
   }
 
   /** the account's task types, for the "add a service" picker */

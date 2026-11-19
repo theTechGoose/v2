@@ -16,6 +16,7 @@ import { FieldNotices } from "@field/domain/coordinators/field-notices/mod.ts";
 import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts";
 import { FieldQuoteSubscriptions } from "@field/domain/coordinators/field-quote-subscriptions/mod.ts"; // REQ-699
+import { FieldWorkOrderWorkers } from "@field/domain/coordinators/field-work-order-workers/mod.ts"; // REQ-1010
 
 /** REQ-137 — field tasks: workers, subscriptions, zones, the day's round, batch invoicing — on the account's customers and invoices. */
 @Module({
@@ -55,6 +56,7 @@ import { FieldQuoteSubscriptions } from "@field/domain/coordinators/field-quote-
     FieldMapCenter,
     FieldActivity,
     FieldQuoteSubscriptions, // REQ-699 — registers itself on paperwork's QuoteSubscriptionPort
+    FieldWorkOrderWorkers, // REQ-1010 — registers itself on paperwork's WorkOrderWorkerPort
   ],
 })
 export class FieldModule {}

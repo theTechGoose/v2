@@ -28,8 +28,10 @@ export interface WorkOrder extends NumberedFields {
   scheduledFor?: string;
   /** ISO date the work was completed */
   completedOn?: string;
-  /** free text: the crew / tech it is assigned to */
+  /** the crew / tech it is assigned to, as shown (REQ-1010: the picked worker's name) */
   assignee?: string;
+  /** REQ-1010 — the account's field worker it is assigned to: it lists on their /worker day (`scheduledFor`) */
+  assigneeWorkerId?: string;
   notes?: string;
   status: WorkOrderStatus;
   createdAt: string;
@@ -53,6 +55,9 @@ export class CreateWorkOrderDto {
   completedOn?: string;
   @IsOptional() @IsString()
   assignee?: string;
+  /** REQ-1010 — a worker of this account; "" (on an edit) unassigns */
+  @IsOptional() @IsString()
+  assigneeWorkerId?: string;
   @IsOptional() @IsString()
   notes?: string;
   @IsOptional() @IsIn(WORK_ORDER_STATUSES as unknown as string[])
@@ -76,6 +81,9 @@ export class UpdateWorkOrderDto {
   completedOn?: string;
   @IsOptional() @IsString()
   assignee?: string;
+  /** REQ-1010 — a worker of this account; "" (on an edit) unassigns */
+  @IsOptional() @IsString()
+  assigneeWorkerId?: string;
   @IsOptional() @IsString()
   notes?: string;
   @IsOptional() @IsIn(WORK_ORDER_STATUSES as unknown as string[])
@@ -89,6 +97,7 @@ export const WORK_ORDER_CONTENT_FIELDS = [
   "scheduledFor",
   "completedOn",
   "assignee",
+  "assigneeWorkerId",
   "notes",
   "status",
   "customerId",

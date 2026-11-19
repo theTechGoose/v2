@@ -10,6 +10,7 @@ import {
 } from "#danet/core";
 import type { ExecutionContext } from "#danet/core";
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
+import { WorkOrderWorkerPort } from "@paperwork/domain/coordinators/work-order-worker-port/mod.ts";
 import { QuoteStore } from "@paperwork/domain/data/quote-store/mod.ts";
 import { InvoiceStore } from "@paperwork/domain/data/invoice-store/mod.ts";
 import { CustomerStore } from "@crm/domain/data/customer-store/mod.ts";
@@ -45,6 +46,7 @@ export class WorkOrderController {
     readonly customers: CustomerStore,
     private users: UserStore,
     private sessions: SessionStore,
+    private workers: WorkOrderWorkerPort, // REQ-1010
   ) {}
 
   @Get()
@@ -76,6 +78,8 @@ export class WorkOrderController {
         detail: (err as Error).message,
       }, 400);
     }
+    const bad = await assignWorker(this.workers, dto, user.id);
+    if (bad) return ctx.json(bad, 400);
     const created = await this.store.create(user.id, dto, { requestId });
     return ctx.json(await withLinks(this, created, user.id));
   }
@@ -104,6 +108,8 @@ export class WorkOrderController {
         detail: (err as Error).message,
       }, 400);
     }
+    const bad = await assignWorker(this.workers, dto, user.id);
+    if (bad) return ctx.json(bad, 400);
     const by = await publisherOf(ctx, this.sessions, this.users, user);
     const next = await this.store.update(id, user.id, dto, by);
     return ctx.json(await withLinks(this, next, user.id));
@@ -136,6 +142,36 @@ export class WorkOrderController {
 }
 
 // ---- module-level helpers (Danet registers every controller method as a route) ----
+
+/**
+ * REQ-1010 — the Assignee is one of the account's field workers: another
+ * account's (or an unknown) worker id is refused; a picked worker with no
+ * Assignee text gets the worker's name. "" on an edit unassigns (the store
+ * drops the id), so it is not looked up.
+ */
+async function assignWorker(
+  port: WorkOrderWorkerPort,
+  dto: { assignee?: string; assigneeWorkerId?: string },
+  userId: string,
+): Promise<{ ok: false; reason: string; detail: string } | null> {
+  const id = dto.assigneeWorkerId?.trim();
+  if (dto.assigneeWorkerId === undefined) return null;
+  if (id === "") {
+    dto.assigneeWorkerId = "";
+    return null;
+  }
+  const w = await port.find(id!, userId);
+  if (!w) {
+    return {
+      ok: false,
+      reason: "invalid",
+      detail: "assigneeWorkerId is not one of this account's workers",
+    };
+  }
+  dto.assigneeWorkerId = w.id;
+  if (!dto.assignee?.trim()) dto.assignee = w.name;
+  return null;
+}
 
 function summary(wo: WorkOrder) {
   return {
