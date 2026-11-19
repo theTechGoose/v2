@@ -140,7 +140,14 @@ export default function HrDocumentsPage(
               </span>
               <span>{t("hr.docs.card.v", { n: d.version })}</span>
               {d.type === "pdf" && (
-                <span>{t("hr.docs.card.fields", { n: d.fields.length })}</span>
+                <span>
+                  {t(
+                    `hr.docs.card.fields.${
+                      d.fields.length === 1 ? "one" : "other"
+                    }`,
+                    { n: d.fields.length },
+                  )}
+                </span>
               )}
             </span>
             {d.category && <span class="hint">{d.category}</span>}

@@ -123,8 +123,22 @@ export default function HrDepartmentsPage(
                       {d.name}
                     </span>
                   </td>
-                  <td>{t("hr.depts.nDocs", { n: d.docIds.length })}</td>
-                  <td>{t("hr.depts.nSystems", { n: d.systemIds.length })}</td>
+                  <td>
+                    {t(
+                      `hr.depts.nDocs.${
+                        d.docIds.length === 1 ? "one" : "other"
+                      }`,
+                      { n: d.docIds.length },
+                    )}
+                  </td>
+                  <td>
+                    {t(
+                      `hr.depts.nSystems.${
+                        d.systemIds.length === 1 ? "one" : "other"
+                      }`,
+                      { n: d.systemIds.length },
+                    )}
+                  </td>
                   <td style="text-align:right">
                     <span class="btn btn--ghost btn--sm">
                       {t("hr.depts.config")} <I d={ICN.arrow} size={14} />
