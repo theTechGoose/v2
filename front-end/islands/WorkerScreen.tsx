@@ -562,6 +562,15 @@ export default function WorkerScreen(
       setOpen({});
       setDrafts({});
       setDeferring(null);
+      // REQ-1160 (q3-100) — Salir puts the screen back on Today: the next worker (and a reload)
+      // starts on the day of the business, not on the day the last one was viewing
+      if (todayRef.current) {
+        dateRef.current = todayRef.current;
+        setDate(todayRef.current);
+      }
+      const u = new URL(location.href);
+      u.searchParams.delete("date");
+      history.replaceState(null, "", u);
     }, load);
   }
 
@@ -642,7 +651,12 @@ export default function WorkerScreen(
   };
   const preview = !!nav?.preview;
 
-  const dayLine = () => (date ? fmtDayLabel(date, lang) : "");
+  // REQ-1160 (q3-92) — the greeting names TODAY (REQ-940, the business's day); the viewed day has
+  // its own "Viendo" label. `date` only covers the moment before /me says what today is.
+  const dayLine = () => {
+    const d = today || date;
+    return d ? fmtDayLabel(d, lang) : "";
+  };
 
   /** REQ-1010 — a work order the office assigned to this worker for the day: what, where, its
    *  number. Read-only here (the office runs the work order), so no check, note or defer. */
