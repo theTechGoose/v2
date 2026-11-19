@@ -53,12 +53,15 @@ const SECTION =
 export function errorText(
   lang: Lang,
   errors: CustomerFormErrors,
-  f: "name" | "phone" | "email",
+  f: "name" | "phone" | "email" | "state" | "zip",
 ) {
   const e = errors[f];
   if (!e) return null;
   if (f === "name") return tFor(lang, "customerForm.err.nameRequired");
   if (f === "phone") return tFor(lang, "customerForm.err.phoneInvalid");
+  // REQ-992 (LOOP-007 q1-74): a state no one can mail to, a ZIP that isn't one
+  if (f === "state") return tFor(lang, "customerForm.err.stateInvalid");
+  if (f === "zip") return tFor(lang, "customerForm.err.zipInvalid");
   return tFor(lang, "customerForm.err.emailInvalid");
 }
 
@@ -141,6 +144,7 @@ export function CustomerFields(
             : undefined)}
         aria-label={label}
         aria-invalid={opts.bad ? true : undefined}
+        aria-describedby={opts.bad ? `${cy}-err` : undefined}
         autoComplete={opts.autoComplete}
         autoFocus={opts.focus}
         required={opts.required}
@@ -154,7 +158,7 @@ export function CustomerFields(
       return (
         <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
           {input}
-          {opts.bad && <span style={ERR}>{opts.bad}</span>}
+          {opts.bad && <span id={`${cy}-err`} style={ERR}>{opts.bad}</span>}
         </div>
       );
     }
@@ -162,7 +166,9 @@ export function CustomerFields(
       <label style={LABEL}>
         {label}
         {input}
-        {opts.bad && <span style={ERR} role="alert">{opts.bad}</span>}
+        {opts.bad && (
+          <span id={`${cy}-err`} style={ERR} role="alert">{opts.bad}</span>
+        )}
       </label>
     );
   }
@@ -230,9 +236,11 @@ export function CustomerFields(
         })}
         {field("state", "cf-state", "customerForm.state", {
           autoComplete: "address-level1",
+          bad: errorText(lang, errors, "state"),
         })}
         {field("zip", "cf-zip", "customerForm.zip", {
           autoComplete: "postal-code",
+          bad: errorText(lang, errors, "zip"),
         })}
       </div>
       {!shows("notes") ? null : asst
@@ -318,9 +326,12 @@ export default function CustomerFormDialog(
         : await clientsClient.create(customerCreatePayload(values, language));
       await onSaved(saved);
     } catch (x) {
+      // REQ-278/992: the backend's refusal is a dictionary key
       setErr(
         x instanceof Error && x.message
-          ? x.message
+          ? (/^customer\.invalid[A-Z]\w*$/.test(x.message)
+            ? tFor(lang, x.message)
+            : x.message)
           : tFor(lang, "customerForm.err.save"),
       );
     } finally {

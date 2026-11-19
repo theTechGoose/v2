@@ -252,3 +252,114 @@ Deno.test("REQ-352 M38: the onboarding wizard refuses ZIP '7870' and Zelle 'asdf
       timeout: 5_000,
     });
   }));
+
+/**
+ * REQ-992 (LOOP-007 cycle 1, q1-74) — the tester's path: a customer's page →
+ * More ▾ → Edit details → State "Texasssss", ZIP "ABCDE" → Save showed
+ * "Customer saved" and the 📍 line read "…, Austin, Texasssss ABCDE". The
+ * form must say what is wrong under State and ZIP, save nothing, and keep the
+ * address as it was. (If State becomes a picker of US states, "Texasssss"
+ * simply cannot be chosen — the story checks that instead of typing it.)
+ */
+Deno.test("REQ-992 q1-74: Edit details refuses State 'Texasssss' and ZIP 'ABCDE' with a message under each field; no 'Customer saved', the 📍 address unchanged", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const created = await (await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Ana Barton",
+        street: "1200 Barton Springs Rd",
+        city: "Austin",
+        state: "TX",
+        zip: "78704",
+      }),
+    })).json();
+    const before = "1200 Barton Springs Rd, Austin, TX 78704";
+    expect.eq(created.address, before, "the seeded address");
+
+    await page.goto(`/customers/${created.id}`);
+    await page.locator("[data-cy='customer-workspace']").waitFor({
+      timeout: 30_000,
+    });
+    const edit = page.locator("[data-cy='customer-form'][data-mode='edit']");
+    await clickUntil(
+      page,
+      "[data-cy='cws-more']",
+      async () => (await page.locator("[data-cy='cws-edit']").count()) > 0,
+    );
+    await clickUntil(
+      page,
+      "[data-cy='cws-edit']",
+      async () => (await edit.count()) > 0,
+    );
+
+    const state = edit.locator("[data-cy='cf-state']");
+    const zip = edit.locator("[data-cy='cf-zip']");
+    const stateTag = await state.evaluate((el: Element) => el.tagName);
+    if (stateTag === "SELECT") {
+      const options = await state.locator("option").evaluateAll(
+        (os: Element[]) => os.map((o) => (o as HTMLOptionElement).value),
+      );
+      expect(
+        !options.includes("Texasssss"),
+        `the State picker offers no "Texasssss" (${options.join(",")})`,
+      );
+    } else {
+      await state.fill("Texasssss");
+    }
+    await zip.fill("ABCDE");
+    await edit.locator("[data-cy='cf-save']").click();
+
+    // the ZIP (and a typed State) are flagged, each with its own message
+    await page.waitForFunction(
+      () =>
+        document.querySelector("[data-cy='cf-zip']")?.getAttribute(
+          "aria-invalid",
+        ) === "true",
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => {});
+    const msgUnder = (cy: string) =>
+      page.evaluate((cy: string) => {
+        const el = document.querySelector(`[data-cy='${cy}']`);
+        if (!el) return { invalid: null, text: "" };
+        const id = el.getAttribute("aria-describedby");
+        const described = id ? document.getElementById(id)?.textContent : "";
+        const inLabel = el.closest("label")?.querySelector("[role='alert']")
+          ?.textContent;
+        return {
+          invalid: el.getAttribute("aria-invalid"),
+          text: (described || inLabel || "").trim(),
+        };
+      }, cy);
+    const z = await msgUnder("cf-zip");
+    expect.eq(z.invalid, "true", "the ZIP field is flagged aria-invalid");
+    expect(z.text.length > 0, `a message sits under ZIP ("${z.text}")`);
+    if (stateTag !== "SELECT") {
+      const s = await msgUnder("cf-state");
+      expect.eq(s.invalid, "true", "the State field is flagged aria-invalid");
+      expect(s.text.length > 0, `a message sits under State ("${s.text}")`);
+    }
+
+    expect.eq(await edit.count(), 1, "the edit form stays open");
+    expect.eq(
+      await page.locator("[data-cy='cws-toast']").filter({
+        hasText: "Customer saved",
+      }).count(),
+      0,
+      "no 'Customer saved' toast",
+    );
+    const got = await (await http(`/api/customers/${created.id}`, {
+      headers: auth,
+    })).json();
+    expect.eq(got.address, before, "the stored address did not change");
+    expect.eq(got.zip, "78704", "the stored ZIP did not change");
+    const pin = await page.locator("[data-cy='customer-workspace']").evaluate(
+      (el: Element) => el.textContent ?? "",
+    );
+    expect(
+      !pin.includes("ABCDE") && !pin.includes("Texasssss"),
+      "the 📍 line does not show the absurd address",
+    );
+  }));
