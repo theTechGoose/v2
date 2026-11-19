@@ -159,3 +159,99 @@ Deno.test("REQ-784 d12: GET /outbox lists the caller's customer messages newest 
     await resetKv();
   }
 });
+
+/**
+ * REQ-989 (LOOP-007 q1, q1-72) — "Customer's Mensajes tab shows none of the
+ * emails sent to her". Her page has to ask for HER entries alone:
+ * `GET /outbox?customerId=<id>` lists only the caller's entries for that
+ * customer — never another customer's of the same account, never another
+ * account's entry that happens to carry the same customer id.
+ */
+Deno.test("REQ-989 q1-72: GET /outbox?customerId= lists only that customer's entries of the caller's account", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const PORT2 = 9989;
+  const base2 = `http://localhost:${PORT2}`;
+  const server = await bootstrapServer(TestApp, {
+    port: PORT2,
+    swagger: false,
+  });
+  await server.listen();
+  const login2 = async (phone: string) => {
+    await (await fetch(`${base2}/auth/send-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone }),
+    })).body?.cancel();
+    const stored = await new OtpStore().get(phone);
+    const v = await fetch(`${base2}/auth/verify-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone, code: stored!.code }),
+    }).then((r) => r.json());
+    return { sid: v.sessionId as string, userId: v.userId as string };
+  };
+  try {
+    const a = await login2("+15125559891");
+    const b = await login2("+15125559892");
+    const log = new LogPaperworkMessage(
+      new ConversationStore(),
+      new MessageStore(),
+    );
+    const entry = (
+      userId: string,
+      customerId: string,
+      to: string,
+      docRef: string,
+    ) =>
+      log.outbox({
+        userId,
+        channel: "email",
+        kind: "invoice",
+        language: "es",
+        ok: true,
+        customerId,
+        customerName: customerId,
+        to,
+        docRef,
+        subject: `Factura ${docRef}`,
+        body: "<p>hola</p>",
+      });
+    await entry(a.userId, "c-maria", "maria@example.com", "INV-001");
+    await tick();
+    await entry(a.userId, "c-other", "other@example.com", "INV-002");
+    await tick();
+    await entry(a.userId, "c-maria", "maria@example.com", "INV-003");
+    await tick();
+    await entry(b.userId, "c-maria", "foreign@example.com", "INV-900");
+
+    const res = await fetch(`${base2}/outbox?customerId=c-maria`, {
+      headers: { "x-session-id": a.sid },
+    });
+    assertEquals(res.status, 200);
+    const list = await res.json() as Array<Record<string, unknown>>;
+    assertEquals(
+      list.map((e) => e.docRef),
+      ["INV-003", "INV-001"],
+      `only María's entries, newest first: ${JSON.stringify(list)}`,
+    );
+    assertEquals(
+      list.some((e) => e.to === "foreign@example.com"),
+      false,
+      "never another account's",
+    );
+
+    const none = await fetch(`${base2}/outbox?customerId=c-nobody`, {
+      headers: { "x-session-id": a.sid },
+    }).then((r) => r.json()) as unknown[];
+    assertEquals(none.length, 0, "a customer with nothing sent lists nothing");
+
+    const all = await fetch(`${base2}/outbox`, {
+      headers: { "x-session-id": a.sid },
+    }).then((r) => r.json()) as unknown[];
+    assertEquals(all.length, 3, "without the filter the whole account's list stands");
+  } finally {
+    await server.stop();
+    await resetKv();
+  }
+});
