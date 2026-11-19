@@ -1064,3 +1064,70 @@ Deno.test("REQ-1002 (LOOP-007 q1-89) POST /hr/departments with just a name store
     );
   });
 });
+
+Deno.test("REQ-1158 (LOOP-007 q3-90) POST /hr/hires/:id/send texts the hire with no whale emoji, in en and es", async () => {
+  const PICTO = /\p{Extended_Pictographic}/u;
+  for (
+    const [lang, phone, opening] of [
+      ["en", "+15125551158", "Hey Rosa! Welcome to"],
+      ["es", "+15125552158", "¡Hola Rosa! Bienvenido a"],
+    ] as const
+  ) {
+    await withServer(async (call) => {
+      const log = captureLog();
+      try {
+        const H = await login(call, phone, "Reyes Owner");
+        await call("PUT", "/me", {
+          name: "Reyes Owner",
+          language: lang,
+          email: "hr@example.com",
+        }, H);
+        await call("PUT", "/profile/identity", {
+          businessName: "Reyes Lawn & Pool",
+        }, H);
+        const doc = await call("POST", "/hr/documents", {
+          name: "Offer Letter",
+          kind: "sign",
+          contentHtml: "<p>Offer.</p>",
+        }, H);
+        assertEquals(doc.status, 201, doc.text);
+        const dept = await call("POST", "/hr/departments", {
+          name: "Pool crew",
+        }, H);
+        assertEquals(dept.status, 201, dept.text);
+        await call("PUT", `/hr/departments/${dept.body.id}`, {
+          docIds: [doc.body.id],
+        }, H);
+        const rosa = await call("POST", "/hr/hires", {
+          firstName: "Rosa",
+          lastName: "Delgado",
+          email: "rosa@example.com",
+          phone: "(702) 555-1158",
+          departmentId: dept.body.id,
+        }, H);
+        assertEquals(rosa.status, 201, rosa.text);
+
+        log.lines.length = 0;
+        const sent = await call(
+          "POST",
+          `/hr/hires/${rosa.body.id}/send`,
+          {},
+          H,
+        );
+        assertEquals(sent.status, 200, sent.text);
+        const sms = log.lines.find((l) =>
+          l.includes("[sms:dev-mode]") && l.includes("+17025551158")
+        );
+        assert(sms, `the text went out: ${log.lines.join(" | ")}`);
+        assert(
+          !PICTO.test(sms),
+          `REQ-1158 (${lang}): the new-hire text carries no emoji — got ${sms}`,
+        );
+        assertStringIncludes(sms, opening);
+        assertStringIncludes(sms, "Reyes Lawn & Pool");
+      } finally {
+        log.restore();
+      }
+    });
+  }
+});
