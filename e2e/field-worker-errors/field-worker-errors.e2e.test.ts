@@ -221,3 +221,111 @@ Deno.test("REQ-1015 (LOOP-007 q1-101): Remove access on a worker who covers a zo
     expect((await del).ok(), "the zone-free worker's DELETE succeeds");
     await freeRow.waitFor({ state: "detached", timeout: 10_000 });
   }));
+
+/**
+ * REQ-1062 (LOOP-007 q2, q2-51) — the REQ-1015 "This worker still covers Zone A …" refusal is
+ * feedback for the Remove click, not a lasting state: saving a new crew, or marking someone
+ * out, clears it from the worker's card.
+ */
+async function zonedWorkerRefused(
+  { page, expect, http, baseUrl }: StoryTools,
+) {
+  const { auth } = await signIn(http, page, baseUrl);
+  const mk = async (name: string) => {
+    const r = await http("/api/field/workers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ name, phoneNumber: `843${digits()}`, pin: "1234" }),
+    });
+    expect(r.status === 201, `${name} created (${r.status})`);
+    return (await r.json()) as { id: string };
+  };
+  const zoned = await mk("Jake Zone");
+  const free = await mk("Ana Free");
+  const cust = await (await http("/api/customers", {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({ name: "Zone Owner" }),
+  })).json();
+  const sub = await (await http("/api/field/subscriptions", {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({
+      customerId: cust.id,
+      address: "900 Broadway St, Myrtle Beach, SC",
+      items: [{ taskTypeName: "Cut", priceCents: 100 }],
+    }),
+  })).json();
+  expect(!!sub?.region?.id, `the subscription has a zone (${JSON.stringify(sub)})`);
+  const zr = await http(`/api/field/regions/${sub.region.id}/worker`, {
+    method: "PUT",
+    headers: auth,
+    body: JSON.stringify({ workerId: zoned.id }),
+  });
+  expect(zr.ok, `zone assigned to Jake (${zr.status})`);
+  await zr.body?.cancel();
+
+  await page.goto("/field/workers");
+  const row = page.locator(`[data-cy='wk-row'][data-id='${zoned.id}']`);
+  await row.waitFor({ timeout: 20_000 });
+  await row.locator("[data-cy='wk-delete']").click();
+  const err = row.locator("[data-cy='wk-row-error']");
+  await err.waitFor({ timeout: 10_000 });
+  expect(
+    /still covers/.test(await err.innerText()),
+    "the REQ-1015 coversZones refusal shows after Remove",
+  );
+  return { row, err, free };
+}
+
+Deno.test("REQ-1062 (LOOP-007 q2-51): the 'still covers Zone A' refusal is gone from the worker card after a new crew is saved", (t) =>
+  story(t, async (tools) => {
+    const { page, expect } = tools;
+    const { err } = await zonedWorkerRefused(tools);
+
+    await page.locator("[data-cy='crew-new']").click();
+    const form = page.locator("[data-cy='crew-form']");
+    await form.waitFor({ timeout: 10_000 });
+    await page.locator("[data-cy='crew-name']").fill("Crew Q2");
+    const saved = page.waitForResponse((r) =>
+      r.request().method() === "POST" && /\/field\/crews/.test(r.url())
+    );
+    await page.locator("[data-cy='crew-submit']").click();
+    expect((await saved).ok(), "the crew is created");
+    await form.waitFor({ state: "detached", timeout: 10_000 });
+    await page.locator("[data-cy='crew-card-name']", { hasText: "Crew Q2" })
+      .waitFor({ timeout: 10_000 });
+
+    const left = await err.count() === 0 ? null : await err.innerText();
+    expect(
+      left === null,
+      `no wk-row-error on the worker's card after the crew is saved (still shows: ${left})`,
+    );
+  }));
+
+Deno.test("REQ-1062 (LOOP-007 q2-51): the 'still covers Zone A' refusal is gone from the worker card after another worker is marked out", (t) =>
+  story(t, async (tools) => {
+    const { page, expect } = tools;
+    const { err, free } = await zonedWorkerRefused(tools);
+
+    const freeRow = page.locator(`[data-cy='wk-row'][data-id='${free.id}']`);
+    await freeRow.locator("[data-cy='wk-away']").click();
+    const form = page.locator("[data-cy='away-form']");
+    await form.waitFor({ timeout: 10_000 });
+    await page.locator("[data-cy='away-disp-skip']").check();
+    const saved = page.waitForResponse((r) =>
+      r.request().method() === "POST" && /\/field\/absences/.test(r.url())
+    );
+    await page.locator("[data-cy='away-submit']").click();
+    expect((await saved).ok(), "the absence is saved");
+    await form.waitFor({ state: "detached", timeout: 10_000 });
+    await page.locator("[data-cy='away-row']").first().waitFor({
+      timeout: 10_000,
+    });
+
+    const left = await err.count() === 0 ? null : await err.innerText();
+    expect(
+      left === null,
+      `no wk-row-error on the worker's card after marking a worker out (still shows: ${left})`,
+    );
+  }));
