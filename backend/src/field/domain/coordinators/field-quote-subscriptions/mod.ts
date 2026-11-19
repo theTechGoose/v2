@@ -29,7 +29,7 @@ import {
 import { FieldMapCenter } from "@field/domain/coordinators/field-map-center/mod.ts";
 import { findOrCreateTaskType } from "@field/domain/business/tasks/mod.ts";
 import { subscriptionPlan } from "@field/domain/business/quote-subscription/mod.ts";
-import { fieldToday } from "@field/domain/business/schedule/mod.ts";
+import { fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import { CAP, type Subscription } from "@field/dto/field.ts";
 
 @Injectable()
@@ -62,7 +62,7 @@ export class FieldQuoteSubscriptions {
         .catch(() => null)
       : null;
     const plan = subscriptionPlan(quote, {
-      today: fieldToday(),
+      today: await fieldTodayFor(e.userId),
       customerAddress: customer?.address,
     });
     if (!plan || !customer) return null;

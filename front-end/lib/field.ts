@@ -19,10 +19,11 @@ export function todayIso(now = new Date()): string {
   }`;
 }
 
-/** REQ-197 — today in the field's time zone (the backend's FIELD_TZ, America/New_York by
- *  default), for a server render that has no browser clock to ask */
-export function fieldTodayIso(now = new Date()): string {
-  const tz =
+/** REQ-197 — today in the field's time zone, for a server render that has no browser clock to
+ *  ask. REQ-940: `zone` is the business's (the backend's /field/worker/me `timeZone`); without
+ *  one, the server's fallback (FIELD_TZ, America/New_York by default). */
+export function fieldTodayIso(now = new Date(), zone?: string): string {
+  const tz = zone ||
     (typeof Deno !== "undefined" ? Deno.env.get("FIELD_TZ") : undefined) ||
     "America/New_York";
   return new Intl.DateTimeFormat("en-CA", {

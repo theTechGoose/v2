@@ -137,5 +137,7 @@ export function todayIn(tz: string, now: Date = new Date()): string {
     day: "2-digit",
   }).format(now);
 }
+/** the server's fallback day (FIELD_TZ, else New York) — an account's own day is
+ *  `fieldTodayFor(userId)` (users/domain/coordinators/business-zone, REQ-940) */
 export const fieldToday = () =>
   todayIn(Deno.env.get("FIELD_TZ")?.trim() || "America/New_York");

@@ -29,7 +29,6 @@ import {
   fmtDay,
   rememberWorkerLangPick,
   shiftIso,
-  todayIso,
   WORKER_OFFICE_FALLBACK,
   workerDayHref,
   workerDayNav,
@@ -242,6 +241,11 @@ function friendly(e: unknown): string {
         : typeof b.message === "string"
         ? b.message
         : "")) || "";
+    // REQ-940 — a day that has not started yet is not one that "can no longer be edited"
+    const code = b && typeof b === "object"
+      ? (b as { code?: unknown }).code
+      : undefined;
+    if (code === "future_day") return t("worker.err.future");
     if (/outside/i.test(msg)) return t("worker.err.outside");
     if (/invoiced/i.test(msg)) return t("worker.err.invoiced");
     return msg || t("worker.err.conflict");
@@ -276,6 +280,8 @@ export interface WorkerSsr {
   types: TaskType[];
   /** the day those tasks are for (the field's time zone) */
   date: string;
+  /** REQ-940 — the business's field day ("Today"), from the server — never the device's clock */
+  today?: string;
 }
 
 export default function WorkerScreen(
@@ -313,7 +319,11 @@ export default function WorkerScreen(
   const [tasks, setTasks] = useState<WorkerTaskView[]>(ssr?.tasks ?? []);
   const [types, setTypes] = useState<TaskType[]>(ssr?.types ?? []);
   const [date, setDate] = useState(initialDate ?? ssr?.date ?? "");
-  const [today, setToday] = useState(ssr?.date ?? initialDate ?? "");
+  // REQ-940 — "Today" is the business's day, as the server says (ssr.today, then /me's `today`);
+  // the device's clock is in whatever zone the phone is, and the server checks against the business's
+  const [today, setToday] = useState(
+    ssr?.today ?? (initialDate ? "" : ssr?.date) ?? "",
+  );
   /** the server's data is on screen already: the first load effect must not fetch it again */
   const primed = useRef(Boolean(ssr && ssr.me));
   const [cell, setCell] = useState("");
@@ -350,6 +360,8 @@ export default function WorkerScreen(
   meRef.current = me;
   const dateRef = useRef(date);
   dateRef.current = date;
+  const todayRef = useRef(today);
+  todayRef.current = today;
   /** REQ-285 — the person chose the language (the switch, or ?lang=): keep it over the worker's */
   const langChosenRef = useRef(langChosen || !!langPicked);
   /** REQ-416 — the page's own language (opened in, or picked on the switch); Salir returns to it */
@@ -365,11 +377,10 @@ export default function WorkerScreen(
     setLang(initialLang, { persist: initialLang === page });
   }, [initialLang, pageLang]);
 
-  // Browser-side facts: the real day, the remembered cell.
+  // Browser-side facts: the remembered cell. (REQ-940: the day is the server's, not the browser's.)
   useEffect(() => {
-    const now = todayIso();
-    setToday(now);
-    if (!initialDate) setDate(now);
+    // no day yet (the server render could not say): ask the server, whose answer sets it
+    if (!dateRef.current) load();
     try {
       setCell(localStorage.getItem(CELL_KEY) ?? "");
     } catch { /* storage disabled */ }
@@ -377,6 +388,20 @@ export default function WorkerScreen(
       setTab("clock");
     }
   }, [initialDate]);
+
+  /** REQ-940 — the server's "today" moved (first sign-in, or midnight in the business's zone):
+   *  a screen that is on Today follows it. True when the day on screen changed. */
+  function takeToday(iso: string): boolean {
+    const prev = todayRef.current;
+    todayRef.current = iso;
+    if (iso !== prev) setToday(iso);
+    const d = dateRef.current;
+    if (d && d !== prev) return false;
+    if (d === iso) return false;
+    dateRef.current = iso;
+    setDate(iso);
+    return true;
+  }
 
   /** REQ-194 — yesterday | today | tomorrow, switched in place (the loader follows `date`) */
   function pickDay(iso: string) {
@@ -402,8 +427,7 @@ export default function WorkerScreen(
   }
 
   async function load() {
-    const d = dateRef.current;
-    if (!d) return;
+    const d = dateRef.current; // "" until the server has said which day is today (REQ-940)
     lastLoadRef.current = Date.now();
     try {
       // no worker session: the backend answers 200 with an empty body (Danet
@@ -416,7 +440,9 @@ export default function WorkerScreen(
       const wl = workerScreenLang(who, langChosenRef.current);
       if (wl) setLang(wl, { persist: false });
       meRef.current = who;
-      if (who) {
+      // REQ-940 — the business's day; when the screen moves to it, the [date] effect reloads it
+      if (who?.today && takeToday(who.today)) return;
+      if (who && d) {
         const [rows, tt] = await Promise.all([
           workerClient.tasks(d, who.role === "foreman"),
           workerClient.taskTypes(),

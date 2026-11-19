@@ -12,7 +12,8 @@ import { PaymentStore } from "@paperwork/domain/data/payment-store/mod.ts";
 import { WorkOrderStore } from "@paperwork/domain/data/work-order-store/mod.ts";
 import { FieldTaskStore, SubscriptionStore } from "@field/domain/data/field-stores/mod.ts";
 import { FieldViews } from "@field/domain/coordinators/field-views/mod.ts";
-import { fieldToday, shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import { liveIds } from "@field/domain/business/live-invoices/mod.ts";
 import { BuildCustomerCards } from "@analytics/domain/coordinators/build-customer-cards/mod.ts";
 import {
@@ -53,7 +54,8 @@ export class BuildCustomerWorkspace {
     private views: FieldViews,
   ) {}
 
-  async run(userId: string, customerId: string, today: string = fieldToday()): Promise<CustomerWorkspace> {
+  async run(userId: string, customerId: string, today?: string): Promise<CustomerWorkspace> {
+    today ??= await fieldTodayFor(userId); // REQ-940: the business's day
     const owned = await this.customers.getOwned(customerId, userId).catch(() => null);
     if (!owned || owned.deletedAt) throw new CustomerNotFound(customerId);
 

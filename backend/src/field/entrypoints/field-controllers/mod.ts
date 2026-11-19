@@ -95,10 +95,11 @@ import {
   taskTypeUsage,
 } from "@field/domain/business/tasks/mod.ts";
 import {
-  fieldToday,
   isValidDate,
   shiftDate,
+  todayIn,
 } from "@field/domain/business/schedule/mod.ts";
+import { businessZoneOf, fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940: the business's day
 import {
   crewList,
   ledBy,
@@ -457,7 +458,7 @@ export class FieldWorkersController {
       if (before !== w.crewId) {
         await this.day.dropOpen(
           user.id,
-          fieldToday(),
+          await fieldTodayFor(user.id),
           (t) =>
             (!!before && t.crewId === before) ||
             (!!w.crewId && t.crewId === w.crewId),
@@ -576,7 +577,7 @@ async function saveSegment(
   await d.tasks.putMany(pick(r.world.tasks, r.changed.tasks));
   await d.migrations.put(r.seg);
   const types = new Set(involved);
-  await d.day.dropOpen(userId, fieldToday(), (t) => !!t.subscriptionId && types.has(t.taskTypeId));
+  await d.day.dropOpen(userId, await fieldTodayFor(userId), (t) => !!t.subscriptionId && types.has(t.taskTypeId));
   return r.seg;
 }
 
@@ -1058,7 +1059,7 @@ export class FieldCrewsController {
     await this.crews.put(crew);
     if (members) await applyMembers(this, user.id, crew, members);
     if (members?.length || crew.coversAll) {
-      await this.day.dropOpen(user.id, fieldToday(), (t) => !!t.subscriptionId);
+      await this.day.dropOpen(user.id, await fieldTodayFor(user.id), (t) => !!t.subscriptionId);
     }
     return ctx.json(await crewView(this, user.id, crew), 201);
   }
@@ -1094,7 +1095,7 @@ export class FieldCrewsController {
       const everywhere = !!cur.coversAll || !!crew.coversAll;
       await this.day.dropOpen(
         user.id,
-        fieldToday(),
+        await fieldTodayFor(user.id),
         (t) =>
           !!t.subscriptionId &&
           (everywhere || t.crewId === crew.id || zones.has(t.regionId)),
@@ -1128,7 +1129,7 @@ export class FieldCrewsController {
     await this.crews.delete(crew);
     await this.day.dropOpen(
       user.id,
-      fieldToday(),
+      await fieldTodayFor(user.id),
       (t) => t.crewId === crew.id || t.coverFor === crew.id || !!crew.coversAll,
     );
     return { ok: true };
@@ -1154,7 +1155,7 @@ async function redoAbsence(
   userId: string,
   a: Absence,
 ) {
-  const today = fieldToday();
+  const today = await fieldTodayFor(userId);
   const from = a.from > today ? a.from : today;
   if (a.to < from) return;
   const crewId = a.workerId
@@ -1187,7 +1188,7 @@ export class FieldAbsencesController {
   @Get()
   async list(@Context() ctx: ExecutionContext) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const today = fieldToday();
+    const today = await fieldTodayFor(user.id);
     const [rows, n] = await Promise.all([
       this.absences.listByUser(user.id),
       this.views.names(user.id),
@@ -1374,7 +1375,7 @@ export class FieldSubscriptionsController {
       items,
       ...(ckl.set && ckl.id ? { checklistId: ckl.id } : {}), // REQ-811
       ...sched,
-      startDate: isValidDate(b.startDate) ? b.startDate : fieldToday(),
+      startDate: isValidDate(b.startDate) ? b.startDate : await fieldTodayFor(user.id),
       ...(netDays.value !== undefined ? { netDays: netDays.value } : {}),
       ...(b.overhead === true ? { overhead: true } : {}), // REQ-788
       active: true,
@@ -1408,7 +1409,7 @@ export class FieldSubscriptionsController {
       if (!s.active) {
         await this.day.dropOpen(
           user.id,
-          fieldToday(),
+          await fieldTodayFor(user.id),
           (t) => t.subscriptionId === s.id,
         );
       }
@@ -1451,7 +1452,7 @@ export class FieldSubscriptionsController {
     // REQ-170 — open future work follows the change: dropped here, re-derived on the next read
     await this.day.dropOpen(
       user.id,
-      fieldToday(),
+      await fieldTodayFor(user.id),
       (t) => t.subscriptionId === s.id,
     );
     const { subs } = await this.zones.regroup(user.id);
@@ -1468,7 +1469,7 @@ export class FieldSubscriptionsController {
     await this.subs.delete(s);
     await this.day.dropOpen(
       user.id,
-      fieldToday(),
+      await fieldTodayFor(user.id),
       (t) => t.subscriptionId === s.id,
     ); // history stays, open future work goes
     await this.zones.regroup(user.id);
@@ -1691,7 +1692,7 @@ export class FieldChecklistsController {
       if (using.size) {
         await this.day.dropOpen(
           user.id,
-          fieldToday(),
+          await fieldTodayFor(user.id),
           (t) => using.has(t.subscriptionId),
         );
       }
@@ -1841,7 +1842,7 @@ export class FieldRegionsController {
       await this.regions.put(r);
       await this.day.dropOpen(
         user.id,
-        fieldToday(),
+        await fieldTodayFor(user.id),
         (t) => t.regionId === r.id && !!t.subscriptionId,
       );
       if (!("workerId" in b)) return r;
@@ -1854,7 +1855,7 @@ export class FieldRegionsController {
       }
       r.workerId = workerId;
       const open =
-        (await this.tasks.listByRange(user.id, fieldToday(), "9999-12-31"))
+        (await this.tasks.listByRange(user.id, await fieldTodayFor(user.id), "9999-12-31"))
           .filter((t) =>
             t.regionId === r.id && t.status === "assigned" && !t.invoiceId &&
             t.workerId !== workerId
@@ -1995,7 +1996,7 @@ export class FieldTasksController {
   async reassign(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
     const b = body(raw);
-    const date = str(b.date) ?? fieldToday();
+    const date = str(b.date) ?? await fieldTodayFor(user.id);
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
     const fromWorkerId = str(b.fromWorkerId), fromCrewId = str(b.fromCrewId);
     const toWorkerId = str(b.toWorkerId), toCrewId = str(b.toCrewId);
@@ -2054,7 +2055,7 @@ export class FieldTasksController {
     const customerId = str(b.customerId);
     if (!customerId) throw new FieldError("customerId required");
     const customer = await this.customers.getOwned(customerId, user.id); // 404 / 403 as the customers resource answers
-    const date = str(b.date) ?? fieldToday();
+    const date = str(b.date) ?? await fieldTodayFor(user.id);
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
     const span = spanOf(date, b); // REQ-785
     const taskTypeId = await taskTypeFrom(this.types, user.id, b);
@@ -2165,11 +2166,19 @@ export class FieldTasksController {
     return { ok: true, texted };
   }
 
+  /** REQ-940: the account's field day and the zone it is in — the office pages start here, not at the browser's clock */
+  @Get("today")
+  async today(@Context() ctx: ExecutionContext) {
+    const user = await requireUser(ctx, this.sessions, this.users);
+    const timeZone = await businessZoneOf(user.id);
+    return { date: todayIn(timeZone), timeZone };
+  }
+
   /** REQ-141/170: the day's round — any day is materialized on read, so it is always current */
   @Get()
   async list(@Context() ctx: ExecutionContext, @Query("date") date?: string) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const d = date ?? fieldToday();
+    const d = date ?? await fieldTodayFor(user.id);
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
     const rows = (await this.day.generate(user.id, d)).all;
     const n = await this.views.names(user.id);
@@ -2183,7 +2192,7 @@ export class FieldTasksController {
     @Query("date") date?: string,
   ) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const d = date ?? fieldToday();
+    const d = date ?? await fieldTodayFor(user.id);
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
     const skipped = await this.day.uncoveredOn(user.id, d);
     const n = await this.views.names(user.id);
@@ -2200,7 +2209,7 @@ export class FieldTasksController {
   @Post("generate")
   async generate(@Context() ctx: ExecutionContext, @Body() raw: unknown) {
     const user = await requireUser(ctx, this.sessions, this.users);
-    const date = str(body(raw).date) ?? fieldToday();
+    const date = str(body(raw).date) ?? await fieldTodayFor(user.id);
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
     const r = await this.day.generate(user.id, date);
     const n = await this.views.names(user.id);

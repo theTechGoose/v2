@@ -183,9 +183,11 @@ export default function FieldTasksPage(
   { seed }: { seed?: FieldTasksSeed | null } = {},
 ) {
   const lang = langSignal.value;
-  const [date, setDate] = useState<string>(() => todayIso());
-  // the server's day can differ from the browser's: then the seed is not this page's day
-  const [day] = useState(() => seed && seed.date === date ? seed : null);
+  // REQ-940 — the office's day is the business's (the route read it from the server), never the
+  // browser's clock: a laptop in another zone would open on a day the field does not call today
+  const [today, setToday] = useState<string>(seed?.today ?? seed?.date ?? "");
+  const [date, setDate] = useState<string>(seed?.date ?? "");
+  const [day] = useState(() => seed ?? null);
   const [tasks, setTasks] = useState<TaskView[]>(day?.tasks ?? []);
   const [skipped, setSkipped] = useState<GenerateResult["skipped"]>(
     day?.skipped ?? [],
@@ -240,12 +242,24 @@ export default function FieldTasksPage(
   // REQ-730 — the seeded day is already on screen: skip only that first read
   const seededDay = useRef(day?.date ?? null);
   useEffect(() => {
+    if (!date) return;
     if (seededDay.current === date) {
       seededDay.current = null;
       return;
     }
     load(date);
   }, [date]);
+
+  // REQ-940 — no seed (the server render could not read): ask the server which day is today
+  useEffect(() => {
+    if (date) return;
+    fieldClient.today().then((r) => r.date).catch(() => todayIso()).then(
+      (d) => {
+        setToday(d);
+        setDate(d);
+      },
+    );
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -1102,7 +1116,7 @@ export default function FieldTasksPage(
             <button
               type="button"
               class="btn btn--ghost btn--sm"
-              onClick={() => go(todayIso())}
+              onClick={() => go(today || todayIso())}
             >
               {t("field.common.today")}
             </button>
@@ -1335,7 +1349,9 @@ export default function FieldTasksPage(
       )}
 
       <div class="workload" data-cy="tk-summary" style="align-items:center">
-        <span class="hint" style="font-weight:700">{fmtDay(date, lang)}</span>
+        <span class="hint" style="font-weight:700">
+          {date ? fmtDay(date, lang) : ""}
+        </span>
         <span class="chip chip--green">{t("field.tk.done")} {done}</span>
         <span class="chip">{t("field.tk.toDo")} {toDo}</span>
         {notDone > 0 && (

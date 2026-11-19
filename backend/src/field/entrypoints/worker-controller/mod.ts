@@ -15,7 +15,8 @@ import { FieldActivity } from "@field/domain/coordinators/field-activity/mod.ts"
 import { newId } from "@field/domain/coordinators/field-zones/mod.ts";
 import { addService, deferTask, findOrCreateTaskType, inActionWindow, liveTypes, sameVisit } from "@field/domain/business/tasks/mod.ts";
 import { lastDayOf, onTask } from "@field/domain/business/job-span/mod.ts";
-import { fieldToday, isValidDate, shiftDate } from "@field/domain/business/schedule/mod.ts";
+import { isValidDate, shiftDate, todayIn } from "@field/domain/business/schedule/mod.ts";
+import { businessZoneOf, fieldTodayFor } from "@users/domain/coordinators/business-zone/mod.ts"; // REQ-940
 import { workerLang } from "@field/domain/business/worker-welcome/mod.ts";
 import { UserStore } from "@users/domain/data/user-store/mod.ts";
 import { CAP, type Crew, digitsOf, FieldError, type FieldTask, type FieldWorker, str, tooLong } from "@field/dto/field.ts";
@@ -31,14 +32,18 @@ async function crewOf(w: FieldWorker, crews: CrewStore): Promise<Crew | null> {
 /**
  * REQ-285 — what the worker's screen gets: who, the role, and the language the screen opens in (REQ-155's
  * rule: theirs, else the owner's). REQ-840 — the crew's name; a worker who leads their crew is a foreman.
+ * REQ-940 — `today` / `timeZone`: the business's field day, the one the action window checks against.
  */
 async function publicWorker(w: FieldWorker, users: UserStore, crews: CrewStore) {
   const owner = w.language ? {} : await users.get(w.userId).catch(() => ({}));
   const crew = await crewOf(w, crews);
   const foreman = w.role === "foreman" || (!!crew && crew.foremanId === w.id);
+  const timeZone = await businessZoneOf(w.userId); // REQ-940: the screen's "Today" is the business's day
   return {
     id: w.id,
     name: w.name,
+    today: todayIn(timeZone),
+    timeZone,
     role: foreman ? "foreman" as const : "worker" as const,
     language: workerLang(w, owner),
     ...(crew ? { crewId: crew.id, crewName: crew.name } : {}),
@@ -63,8 +68,15 @@ async function actionable(ctx: ExecutionContext, id: string, sessions: WorkerSes
   const w = await need(ctx, sessions, workers);
   const t = await tasks.find(id);
   if (!t || t.userId !== w.userId || !canActOn(w, t, await crewOf(w, crews))) throw new FieldError("not found", 404);
-  if (!inActionWindow(w, t.date, fieldToday(), lastDayOf(t))) throw new FieldError("outside the days you can edit", 409); // REQ-785: a job's last day
+  outsideWindow(w, t.date, await fieldTodayFor(w.userId), lastDayOf(t)); // REQ-785: a job's last day; REQ-940: the business's day
   return { w, t };
+}
+
+/** REQ-940: the 409 says WHICH side of the window the day is on, so the screen's wording is right */
+function outsideWindow(w: FieldWorker, date: string, today: string, lastDay = date): void {
+  if (inActionWindow(w, date, today, lastDay)) return;
+  const future = date > today;
+  throw new FieldError("outside the days you can edit", 409, { today, reason: future ? "future" : "too_old" }, future ? "future_day" : "too_old");
 }
 
 @Controller("field/worker")
@@ -118,7 +130,7 @@ export class FieldWorkerController {
   @Get("tasks")
   async list(@Context() ctx: ExecutionContext, @Query("date") date?: string, @Query("all") all?: string) {
     const w = await need(ctx, this.sessions, this.workers);
-    const d = date ?? fieldToday();
+    const d = date ?? await fieldTodayFor(w.userId); // REQ-940: the business's day
     if (!isValidDate(d)) throw new FieldError("date must be YYYY-MM-DD");
     const rows = (await this.day.generate(w.userId, d)).all; // REQ-170: any day materializes on read
     const everyone = all === "1" && w.role === "foreman";
@@ -144,9 +156,10 @@ export class FieldWorkerController {
     const b = body(raw);
     const s = await this.subs.find(subscriptionId);
     if (!s || s.userId !== w.userId) throw new FieldError("not found", 404);
-    const date = str(b.date) ?? fieldToday();
+    const today = await fieldTodayFor(w.userId); // REQ-940
+    const date = str(b.date) ?? today;
     if (!isValidDate(date)) throw new FieldError("date must be YYYY-MM-DD");
-    if (!inActionWindow(w, date, fieldToday())) throw new FieldError("outside the days you can edit", 409);
+    outsideWindow(w, date, today);
     const dayTasks = await this.tasks.listByDay(w.userId, date);
     const crew = await crewOf(w, this.crews);
     if (!dayTasks.some((t) => t.subscriptionId === s.id && canActOn(w, t, crew))) throw new FieldError("not found", 404);

@@ -426,9 +426,20 @@ export interface WorkerMe {
   /** REQ-840 — the crew, when in one */
   crewId?: string;
   crewName?: string;
+  /** REQ-940 — the business's field day (YYYY-MM-DD) and its zone: the screen's "Today" */
+  today?: string;
+  timeZone?: string;
+}
+
+/** REQ-940 — the account's field day, in the business's own time zone */
+export interface FieldToday {
+  date: string;
+  timeZone: string;
 }
 
 export const fieldClient = {
+  /** REQ-940 — the business's "today" (the office pages start here, not at the browser's clock) */
+  today: (opts?: ApiOptions) => api.get<FieldToday>("/field/tasks/today", opts),
   // ---- workers (REQ-138) ----
   workers: (opts?: ApiOptions) =>
     api.get<FieldWorker[]>("/field/workers", opts),

@@ -21,7 +21,7 @@ import {
 import FieldHead from "../components/FieldHead.tsx";
 import { initialsOf } from "../lib/clients-display.ts";
 import { I, ICN } from "../lib/dash-icons.tsx";
-import { fmtCell, PHONE_PLACEHOLDER } from "../lib/field.ts";
+import { fmtCell, PHONE_PLACEHOLDER, todayIso } from "../lib/field.ts";
 import { timesheetHref } from "../lib/timesheet-filter.ts";
 import {
   type AddFormField,
@@ -104,8 +104,6 @@ interface AwayForm {
   saving: boolean;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 function toggle(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
@@ -180,6 +178,13 @@ export default function FieldWorkersPage(
     setTypes(ty);
     setLoadErr(null);
   }
+
+  // REQ-940 — "out today" starts on the business's day (the server's), not the UTC date: after
+  // 7 pm in New York the UTC date is already tomorrow and today's round was left untouched
+  const [bizToday, setBizToday] = useState<string | null>(null);
+  useEffect(() => {
+    fieldClient.today().then((r) => setBizToday(r.date)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     // REQ-730 — seeded on the server: no client fetch on mount
@@ -358,10 +363,11 @@ export default function FieldWorkersPage(
   /** REQ-842 — mark a worker or a crew out */
   function openAway(who: { workerId?: string; crewId?: string; name: string }) {
     setAwayErr(null);
+    const day = bizToday ?? todayIso();
     setAway({
       ...who,
-      from: today(),
-      to: today(),
+      from: day,
+      to: day,
       disposition: "cover",
       cover: "",
       note: "",
