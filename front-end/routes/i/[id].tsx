@@ -35,6 +35,7 @@ import {
   type VisitGroup,
 } from "../../../shared/quote-flow/visit-groups.ts";
 import {
+  invoiceHeadlineState,
   invoicePillFlags,
   type InvoicePillTone,
   invoiceStatusPill,
@@ -438,7 +439,11 @@ function InvoiceDoc(
     {
       number: docNumber,
       version: invoice.version ?? 1,
-      state: invoice.state ?? (paid ? "paid" : claimed ? "claimed" : "sent"),
+      // REQ-1139: the same partly-paid rule as the pill below
+      state: invoiceHeadlineState(
+        invoice.state ?? (paid ? "paid" : claimed ? "claimed" : "sent"),
+        invoice,
+      ),
       date: paid ? invoice.paidAt : invoice.publishedAt,
       // REQ-558: owner-only states (scheduled, draft) are named only to the business.
       internal: invoice.internal === true,

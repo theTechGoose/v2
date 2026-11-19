@@ -1984,6 +1984,7 @@
   "invoices.state.paid": "Pagada",
   "invoices.state.viewed": "Vista",
   "invoices.state.void": "Anulada",
+  "invoices.state.partly": "Pago parcial",
   "invoices.lockedPaid": "Las facturas pagadas están bloqueadas",
   "invoices.paidOf": "Pagado {paid} de {total} · Saldo {balance}",
   "invoices.overpaidBy": "Pago de más por {amount}",

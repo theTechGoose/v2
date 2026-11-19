@@ -698,6 +698,10 @@ export type DocState =
   | "revised"
   | "claimed"
   | "paid"
+  /** REQ-1139: an issued invoice with money on it and a balance owed — the
+   *  headline's word, from invoice-status.ts `invoiceHeadlineState`; the
+   *  stored status stays "pending" and `invoiceState` never returns it. */
+  | "partly"
   | "void"
   | "approved"
   | "pending";
