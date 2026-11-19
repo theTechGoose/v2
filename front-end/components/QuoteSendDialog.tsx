@@ -376,14 +376,18 @@ export function SendDialog(
  * (the chat's SendQuote, on the quote's own thread).
  */
 export default function QuoteSendDialog(
-  { lang, quoteId, customer, initialChannel, onClose, onSent }: {
-    lang: Lang;
-    quoteId: string;
-    customer: SendDialogCustomer | null;
-    initialChannel: SendChannel;
-    onClose: () => void;
-    onSent: (r: PanelSendResult) => void;
-  },
+  { lang, quoteId, customer, initialChannel, initialSendLang, onClose, onSent }:
+    {
+      lang: Lang;
+      quoteId: string;
+      customer: SendDialogCustomer | null;
+      initialChannel: SendChannel;
+      /** REQ-971: "Sends in" starts here (the customer's language, else the
+       *  quote's own); else the customer's language, else the app's */
+      initialSendLang?: "en" | "es";
+      onClose: () => void;
+      onSent: (r: PanelSendResult) => void;
+    },
 ) {
   return (
     <SendDialog
@@ -393,6 +397,7 @@ export default function QuoteSendDialog(
         : tFor(lang, "asstChat.send.howTitleNoName")}
       customer={customer}
       initialChannel={initialChannel}
+      initialSendLang={initialSendLang}
       loadPreview={(ch, l) => quotesClient.sendPreview(quoteId, ch, l)}
       previewKey={quoteId}
       errorKey="quotesPage.open.sendError"

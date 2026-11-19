@@ -45,6 +45,9 @@ export interface QuoteCard {
   /** Per-language cache of the description (keyed by lang code), populated
    *  lazily when the quote is previewed/sent in a language. */
   descriptionByLang?: Record<string, string>;
+  /** REQ-710: the language the text was typed in (stamped from it). REQ-971:
+   *  "Sends in" starts on it when the customer has no language. */
+  lang?: string;
   /** Per-language job title + summary, populated from the picked job option. */
   jobNameByLang?: Record<string, string>;
   summaryByLang?: Record<string, string>;
