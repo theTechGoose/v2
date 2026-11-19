@@ -8,6 +8,7 @@ import { asset, Head } from "fresh/runtime";
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
+import { appTitle } from "../../lib/doc-title.ts";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
 import DashTopbar from "../../islands/DashTopbar.tsx";
@@ -29,7 +30,7 @@ export default define.page(async function CustomerRoute(ctx) {
       <Head>
         <DocTitle
           lang={lang}
-          title={(l) => name || tFor(l, "clientsRoute.docTitle")}
+          title={(l) => appTitle(l, name, tFor(l, "nav.customers"))}
         />
         <link
           key="css-dashboard"

@@ -4,6 +4,7 @@ import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import type { Lang } from "../../lib/lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
+import { appTitle } from "../../lib/doc-title.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -29,7 +30,7 @@ export default define.page(function AccountsManager(ctx) {
       <Head>
         <DocTitle
           lang={lang}
-          title={(l) => tFor(l, "accountsManager.docTitle")}
+          title={(l) => appTitle(l, tFor(l, "accountsManager.docTitle"))}
         />
         <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>
