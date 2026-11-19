@@ -16,6 +16,7 @@ async function signIn(
   http: StoryTools["http"],
   page: StoryTools["page"],
   baseUrl: string,
+  lang: "en" | "es" = "en",
 ) {
   const phone = `+1512${digits()}`;
   const r = await http("/api/auth/verify", {
@@ -41,14 +42,14 @@ async function signIn(
   await (await http("/api/me", {
     method: "PUT",
     headers: auth,
-    body: JSON.stringify({ language: "en", name: "Money Bar" }),
+    body: JSON.stringify({ language: lang, name: "Money Bar" }),
   })).body?.cancel();
   const [name, value] = cookie.split("=");
   const hosts = new Set([new URL(baseUrl).hostname, "localhost", "127.0.0.1"]);
   await page.context().addCookies(
     [...hosts].flatMap((domain) => [
       { name, value, domain, path: "/" },
-      { name: "pm_lang", value: "en", domain, path: "/" },
+      { name: "pm_lang", value: lang, domain, path: "/" },
     ]),
   );
   return { auth };
@@ -188,8 +189,8 @@ Deno.test("REQ-798: the dashboard's money bar shows estimates / unbilled / overd
       (await page.locator(sel).innerText()).replace(/\s+/g, " ").trim();
     expect.eq(
       await text(col("estimates")),
-      "$1,200 1 estimate out",
-      "estimates column",
+      "$1,200 1 quote out",
+      "estimates column (REQ-972: the product's word is Quote)",
     );
     expect.eq(
       await text(col("unbilled")),
@@ -279,5 +280,80 @@ Deno.test("REQ-798: the dashboard's money bar shows estimates / unbilled / overd
     await page.waitForURL(
       (u) => u.pathname === "/quotes" && u.searchParams.get("open") === sent.id,
       { timeout: 15_000 },
+    );
+  }));
+
+Deno.test("REQ-972 (q1-52): the money bar calls sent quotes 'quote out' in English and 'cotización enviada' in Spanish, never estimate / presupuesto", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl, "es");
+    await answerQuestions(http, auth, { name: "Money Bar" });
+    const ana = await post(http, auth, "/api/customers", {
+      name: "Ana Torres",
+    });
+    const sent = await post(http, auth, "/api/quotes", {
+      customerId: ana.id,
+      jobName: "Fence stain",
+      summary: "Fence stain",
+      lineItems: [{
+        description: "Stain",
+        quantity: 1,
+        unit: "job",
+        price: 120_000,
+      }],
+      estimatedTotal: 120_000,
+    });
+    await (await http(`/api/quotes/${sent.id}`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ status: "sent" }),
+    })).body?.cancel();
+
+    const caption = async () =>
+      (await page.locator(col("estimates")).innerText())
+        .replace(/\s+/g, " ").trim();
+
+    await page.goto("/dashboard?lang=es");
+    await page.locator(col("estimates")).waitFor({ timeout: 20_000 });
+    const es = await caption();
+    expect(
+      es.endsWith("1 cotización enviada"),
+      `the Spanish estimates column reads "1 cotización enviada" (${es})`,
+    );
+    expect(
+      !/presupuesto/i.test(es),
+      `the Spanish caption never says presupuesto (${es})`,
+    );
+
+    // switch the same account to English (profile + cookie), then re-read the column
+    await (await http("/api/me", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ language: "en" }),
+    })).body?.cancel();
+    const host = new URL(baseUrl).hostname;
+    await page.context().addCookies(
+      [...new Set([host, "localhost", "127.0.0.1"])].map((domain) => ({
+        name: "pm_lang",
+        value: "en",
+        domain,
+        path: "/",
+      })),
+    );
+    await page.goto("/dashboard?lang=en");
+    await page.locator(col("estimates")).waitFor({ timeout: 20_000 });
+    await page.waitForFunction(
+      (sel) =>
+        !/cotizaci/i.test(document.querySelector(sel)?.textContent ?? ""),
+      col("estimates"),
+      { timeout: 10_000 },
+    ).catch(() => {});
+    const en = await caption();
+    expect(
+      en.endsWith("1 quote out"),
+      `the English estimates column reads "1 quote out" (${en})`,
+    );
+    expect(
+      !/estimate/i.test(en),
+      `the English caption never says estimate (${en})`,
     );
   }));
