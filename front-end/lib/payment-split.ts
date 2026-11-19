@@ -139,14 +139,22 @@ export function computePaymentSplit(
  */
 export function depositBalanceSubVars(
   totalCents: number | null | undefined,
+  term = "Deposit + balance",
 ): { pct: number; deposit?: string; balance?: string } {
+  // REQ-936 (LOOP-007 q1-3): `term` is the deposit the message stated
+  // ("Deposit 30% + balance") — the sub-line names that share, not the 20 %.
+  const picked = parseDepositTerm(term);
+  const statedPct = picked && "pct" in picked
+    ? picked.pct
+    : DEPOSIT_BALANCE_PCT;
   const parts = typeof totalCents === "number"
-    ? computePaymentSplit("Deposit + balance", totalCents)
+    ? computePaymentSplit(term, totalCents)
     : [];
-  if (parts.length !== 2) return { pct: DEPOSIT_BALANCE_PCT };
+  if (parts.length !== 2) return { pct: statedPct };
   const usd = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
   return {
-    pct: DEPOSIT_BALANCE_PCT,
+    // a dollar deposit names its share of the total, rounded
+    pct: picked && "cents" in picked ? Math.round(parts[0].pct) : statedPct,
     deposit: usd(parts[0].amountCents),
     balance: usd(parts[1].amountCents),
   };

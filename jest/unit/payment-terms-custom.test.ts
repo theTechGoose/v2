@@ -85,15 +85,17 @@ describe("REQ-387 (M25) extractPaymentTerms — a stated N-payment schedule", ()
   });
 
   test("the REQ-265 single-figure rules still hold", () => {
-    expect(facts.extractPaymentTerms("25% deposit to book")).toBe(
-      "deposit_bal",
-    );
+    // AMENDED by REQ-936 (LOOP-007 q1-3): a stated deposit keeps its figure.
+    expect(facts.extractPaymentTerms("25% deposit to book")).toMatchObject({
+      kind: "deposit",
+      pct: 25,
+    });
     expect(facts.extractPaymentTerms("half deposit")).toBe("50_50");
     expect(facts.extractPaymentTerms("30/30/40 schedule")).toBe("30_30_40");
     expect(facts.extractPaymentTerms("net 15")).toBe("net_15");
     // percentages that do not add up to 100 are not a schedule
     expect(facts.extractPaymentTerms("10% off labor, 30% deposit"))
-      .toBe("deposit_bal");
+      .toMatchObject({ kind: "deposit", pct: 30 });
     // percentages with no payment word are not a schedule
     expect(facts.extractPaymentTerms("50% walls, 50% ceilings")).toBeNull();
   });

@@ -75,8 +75,9 @@ describe("REQ-265 extractQuoteFacts — what the user already typed", () => {
     expect(mod.extractQuoteFacts("30/30/40 schedule", TODAY).paymentTerms).toBe(
       "30_30_40",
     );
+    // AMENDED by REQ-936 (LOOP-007 q1-3): the stated share is kept.
     expect(mod.extractQuoteFacts("25% deposit to book", TODAY).paymentTerms)
-      .toBe("deposit_bal");
+      .toMatchObject({ kind: "deposit", pct: 25 });
     expect(mod.extractQuoteFacts("net 15", TODAY).paymentTerms).toBe("net_15");
   });
 

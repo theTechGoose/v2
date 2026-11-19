@@ -92,6 +92,8 @@ import {
   depositChoices,
   depositTermValue,
   isDepositPickerOption,
+  localizeDepositTerm, // REQ-936
+  parseDepositTerm, // REQ-936
 } from "../../shared/quote-flow/deposit-term.ts"; // REQ-678
 import {
   mergeFreshTerms,
@@ -9954,6 +9956,39 @@ export default function AsstChat({
                               const every = recurringAsk
                                 ? tFor(lang, recurringEveryKey(recurringAsk.cadence))
                                 : "";
+                              // REQ-936 (LOOP-007 q1-3): a deposit the
+                              // message stated ("30% deposit up front") —
+                              // the suggested option's sub-line names that
+                              // share, never the plain option's 20 %. A
+                              // dollar deposit with no total yet has no
+                              // share to name, so it shows none.
+                              const prefillDeposit = showPrefill &&
+                                  prefill?.customValue
+                                ? parseDepositTerm(prefill.customValue)
+                                : null;
+                              const prefillDepositSub = (() => {
+                                if (!prefill?.customValue || !prefillDeposit) {
+                                  return undefined;
+                                }
+                                const total = latestSentQuoteCents(messages) ||
+                                  (typeof quote?.estimatedTotal === "number"
+                                    ? quote.estimatedTotal
+                                    : 0);
+                                if (!total && "cents" in prefillDeposit) {
+                                  return "";
+                                }
+                                const vars = depositBalanceSubVars(
+                                  total || null,
+                                  prefill.customValue,
+                                );
+                                return tFor(
+                                  lang,
+                                  vars.deposit
+                                    ? "termsWizard.paymentTerms.depositBalance.subAmounts"
+                                    : "termsWizard.paymentTerms.depositBalance.sub",
+                                  vars,
+                                );
+                              })();
                               return (
                                 <>
                                 {showPrefill && prefill && recurringAsk
@@ -10011,10 +10046,17 @@ export default function AsstChat({
                                         {": "}
                                         <strong>
                                           {prefill.customValue
-                                            ? formatTermDate(
-                                              prefill.customValue,
-                                              lang,
-                                            )
+                                            ? (payload.stepId ===
+                                                  "payment_terms" &&
+                                                localizeDepositTerm(
+                                                  prefill.customValue,
+                                                  lang,
+                                                  tFor,
+                                                )) ||
+                                              formatTermDate(
+                                                prefill.customValue,
+                                                lang,
+                                              )
                                             : prefillOpt.label}
                                         </strong>
                                         {
@@ -10173,13 +10215,20 @@ export default function AsstChat({
                                       disabled={sending}
                                     >
                                       {opt.label}
-                                      {opt.sub
-                                        ? (
-                                          <span class="wiz-opt__sub">
-                                            {opt.sub}
-                                          </span>
-                                        )
-                                        : null}
+                                      {(() => {
+                                        const sub = prefillDepositSub !==
+                                              undefined &&
+                                            prefillOpt?.id === opt.id
+                                          ? prefillDepositSub
+                                          : opt.sub;
+                                        return sub
+                                          ? (
+                                            <span class="wiz-opt__sub">
+                                              {sub}
+                                            </span>
+                                          )
+                                          : null;
+                                      })()}
                                       {
                                         /* REQ-672 (cycle 5, p9): a
                                           suggestion says so in words — it
