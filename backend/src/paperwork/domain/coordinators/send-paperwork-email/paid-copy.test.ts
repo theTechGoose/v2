@@ -98,3 +98,42 @@ Deno.test("REQ-933 (q1-6) control: the unpaid invoice email still asks to pay (E
   );
   assert(html.includes("pay whenever"), "unpaid intro asks to pay");
 });
+
+// REQ-1114 — LOOP-007 cycle 3, q3-41 ("Paid-invoice email still shows payment
+// instructions"). The invoice's frozen paymentInstructions ("Zelle: …") must
+// not appear on the paid email — both renderers, EN and ES. Unpaid keeps them.
+const ZELLE = "Zelle: dana@x.com";
+const withInstructions = (inv: Invoice) => ({ ...inv, paymentInstructions: ZELLE }) as Invoice;
+
+/** every payment-instructions leak in one message */
+function instructionLeaks(html: string): string[] {
+  return [
+    ...(html.includes("data-payment-instructions") ? ["data-payment-instructions block"] : []),
+    ...["Payment instructions", "Instrucciones de pago", "dana@x.com"].filter((s) => html.includes(s))
+      .map((s) => `"${s}"`),
+  ];
+}
+
+for (const lang of ["en", "es"] as const) {
+  Deno.test(`REQ-1114 (q3-41) standalone paid invoice email (${lang}) shows no payment instructions`, () => {
+    const html = renderInvoiceBasicHtml(withInstructions(paidInvoice(false)), undefined, carl, bizOf(lang), lang, true);
+    const leaks = instructionLeaks(html);
+    assert(leaks.length === 0, `paid ${lang} standalone email still tells the customer how to pay: ${leaks.join(" | ")}`);
+  });
+
+  Deno.test(`REQ-1114 (q3-41) quote-linked paid invoice email (${lang}) shows no payment instructions`, () => {
+    const html = renderInvoiceHtml(withInstructions(paidInvoice(true)), undefined, carl, bizOf(lang), quote, true);
+    const leaks = instructionLeaks(html);
+    assert(leaks.length === 0, `paid ${lang} quote-linked email still tells the customer how to pay: ${leaks.join(" | ")}`);
+  });
+}
+
+Deno.test("REQ-1114 (q3-41) control: the unpaid invoice email still shows the payment instructions (EN, both renderers)", () => {
+  const unpaid = (q: boolean) => ({ ...withInstructions(paidInvoice(q)), status: "sent", paidAt: undefined }) as Invoice;
+  const basic = renderInvoiceBasicHtml(unpaid(false), undefined, carl, bizOf("en"), "en", false);
+  const linked = renderInvoiceHtml(unpaid(true), undefined, carl, bizOf("en"), quote, false);
+  for (const [name, html] of [["standalone", basic], ["quote-linked", linked]] as const) {
+    assert(html.includes("data-payment-instructions"), `${name} unpaid email keeps the instructions block`);
+    assert(html.includes("dana@x.com"), `${name} unpaid email keeps the instructions text`);
+  }
+});
