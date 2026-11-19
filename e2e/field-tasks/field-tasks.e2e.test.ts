@@ -1432,6 +1432,48 @@ Deno.test("REQ-787: Annual shows a Month dropdown and that month's calendar; day
     );
   }));
 
+// REQ-1013 (LOOP-007 q1-100) — the Annual hint said "One visit a year" under a calendar that takes several days.
+Deno.test("REQ-1013: Annual with two days checked (5 and 20) — the hint under the month calendar says each picked day, every year, never one visit a year", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const r = await http("/api/customers", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        name: "Ana Torres",
+        address: "4601 Dick Pond Rd, Myrtle Beach, SC",
+        email: "ana.torres@blackhole.postmarkapp.com",
+      }),
+    });
+    await r.body?.cancel();
+    await page.goto("/field/subscriptions");
+    await page.locator("[data-cy='subs-new']").click();
+    await pickCustomer(page, "Ana Torres");
+    await page.locator("[data-cy='subs-cadence']").selectOption("annual");
+    await page.locator("[data-cy='subs-month']").selectOption("3");
+    const view = page.locator("[data-cy='subs-month-view']");
+    for (const on of await view.locator("[data-cy='subs-dom-day'].on").all()) {
+      await on.click();
+    }
+    await view.locator("[data-cy='subs-dom-day'][data-dom='5']").click();
+    await view.locator("[data-cy='subs-dom-day'][data-dom='20']").click();
+    expect.eq(
+      (await view.locator("[data-cy='subs-dom-day'].on").allTextContents())
+        .join("|"),
+      "5|20",
+      "two days are checked",
+    );
+    const hint = (await view.locator(".hint").textContent() ?? "").trim();
+    expect(
+      !/one visit/i.test(hint),
+      `the hint does not promise one visit a year (got "${hint}")`,
+    );
+    expect(
+      /each day you pick/i.test(hint) && /every year/i.test(hint),
+      `the hint says every year, on each day you pick (got "${hint}")`,
+    );
+  }));
+
 // REQ-788 — "a toggle button in the upper right that adds an overhead cost. that overhead cost is
 // defined in settings. the toggle button is in the same style as the weekday selection button."
 Deno.test("REQ-788: the overhead cost set in Settings; the form's upper-right chip (a weekday chip) toggles it on; the card lists it; the pulled draft bills services + overhead", (t) =>
