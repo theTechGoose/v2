@@ -62,11 +62,12 @@ describe("REQ-924 the sidebar's Customers context", () => {
     expect(by.bp.initials).toBe("BM"); // first + last word, as the sidebar's own initials
   });
 
-  test("short money for the narrow rail: $980, $4.5k, $12k", () => {
+  test("REQ-924/REQ-1041 the rail's amount is the exact balance: $980, $4,550, $12,400", () => {
     expect(shortMoney(98000)).toBe("$980");
-    expect(shortMoney(455000)).toBe("$4.5k");
-    expect(shortMoney(400000)).toBe("$4k");
-    expect(shortMoney(1240000)).toBe("$12k");
+    expect(shortMoney(455000)).toBe("$4,550");
+    expect(shortMoney(400000)).toBe("$4,000");
+    expect(shortMoney(1240000)).toBe("$12,400");
+    expect(shortMoney(175025)).toBe("$1,750.25");
     expect(shortMoney(0)).toBe("$0");
   });
 
