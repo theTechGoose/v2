@@ -23,3 +23,46 @@ Deno.test("REQ-134 customer-store — 250 customers listByUser: all 250, the del
     await resetKv();
   }
 });
+
+// REQ-1088 (LOOP-007 cycle 3, q3-5/q3-6): QA5 created María José Peña through
+// POST /api/customers with lowercase parts; the store composed and kept
+// "45 palmetto dr, conway, SC 29526", which the invoice bill-to, /i and the
+// email then printed raw — and a quote's address copied from the record.
+Deno.test("REQ-1088 q3-6 customer-store — create with lowercase address parts stores a tidy address", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  try {
+    const store = new CustomerStore();
+    const c = await store.create("u-1", {
+      name: "María José Peña",
+      street: "45 palmetto dr",
+      city: "conway",
+      state: "SC",
+      zip: "29526",
+    });
+    assertEquals(
+      (await store.getOwned(c.id, "u-1")).address,
+      "45 Palmetto Dr, Conway, SC 29526",
+    );
+  } finally {
+    await resetKv();
+  }
+});
+
+Deno.test("REQ-1088 q3-5 customer-store — update with a lowercase free-text address stores it tidy", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  try {
+    const store = new CustomerStore();
+    const c = await store.create("u-1", { name: "María José Peña" });
+    await store.update(c.id, "u-1", {
+      address: "12 oak st, myrtle beach, sc 29577",
+    });
+    assertEquals(
+      (await store.getOwned(c.id, "u-1")).address,
+      "12 Oak St, Myrtle Beach, SC 29577",
+    );
+  } finally {
+    await resetKv();
+  }
+});
