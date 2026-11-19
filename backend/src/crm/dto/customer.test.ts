@@ -180,3 +180,41 @@ Deno.test("REQ-1119 q3-47 parseUpdateCustomer refuses the undeclared key `phone`
     `accepted and kept: ${JSON.stringify(kept)}`,
   );
 });
+
+// REQ-1141 (LOOP-007 cycle 3, q3-73): a customer name (and business name) is
+// capped at 120 characters — the same MAX_NAME the inquiry store clips to. A
+// 308-character name was accepted and filled the phone screen as a 486 px h1.
+const NAME_121 = "A".repeat(121);
+const NAME_120 = "B".repeat(120);
+Deno.test("REQ-1141 q3-73 parseCreateCustomer refuses a 121-character name with 400 customer.nameTooLong", () => {
+  const err = statusOf(() => parseCreateCustomer({ name: NAME_121 }));
+  assertEquals(err.status, 400);
+  assertEquals(err.message, "customer.nameTooLong");
+});
+Deno.test("REQ-1141 q3-73 parseCreateCustomer refuses the QA's 308-character name with 400 customer.nameTooLong", () => {
+  const err = statusOf(() => parseCreateCustomer({ name: "<b>x</b>" + "Z".repeat(300) }));
+  assertEquals(err.status, 400);
+  assertEquals(err.message, "customer.nameTooLong");
+});
+Deno.test("REQ-1141 q3-73 parseUpdateCustomer refuses a 121-character name with 400 customer.nameTooLong", () => {
+  const err = statusOf(() => parseUpdateCustomer({ name: NAME_121 }));
+  assertEquals(err.status, 400);
+  assertEquals(err.message, "customer.nameTooLong");
+});
+Deno.test("REQ-1141 q3-73 parseCreateCustomer refuses a 121-character business name with 400 customer.nameTooLong", () => {
+  const err = statusOf(() => parseCreateCustomer({ name: "Ann", businessName: NAME_121 }));
+  assertEquals(err.status, 400);
+  assertEquals(err.message, "customer.nameTooLong");
+});
+Deno.test("REQ-1141 q3-73 parseUpdateCustomer refuses a 121-character business name with 400 customer.nameTooLong", () => {
+  const err = statusOf(() => parseUpdateCustomer({ businessName: NAME_121 }));
+  assertEquals(err.status, 400);
+  assertEquals(err.message, "customer.nameTooLong");
+});
+Deno.test("REQ-1141 q3-73 a name of exactly 120 characters is kept whole (create and update)", () => {
+  assertEquals(parseCreateCustomer({ name: NAME_120 }).name, NAME_120);
+  assertEquals(parseUpdateCustomer({ name: NAME_120 }).name, NAME_120);
+});
+Deno.test("REQ-1141 q3-73 the limit counts the trimmed name — 120 characters plus padding passes", () => {
+  assertEquals(parseCreateCustomer({ name: `  ${NAME_120}  ` }).name, NAME_120);
+});

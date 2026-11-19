@@ -6,6 +6,7 @@
 import { formatPhoneInput } from "../quote-flow/format-helpers.ts";
 import { splitAddress } from "../customer-address/mod.ts";
 import { addressPartErrors } from "../customer-address/rules.ts"; // REQ-992
+import { CUSTOMER_NAME_MAX } from "../quote-flow/customer-contact.ts"; // REQ-1141
 
 export interface CustomerFormValues {
   name: string;
@@ -89,7 +90,10 @@ export function customerFormFrom(
 }
 
 export type CustomerFormErrors = Partial<
-  Record<"name" | "phone" | "email" | "state" | "zip", "required" | "invalid">
+  Record<
+    "name" | "phone" | "email" | "state" | "zip",
+    "required" | "invalid" | "tooLong"
+  >
 >;
 
 /** Lenient: any format (spaces, dots, dashes, parens, +country, ext) with at
@@ -108,6 +112,8 @@ export function validateCustomerForm(
 ): CustomerFormErrors {
   const out: CustomerFormErrors = {};
   if (!v.name.trim()) out.name = "required";
+  // REQ-1141: a name stored before the cap must be shortened on edit
+  else if (v.name.trim().length > CUSTOMER_NAME_MAX) out.name = "tooLong";
   if (v.phone.trim() && !isPhoneLike(v.phone)) out.phone = "invalid";
   if (v.email.trim() && !isEmailLike(v.email)) out.email = "invalid";
   // REQ-992: a state no one can mail to, a ZIP that is not a ZIP

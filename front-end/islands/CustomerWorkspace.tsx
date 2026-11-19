@@ -471,7 +471,8 @@ export default function CustomerWorkspace(
       <header class="cws-hero">
         <div class="cws-av" aria-hidden="true">{initialsOf(c.name)}</div>
         <div class="cws-hero__who">
-          <h1 data-cy="cws-name">{c.name}</h1>
+          {/* REQ-1141: clamped to two lines; the full name in title */}
+          <h1 data-cy="cws-name" title={c.name}>{c.name}</h1>
           <div class="cws-contact">
             {c.businessName && <span>{c.businessName}</span>}
             {c.phoneNumber && (

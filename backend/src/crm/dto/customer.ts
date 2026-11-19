@@ -8,7 +8,10 @@ import {
 } from "#class-validator";
 import { plainToInstance } from "#class-transformer";
 import type { NumberedFields } from "@core/data/numbered-store/mod.ts";
-import { customerContactError } from "#quote-flow/customer-contact.ts"; // REQ-278
+import {
+  CUSTOMER_NAME_MAX, // REQ-1141
+  customerContactError, // REQ-278
+} from "#quote-flow/customer-contact.ts";
 import { addressPartError, stateCode } from "#customer-address/rules.ts"; // REQ-992
 
 /**
@@ -269,6 +272,8 @@ function assertAddressParts(dto: { state?: string; zip?: string }): void {
  * kept trimmed, and a blank or whitespace-only one is refused with the form's
  * own key. `required` is false for an edit, where an absent name is "unchanged".
  * businessName is trimmed the same way.
+ * REQ-1141 (LOOP-007 cycle 3, q3-73): a name or businessName longer than
+ * CUSTOMER_NAME_MAX (after trimming) is refused with customer.nameTooLong.
  */
 function assertName(
   dto: { name?: string; businessName?: string },
@@ -280,6 +285,12 @@ function assertName(
   }
   if (typeof dto.businessName === "string") {
     dto.businessName = dto.businessName.trim();
+  }
+  if (
+    (dto.name?.length ?? 0) > CUSTOMER_NAME_MAX ||
+    (dto.businessName?.length ?? 0) > CUSTOMER_NAME_MAX
+  ) {
+    throw new CustomerInputError("customer.nameTooLong");
   }
 }
 
