@@ -13,7 +13,10 @@ import {
   commsLanguagesSeed,
   hasSendLanguage,
 } from "#quote-flow/comms-language.ts";
-import { businessNameError } from "#quote-flow/settings-fields.ts";
+import {
+  businessNameError,
+  websiteUrlError,
+} from "#quote-flow/settings-fields.ts";
 import { checkCardPayUrl, checkPayLinks } from "#payments/pay-links.ts";
 
 /** REQ-172 — a time zone Intl does not know is a 400, not a stored string */
@@ -26,6 +29,14 @@ class BadTimezone extends Error {
 
 /** REQ-501 (demo M35) — a blank business name once one is set is a 400 naming its key (REQ-598: empty → settings.businessNameRequired, spaces → welcome.nameBlank) */
 class BlankBusinessName extends Error {
+  readonly status = 400;
+  constructor(key: string) {
+    super(key);
+  }
+}
+
+/** REQ-1043 (LOOP-007 q2, q2-27) — a website that would not link ("reyes tile dot com") is a 400 naming its key, not a stored dead link */
+class BadWebsite extends Error {
   readonly status = 400;
   constructor(key: string) {
     super(key);
@@ -99,6 +110,10 @@ export class BusinessIdentityController {
     if (links && patch.acceptedPaymentMethods) patch.acceptedPaymentMethods.links = links;
     if (cardUrl !== undefined && patch.acceptedPaymentMethods?.card) {
       patch.acceptedPaymentMethods.card.url = cardUrl;
+    }
+    if (patch.websiteUrl !== undefined) {
+      const siteErr = websiteUrlError(patch.websiteUrl);
+      if (siteErr) throw new BadWebsite(siteErr);
     }
     if (patch.timezone !== undefined && !validTimezone(patch.timezone)) {
       throw new BadTimezone(String(patch.timezone));

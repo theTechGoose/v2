@@ -10,6 +10,7 @@
  *   wizard's own copy (`welcome.nameBlank`, "spaces alone don't count").
  */
 import { isValidCustomerEmail } from "./customer-contact.ts";
+import { isValidWebsiteUrl } from "./format-helpers.ts";
 
 export function accountEmailError(
   raw: string | null | undefined,
@@ -67,4 +68,15 @@ export function overheadError(
   return s && Number.isFinite(n) && n >= 0 && n <= 100
     ? null
     : "settings.overheadPctInvalid";
+}
+
+/**
+ * REQ-1043 (LOOP-007 q2, q2-27) — the business website: a value that would not link
+ * ("reyes tile dot com") is refused with a key shown under the field and a 400 on
+ * PUT /profile/identity; blank is allowed (it clears the website).
+ */
+export function websiteUrlError(
+  raw: string | null | undefined,
+): "settings.websiteInvalid" | null {
+  return isValidWebsiteUrl(raw) ? null : "settings.websiteInvalid";
 }

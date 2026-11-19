@@ -108,7 +108,8 @@ import {
   moneyError,
   netDaysError,
   overheadError,
-} from "../../shared/quote-flow/settings-fields.ts"; // REQ-501, REQ-978
+  websiteUrlError,
+} from "../../shared/quote-flow/settings-fields.ts"; // REQ-501, REQ-978, REQ-1043
 import {
   businessTimezone,
   PICKER_TIMEZONES,
@@ -524,6 +525,8 @@ function EditCard(
   // saved — the stored value stays (the keys come from shared/quote-flow/settings-fields.ts)
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [bizErr, setBizErr] = useState<string | null>(null);
+  // REQ-1043 (q2-27): a website that would not link is shown under its field and NOT saved
+  const [siteErr, setSiteErr] = useState<string | null>(null);
   // REQ-978 (q1-58): the number fields too — a bad value shows its message, stays on screen, and
   // nothing is saved; it is never silently put back to the stored value
   const [netDaysErr, setNetDaysErr] = useState<string | null>(null);
@@ -743,11 +746,16 @@ function EditCard(
             value={site}
             placeholder="https://"
             disabled={busy === "identity"}
+            aria-invalid={siteErr ? "true" : undefined}
             onInput={(e) => {
               setSaved(false);
               setSite((e.target as HTMLInputElement).value);
+              setSiteErr(null);
             }}
             onBlur={() => {
+              const key = websiteUrlError(site);
+              setSiteErr(key);
+              if (key) return;
               const next = normalizeWebsiteUrl(site);
               if (next !== site) setSite(next);
               if (next !== (snapshot.identity?.websiteUrl ?? "")) {
@@ -756,6 +764,17 @@ function EditCard(
             }}
             aria-label={t.ariaEditWebsite}
           />
+          {siteErr
+            ? (
+              <span
+                role="alert"
+                data-cy="settings-website-error"
+                style="display:block;margin-top:4px;font-size:12px;color:#a83b3b"
+              >
+                {tFor(fieldLang, siteErr)}
+              </span>
+            )
+            : null}
         </label>
         <label style="display:block;grid-column:1 / -1">
           <span style={labelStyle}>{t.netDays}</span>

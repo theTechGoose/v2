@@ -3259,6 +3259,7 @@
   "settings.netDaysInvalid": "Escribe un número entero de 0 a 365.",
   "settings.moneyInvalid": "Escribe una cantidad de 0 o más.",
   "settings.overheadPctInvalid": "Escribe un porcentaje de 0 a 100.",
+  "settings.websiteInvalid": "Eso no parece un sitio web. Escríbelo así: reyestile.com.",
   "settings.certHint": "PDF o imagen · prueba de seguro / COI",
   "settings.certOnFile": "Certificado en archivo",
   "settings.city": "Ciudad",

@@ -3260,6 +3260,7 @@
   "settings.netDaysInvalid": "Type a whole number from 0 to 365.",
   "settings.moneyInvalid": "Type an amount of 0 or more.",
   "settings.overheadPctInvalid": "Type a percent from 0 to 100.",
+  "settings.websiteInvalid": "That doesn't look like a website. Type it like reyestile.com.",
   "settings.certHint": "PDF or image · proof of insurance / COI",
   "settings.certOnFile": "Certificate on file",
   "settings.city": "City",
