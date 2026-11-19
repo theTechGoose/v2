@@ -160,6 +160,8 @@ const css = `
   .svc--done .svc__name { color: var(--fg-muted); }
   .svc__extra { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--brand-teal); background: var(--mint-100); border-radius: 999px; padding: 2px 7px; }
   .svc__lock { font-size: 11px; color: var(--fg-muted); }
+  /* REQ-1070 — an inline SVG icon ahead of hint / row-button text */
+  .ico-in { display: inline-flex; vertical-align: -1px; margin-right: 4px; }
   .visit__btns { display: flex; gap: 8px; }
   .visit__btns button { flex: 1; padding: 8px 4px; border: 1px solid var(--border); border-radius: 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: var(--brand-teal); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 54px; cursor: pointer; white-space: nowrap; }
   .visit__btns button.on { background: var(--mint-100); border-color: var(--brand-teal); }
@@ -819,7 +821,10 @@ export default function WorkerScreen(
                   <>
                     {" "}
                     <span class="svc__lock">
-                      🔒 {t(lockLabelKey(s.lockState))}
+                      <span class="ico-in">
+                        <I d={ICN.lock} size={12} />
+                      </span>
+                      {t(lockLabelKey(s.lockState))}
                     </span>
                   </>
                 )}
@@ -829,7 +834,10 @@ export default function WorkerScreen(
         </div>
         {v.services.filter((s) => s.status === "deferred").map((s) => (
           <div class="hint" key={s.id}>
-            ⏭ {s.taskTypeName} · {t("worker.deferred")}
+            <span class="ico-in">
+              <I d={ICN.skip} size={12} />
+            </span>
+            {s.taskTypeName} · {t("worker.deferred")}
             {s.note ? ` — ${s.note}` : ""}
           </div>
         ))}
@@ -874,7 +882,8 @@ export default function WorkerScreen(
                       : { visit: v.id, note: "" }
                   )}
               >
-                ⏭ {t("worker.deferVisit")}
+                <I d={ICN.skip} size={14} />
+                {t("worker.deferVisit")}
               </button>
             )}
           </div>
@@ -973,7 +982,14 @@ export default function WorkerScreen(
                     </button>
                   )
                   : s.status === "deferred"
-                  ? <span class="hint">⏭ {t("worker.deferred")}</span>
+                  ? (
+                    <span class="hint">
+                      <span class="ico-in">
+                        <I d={ICN.skip} size={12} />
+                      </span>
+                      {t("worker.deferred")}
+                    </span>
+                  )
                   : (
                     <>
                       <button
@@ -991,7 +1007,10 @@ export default function WorkerScreen(
                           onClick={() =>
                             setDeferring({ visit: v.id, task: s.id, note: "" })}
                         >
-                          ⏭ {t("worker.defer")}
+                          <span class="ico-in">
+                            <I d={ICN.skip} size={12} />
+                          </span>
+                          {t("worker.defer")}
                         </button>
                       )}
                     </>
@@ -1386,7 +1405,10 @@ export default function WorkerScreen(
             {/* REQ-362 — a day after today is a read-only preview */}
             {preview && (
               <div class="hint" data-cy="w-preview">
-                🔒 {t("worker.preview")}
+                <span class="ico-in">
+                  <I d={ICN.lock} size={12} />
+                </span>
+                {t("worker.preview")}
               </div>
             )}
             {/* REQ-196 — the day in one glance */}

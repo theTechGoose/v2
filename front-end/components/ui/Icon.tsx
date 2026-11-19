@@ -3,7 +3,7 @@
  * Add more as the UI grows; keep them dependency-free.
  *
  * REQ-366 (demo setup-m4): every UI icon comes from here — never a literal
- * Dingbat character (✓ ✎ ✕ …). The app's web fonts carry no Dingbats, so
+ * Dingbat (✓ ✎ ✕ …) or Misc Technical (⏭ …, REQ-1070) character. The app's web fonts carry no Dingbats, so
  * those fell back per element/frame and rendered as tofu boxes.
  * lib/ui-glyph-icons.test.tsx guards it.
  */
@@ -30,6 +30,8 @@ type Name =
   | "chevron-down"
   | "chevron-up"
   | "play"
+  | "skip-forward"
+  | "lock"
   | "menu"
   | "logo";
 
@@ -99,6 +101,14 @@ const PATHS: Record<Name, JSX.Element> = {
   "chevron-down": <path d="M6 9l6 6 6-6" />,
   "chevron-up": <path d="M6 15l6-6 6 6" />,
   play: <path d="M8 5v14l11-7z" />,
+  // REQ-1070 — replaces the literal ⏭ (U+23ED, Misc Technical) and 🔒.
+  "skip-forward": <path d="M5 4l10 8-10 8zM19 5v14" />,
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
   menu: <path d="M3 6h18M3 12h18M3 18h18" />,
   logo: <path d="M4 18h16l-2-9-3 3-3-6-3 6-3-3z" />,
 };

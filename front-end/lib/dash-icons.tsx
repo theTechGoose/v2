@@ -265,6 +265,15 @@ export const ICN = {
     </>
   ),
   x: <path d="M18 6 6 18M6 6l12 12" />,
+  // REQ-1070 — Defer / deferred (was a literal ⏭, U+23ED) and the locked /
+  // read-only marker (was 🔒): SVG, not a font-fallback glyph.
+  skip: <path d="M5 4l10 8-10 8zM19 5v14" />,
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
   logout: (
     <>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

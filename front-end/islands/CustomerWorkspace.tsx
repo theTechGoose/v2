@@ -1587,7 +1587,10 @@ function Messages(
                     href={outboxOpenHref(r.id)}
                   >
                     <span class="cws-outbox__icon" aria-hidden="true">
-                      {r.channel === "text" ? "💬" : "✉️"}
+                      <I
+                        d={r.channel === "text" ? ICN.msg : ICN.mail}
+                        size={15}
+                      />
                     </span>
                     <span class="cws-outbox__main">
                       <b>{outboxWhat(r, lang)}</b>
