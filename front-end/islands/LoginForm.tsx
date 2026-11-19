@@ -11,6 +11,7 @@ import {
   signedInNow,
   watchLoginRejoin,
 } from "../lib/login-rejoin.ts";
+import { safeNext } from "../lib/login-redirect.ts";
 
 /**
  * LoginForm — the clean, login-branded phone entry used by /login
@@ -60,9 +61,15 @@ export default function LoginForm() {
         language: lang,
       });
       stashDevCode(e164, sent.devCode); // REQ-082 — /verify shows it on the fakes
+      // REQ-1153: the page asked for (?next=) rides along to /verify, so the code ends there
+      const next = safeNext(
+        new URLSearchParams(globalThis.location.search).get("next"),
+      );
       globalThis.location.href = `/verify?phone=${
         encodeURIComponent(e164)
-      }&lang=${lang}&from=login`; // REQ-351: /verify's Edit returns here
+      }&lang=${lang}&from=login${
+        next ? `&next=${encodeURIComponent(next)}` : ""
+      }`; // REQ-351: /verify's Edit returns here
     } catch (error) {
       const msg = error instanceof ApiError
         ? `${error.status}`

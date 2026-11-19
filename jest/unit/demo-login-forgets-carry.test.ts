@@ -27,10 +27,10 @@ describe("REQ-821 AMENDMENT (demo-loop run 11, p2) — a sign-in forgets the car
       /import \{ sessionStore \} from "\.\.\/lib\/demo-mode\/cursor-handoff\.ts"/,
     );
     expect(src).toMatch(
-      /forgetDemo\(sessionStore\(\)\);\s*setTimeout\(\(\) => \{\s*globalThis\.location\.href = result\.redirectTo;/,
+      /forgetDemo\(sessionStore\(\)\);\s*setTimeout\(\(\) => \{\s*globalThis\.location\.href = afterCodeTarget\(\s*result\.redirectTo,\s*nextPage,?\s*\);/, // REQ-1153: next over the plain dashboard landing
     );
     expect(src).toMatch(
-      /forgetDemo\(sessionStore\(\)\);\s*globalThis\.location\.href = res\.redirectTo;/,
+      /forgetDemo\(sessionStore\(\)\);\s*globalThis\.location\.href = afterCodeTarget\(\s*res\.redirectTo,\s*nextPage,?\s*\);/, // REQ-1153
     );
   });
   test("a forgotten carry is not carried: the next page's overlay finds nothing (arrives, grace)", () => {

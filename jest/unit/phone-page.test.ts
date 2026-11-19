@@ -61,7 +61,7 @@ describe("REQ-915 the Phone page", () => {
     expect(exists("front-end/islands/PhonePage.tsx")).toBe(true);
     const gate = read("front-end/routes/communications/_middleware.ts");
     expect(gate).toContain("loadUser(ctx.req)");
-    expect(gate).toContain('Location: "/"');
+    expect(gate).toContain("loginRedirect(new URL(ctx.req.url))"); // REQ-1153: no session → /login?next=
   });
 
   test("REQ-915d the client hits every endpoint under its real path and method", async () => {

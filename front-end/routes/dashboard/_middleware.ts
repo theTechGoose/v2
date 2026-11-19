@@ -1,10 +1,11 @@
 import { define } from "../../utils.ts";
 import { loadUser } from "../../lib/auth.ts";
+import { loginRedirect } from "../../lib/login-redirect.ts";
 import { dashboardGateQuestions } from "../../lib/onboarding-gate.ts";
 
 /** The dashboard's gate.
  *
- *  - No session → redirect to "/".
+ *  - No session → /login?next=<the page asked for> (REQ-1153).
  *  - REQ-091: an onboarding question still open → redirect to /welcome, which
  *    resumes at the first open one. Onboarding happens until every question
  *    is answered; Skip only puts a question off, so the dashboard — the app's
@@ -23,11 +24,14 @@ import { dashboardGateQuestions } from "../../lib/onboarding-gate.ts";
 export const handler = define.middleware(async (ctx) => {
   const user = await loadUser(ctx.req);
   if (!user) {
-    return new Response(null, { status: 302, headers: { Location: "/" } });
+    return loginRedirect(new URL(ctx.req.url));
   }
   const open = await dashboardGateQuestions(ctx.req);
   if (open && open.length > 0) {
-    return new Response(null, { status: 302, headers: { Location: "/welcome" } });
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/welcome" },
+    });
   }
   ctx.state.user = user;
   return await ctx.next();

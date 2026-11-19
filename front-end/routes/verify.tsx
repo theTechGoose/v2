@@ -15,6 +15,8 @@ import { MetaPixelEvent } from "../components/MetaPixel.tsx";
 import { leadEvent } from "../../shared/meta-pixel/pixel.ts";
 import { verifyEditHref } from "../lib/verify-edit-href.ts";
 import { Icon } from "../components/ui/Icon.tsx";
+import { rejoinTarget } from "../lib/login-rejoin.ts";
+import { loginHref, safeNext } from "../lib/login-redirect.ts";
 
 function formatPhoneDisplay(e164: string): string {
   const digits = e164.replace(/\D/g, "").slice(-10);
@@ -31,9 +33,10 @@ export const handler = define.handlers({
 
     const user = await loadUser(ctx.req);
     if (user) {
+      // REQ-1153: a signed-in visitor goes on to the page asked for (?next=), else the dashboard
       return new Response(null, {
         status: 302,
-        headers: { Location: "/dashboard" },
+        headers: { Location: rejoinTarget(new URL(ctx.req.url).search) },
       });
     }
 
@@ -58,7 +61,11 @@ export default define.page<typeof handler>(function Verify(ctx) {
   // from. Every sign-in form sends ?from=<origin> (survives reload); the
   // allow-list in lib/verify-edit-href.ts maps it — never reflect a URL — and
   // a missing/unknown origin goes to /login, not the marketing page.
-  const editHref = verifyEditHref(url.searchParams.get("from"));
+  // REQ-1153: the page asked for (/login?next= → LoginForm → here) — the code ends on it, and
+  // "Edit" back to /login keeps it
+  const next = safeNext(url.searchParams.get("next"));
+  const editBase = verifyEditHref(url.searchParams.get("from"));
+  const editHref = next && editBase === "/login" ? loginHref(next) : editBase;
 
   return (
     <>
@@ -133,6 +140,7 @@ export default define.page<typeof handler>(function Verify(ctx) {
             phoneNumber={phone}
             initialLang={lang}
             editHref={editHref}
+            next={next ?? undefined}
           />
         </div>
         <SiteFooter lang={lang} />

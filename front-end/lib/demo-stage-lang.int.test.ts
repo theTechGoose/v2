@@ -116,10 +116,10 @@ Deno.test("REQ-812 no impersonation: the signed-in person's own language (es) �
   assertEquals(title(html), "Modo demo · DocuMonster");
 });
 
-Deno.test("REQ-812 no session still goes home", async () => {
+Deno.test("REQ-812 no session goes to /login?next=/demo/stage (REQ-1153)", async () => {
   const { res } = await stage(backend("es", "en"), "");
   assertEquals(res.status, 302);
-  assertEquals(res.headers.get("location"), "/");
+  assertEquals(res.headers.get("location"), "/login?next=%2Fdemo%2Fstage");
 });
 
 /** REQ-829 (demo-loop cycle dm2, m7) — the presenter's live language rides the stage URL */
