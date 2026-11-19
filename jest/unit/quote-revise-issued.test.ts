@@ -247,6 +247,7 @@ describe("REQ-315 m49 chatQuoteLink — a reply that names a quote gets a link t
         "needs_invoice",
         "locked",
         "no_such_line",
+        "ask_total", // REQ-1027 (q2-4): the stated total could not land
       ]
     ) {
       expect(

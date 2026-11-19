@@ -7,11 +7,18 @@ import {
   isQuoteLocked,
   versionOf,
 } from "#documents/versions.ts";
-import { pickChangeOrderTarget } from "@agents/domain/business/change-order-intent/mod.ts";
+import {
+  changeOrderAmountsCents,
+  parseTargetTotalChange,
+  pickChangeOrderTarget,
+  saysTooExpensive,
+  typedAmountsCents,
+} from "@agents/domain/business/change-order-intent/mod.ts";
 import {
   findLine,
   type LineChange,
   reviseLineItems,
+  settleToTotal,
   totalOf,
 } from "@agents/domain/business/quote-line-revision/mod.ts";
 import { describeQuoteRevision } from "@agents/domain/business/quote-revision-reply/mod.ts";
@@ -41,6 +48,11 @@ export interface ReviseQuoteInput {
   /** REQ-585: the job details were rewritten this same turn — a bullet the
    *  model also tried to revise needs no reply of its own. */
   jobDetailsUpdated?: boolean;
+  /** REQ-1027 (LOOP-007 cycle 2, q2-4): the job's NEW total, integer cents —
+   *  the model's revise_quote newTotalDollars, else read from `userText`
+   *  ("total 5,550"). The revision lands exactly this total or nothing is
+   *  written and the contractor is asked. */
+  targetTotalCents?: number;
 }
 
 export type ReviseQuoteOutcome =
@@ -69,6 +81,16 @@ export type ReviseQuoteOutcome =
     inJobDetails?: boolean;
   }
   | { kind: "ambiguous"; quoteIds: string[] }
+  /** REQ-1027: the revision can't land the stated total, or a "too much"
+   *  ask would raise the price — nothing written, the contractor is asked. */
+  | {
+    kind: "ask_total";
+    quoteId: string;
+    quoteNumber?: string;
+    currentTotalCents: number;
+    revisedTotalCents: number;
+    targetTotalCents?: number;
+  }
   | { kind: "none" }
   | { kind: "ask_customer" };
 
@@ -318,7 +340,7 @@ export class ReviseQuote {
     }
     const withNote = (text: string) =>
       detailsNote ? `${text} ${detailsNote}` : text;
-    const rev = reviseLineItems(base, lines, remove);
+    let rev = reviseLineItems(base, lines, remove);
     if (rev.unmatched.length > 0) {
       const list = base
         .map((l) =>
@@ -333,6 +355,58 @@ export class ReviseQuote {
         })),
         outcome: { kind: "no_such_line", ...ref, unmatched: rev.unmatched },
       };
+    }
+
+    // REQ-1027 (LOOP-007 cycle 2, q2-4): "sin la cerca, solo la pintura,
+    // total 5,550" — the model put the total on the painting line and the
+    // $1,350 materials stayed: Version 2 was $6,900. A stated total is
+    // landed in code (settleToTotal) or nothing is written and he is asked;
+    // a "too much / cheaper" ask never raises the price.
+    const currentTotal = totalOf(base);
+    const statedTotal = input.targetTotalCents ??
+      parseTargetTotalChange(input.userText)?.targetTotalCents;
+    const askTotal = (key: string, revised: number) => ({
+      text: withNote(t(lang, key, {
+        ...vars,
+        from: money(currentTotal),
+        to: money(revised),
+        target: money(statedTotal ?? 0),
+      })),
+      outcome: {
+        kind: "ask_total" as const,
+        ...ref,
+        currentTotalCents: currentTotal,
+        revisedTotalCents: revised,
+        ...(statedTotal ? { targetTotalCents: statedTotal } : {}),
+      },
+    });
+    if (statedTotal && statedTotal > 0 && rev.estimatedTotal !== statedTotal) {
+      const settled = settleToTotal(
+        base,
+        lines,
+        remove,
+        statedTotal,
+        [
+          ...changeOrderAmountsCents(input.userText),
+          ...typedAmountsCents(input.userText),
+        ].filter((c) => c !== statedTotal),
+      );
+      if (!settled) {
+        return askTotal(
+          "chatCoordinator.reviseQuote.targetMismatch",
+          rev.estimatedTotal,
+        );
+      }
+      rev = settled;
+    }
+    if (
+      !statedTotal && saysTooExpensive(input.userText) &&
+      rev.estimatedTotal > currentTotal
+    ) {
+      return askTotal(
+        "chatCoordinator.reviseQuote.wouldRaise",
+        rev.estimatedTotal,
+      );
     }
 
     const asRevisionLine = (l: LineItem) => ({

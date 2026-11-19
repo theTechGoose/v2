@@ -30,6 +30,7 @@ const LINKABLE = new Set([
   "all_paid", // REQ-655: a credit on a paid-off job
   "locked",
   "no_such_line",
+  "ask_total", // REQ-1027 (q2-4): a total that could not land — the quote it names
 ]);
 
 /** REQ-462 (demo-loop cycle 3, M26): the chat's edit of a change order by

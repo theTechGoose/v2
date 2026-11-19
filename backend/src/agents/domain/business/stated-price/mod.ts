@@ -357,6 +357,19 @@ export function statedTotalNote(targetCents: number): string {
   } (${targetCents} cents). If you call create_quote, its line items' amountCents must add up to about ${targetCents}: spread it over all the work, including anything added in this message. It is the job's total — never one line's price, and never a reason to multiply the other lines.`;
 }
 
+/**
+ * REQ-1027 (LOOP-007 cycle 2, q2-4): the note for a revision of an issued
+ * quote whose message gives the job's new total ("sin la cerca, solo la
+ * pintura, total 5,550"). The model had put the total on the painting line.
+ */
+export function revisionTotalNote(targetCents: number): string {
+  return `Contractor's NEW TOTAL for the whole job: ${
+    dollars(targetCents)
+  }. If you call revise_quote, pass newTotalDollars: ${
+    targetCents / 100
+  } and only the line changes he named (lines to remove, line prices he typed). Never put this total on a line's amountCents — the server makes the remaining lines add up to it.`;
+}
+
 // ---------------------------------------------------------------------------
 // Checking the model's lines
 // ---------------------------------------------------------------------------
