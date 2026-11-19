@@ -589,32 +589,68 @@ export function revisionJump(
 // REQ-651 (demo-loop cycle 5, B1) — a typed rate × the job's quantity
 // ---------------------------------------------------------------------------
 
-/** The unit a rate or a quantity is in: "ft", "sqft", "hr", "day", "yd", "m". */
+/**
+ * One unit vocabulary for a rate's unit ("$9 por pie cuadrado", "$55/ft")
+ * and a quantity's ("200 pies cuadrados", "150 ft"), so the two always read
+ * the same family (REQ-1018: "$9 por pie cuadrado" read "pie" → ft while
+ * "200 pies cuadrados" read sqft, and the ×10 slip was never compared).
+ * Square units come first so "pie cuadrado" / "pie²" never stop at "pie".
+ */
+const UNIT = String.raw`(?:` + [
+  // square — English and Spanish, words or a ²/2 suffix
+  String
+    .raw`(?:sq|square)\.?\s*(?:ft|feet|foot|yards?|yds?|m|meters?|metres?)\.?`,
+  String.raw`sq|square|sqft|sf|ft[²2]|yd[²2]|m[²2]`,
+  String.raw`(?:pies?|metros?|yardas?)(?:\s+cuadrad[oa]s?|[²2])`,
+  // linear / plain
+  String.raw`(?:lin(?:ear)?\.?\s+)?(?:ft|foot|feet)\.?|lf`,
+  String.raw`pies?(?:\s+lineal(?:es)?)?`,
+  String.raw`metros?(?:\s+lineal(?:es)?)?`,
+  String.raw`h|hrs?|hours?|horas?`,
+  String.raw`days?|d[ií]as?`,
+  String.raw`yards?|yds?|yardas?`,
+].join("|") + `)`;
+
+/** The unit a rate or a quantity is in: "ft", "sqft", "sqm", "sqyd", "hr",
+ *  "day", "yd", "m" — read off a `UNIT` capture. */
 function unitFamily(word: string): string | undefined {
   const w = word.toLowerCase().replace(/[\s.]+/g, " ").trim();
-  if (/^(?:sq|sqft|sf|square|m2)\b/.test(w)) return "sqft";
+  const square = /^(?:sq|square|sqft|sf)\b/.test(w) || /cuadrad|[²2]$/.test(w);
+  if (square) {
+    if (/\b(?:m|meters?|metres?|metros?)\b|^m[²2]$|^metros?[²2]$/.test(w)) {
+      return "sqm";
+    }
+    if (/yard|yd/.test(w)) return "sqyd";
+    return "sqft";
+  }
   if (/^(?:ft|foot|feet|lf|lin|linear|pie|pies)\b/.test(w)) return "ft";
   if (/^(?:h|hr|hrs|hour|hours|hora|horas)\b/.test(w)) return "hr";
   if (/^(?:day|days|d[ií]a|d[ií]as)\b/.test(w)) return "day";
-  if (/^(?:yard|yd|yds)\b/.test(w)) return "yd";
+  if (/^(?:yard|yards|yd|yds|yarda|yardas)\b/.test(w)) return "yd";
   if (/^(?:metro|metros)\b/.test(w)) return "m";
   return undefined;
 }
 
-/** What follows a rate's amount: "/ft", " a foot", " per sq ft". */
-const RATE_UNIT_RE =
-  /^\s*(?:\/\s*|(?:a|an|per|each|por|la|el|al|the)\s+)((?:sq|square)\s*(?:ft|feet|foot)?|sqft|sf|m2|(?:lin(?:ear)?\s+)?(?:ft|foot|feet)|lf|h|hr|hrs|hour|hours|hora|horas|day|days|d[ií]as?|yard|yds?|pies?|metros?)(?![\p{L}])/iu;
+/** What follows a rate's amount: "/ft", " a foot", " per sq ft",
+ *  " por pie cuadrado", "/pie²". */
+const RATE_UNIT_RE = new RegExp(
+  String
+    .raw`^\s*(?:\/\s*|(?:a|an|per|each|por|la|el|al|the)\s+)(${UNIT})(?![\p{L}\d])`,
+  "iu",
+);
 
-/** "150 ft", "150-ft", "64 sqft", "64 sq ft", "40 hours" — never a height or
- *  a width ("6 ft high", "6 ft tall"). */
-const QTY_RE =
-  /(?<![\p{L}\d$.,])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*-?\s*((?:sq|square)\s*(?:ft|feet|foot)|sqft|sf|m2|(?:lin(?:ear)?\s+)?(?:ft|foot|feet)|lf|hrs?|hours?|days?|yards?|yds?|pies?\s+cuadrados|pies?|metros?(?:\s+cuadrados)?)(?![\p{L}])(?!\s*(?:high|tall|wide|deep|thick|de\s+alto|de\s+ancho)\b)/giu;
+/** "150 ft", "150-ft", "64 sqft", "64 sq ft", "40 hours", "200 pies
+ *  cuadrados" — never a height or a width ("6 ft high", "6 ft tall"). */
+const QTY_RE = new RegExp(
+  String
+    .raw`(?<![\p{L}\d$.,])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*-?\s*(${UNIT})(?![\p{L}\d])(?!\s*(?:high|tall|wide|deep|thick|de\s+alto|de\s+ancho)\b)`,
+  "giu",
+);
 
 function quantitiesIn(text: string): Map<string, number[]> {
   const out = new Map<string, number[]>();
   for (const m of (text ?? "").matchAll(QTY_RE)) {
-    let fam = unitFamily(m[2]);
-    if (/cuadrados/i.test(m[2])) fam = "sqft";
+    const fam = unitFamily(m[2]);
     const n = Number(m[1].replace(/,/g, ""));
     if (!fam || !(n > 0)) continue;
     out.set(fam, [...(out.get(fam) ?? []), n]);
