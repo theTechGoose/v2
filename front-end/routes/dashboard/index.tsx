@@ -5,6 +5,7 @@ import { isPlaceholderName } from "../../../shared/quote-flow/outbound-identity.
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import type { Lang } from "../../lib/lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
+import { appTitle } from "../../lib/doc-title.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -66,8 +67,7 @@ export default define.page(function Dashboard(ctx) {
       <Head>
         <DocTitle
           lang={lang}
-          title={(l) =>
-            tFor(l, "dashboardPage.docTitle", { brand: tFor(l, "brand.name") })}
+          title={(l) => appTitle(l, tFor(l, "nav.home"))}
         />
         <link rel="stylesheet" href={asset("/dashboard.css")} />
       </Head>

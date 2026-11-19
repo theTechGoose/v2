@@ -3,6 +3,7 @@ import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-6
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
+import { appTitle } from "../../lib/doc-title.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -49,7 +50,7 @@ export default define.page(function ReportsRoute(ctx) {
       <Head>
         <DocTitle
           lang={lang}
-          title={(l) => tFor(l, "reportsPage.docTitle")}
+          title={(l) => appTitle(l, tFor(l, "nav.reports"))}
         />
         <link
           key="css-dashboard"

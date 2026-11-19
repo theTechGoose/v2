@@ -5,6 +5,7 @@ import type { PageProps } from "fresh";
 import type { State } from "../utils.ts";
 import { ssrLangMiddleware } from "./ssr-lang.ts";
 import { tFor } from "./i18n.ts";
+import { appTitle } from "./doc-title.ts";
 import type { Lang } from "./lang.ts";
 import * as dashboardMw from "../routes/dashboard/_middleware.ts";
 import DashboardRoute from "../routes/dashboard/index.tsx";
@@ -57,8 +58,8 @@ const ROUTES: {
     pattern: "/dashboard",
     mw: dashboardMw as Mw,
     page: DashboardRoute,
-    title: (l) =>
-      tFor(l, "dashboardPage.docTitle", { brand: tFor(l, "brand.name") }),
+    // REQ-977: the dashboard tab leads with the sidebar's own label
+    title: (l) => appTitle(l, tFor(l, "nav.home")),
   },
   {
     path: "/quotes",
@@ -93,7 +94,8 @@ const ROUTES: {
     pattern: "/accounts-manager",
     mw: accountsMw as Mw,
     page: AccountsManagerRoute,
-    title: (l) => tFor(l, "accountsManager.docTitle"),
+    // REQ-977: the brand is appended by appTitle, one format for every page
+    title: (l) => appTitle(l, tFor(l, "accountsManager.docTitle")),
   },
 ];
 

@@ -9,6 +9,7 @@ import { greetingFirstName } from "../../../shared/person-name/mod.ts"; // REQ-6
 import { define } from "../../utils.ts";
 import { resolveSsrLang } from "../../lib/ssr-lang.ts";
 import DocTitle from "../../components/DocTitle.tsx";
+import { appTitle } from "../../lib/doc-title.ts";
 import SiteFooter from "../../components/SiteFooter.tsx";
 import { type Lang, tFor } from "../../lib/i18n.ts";
 import DashSidebar from "../../islands/DashSidebar.tsx";
@@ -24,7 +25,15 @@ export default define.page(function CommunicationsRoute(ctx) {
   return (
     <>
       <Head>
-        <DocTitle lang={lang} title={(l) => tFor(l, "comms.docTitle")} />
+        <DocTitle
+          lang={lang}
+          title={(l) =>
+            appTitle(
+              l,
+              tFor(l, "comms.docTitle"),
+              tFor(l, "nav.communications"),
+            )}
+        />
         <link
           key="css-dashboard"
           rel="stylesheet"
