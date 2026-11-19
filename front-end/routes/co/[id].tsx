@@ -29,7 +29,11 @@ interface ChangeOrderPublic {
   /** REQ-198/201/205: the order's number, version, and the documents it belongs to. */
   number?: string;
   version?: number;
-  invoice?: { id: string; number: string; url: string; status?: string };
+  /** REQ-1099: number + url only once the invoice reached the customer */
+  invoice?: { id: string; number?: string; url?: string; status?: string };
+  /** REQ-1099 (LOOP-007 q3-24): the invoice never reached the customer
+   *  (draft / scheduled, unsent) — the page speaks of the job */
+  onJob?: boolean;
   quote?: { id: string; number: string; url: string; accepted?: boolean };
   approvedName?: string;
   description: string;
@@ -99,12 +103,18 @@ export default define.page(async function PublicChangeOrder(ctx) {
   // <html lang> says what this page actually paints (REQ-122 contract).
   ctx.state.lang = lang;
   const hasJob = co?.jobCurrentAmount != null && co?.jobNewAmount != null;
+  // REQ-949 / REQ-1099: the invoice never reached the customer — never name
+  // it, never link it; its rows read "Remaining balance".
+  const unsentInvoice = co?.onJob === true ||
+    co?.invoice?.status === "draft" || co?.invoice?.status === "scheduled";
   // REQ-685 (demo m42): "What changed in Version 2: Amount +$1,600.00 → …"
   const changedLine = co?.changesFromPrevious
     ? changeOrderChangeLine(co.changesFromPrevious, lang)
     : "";
   // REQ-689 (demo p5): pending asks; approved/declined say what happened.
-  const intro = co ? changeOrderIntro(co, lang, money) : undefined;
+  const intro = co
+    ? changeOrderIntro({ ...co, onJob: unsentInvoice }, lang, money)
+    : undefined;
 
   return (
     <>
@@ -219,7 +229,8 @@ export default define.page(async function PublicChangeOrder(ctx) {
                         data-cy="co-links"
                         style={`margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;font-size:13px`}
                       >
-                        {co.invoice
+                        {co.invoice?.url && co.invoice.number &&
+                            !unsentInvoice
                           ? (
                             <a
                               data-cy="co-invoice-link"
@@ -312,8 +323,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
                                   lang,
                                   // REQ-949: a draft/scheduled balance invoice never reached
                                   // the customer — don't name it, say "remaining balance"
-                                  co.invoice.status === "draft" ||
-                                    co.invoice.status === "scheduled"
+                                  unsentInvoice
                                     ? (co.deltaAmountCents >= 0
                                       ? "changeOrderPublic.addedToBalance"
                                       : "changeOrderPublic.creditedOnBalance")
@@ -321,7 +331,7 @@ export default define.page(async function PublicChangeOrder(ctx) {
                                     ? "changeOrderPublic.addedToInvoice"
                                     : "changeOrderPublic.creditedOnInvoice",
                                   {
-                                    number: co.invoice.number,
+                                    number: co.invoice.number ?? "",
                                     from: money(co.currentAmount),
                                     to: money(co.newAmount),
                                   },
@@ -351,7 +361,11 @@ export default define.page(async function PublicChangeOrder(ctx) {
                               {tFor(
                                 lang,
                                 hasJob
-                                  ? (co.status === "approved"
+                                  ? (unsentInvoice
+                                    ? (co.status === "approved"
+                                      ? "changeOrderPublic.balanceBefore"
+                                      : "changeOrderPublic.balanceNow")
+                                    : co.status === "approved"
                                     ? "changeOrderPublic.thisInvoiceBefore"
                                     : "changeOrderPublic.thisInvoiceNow")
                                   : co.status === "approved"
@@ -393,7 +407,11 @@ export default define.page(async function PublicChangeOrder(ctx) {
                               {tFor(
                                 lang,
                                 hasJob
-                                  ? (co.status === "declined"
+                                  ? (unsentInvoice
+                                    ? (co.status === "declined"
+                                      ? "changeOrderPublic.balanceProposed"
+                                      : "changeOrderPublic.balanceAfter")
+                                    : co.status === "declined"
                                     ? "changeOrderPublic.thisInvoiceProposed"
                                     : "changeOrderPublic.thisInvoiceAfter")
                                   : co.status === "declined"
