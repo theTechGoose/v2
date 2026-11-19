@@ -52,6 +52,7 @@ import {
   deletedNotice,
   fmtDay,
   fmtMoneyExact,
+  knownServiceAddress,
   serviceHint,
   shiftIso,
   todayIso,
@@ -90,14 +91,23 @@ function invoiceIdOf(e: unknown): string | null {
   return null;
 }
 
-/** every customer, page after page (REQ-137 — the existing resource) */
+/**
+ * every customer, page after page (REQ-137 — the existing resource). REQ-1007:
+ * each carries their KNOWN service address — a city-only record gives way to
+ * the street address on their active repeat visit.
+ */
 async function loadAllCustomers(): Promise<Customer[]> {
   const out: Customer[] = [];
+  const subs = await fieldClient.subscriptions().catch(() => []);
   let page = 1;
   for (;;) {
     const res = await clientsClient.list({ page, pageSize: 200 });
     for (const c of res.items) {
-      out.push({ id: c.id, name: c.name, address: c.address });
+      out.push({
+        id: c.id,
+        name: c.name,
+        address: knownServiceAddress(c, subs) || undefined,
+      });
     }
     if (page >= res.totalPages || res.items.length === 0) break;
     page++;

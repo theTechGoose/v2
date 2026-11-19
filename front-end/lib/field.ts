@@ -238,6 +238,41 @@ export function prefillAddress(
   return untouched ? picked : current;
 }
 
+/**
+ * REQ-1007 — the customer's KNOWN service address, for the Add task and New
+ * work order prefill. A customer record holding only a city ("Myrtle Beach,
+ * SC") gives way to the street address on their most recently updated ACTIVE
+ * repeat visit, when that address is more complete: the customer has no
+ * address, or the visit's address contains the customer's and is longer. A
+ * customer with their own street address keeps it (REQ-340: the customer's
+ * address and a job's service address stay separate).
+ */
+export function knownServiceAddress(
+  customer: { id: string; address?: string },
+  subscriptions: {
+    customerId: string;
+    address?: string;
+    active: boolean;
+    updatedAt?: string;
+  }[],
+): string {
+  const own = customer.address?.trim() ?? "";
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const ownN = norm(own);
+  const visits = subscriptions
+    .filter((s) => s.customerId === customer.id && s.active)
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  for (const s of visits) {
+    const addr = s.address?.trim() ?? "";
+    if (!addr) continue;
+    const addrN = norm(addr);
+    if (!ownN || (addrN.length > ownN.length && addrN.includes(ownN))) {
+      return addr;
+    }
+  }
+  return own;
+}
+
 /** REQ-152 — the customers as SearchSelect rows: the name is the label, the address on file the hint */
 export function customerOptions(
   customers: { id: string; name: string; address?: string }[],
