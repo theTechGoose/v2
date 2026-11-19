@@ -97,11 +97,24 @@ const DAY_ABBR = {
   en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
 };
 
-/** the schedule in words — "Cada semana · lun, jue", "Every 3 weeks · Tue", "Mensual · día 5" */
+/** REQ-1004 — "· until Mar 31" / "· hasta el 31 mar" when the visit has an end date */
+function untilText(s: Subscription, lang: "es" | "en"): string {
+  if (!s.endDate || !isValidDate(s.endDate)) return "";
+  const m = Number(s.endDate.slice(5, 7)) - 1, d = Number(s.endDate.slice(8));
+  return lang === "es"
+    ? ` · hasta el ${d} ${MONTH_NAMES.es[m].slice(0, 3)}`
+    : ` · until ${MONTH_NAMES.en[m].slice(0, 3)} ${d}`;
+}
+
+/** the schedule in words — "Cada semana · lun, jue", "Every 3 weeks · Tue", "Mensual · día 5"; REQ-1004: "… · until Mar 31" */
 export function scheduleText(
   s: Subscription,
   lang: "es" | "en" = "es",
 ): string {
+  return cadenceText(s, lang) + untilText(s, lang);
+}
+
+function cadenceText(s: Subscription, lang: "es" | "en"): string {
   if (s.cadence === "annual") { // REQ-787 — "Annual · March 5" / "Anual · 5 de marzo"
     const list = monthDaysOf(s).join(", "), m = monthOf(s) - 1;
     return lang === "es"

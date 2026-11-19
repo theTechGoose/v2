@@ -195,7 +195,7 @@ export interface SubscriptionView {
   pinned?: boolean;
   /** "Weekly · Mon, Thu" in both languages */
   schedule: { es: string; en: string };
-  /** REQ-699: the last service day, if the quote's term ends */
+  /** REQ-699: the last service day, if the quote's term ends; REQ-1004: or the owner set one */
   endDate?: string;
   /** REQ-699: the signed quote that made it, and its number */
   quoteId?: string;
@@ -229,6 +229,8 @@ export interface SubscriptionInput {
   /** REQ-787 — annual: the month, 1–12 */
   month?: number;
   startDate?: string;
+  /** REQ-1004: the last visit day (YYYY-MM-DD, not before startDate); null clears it */
+  endDate?: string | null;
   /** REQ-174: days to pay; null clears it (back to the account's default) */
   netDays?: number | null;
   /** REQ-788: the overhead toggle */
