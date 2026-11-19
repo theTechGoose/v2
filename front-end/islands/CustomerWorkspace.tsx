@@ -267,17 +267,31 @@ export default function CustomerWorkspace(
     if (text) setToast({ text });
   }
 
+  // REQ-1146: Back/Forward step through the tabs — the URL is the source of truth on popstate
+  useEffect(() => {
+    // Fresh's runtime stamps the page's first entry { fClientNav: true } and, with client nav
+    // off (this app never sets f-client-nav), RELOADS the page when Back pops to such an entry.
+    // Un-flag this page's entry so Back from a tab to Overview stays in-page like the others.
+    try {
+      const st = globalThis.history.state;
+      if (st && typeof st === "object" && st.fClientNav) {
+        globalThis.history.replaceState({ ...st, fClientNav: false }, "");
+      }
+    } catch { /* history unavailable */ }
+    const onPop = () => setTabState(tabFromUrl());
+    globalThis.addEventListener("popstate", onPop);
+    return () => globalThis.removeEventListener("popstate", onPop);
+  }, []);
+
+  /** REQ-1146: a tab click ADDS a history entry (pushState), so Back returns to the earlier tab */
   function setTab(t: WsTab) {
     setTabState(t);
     try {
+      if (tabFromUrl() === t) return; // already showing — no duplicate entry
       const url = new URL(globalThis.location.href);
       if (t === "overview") url.searchParams.delete("tab");
       else url.searchParams.set("tab", t);
-      globalThis.history.replaceState(
-        globalThis.history.state,
-        "",
-        url.toString(),
-      );
+      globalThis.history.pushState({ tab: t }, "", url.toString());
     } catch { /* history unavailable — the tab still switches */ }
   }
 
