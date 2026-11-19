@@ -1673,7 +1673,7 @@ function InvoicesHero(
             )
             : (
               <>
-                <em>{fmtMoney(outstandingTotal)}</em>{" "}
+                <em>{fmtMoneyTotal(outstandingTotal)}</em>{" "}
                 {/* REQ-958: overdue money is not "on the way" (the Out tile's phrase) */}
                 {tFor(lang, invoicesHeroOutstandingKey(overdueCount))}
                 <br />

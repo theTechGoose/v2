@@ -79,11 +79,20 @@ type Modal =
   | { kind: "edit" }
   | null;
 
-const money = (cents: number, lang: Lang, whole = false) =>
+const money = (cents: number, lang: Lang) =>
   new Intl.NumberFormat(lang === "es" ? "es-US" : "en-US", {
     style: "currency",
     currency: "USD",
-    ...(whole ? { maximumFractionDigits: 0, minimumFractionDigits: 0 } : {}),
+  }).format(cents / 100);
+/** REQ-1072 (q2-61): a KPI total — owes, billed, paid, recurring, unbilled,
+ *  open quotes — follows REQ-961's fmtMoneyTotal rule: whole dollars only
+ *  when the total is whole ("$2,400"), to the cent otherwise ("$1,190.75"),
+ *  so FACTURADO never reads "$1,191" beside a TE DEBE of "$1,190.75". */
+const moneyTotal = (cents: number, lang: Lang) =>
+  new Intl.NumberFormat(lang === "es" ? "es-US" : "en-US", {
+    style: "currency",
+    currency: "USD",
+    ...(Math.round(cents) % 100 === 0 ? { minimumFractionDigits: 0 } : {}),
   }).format(cents / 100);
 const day = (iso: string | undefined, lang: Lang) =>
   iso
@@ -538,7 +547,7 @@ export default function CustomerWorkspace(
             <div class="cws-kpi__lbl">
               {tFor(lang, "customerWs.kpi.billed")}
             </div>
-            <div class="cws-kpi__val">{money(s.billedCents, lang, true)}</div>
+            <div class="cws-kpi__val">{moneyTotal(s.billedCents, lang)}</div>
             <div class="cws-kpi__hint">
               {tFor(lang, "customerWs.kpi.invoices", {
                 count: issuedCount,
@@ -548,7 +557,7 @@ export default function CustomerWorkspace(
           <div class="cws-kpi" data-cy="cws-paid">
             <div class="cws-kpi__lbl">{tFor(lang, "customerWs.kpi.paid")}</div>
             <div class="cws-kpi__val cws-kpi__val--green">
-              {money(s.paidCents, lang, true)}
+              {moneyTotal(s.paidCents, lang)}
             </div>
             <div class="cws-kpi__hint">
               {s.lastPayment
@@ -575,7 +584,7 @@ export default function CustomerWorkspace(
               {s.activeServices > 0
                 ? (
                   <>
-                    {money(s.recurringMonthlyCents, lang, true)}
+                    {moneyTotal(s.recurringMonthlyCents, lang)}
                     <small>{tFor(lang, "customerWs.perMonth")}</small>
                   </>
                 )
@@ -594,7 +603,7 @@ export default function CustomerWorkspace(
                 <b class="cws-amber">
                   {" · "}
                   {tFor(lang, "customerWs.kpi.unbilled", {
-                    amount: money(s.unbilledCents, lang, true),
+                    amount: moneyTotal(s.unbilledCents, lang),
                   })}
                 </b>
               )}
@@ -605,7 +614,7 @@ export default function CustomerWorkspace(
               {tFor(lang, "customerWs.kpi.openQuotes")}
             </div>
             <div class="cws-kpi__val">
-              {money(s.openQuotesCents, lang, true)}
+              {moneyTotal(s.openQuotesCents, lang)}
             </div>
             <div class="cws-kpi__hint">
               {s.openQuotes > 0
@@ -1311,7 +1320,7 @@ function ServiceCard(
           {money(sv.perVisitCents, lang)}
           <small>
             {tFor(lang, "customerWs.svc.perVisit", {
-              month: money(sv.monthlyCents, lang, true),
+              month: moneyTotal(sv.monthlyCents, lang),
             })}
           </small>
         </div>
