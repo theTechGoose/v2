@@ -111,14 +111,49 @@ export function outboxWhy(row: OutboxRow, lang: Lang): string | undefined {
     : tFor(lang, "outbox.why.other");
 }
 
-/** "Nov 13, 2026 · 3:08 PM" / "13 nov 2026 · 3:08 p. m." — the viewer's clock. */
-export function outboxWhen(iso: string, lang: Lang): string {
+/** An IANA zone Intl accepts, else undefined (the device's zone). */
+function validZone(timeZone: string | undefined): string | undefined {
+  if (!timeZone) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The day an outbox entry went out — "Nov 13, 2026" / "13 nov 2026" — in the
+ * business's zone (REQ-944, REQ-1037), so it flips at the business's
+ * midnight, not the device's or UTC's.
+ */
+export function outboxDay(iso: string, lang: Lang, timeZone?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(+d)) return iso;
-  const day = new Intl.DateTimeFormat(lang === "es" ? "es-US" : "en-US", {
+  const zone = validZone(timeZone);
+  return new Intl.DateTimeFormat(lang === "es" ? "es-US" : "en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    ...(zone ? { timeZone: zone } : {}),
   }).format(d);
-  return `${day} · ${formatClockTime(d, lang)}`;
+}
+
+/**
+ * "Nov 13, 2026 · 3:08 PM" / "13 nov 2026 · 3:08 p. m." — the business's
+ * wall clock (REQ-944; REQ-1037 q2-21: the Outbox printed the device's clock
+ * while the chat printed the business's). `timeZone` is the account's
+ * businessTimezone; without one it falls back to the device's clock.
+ */
+export function outboxWhen(
+  iso: string,
+  lang: Lang,
+  timeZone?: string,
+): string {
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return iso;
+  const zone = validZone(timeZone);
+  return `${outboxDay(iso, lang, zone)} · ${
+    formatClockTime(d, lang, { timeZone: zone })
+  }`;
 }

@@ -28,7 +28,12 @@ function syncOpenParam(id: string | null) {
   } catch { /* no history (SSR) — the dialog still opens */ }
 }
 
-export default function OutboxPage() {
+/**
+ * REQ-1037 q2-21: `timeZone` is the account's businessTimezone (/me always
+ * fills it — picked, else the address's state, else New York), so every row
+ * prints the clock the assistant chat prints for the same minute.
+ */
+export default function OutboxPage({ timeZone }: { timeZone?: string } = {}) {
   const lang = langSignal.value;
   const [rows, setRows] = useState<OutboxRow[] | null>(null);
   const [loadErr, setLoadErr] = useState(false);
@@ -105,7 +110,14 @@ export default function OutboxPage() {
               {t("outbox.empty")}
             </div>
           )
-          : <OutboxTable rows={rows} lang={lang} onOpen={setOpenId} />}
+          : (
+            <OutboxTable
+              rows={rows}
+              lang={lang}
+              onOpen={setOpenId}
+              timeZone={timeZone}
+            />
+          )}
       </div>
 
       {openId && (
@@ -119,15 +131,23 @@ export default function OutboxPage() {
             style="max-width:820px"
             onClick={(e) => e.stopPropagation()}
           >
-            {opened ? <OutboxDetail message={opened} lang={lang} /> : (
-              <p
-                class={openErr ? "alert" : "hint"}
-                id="outbox-detail-title"
-                data-cy={openErr ? "outbox-open-error" : "outbox-opening"}
-              >
-                {openErr ? t("outbox.error") : t("outbox.loading")}
-              </p>
-            )}
+            {opened
+              ? (
+                <OutboxDetail
+                  message={opened}
+                  lang={lang}
+                  timeZone={timeZone}
+                />
+              )
+              : (
+                <p
+                  class={openErr ? "alert" : "hint"}
+                  id="outbox-detail-title"
+                  data-cy={openErr ? "outbox-open-error" : "outbox-opening"}
+                >
+                  {openErr ? t("outbox.error") : t("outbox.loading")}
+                </p>
+              )}
             <div class="modal__foot">
               <button
                 type="button"

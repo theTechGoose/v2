@@ -93,3 +93,23 @@ describe("REQ-944 q1-10: document dates are the business's day, not the UTC day"
     expect(shortTime).toMatch(/timeZone/);
   });
 });
+
+describe("REQ-1037 q2-21 (AMENDMENT of REQ-944): the Outbox prints the business's clock, like the chat", () => {
+  it("REQ-1037 /messages hands the business's zone to the Outbox island", () => {
+    const route = read("front-end/routes/messages/index.tsx");
+    expect(route).toMatch(/<OutboxPage[^>]*timeZone=\{[^}]*businessTimezone[^}]*\}/);
+  });
+
+  it("REQ-1037 the Outbox island and its views pass a zone to outboxWhen", () => {
+    const page = read("front-end/islands/OutboxPage.tsx");
+    expect(page).toMatch(/<OutboxTable[^>]*timeZone=/);
+    expect(page).toMatch(/<OutboxDetail[^>]*timeZone=/);
+    const views = read("front-end/components/OutboxView.tsx");
+    const calls = views.match(/outboxWhen\([^)]*\)/g) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call).toMatch(/timeZone/);
+    const lib = read("front-end/lib/outbox.ts");
+    const fn = lib.match(/export function outboxWhen\([\s\S]*?\n}/)?.[0] ?? "";
+    expect(fn).toMatch(/formatClockTime\([^)]*timeZone/);
+  });
+});

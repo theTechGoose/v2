@@ -92,6 +92,26 @@ const day = (iso: string | undefined, lang: Lang) =>
       },
     )
     : "—";
+/**
+ * REQ-1037 q2-21 (amending REQ-944): the day an instant (a sent message, a
+ * text) happened, in the business's zone — `day()` above is for calendar
+ * dates and reads the UTC date off the ISO string, so a 9 PM Central text
+ * showed as tomorrow.
+ */
+const instantDay = (iso: string | undefined, lang: Lang, timeZone?: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return "—";
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  try {
+    return d.toLocaleDateString(lang === "es" ? "es-US" : "en-US", {
+      ...opts,
+      ...(timeZone ? { timeZone } : {}),
+    });
+  } catch { // an unknown zone — the device's day
+    return d.toLocaleDateString(lang === "es" ? "es-US" : "en-US", opts);
+  }
+};
 const weekday = (iso: string, lang: Lang) =>
   new Date(iso + "T12:00:00Z").toLocaleDateString(
     lang === "es" ? "es-US" : "en-US",
@@ -152,7 +172,11 @@ function quotePill(state: string, lang: Lang): { text: string; cls: string } {
 }
 
 export default function CustomerWorkspace(
-  { customerId }: { customerId: string },
+  { customerId, timeZone }: {
+    customerId: string;
+    /** REQ-1037: the account's businessTimezone — message days follow it */
+    timeZone?: string;
+  },
 ) {
   const lang = langSignal.value;
   const [ws, setWs] = useState<Workspace | null>(null);
@@ -1002,7 +1026,12 @@ export default function CustomerWorkspace(
         )}
 
         {tab === "messages" && (
-          <Messages customerId={c.id} phone={c.phoneNumber} lang={lang} />
+          <Messages
+            customerId={c.id}
+            phone={c.phoneNumber}
+            lang={lang}
+            timeZone={timeZone}
+          />
         )}
       </div>
 
@@ -1557,10 +1586,11 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
  * way — to the get-a-line link / the no-phone note — never the history.
  */
 function Messages(
-  { customerId, phone, lang }: {
+  { customerId, phone, lang, timeZone }: {
     customerId: string;
     phone?: string;
     lang: Lang;
+    timeZone?: string;
   },
 ) {
   const peer = phone ? toE164(phone) : null;
@@ -1648,7 +1678,7 @@ function Messages(
                         {[
                           outboxChannelLabel(r.channel, lang),
                           outboxLanguageLabel(r.language, lang),
-                          day(r.createdAt, lang),
+                          instantDay(r.createdAt, lang, timeZone),
                         ].join(" · ")}
                       </span>
                     </span>
@@ -1714,7 +1744,9 @@ function Messages(
               }`}
             >
               <div>{m.body}</div>
-              <div class="cws-muted">{day(m.createdAt, lang)}</div>
+              <div class="cws-muted">
+                {instantDay(m.createdAt, lang, timeZone)}
+              </div>
             </li>
           ))}
         </ul>

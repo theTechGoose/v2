@@ -26,10 +26,12 @@ import {
 } from "../lib/outbox.ts";
 
 export function OutboxTable(
-  { rows, lang, onOpen }: {
+  { rows, lang, onOpen, timeZone }: {
     rows: OutboxRow[];
     lang: Lang;
     onOpen: (id: string) => void;
+    /** REQ-1037: the business's zone — the clock the chat prints too */
+    timeZone?: string;
   },
 ) {
   const t = (key: string) => tFor(lang, key);
@@ -65,7 +67,7 @@ export function OutboxTable(
                   data-label={t("outbox.col.when")}
                   class="outbox-table__nowrap"
                 >
-                  {outboxWhen(r.createdAt, lang)}
+                  {outboxWhen(r.createdAt, lang, timeZone)}
                 </td>
                 <td
                   data-cy="outbox-row-customer"
@@ -144,7 +146,12 @@ export function OutboxTable(
 }
 
 export function OutboxDetail(
-  { message, lang }: { message: OutboxMessage; lang: Lang },
+  { message, lang, timeZone }: {
+    message: OutboxMessage;
+    lang: Lang;
+    /** REQ-1037: the business's zone — the clock the chat prints too */
+    timeZone?: string;
+  },
 ) {
   const t = (key: string, vars?: Record<string, string>) =>
     tFor(lang, key, vars);
@@ -160,7 +167,11 @@ export function OutboxDetail(
       t("outbox.detail.to"),
       [message.customerName, message.to].filter(Boolean).join(" · ") || "—",
     ],
-    ["when", t("outbox.col.when"), outboxWhen(message.createdAt, lang)],
+    [
+      "when",
+      t("outbox.col.when"),
+      outboxWhen(message.createdAt, lang, timeZone),
+    ],
     [
       "channel",
       t("outbox.col.channel"),

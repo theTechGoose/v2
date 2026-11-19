@@ -582,3 +582,92 @@ Deno.test("REQ-991 q1-73: at 390x844 the Outbox shows every column of a row — 
       `REQ-991 nothing hides in the table's sideways scroller (scrollWidth ${m.wrapScroll} > clientWidth ${m.wrapClient})`,
     );
   }));
+
+/**
+ * REQ-1037 (LOOP-007 cycle 2, q2-21; AMENDMENT of REQ-944): "Outbox and
+ * assistant chat show different clocks for the same morning". QA's browser
+ * ran in UTC; the business is in Central. The chat prints Central (REQ-944);
+ * the Outbox printed the device's UTC clock. Every time the Outbox prints —
+ * the row and the opened message — is the business's wall time, the same
+ * clock the chat uses, whatever zone the browser is in.
+ */
+Deno.test("REQ-1037 (LOOP-007 q2, q2-21): with the browser in UTC and the business in Central, the Outbox row and the opened message print Central time — the chat's clock", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const auth = await signIn(http, page, baseUrl);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const zone = "America/Chicago";
+    const idRes = await http("/api/profile/identity", {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({
+        businessName: "Ortega Handyman Services",
+        timezone: zone,
+      }),
+    });
+    await idRes.body?.cancel();
+    const me = await (await http("/api/me", { headers: auth })).json();
+    expect.eq(me.businessTimezone, zone, "the business is in Central");
+
+    // QA's headless browser: the device clock is UTC
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTimezoneOverride", { timezoneId: "UTC" });
+
+    const maria = await post(http, auth, "/api/customers", {
+      name: "María López",
+      email: "maria@blackhole.postmarkapp.com",
+      language: "en",
+    });
+    const invoice = await post(http, auth, "/api/invoices", {
+      customerId: maria.id,
+      jobName: "Fence Repair",
+      amount: 20000,
+      dueDate: "2026-12-30",
+    });
+    await post(http, auth, `/api/invoices/${invoice.id}/email`, {});
+    const listed = await (await http("/api/outbox", { headers: auth }))
+      .json() as (Row & { createdAt: string })[];
+    const sent = listed.find((r) => r.kind === "invoice");
+    expect(!!sent, `the invoice email is in the Outbox: ${JSON.stringify(listed)}`);
+
+    // the chat's clock (REQ-944): the instant in the business's zone
+    const at = new Date(sent!.createdAt);
+    const day = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: zone,
+    }).format(at);
+    const clock = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: zone,
+    }).format(at);
+    const norm = (s: string) => s.replace(/[\s  ]+/g, " ").trim();
+    const want = norm(`${day} · ${clock}`);
+
+    await page.goto("/messages");
+    const row = page.locator(
+      `[data-cy='outbox-row'][data-id='${sent!.id}']`,
+    );
+    await row.waitFor({ timeout: 20_000 });
+    const deviceZone = await page.evaluate(() =>
+      Intl.DateTimeFormat().resolvedOptions().timeZone
+    );
+    expect.eq(deviceZone, "UTC", "the browser runs in UTC, as QA's did");
+    const rowWhen = norm(
+      (await row.locator("[data-cy='outbox-row-when']").textContent()) ?? "",
+    );
+    expect.eq(rowWhen, want, "the row prints the business's (Central) clock");
+
+    const detail = page.locator("[data-cy='outbox-detail-when']");
+    await clickUntil(
+      page,
+      `[data-cy='outbox-row'][data-id='${sent!.id}'] [data-cy='outbox-open']`,
+      async () => (await detail.count()) > 0,
+    );
+    const detailWhen = norm((await detail.textContent()) ?? "");
+    expect(
+      detailWhen.includes(want),
+      `the opened message prints the business's clock: want "${want}", got "${detailWhen}"`,
+    );
+  }));

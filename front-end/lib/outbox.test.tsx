@@ -352,3 +352,71 @@ Deno.test("REQ-991 q1-73: field.css reflows .outbox-table on a phone (a max-widt
     "each phone cell prints its label from data-label",
   );
 });
+
+/**
+ * REQ-1037 (LOOP-007 cycle 2, q2-21; AMENDMENT of REQ-944) — "Outbox and
+ * assistant chat show different clocks for the same morning". The chat
+ * prints the business's wall time (REQ-944, `timeZone: chatZone`); the
+ * Outbox printed the device's clock because `outboxWhen` never took a zone.
+ * The business's zone is passed in and both the day and the time follow it,
+ * whatever the device's zone is (run under TZ=UTC as QA's browser was).
+ */
+// the zone parameter is what the fix adds
+const whenIn = outboxWhen as unknown as (
+  iso: string,
+  lang: "en" | "es",
+  timeZone?: string,
+) => string;
+
+Deno.test("REQ-1037 q2-21: outboxWhen prints the business's wall time — 08:01Z reads 2:01 a. m. Central, not the device's 8:01", () => {
+  const es = whenIn("2026-11-19T08:01:00Z", "es", "America/Chicago");
+  assertStringIncludes(es, "2:01 a. m.");
+  assertStringIncludes(es, "19 nov");
+  const en = whenIn("2026-11-19T08:01:00Z", "en", "America/New_York");
+  assertStringIncludes(en, "3:01 AM");
+  // a zone no device runs in by accident: the result cannot be the device's
+  assertStringIncludes(
+    whenIn("2026-11-19T08:01:00Z", "en", "Asia/Tokyo"),
+    "5:01 PM",
+  );
+});
+
+Deno.test("REQ-1037 q2-21: outboxWhen's day flips at the business's midnight — 03:00Z is Nov 18 in Chicago", () => {
+  assertStringIncludes(
+    whenIn("2026-11-19T03:00:00Z", "en", "America/Chicago"),
+    "Nov 18, 2026",
+  );
+  assertStringIncludes(
+    whenIn("2026-11-18T20:00:00Z", "en", "Asia/Tokyo"),
+    "Nov 19, 2026",
+  );
+});
+
+Deno.test("REQ-1037 q2-21: the Outbox table row and the opened message both print the business's clock", () => {
+  // deno-lint-ignore no-explicit-any
+  const Table = OutboxTable as any;
+  // deno-lint-ignore no-explicit-any
+  const Detail = OutboxDetail as any;
+  const row: OutboxRow = { ...ROWS[1], createdAt: "2026-11-19T08:01:00.000Z" };
+  const tableDoc = new DOMParser().parseFromString(
+    renderToString(
+      <Table
+        rows={[row]}
+        lang="es"
+        onOpen={() => {}}
+        timeZone="America/Chicago"
+      />,
+    ),
+    "text/html",
+  )!;
+  assertStringIncludes(
+    tableDoc.querySelector("[data-cy='outbox-row-when']")?.textContent ?? "",
+    "2:01 a. m.",
+    "the row's time is Central",
+  );
+  const message = { ...row, body: HTML } as OutboxMessage;
+  const detailHtml = renderToString(
+    <Detail message={message} lang="es" timeZone="America/Chicago" />,
+  );
+  assertStringIncludes(detailHtml, "2:01 a. m.", "the detail's time is Central");
+});
