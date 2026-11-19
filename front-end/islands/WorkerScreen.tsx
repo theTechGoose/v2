@@ -131,6 +131,8 @@ const css = `
   .ring__bar { stroke: var(--brand-green); stroke-linecap: round; stroke-dasharray: var(--p, 0) 100; transition: stroke-dasharray var(--pm-dur-slow) var(--pm-ease-emph); }
   .ring b { font-family: var(--font-heading); font-size: 13px; font-weight: 800; color: var(--brand-teal); }
   .summary--done .ring__bar { stroke: var(--brand-green); }
+  /* REQ-1164 — an empty day: a quiet tile, no 0% track */
+  .ring--idle { border-radius: 50%; background: var(--mint-100); color: var(--brand-teal); }
   .summary--done { background: var(--green-50); border-color: var(--green-100); }
   .summary__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .summary__text b { font-family: var(--font-heading); font-size: 16px; font-weight: 800; color: var(--brand-teal); }
@@ -1438,27 +1440,44 @@ export default function WorkerScreen(
               }`}
               data-cy="w-summary"
             >
-              <div
-                class="ring"
-                data-cy="w-progress"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={liveTasks.length}
-                aria-valuenow={done}
-                style={`--p:${pct}`}
-              >
-                <svg viewBox="0 0 36 36" aria-hidden="true">
-                  <circle class="ring__track" cx="18" cy="18" r="15.5" />
-                  <circle
-                    class="ring__bar"
-                    cx="18"
-                    cy="18"
-                    r="15.5"
-                    pathLength={100}
-                  />
-                </svg>
-                <b>{Math.round(pct)}%</b>
-              </div>
+              {
+                /* REQ-1164 (q3-101) — the ring is a progress meter; an empty day has
+                  nothing to measure, so it gets a calm calendar tile instead of a
+                  "0%" track (and never a progressbar with aria-valuemax 0) */
+              }
+              {liveTasks.length > 0
+                ? (
+                  <div
+                    class="ring"
+                    data-cy="w-progress"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={liveTasks.length}
+                    aria-valuenow={done}
+                    style={`--p:${pct}`}
+                  >
+                    <svg viewBox="0 0 36 36" aria-hidden="true">
+                      <circle class="ring__track" cx="18" cy="18" r="15.5" />
+                      <circle
+                        class="ring__bar"
+                        cx="18"
+                        cy="18"
+                        r="15.5"
+                        pathLength={100}
+                      />
+                    </svg>
+                    <b>{Math.round(pct)}%</b>
+                  </div>
+                )
+                : (
+                  <div
+                    class="ring ring--idle"
+                    data-cy="w-idle"
+                    aria-hidden="true"
+                  >
+                    <I d={ICN.cal} size={22} />
+                  </div>
+                )}
               <div class="summary__text">
                 <b data-cy="w-count">
                   {t(workerTodayKey(liveTasks.length, date === today), {
