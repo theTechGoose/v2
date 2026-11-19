@@ -8060,7 +8060,7 @@ export default function AsstChat({
                                     class="quote-review__from-warn"
                                     style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:var(--pink-700,#d94e4e);text-decoration:none"
                                   >
-                                    ⚠ {tFor(
+                                    <I d={ICN.alert} size={13} /> {tFor(
                                       lang,
                                       "asstChat.preview.fromNeedsName",
                                     )}
@@ -8077,7 +8077,7 @@ export default function AsstChat({
                                     data-cy="review-from-needs-email"
                                     style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:var(--pink-700,#d94e4e);text-decoration:none"
                                   >
-                                    ⚠ {tFor(
+                                    <I d={ICN.alert} size={13} /> {tFor(
                                       lang,
                                       "asstChat.preview.fromNeedsEmail",
                                     )}

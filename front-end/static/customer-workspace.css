@@ -12,6 +12,7 @@
 .cws-contact { display: flex; gap: 14px; margin-top: 6px; color: var(--cws-coffee); font-size: 13px; flex-wrap: wrap; }
 .cws-contact a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
 .cws-contact a:hover { text-decoration: underline; }
+.cws-contact__addr, .cws-svc__addr { display: inline-flex; align-items: center; gap: 4px; }
 .cws-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 /* buttons — one solid primary, outlined secondaries, ghost tertiary */
@@ -27,7 +28,7 @@
 .cws-btn--sm { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
 .cws-more { position: relative; }
 .cws-menu { position: absolute; right: 0; top: calc(100% + 6px); background: #fff; border: 1px solid var(--cws-line); border-radius: 12px; box-shadow: 0 12px 30px rgba(26, 83, 92, 0.14); padding: 6px; min-width: 220px; z-index: 30; display: flex; flex-direction: column; }
-.cws-menu button, .cws-menu a { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
+.cws-menu button, .cws-menu a { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
 .cws-menu button:hover, .cws-menu a:hover { background: var(--mint-200, #ecf6ec); }
 /* REQ-1075: Delete customer — a quiet danger item and REQ-802's inline question; never a filled primary */
 .cws-menu .cws-menu__danger { color: var(--danger, #c0392b); border-top: 1px solid var(--cws-line); border-radius: 0 0 8px 8px; margin-top: 4px; }
@@ -107,7 +108,7 @@
 .cws-timeline { list-style: none; padding: 0; margin: 0; }
 .cws-timeline li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--cws-line); font-size: 13px; }
 .cws-timeline li:last-child { border: 0; }
-.cws-dot { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; background: var(--mint-200, #ecf6ec); }
+.cws-dot { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; color: var(--cws-coffee); background: var(--mint-200, #ecf6ec); }
 
 /* recurring services */
 .cws-svc { border: 1px solid var(--cws-line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; background: #fff; }

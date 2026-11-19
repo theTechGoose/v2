@@ -761,7 +761,14 @@ export default function FieldSubscriptionsPage(
                           {s.region.workerId
                             ? ""
                             : ` · ${t("field.subs.noWorker")}`}
-                          {s.pinned ? " 📌" : ""}
+                          {s.pinned && (
+                            <span
+                              aria-hidden="true"
+                              style="display:inline-block;vertical-align:-2px;margin-left:4px"
+                            >
+                              <I d={ICN.pushpin} size={12} />
+                            </span>
+                          )}
                         </span>
                       )
                       : <span class="chip">{t("field.subs.noRegion")}</span>}

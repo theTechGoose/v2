@@ -500,7 +500,11 @@ export default function CustomerWorkspace(
                 <I d={ICN.mail} size={13} /> {c.email}
               </a>
             )}
-            {c.address && <span>📍 {c.address}</span>}
+            {c.address && (
+              <span class="cws-contact__addr">
+                <I d={ICN.pin} size={13} /> {c.address}
+              </span>
+            )}
           </div>
         </div>
         <div class="cws-actions">
@@ -555,7 +559,8 @@ export default function CustomerWorkspace(
                       href="/communications"
                       data-cy="cws-text"
                     >
-                      💬 {tFor(lang, "customerWs.act.getLineToText")}
+                      <I d={ICN.msg} size={14} />{" "}
+                      {tFor(lang, "customerWs.act.getLineToText")}
                     </a>
                   )
                   : !c.phoneNumber
@@ -566,7 +571,8 @@ export default function CustomerWorkspace(
                       data-cy="cws-text"
                       onClick={() => setModal({ kind: "edit" })}
                     >
-                      💬 {tFor(lang, "customerWs.act.addPhoneToText")}
+                      <I d={ICN.msg} size={14} />{" "}
+                      {tFor(lang, "customerWs.act.addPhoneToText")}
                     </button>
                   )
                   : (
@@ -576,7 +582,8 @@ export default function CustomerWorkspace(
                       data-cy="cws-text"
                       onClick={() => setTab("messages", { land: true })}
                     >
-                      💬 {tFor(lang, "customerWs.act.text")}
+                      <I d={ICN.msg} size={14} />{" "}
+                      {tFor(lang, "customerWs.act.text")}
                     </button>
                   )}
                 <a
@@ -584,7 +591,8 @@ export default function CustomerWorkspace(
                   href={startServiceHref}
                   data-cy="cws-start-service"
                 >
-                  🔁 {tFor(lang, "customerWs.act.startService")}
+                  <I d={ICN.repeat} size={14} />{" "}
+                  {tFor(lang, "customerWs.act.startService")}
                 </a>
                 <button
                   type="button"
@@ -1673,7 +1681,10 @@ function ServiceCard(
         <div class="cws-svc__who">
           <div class="cws-svc__name">{name}</div>
           <div class="cws-svc__sub">
-            {sv.schedule[lang]} · 📍 {sv.address}
+            {sv.schedule[lang]} ·{" "}
+            <span class="cws-svc__addr">
+              <I d={ICN.pin} size={12} /> {sv.address}
+            </span>
             {!sv.active
               ? (
                 <span class="cws-pill cws-pill--draft">
@@ -1827,7 +1838,7 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
   const items = [
     ...ws.payments.map((p) => ({
       when: p.receivedAt,
-      icon: "💵",
+      icon: ICN.pay,
       text: tFor(lang, "customerWs.act.paid", {
         amount: money(p.amountCents, lang),
         number: p.invoiceNumber,
@@ -1835,7 +1846,7 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
     })),
     ...ws.invoices.filter((i) => i.issuedDate).map((i) => ({
       when: i.issuedDate!,
-      icon: "🧾",
+      icon: ICN.invoice,
       text: tFor(lang, "customerWs.act.invoiced", {
         number: i.number,
         amount: money(i.amountCents, lang),
@@ -1843,7 +1854,7 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
     })),
     ...ws.quotes.map((q) => ({
       when: q.updatedAt,
-      icon: "📝",
+      icon: ICN.quote,
       text: tFor(
         lang,
         `customerWs.act.quote.${
@@ -1860,7 +1871,7 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
     })),
     ...ws.visits.filter((v) => v.status === "complete").map((v) => ({
       when: v.date,
-      icon: "🔁",
+      icon: ICN.repeat,
       text: tFor(
         lang,
         v.unbilled ? "customerWs.act.visitUnbilled" : "customerWs.act.visit",
@@ -1875,7 +1886,9 @@ function Activity({ ws, lang }: { ws: Workspace; lang: Lang }) {
     <ul class="cws-timeline" data-cy="cws-activity">
       {items.map((a, n) => (
         <li key={n}>
-          <span class="cws-dot" aria-hidden="true">{a.icon}</span>
+          <span class="cws-dot" aria-hidden="true">
+            <I d={a.icon} size={14} />
+          </span>
           <div>
             <div>{a.text}</div>
             <div class="cws-muted">{day(a.when, lang)}</div>

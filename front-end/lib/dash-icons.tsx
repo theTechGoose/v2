@@ -268,6 +268,13 @@ export const ICN = {
   // REQ-1070 — Defer / deferred (was a literal ⏭, U+23ED) and the locked /
   // read-only marker (was 🔒): SVG, not a font-fallback glyph.
   skip: <path d="M5 4l10 8-10 8zM19 5v14" />,
+  // REQ-1147 — "pinned to this zone" (was a literal 📌): a pushpin, not the map pin.
+  pushpin: (
+    <>
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </>
+  ),
   lock: (
     <>
       <rect x="4" y="11" width="16" height="10" rx="2" />
