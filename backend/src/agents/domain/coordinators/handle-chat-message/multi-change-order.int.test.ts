@@ -218,7 +218,9 @@ async function assertOneUnsentChangeOrderOffered(
   assertEquals(f.alerted, [], "nothing sent to Maria before the owner says so");
   assert(
     !reply.content.includes(NOT_CHANGED),
-    `the reply both made ${cos[0].number} and said nothing changed: ${reply.content}`,
+    `the reply both made ${
+      cos[0].number
+    } and said nothing changed: ${reply.content}`,
   );
   assert(
     !/How much should/i.test(reply.content),
@@ -268,7 +270,11 @@ Deno.test("REQ-1025 q2-7: QA's master bath change order — the model's two chan
     sendReply.content !== t("en", "chatCoordinator.noActionFallback"),
     `the send fell to the no-action fallback: ${sendReply.content}`,
   );
-  assertEquals(f.alerted, [co.id], `${co.number} is sent to Maria (the /co email)`);
+  assertEquals(
+    f.alerted,
+    [co.id],
+    `${co.number} is sent to Maria (the /co email)`,
+  );
   assertEquals(
     (await f.changeOrders.listByInvoice("u-1", inv.id)).length,
     1,
@@ -295,6 +301,90 @@ Deno.test("REQ-1025 q2-7: on Maria's bound thread, two change_order calls in one
       "maria also wants a recessed shampoo niche and a frameless glass door, $2,800 for both",
   });
   const replies = res.newMessages.filter((m) => m.role === "assistant");
-  await assertOneUnsentChangeOrderOffered(f, inv.id, replies[replies.length - 1]);
+  await assertOneUnsentChangeOrderOffered(
+    f,
+    inv.id,
+    replies[replies.length - 1],
+  );
+  await resetKv();
+});
+
+// ---------------------------------------------------------------------------
+// REQ-1098 = REQ-1025 AMENDMENT (LOOP-007 cycle 3, q3-23): on the Q-001
+// conversation, "maria wants to add painting the detached garage $1,150 and
+// replacing 3 rotten fence boards $95.50. make a change order and send it to
+// her" made AND SENT CO-001 ($1,150) and CO-002 ($95.50): two customer
+// emails, two owner alerts, two approvals; the chat linked only CO-002.
+// ---------------------------------------------------------------------------
+const Q323_MESSAGE =
+  "maria wants to add painting the detached garage $1,150 and replacing 3 rotten fence boards $95.50. make a change order and send it to her";
+const GARAGE: LLMAction = {
+  type: "change_order",
+  payload: {
+    customerName: "Maria",
+    quoteNumber: "Q-001",
+    description: "Painting the detached garage",
+    deltaAmountCents: 115_000,
+  },
+};
+const BOARDS: LLMAction = {
+  type: "change_order",
+  payload: {
+    customerName: "Maria",
+    quoteNumber: "Q-001",
+    description: "Replacing 3 rotten fence boards",
+    deltaAmountCents: 9_550,
+  },
+};
+
+Deno.test("REQ-1098 (REQ-1025 AMENDMENT q3-23): 'add garage $1,150 and fence boards $95.50, make a change order and send it to her' on Q-001 makes and sends ONE change order at $1,245.50, and the payload names it", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  const f = fresh();
+  const { quote, inv } = await seedSignedMasterBath(f);
+  // the model answers as in QA's run: one change_order per item
+  let calls = 0;
+  f.llm.setHandler(() => {
+    calls++;
+    if (calls === 1) {
+      return { text: "", action: GARAGE, actions: [GARAGE, BOARDS] } as
+        & LLMResponse
+        & { actions: LLMAction[] };
+    }
+    return { text: "" } as LLMResponse;
+  });
+  const conv = await f.conversations.create({
+    userId: "u-1",
+    quoteId: quote.id,
+  });
+  const res = await f.flow.run({
+    userId: "u-1",
+    conversationId: conv.id,
+    content: Q323_MESSAGE,
+  });
+  const replies = res.newMessages.filter((m) => m.role === "assistant");
+  const reply = replies[replies.length - 1];
+
+  const cos = await f.changeOrders.listByInvoice("u-1", inv.id);
+  assertEquals(
+    cos.map((c) => [c.number, c.deltaAmountCents]),
+    [[cos[0]?.number, 124_550]],
+    `one change order for $1,150 + $95.50, not ${cos.length} (reply: ${reply.content})`,
+  );
+  assert(
+    /detached garage/i.test(cos[0].description ?? "") &&
+      /fence boards/i.test(cos[0].description ?? ""),
+    `the change order names both items (got ${cos[0].description})`,
+  );
+  // SendChangeOrderAlert = the customer's /co email + text and the owner's alert
+  assertEquals(f.alerted, [cos[0].id], "Maria is sent ONE change order");
+  const outcome = (reply.payload as { changeOrder?: Outcome })?.changeOrder;
+  assertEquals(
+    { kind: outcome?.kind, sent: outcome?.sent, id: outcome?.changeOrderId },
+    { kind: "change_order", sent: true, id: cos[0].id },
+    `payload.changeOrder must be that sent change order (got ${
+      JSON.stringify(outcome)
+    })`,
+  );
   await resetKv();
 });

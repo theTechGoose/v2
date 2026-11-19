@@ -1086,3 +1086,61 @@ Deno.test("REQ-1025 q2-7 mergeChangeOrderCalls: items each priced as typed, a ne
   ];
   assertEquals(mergeChangeOrderCalls(total, "change Q-001 to $20,800"), total);
 });
+
+// ---------------------------------------------------------------------------
+// REQ-1098 = REQ-1025 AMENDMENT (LOOP-007 cycle 3, q3-23): "maria wants to add
+// painting the detached garage $1,150 and replacing 3 rotten fence boards
+// $95.50. make a change order and send it to her" made CO-001 ($1,150) AND
+// CO-002 ($95.50) — two customer emails, two approvals. The parse read only
+// $1,150 with no description, the model split the items, and
+// mergeChangeOrderCalls kept calls "each priced as typed" apart.
+// ---------------------------------------------------------------------------
+const Q323_MESSAGE =
+  "maria wants to add painting the detached garage $1,150 and replacing 3 rotten fence boards $95.50. make a change order and send it to her";
+
+Deno.test("REQ-1098 (REQ-1025 AMENDMENT q3-23) parseChangeOrderRequest: QA's two-item message is read in code — both items, delta the $1,245.50 sum", () => {
+  const parsed = parseChangeOrderRequest(Q323_MESSAGE);
+  assertEquals(
+    parsed?.deltaAmountCents,
+    124_550,
+    `delta must be $1,150 + $95.50 (got ${JSON.stringify(parsed)})`,
+  );
+  const d = parsed?.description ?? "";
+  assertEquals(
+    /detached garage/i.test(d) && /fence boards/i.test(d),
+    true,
+    `the description names both items (got ${JSON.stringify(parsed)})`,
+  );
+});
+
+Deno.test("REQ-1098 (REQ-1025 AMENDMENT q3-23) mergeChangeOrderCalls: two calls each priced as typed on one quote make ONE call at the sum, naming both items", () => {
+  const out = mergeChangeOrderCalls([
+    {
+      type: "change_order",
+      payload: {
+        customerName: "Maria",
+        quoteNumber: "Q-001",
+        description: "Painting the detached garage",
+        deltaAmountCents: 115_000,
+      },
+    },
+    {
+      type: "change_order",
+      payload: {
+        customerName: "Maria",
+        quoteNumber: "Q-001",
+        description: "Replacing 3 rotten fence boards",
+        deltaAmountCents: 9_550,
+      },
+    },
+  ], Q323_MESSAGE);
+  assertEquals(out.length, 1, `one change order, not ${out.length}`);
+  const p = out[0].payload as { description: string; deltaAmountCents: number };
+  assertEquals(p.deltaAmountCents, 124_550);
+  assertEquals(
+    /detached garage/i.test(p.description) &&
+      /fence boards/i.test(p.description),
+    true,
+    `both items named (got ${p.description})`,
+  );
+});
