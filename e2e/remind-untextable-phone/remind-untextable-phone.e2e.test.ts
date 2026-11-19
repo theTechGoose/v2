@@ -167,10 +167,13 @@ Deno.test("REQ-1113 (LOOP-007 q3-38): Remind for a customer with a reserved 555-
       }; backend smsBody: ${JSON.stringify(pv.smsBody)})`,
     );
 
+    // the toast lives 4 s — longer than the harness's post-click screenshot
+    // can take — so its text is read by a wait armed BEFORE the click
+    const toastRead = page.locator("[data-cy='cws-toast']").textContent({
+      timeout: 20_000,
+    });
     await page.locator("[data-cy='send-keep']").click();
-    const toast = page.locator("[data-cy='cws-toast']");
-    await toast.waitFor({ timeout: 20_000 });
-    const toastText = (await toast.innerText()).trim();
+    const toastText = ((await toastRead) ?? "").trim();
 
     let rows: Row[] = [];
     for (let i = 0; i < 25; i++) {

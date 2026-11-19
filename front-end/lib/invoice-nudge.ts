@@ -53,9 +53,21 @@ export async function sendInvoiceNudge(
   }
 }
 
+/** REQ-704 / REQ-1113: what the backend's reminder preview answers — the
+ *  channels a send will really use, and the words on each. */
 export interface NudgePreview {
   escalated?: boolean;
+  /** "email" and/or "sms", in send order (absent on an old reply) */
+  channels?: ("email" | "sms")[];
+  email?: string;
+  phone?: string;
+  emailSubject?: string;
+  /** the email's words as plain text */
+  emailText?: string;
+  /** only when a text will go */
   smsBody?: string;
+  /** a phone is on file but no text will go ("fictional": a reserved number) */
+  textSkip?: string;
   reason?: string;
 }
 

@@ -81,8 +81,12 @@ Deno.test("REQ-704 m60 e2e: the reminder preview shows what the customer gets, a
     assertEquals(preview.day, -3);
     assertEquals(preview.escalated, false);
     assertEquals(preview.email, "ana@blackhole.postmarkapp.com");
-    assertStringIncludes(preview.smsBody, "Hi Ana");
-    assertStringIncludes(preview.smsBody, "is due soon");
+    // REQ-1113: Ana has no phone — the preview is the email that goes, never
+    // a text that won't (this asserted an smsBody for a phone-less customer)
+    assertEquals(preview.channels, ["email"]);
+    assertEquals(preview.smsBody, undefined);
+    assertStringIncludes(preview.emailText, "Hi Ana");
+    assertStringIncludes(preview.emailText, "is due soon");
     const untouched = await fetch(`${base()}/invoices/${created.id}`, {
       headers: { "x-session-id": sid },
     }).then((r) => r.json());

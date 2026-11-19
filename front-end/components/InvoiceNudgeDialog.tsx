@@ -21,6 +21,84 @@ import {
   previewInvoiceNudge,
 } from "../lib/invoice-nudge.ts";
 
+/**
+ * REQ-1113 (LOOP-007 q3-38; amends REQ-704 + REQ-1031): the reminder a nudge
+ * would send, by the channels the backend says will really go — "By email to
+ * …" with the email's subject and words, "By text to …" with the text only
+ * when one will go, and the reserved-number line when the phone on file
+ * can't take texts. Shared by this dialog and the /invoices card's back face.
+ */
+export function NudgePreviewBody(
+  { lang, preview, name }: { lang: Lang; preview: NudgePreview; name: string },
+) {
+  const channels = preview.channels ?? (preview.smsBody ? ["sms"] : []);
+  const byEmail = channels.includes("email");
+  const byText = channels.includes("sms") && !!preview.smsBody;
+  const line = "display:block;margin-top:2px";
+  const body = `${line};white-space:pre-wrap`;
+  return (
+    <>
+      {byEmail || byText
+        ? (
+          <strong style="display:block;color:var(--fg)">
+            {tFor(lang, "invoicesPage.nudge.previewTitle", { name })}
+          </strong>
+        )
+        : null}
+      {byEmail
+        ? (
+          <>
+            <span data-cy="invoice-nudge-channel-email" style={line}>
+              {tFor(lang, "invoicesPage.nudge.byEmail", {
+                email: preview.email ?? "",
+              })}
+            </span>
+            {preview.emailSubject
+              ? (
+                <span
+                  data-cy="invoice-nudge-preview-subject"
+                  style={`${line};font-weight:700;color:var(--fg)`}
+                >
+                  {preview.emailSubject}
+                </span>
+              )
+              : null}
+            <span data-cy="invoice-nudge-preview-text" style={body}>
+              {preview.emailText}
+            </span>
+          </>
+        )
+        : null}
+      {byText
+        ? (
+          <>
+            <span data-cy="invoice-nudge-channel-text" style={line}>
+              {tFor(lang, "invoicesPage.nudge.byText", {
+                phone: preview.phone ?? "",
+              })}
+            </span>
+            <span
+              data-cy={byEmail
+                ? "invoice-nudge-preview-sms"
+                : "invoice-nudge-preview-text"}
+              style={body}
+            >
+              {preview.smsBody}
+            </span>
+          </>
+        )
+        : null}
+      {preview.textSkip === "fictional"
+        ? (
+          <span data-cy="invoice-nudge-cant-text" style={line}>
+            {tFor(lang, "asstChat.send.cantText")}
+          </span>
+        )
+        : null}
+    </>
+  );
+}
+
 export default function InvoiceNudgeDialog(
   { lang, invoice, customerName, onCancel, onSend }: {
     lang: Lang;
@@ -93,19 +171,11 @@ export default function InvoiceNudgeDialog(
                 ? tFor(lang, "invoicesPage.nudge.previewAlertOnly")
                 : preview.reason === "no_recipient"
                 ? tFor(lang, "invoicesPage.nudge.noRecipient")
-                : (
-                  <>
-                    <strong style="display:block;color:var(--fg)">
-                      {tFor(lang, "invoicesPage.nudge.previewTitle", { name })}
-                    </strong>
-                    <span
-                      data-cy="invoice-nudge-preview-text"
-                      style="display:block;margin-top:2px;white-space:pre-wrap"
-                    >
-                      {preview.smsBody}
-                    </span>
-                  </>
-                )}
+                : <NudgePreviewBody
+                  lang={lang}
+                  preview={preview}
+                  name={name}
+                />}
             </div>
           )
           : null}
