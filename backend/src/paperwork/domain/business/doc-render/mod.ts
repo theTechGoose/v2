@@ -13,6 +13,7 @@
  * front end's).
  */
 import { docNumberOf } from "#documents/numbering.ts";
+import { bpToPercent } from "#documents/invoice-form.ts";
 import { fmtPhone } from "#identity/phone.ts";
 import { invoiceBalance, versionOf } from "#documents/versions.ts";
 
@@ -236,13 +237,11 @@ export function changeOrderOwnerRef(
     : docRef(co);
 }
 
-/** "8.25%" from basis points. */
+/** "8.25%" / "7%" from basis points — REQ-1142: the shared bpToPercent, so
+ *  the email, both PDFs, /i and the send sheet print one rate format. */
 export function fmtTaxRate(bp: number | undefined): string | undefined {
   if (typeof bp !== "number" || !Number.isFinite(bp)) return undefined;
-  const pct = bp / 100;
-  return `${
-    Number.isInteger(pct) ? pct.toFixed(0) : pct.toFixed(2).replace(/0$/, "")
-  }%`;
+  return `${bpToPercent(bp)}%`;
 }
 
 function usd(cents: number): string {

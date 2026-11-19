@@ -24,7 +24,10 @@ import { projectLineItems } from "../../../shared/quote-flow/public-doc-state.ts
 import { fmtServiceDates } from "../../../shared/documents/service-dates.ts"; // REQ-1064
 import { publicLogoUrl } from "../../../shared/quote-flow/public-logo-url.ts";
 import { localizeLineItems } from "../../../shared/quote-flow/quote-translations.ts";
-import { localizePaymentInstructions } from "../../../shared/documents/invoice-form.ts";
+import {
+  bpToPercent, // REQ-1142 — one tax-rate format with the email/PDF/send sheet
+  localizePaymentInstructions,
+} from "../../../shared/documents/invoice-form.ts";
 import {
   claimedNoteKey,
   receiptChannelOf,
@@ -847,7 +850,7 @@ function InvoiceDoc(
                             <span style={`color:${MUTED}`}>
                               {tFor(lang, "public.doc.tax")}
                               {invoice.taxRateBp
-                                ? ` (${(invoice.taxRateBp / 100).toFixed(2)}%)`
+                                ? ` (${bpToPercent(invoice.taxRateBp)}%)`
                                 : ""}
                             </span>
                             <span style="font-variant-numeric:tabular-nums">
