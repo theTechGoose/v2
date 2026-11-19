@@ -2512,7 +2512,7 @@
   "paymentsPage.hero.everyDollarWaiting.other": "Cada dólar registrado; {n} pagos esperan que los confirmes.",
   "paymentsPage.hero.exportCta": "Exportar este mes",
   "paymentsPage.hero.eyebrow": "Pagos · {month}",
-  "paymentsPage.hero.freshSub": "En cuanto un cliente pague una factura, aparecerá aquí. Cada método tarda distinto en acreditarse: ACH en dos días, cheques en hasta 5 días hábiles, tarjetas y efectivo al instante.",
+  "paymentsPage.hero.freshSub": "En cuanto un cliente pague una factura, aparecerá aquí. Cada método tarda distinto en acreditarse: ACH en 1 a 3 días hábiles, cheques en hasta 5 días hábiles, tarjetas y efectivo al instante.",
   "paymentsPage.hero.freshTitleEm": "cambiemos eso",
   "paymentsPage.hero.freshTitlePre": "Todavía no ha llegado nada:",
   "paymentsPage.hero.recordCta": "Registrar un pago",
