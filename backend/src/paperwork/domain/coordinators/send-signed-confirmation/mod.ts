@@ -1,3 +1,4 @@
+import { fmtPhone } from "#identity/phone.ts"; // REQ-965
 import { isDueNowTermValue } from "#quote-flow/terms-i18n.ts";
 import { shortDate, SIGNING_NET_DAYS } from "#documents/linked-view.ts"; // REQ-954
 import { Injectable } from "#danet/core";
@@ -948,7 +949,7 @@ ${
           ${
     contractor?.phoneNumber
       ? `<div style="margin-top:2px;color:${COLOR_INK};font-size:13px">${
-        escapeHtml(contractor.phoneNumber)
+        escapeHtml(fmtPhone(contractor.phoneNumber)) // REQ-965 (q1-43): "(512) 555-0701", as Settings shows it
       }</div>`
       : ""
   }

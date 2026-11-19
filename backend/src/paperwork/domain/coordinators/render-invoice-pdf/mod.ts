@@ -1,3 +1,4 @@
+import { fmtPhone } from "#identity/phone.ts"; // REQ-965
 import { Injectable } from "#danet/core";
 import { businessTimezone } from "@users/domain/business/timezone/mod.ts"; // REQ-944
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
@@ -325,7 +326,7 @@ export class RenderInvoicePdf {
       const fromLines = [
         contractor?.name,
         businessName,
-        contractor?.phoneNumber,
+        fmtPhone(contractor?.phoneNumber), // REQ-965: "(512) 555-0702", like the page
         contractor?.email,
         // REQ-168: the business website
         ident?.websiteUrl?.trim().replace(/^https?:\/\//i, "").replace(

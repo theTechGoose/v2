@@ -67,7 +67,7 @@ import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.t
 import { LoadBusinessLogo } from "@paperwork/domain/coordinators/load-business-logo/mod.ts"; // REQ-945
 import { accountNetDays } from "#quote-flow/completion-schedule.ts"; // REQ-945
 
-/** REQ-719: a US phone reads "+1 (512) 555-0100" in the email; anything else is shown as stored. */
+/** REQ-719 + REQ-965: a US phone reads "(512) 555-0100" in the email (the one display, as on Settings); anything else is shown as stored. */
 function displayPhone(raw: string): string {
   return isUsPhone(raw) ? formatPhoneDisplay(raw) : raw;
 }

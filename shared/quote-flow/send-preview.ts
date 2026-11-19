@@ -32,7 +32,7 @@ export function sendPreviewPath(
 }
 
 /** REQ-593 (cycle 4, m12): the number the text preview names, formatted
- *  ("+1 (512) 867-5309") — "" when the preview has no text recipient. */
+ *  ("(512) 867-5309", REQ-965) — "" when the preview has no text recipient. */
 export function sendPreviewSmsTo(preview: QuoteSendPreview): string {
   const to = preview.sms?.to?.trim();
   return to ? formatPhoneDisplay(to) : "";

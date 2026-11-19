@@ -253,7 +253,7 @@ export function paymentInstructionsFromMethods(
       ? m.instructions
       : m.handle)?.trim();
     // REQ-593 (cycle 4, m12): a phone handle reads like a phone —
-    // "Zelle: +1 (512) 555-0109", not the digits as typed at onboarding.
+    // "Zelle: (512) 555-0109" (REQ-965), not the digits as typed at onboarding.
     const shown = detail && isUsPhone(detail)
       ? formatPhoneDisplay(detail)
       : detail;

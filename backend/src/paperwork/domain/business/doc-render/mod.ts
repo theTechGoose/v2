@@ -13,6 +13,7 @@
  * front end's).
  */
 import { docNumberOf } from "#documents/numbering.ts";
+import { fmtPhone } from "#identity/phone.ts";
 import { invoiceBalance, versionOf } from "#documents/versions.ts";
 
 export type RenderLang = "en" | "es";
@@ -74,13 +75,15 @@ export function customerOnDocument(
     pick(doc.customerSnapshot);
 }
 
-/** The lines a Bill-to / Customer block draws: name, business, phone, email, address. */
+/** The lines a Bill-to / Customer block draws: name, business, phone, email, address.
+ *  The phone is stored as typed ("8435550277", "843-555-0142"), so it is drawn
+ *  through the shared fmtPhone — "(843) 555-0277", like the web pages (REQ-965). */
 export function customerLines(c: RenderedCustomer | undefined): string[] {
   if (!c) return [];
   const head = c.name && c.businessName && c.name !== c.businessName
     ? [c.name, c.businessName]
     : [c.name ?? c.businessName];
-  return [...head, c.phoneNumber, c.email, c.address]
+  return [...head, fmtPhone(c.phoneNumber), c.email, c.address]
     .filter((v): v is string => !!v && v.trim().length > 0);
 }
 

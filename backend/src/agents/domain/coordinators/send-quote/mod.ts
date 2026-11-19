@@ -435,7 +435,7 @@ export function buildDivider(o: {
   const emailOk = !!emailedTo;
   const smsOk = !!textedTo;
   // REQ-593 (cycle 4, m12): the label shows the number as the app does
-  // everywhere ("+1 (512) 867-5309"), not the E.164 the SMS service used.
+  // everywhere ("(512) 867-5309", REQ-965), not the E.164 the SMS service used.
   const textedShown = textedTo ? formatPhoneDisplay(textedTo) : "";
 
   if (channel === "email") {

@@ -1,3 +1,4 @@
+import { fmtPhone } from "#identity/phone.ts"; // REQ-965
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
@@ -255,7 +256,7 @@ export class RenderQuotePdf {
       const fromLines = [
         contractor?.name,
         businessName,
-        contractor?.phoneNumber,
+        fmtPhone(contractor?.phoneNumber), // REQ-965: "(512) 555-0701", like the page
         contractor?.email,
         // REQ-038 (NW-06b): the website, as people read it.
         websiteLabel(input.websiteUrl),

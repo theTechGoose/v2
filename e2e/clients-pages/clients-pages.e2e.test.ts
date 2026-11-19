@@ -286,7 +286,7 @@ Deno.test("REQ-600 (cycle 4, M5): /customers?open=<id> opens a name+address cust
     await expect.see("Enter a full phone number");
     await card.locator("[data-cy='ccard2-input-phone']").fill("(512) 555-3150");
     await card.locator("[data-cy='ccard2-save-phone']").click();
-    await expect.see("+1 (512) 555-3150");
+    await expect.see("(512) 555-3150"); // REQ-965: the one display
     await card.locator("a[data-cy='ccard2-message']").waitFor();
 
     // Add email

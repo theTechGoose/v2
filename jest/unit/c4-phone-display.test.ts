@@ -11,6 +11,8 @@
  *   - the open quote's "Texted to" receipt printed the E.164.
  * (The backend "…texted to +15128675309" divider is pinned in
  * backend/src/agents/domain/coordinators/send-quote/divider.test.ts.)
+ * REQ-965 (q1-43): the formatted form is "(512) 555-0109", the same string as
+ * shared fmtPhone (Settings, the public quote, the PDFs) — was "+1 (512) …".
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -44,7 +46,7 @@ describe("REQ-593 (demo cycle 4, m12) phone numbers are formatted wherever they 
     );
   });
 
-  test("REQ-593 payment instructions from onboarding: 'Zelle: 5125550109' reads 'Zelle: +1 (512) 555-0109'", () => {
+  test("REQ-593 payment instructions from onboarding: 'Zelle: 5125550109' reads 'Zelle: (512) 555-0109'", () => {
     const methods = {
       zelle: { enabled: true, handle: "5125550109" },
       venmo: { enabled: true, handle: "@bob-roofs" },
@@ -52,20 +54,20 @@ describe("REQ-593 (demo cycle 4, m12) phone numbers are formatted wherever they 
       cash: { enabled: true },
     };
     expect(paymentInstructionsFromMethods(methods, "en")).toBe(
-      "Venmo: @bob-roofs · Zelle: +1 (512) 555-0109 · PayPal: bob@example.com · Cash",
+      "Venmo: @bob-roofs · Zelle: (512) 555-0109 · PayPal: bob@example.com · Cash",
     );
     expect(
       paymentInstructionsFromMethods(
         { zelle: { enabled: true, handle: "(512) 555-0109" } },
         "es",
       ),
-    ).toBe("Zelle: +1 (512) 555-0109");
+    ).toBe("Zelle: (512) 555-0109");
   });
 
-  test("REQ-593 send dialog: the text preview names the number as '+1 (512) 867-5309', not the E.164", () => {
+  test("REQ-593 send dialog: the text preview names the number as '(512) 867-5309', not the E.164", () => {
     expect(
       sendPreviewSmsTo({ lang: "es", sms: { to: "+15128675309", body: "x" } }),
-    ).toBe("+1 (512) 867-5309");
+    ).toBe("(512) 867-5309");
     expect(sendPreviewSmsTo({ lang: "en", sms: { body: "x" } })).toBe("");
     expect(sendPreviewSmsTo({ lang: "en" })).toBe("");
     const src = read("front-end/components/SendLangPreview.tsx");

@@ -68,14 +68,16 @@ export function isUsPhone(raw: string | null | undefined): boolean {
 }
 
 /**
- * One phone display everywhere: "5125556999" → "+1 (512) 555-6999".
- * Idempotent on already-formatted +1 numbers; non-10-digit inputs pass
- * through untouched rather than mangled (P-64).
+ * One phone display everywhere: "5125556999" / "+15125556999" →
+ * "(512) 555-6999" — the same string as shared fmtPhone (identity/phone.ts),
+ * which Settings, the public quote/invoice and the PDFs use (REQ-965 q1-43;
+ * REVISION of REQ-719's "+1 (…)" form). Idempotent on its own output;
+ * non-10-digit inputs pass through untouched rather than mangled (P-64).
  */
 export function formatPhoneDisplay(raw: string): string {
   const digits = tenDigits(raw);
   if (digits.length !== 10) return raw.trim();
-  return `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
 /**
@@ -94,7 +96,7 @@ export function formatPhoneInput(raw: string): string {
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 }
 
-/** "5125556999" / "+1 (512) 555-6999" → "tel:+15125556999" (P-64). */
+/** "5125556999" / "(512) 555-6999" / "+1 (512) 555-6999" → "tel:+15125556999" (P-64). */
 export function telHref(raw: string): string {
   const digits = tenDigits(raw);
   if (digits.length === 10) return `tel:+1${digits}`;
