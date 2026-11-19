@@ -1378,7 +1378,19 @@ for (
         });
         const bound = await fx.quotes.getOwned(quote.id, U);
         assert(bound.customerId, "the wizard bound the customer to the quote");
-        assertEquals(bound.customerSnapshot, undefined);
+        // REQ-1021 (LOOP-007 q2-13): binding by id now snapshots her too …
+        assertEquals(bound.customerSnapshot?.email, "ana.diaz@example.com");
+        // … so REQ-777's case — a quote bound by id only, no snapshot — is a
+        // row saved before that fix: drop the snapshot to keep covering it.
+        {
+          const kv = await getKv();
+          const { customerSnapshot: _dropped, ...legacy } = bound;
+          await kv.set(["quote", quote.id], legacy);
+        }
+        assertEquals(
+          (await fx.quotes.getOwned(quote.id, U)).customerSnapshot,
+          undefined,
+        );
 
         const chat = scriptLlm(fx, () => ({ text: "Who is the invoice for?" }));
         const res = await fx.flow.run({

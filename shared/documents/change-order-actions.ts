@@ -153,3 +153,47 @@ export function changeOrderShareLinks(input: {
     }`,
   };
 }
+
+/** Who a change order on the quote panel goes to (its row's Text / Email). */
+export interface ChangeOrderRecipient {
+  name: string | null;
+  phone?: string;
+  email?: string;
+}
+
+/**
+ * REQ-1021 (LOOP-007 q2-13, REQ-565/REQ-204) — the CO row's recipient: the
+ * customer as filed on the quote (`customerSnapshot`) first, the live
+ * customer record second. A quote drafted before its customer was on file
+ * and linked later had no snapshot, so Email opened a bare `mailto:` though
+ * her address was on file. The live record counts only when it is the
+ * quote's own customer.
+ */
+export function changeOrderRecipient(
+  quote: {
+    customerId?: string | null;
+    customerName?: string | null;
+    customerSnapshot?: Record<string, unknown> | null;
+  },
+  customer?: {
+    id?: string | null;
+    name?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+  } | null,
+): ChangeOrderRecipient {
+  const str = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : undefined;
+  const snap = quote.customerSnapshot ?? {};
+  const live = customer &&
+      (!customer.id || !quote.customerId || customer.id === quote.customerId)
+    ? customer
+    : null;
+  const phone = str(snap.phoneNumber) ?? str(live?.phoneNumber);
+  const email = str(snap.email) ?? str(live?.email);
+  return {
+    name: str(quote.customerName) ?? str(snap.name) ?? str(live?.name) ?? null,
+    ...(phone ? { phone } : {}),
+    ...(email ? { email } : {}),
+  };
+}

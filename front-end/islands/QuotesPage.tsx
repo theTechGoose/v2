@@ -82,6 +82,7 @@ import { defaultSendLang } from "../lib/send-dialog.ts"; // REQ-971
 import { quoteTextLang } from "../../shared/quote-flow/quote-translations.ts"; // REQ-971
 import {
   changeOrderBody,
+  changeOrderRecipient,
   changeOrderRowActions,
   changeOrderSavedNote,
   changeOrderShareLinks,
@@ -793,9 +794,11 @@ function LedgerChangeOrderRow(
  *  change order / work order, the version history, and the publish /
  *  next-invoice actions. */
 function QuoteLedgerSection(
-  { lang, q, ledger, versions, onPublished }: {
+  { lang, q, customer, ledger, versions, onPublished }: {
     lang: "en" | "es";
     q: BackendQuoteCard;
+    /** REQ-1021: the quote's customer row the panel loaded (contact on file) */
+    customer?: SendDialogCustomer | null;
     ledger: QuoteLedger;
     versions: QuoteVersion[];
     onPublished: () => void;
@@ -819,16 +822,13 @@ function QuoteLedgerSection(
   // REQ-466 (demo m38): the draft revision can be read before Publish.
   const [showDraft, setShowDraft] = useState(false);
   const summary = ledgerSummary(ledger);
-  // REQ-565: the change orders go to the quote's customer as filed on it
-  const snapshot = (q as { customerSnapshot?: Record<string, unknown> })
-    .customerSnapshot;
-  const coRecipient: CoRecipient = {
-    name: q.customerName ?? null,
-    ...(typeof snapshot?.phoneNumber === "string"
-      ? { phone: snapshot.phoneNumber }
-      : {}),
-    ...(typeof snapshot?.email === "string" ? { email: snapshot.email } : {}),
-  };
+  // REQ-565: the change orders go to the quote's customer as filed on it;
+  // REQ-1021 (q2-13): else to the customer on file (a quote linked to her
+  // after it was drafted had no snapshot — Email opened a bare mailto:).
+  const coRecipient: CoRecipient = changeOrderRecipient(
+    q as BackendQuoteCard & { customerSnapshot?: Record<string, unknown> },
+    customer,
+  );
   // REQ-481 (demo M28): why the next invoice is off — "The rest is on
   // INV-002, scheduled Nov 26", not "already invoiced" over an unsent bill.
   const fullyInvoicedText = tFor(lang, summary.fullyInvoicedKey, {
@@ -2019,6 +2019,7 @@ function OpenQuotePanel(
         <QuoteLedgerSection
           lang={lang}
           q={q}
+          customer={state.customer}
           ledger={state.ledger}
           versions={state.versions}
           onPublished={() => {

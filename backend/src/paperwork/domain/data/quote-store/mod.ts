@@ -52,6 +52,31 @@ export class QuoteSignedError extends Error {
   }
 }
 
+/**
+ * REQ-1021 (LOOP-007 q2-13, REQ-204/REQ-565): a quote drafted before its
+ * customer was on file (the assistant, a brand-new customer) is linked later
+ * through update/updateIf({customerId}) — BindConversationCustomer,
+ * send-quote. That link takes the customer snapshot `create` would have
+ * taken, so the documents built off the quote (a change order's Email, the
+ * PDF) carry her email and phone. Only a patch that sets `customerId` — to a
+ * different customer, or to one the row has no snapshot of yet — snapshots;
+ * a later CRM edit never rewrites an existing snapshot (REQ-204). A patch
+ * that carries its own `customerSnapshot` keeps it.
+ */
+async function linkedCustomerSnapshot(
+  existing: Quote,
+  patch: Partial<Quote>,
+): Promise<Partial<Quote>> {
+  const nextId = patch.customerId;
+  if (!nextId || "customerSnapshot" in patch) return {};
+  const changed = nextId !== existing.customerId;
+  if (!changed && existing.customerSnapshot) return {};
+  const snap = await snapshotCustomer(nextId, existing.userId);
+  // a different customer: the old one's snapshot no longer describes the row
+  if (changed) return { customerSnapshot: snap };
+  return snap ? { customerSnapshot: snap } : {};
+}
+
 @Injectable()
 export class QuoteStore {
   constructor(private numbering: DocNumbering = new DocNumbering()) {}
@@ -244,6 +269,8 @@ export class QuoteStore {
         ...entry.value,
         ...firstIssueStamp(entry.value, definedPatch), // REQ-248
         ...definedPatch,
+        // REQ-1021 (q2-13): a customer linked here is snapshotted (REQ-204)
+        ...await linkedCustomerSnapshot(entry.value, definedPatch),
         id: entry.value.id,
         userId: entry.value.userId,
         createdAt: entry.value.createdAt,
@@ -328,6 +355,8 @@ export class QuoteStore {
       ...(staleDescription ? { descriptionByLang: undefined } : {}),
       ...(staleHeading.jobName ? { jobNameByLang: undefined } : {}),
       ...(staleHeading.summary ? { summaryByLang: undefined } : {}),
+      // REQ-1021 (q2-13): a customer linked here is snapshotted (REQ-204)
+      ...await linkedCustomerSnapshot(existing, definedPatch),
       id: existing.id,
       userId: existing.userId,
       createdAt: existing.createdAt,
