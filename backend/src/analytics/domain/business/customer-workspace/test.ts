@@ -114,6 +114,7 @@ Deno.test("REQ-924 workspaceSummary — a new customer: everything zero, no last
     owedCents: 0,
     overdueCents: 0,
     billedCents: 0,
+    billedCount: 0,
     paidCents: 0,
     openQuotes: 0,
     openQuotesCents: 0,

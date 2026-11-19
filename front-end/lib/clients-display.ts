@@ -240,9 +240,10 @@ export function hasBilled(
 }
 
 /** REQ-323 / REQ-990 — an invoice in this state has been issued and still stands (not a draft, not
- *  void); the board's `hasBilled` and the customer page's billed check both read it. */
+ *  void); the board's `hasBilled` and the customer page's billed check both read it.
+ *  REQ-1090: nor a scheduled installment — it has not gone out (REQ-481; shared `isInvoiceIssued`). */
 export function isIssuedState(state: string): boolean {
-  return state !== "draft" && state !== "void";
+  return state !== "draft" && state !== "void" && state !== "scheduled";
 }
 
 export function segmentLabel(

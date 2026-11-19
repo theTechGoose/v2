@@ -97,6 +97,9 @@ export interface WorkspaceSummary {
   overdueCents: number;
   /** lifetime: every invoice sent or paid, at its amount */
   billedCents: number;
+  /** REQ-1090 — how many invoices are summed into billedCents (the tile's "Invoices: N"); a scheduled
+   *  installment that has not gone out is in neither */
+  billedCount: number;
   /** what was paid on those invoices */
   paidCents: number;
   lastPayment?: { amountCents: number; method: string; receivedAt: string };
@@ -121,7 +124,7 @@ export function workspaceSummary(input: {
   /** the price of each done-not-billed visit */
   unbilledVisitCents: number[];
 }): WorkspaceSummary {
-  let owedCents = 0, overdueCents = 0, billedCents = 0, paidCents = 0;
+  let owedCents = 0, overdueCents = 0, billedCents = 0, billedCount = 0, paidCents = 0;
   for (const i of input.invoices) {
     if (isOpenReceivable(i)) {
       const bal = receivableBalanceCents(i);
@@ -132,6 +135,7 @@ export function workspaceSummary(input: {
     }
     if (BILLED.has(i.status ?? "")) {
       billedCents += i.amount ?? 0;
+      billedCount++;
       paidCents += i.status === "paid" ? i.amount ?? 0 : Math.max(0, i.paidCents ?? 0);
     }
   }
@@ -144,6 +148,7 @@ export function workspaceSummary(input: {
     owedCents,
     overdueCents,
     billedCents,
+    billedCount,
     paidCents,
     ...(last ? { lastPayment: { amountCents: last.amount, method: last.method, receivedAt: last.receivedAt } } : {}),
     openQuotes: open.length,
