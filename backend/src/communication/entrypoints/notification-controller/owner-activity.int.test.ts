@@ -187,3 +187,88 @@ Deno.test("REQ-566 (cycle 4, m11): a field job the worker finishes lands in the 
     );
   });
 });
+
+// REQ-1134 (LOOP-007 cycle 3, q3-66): the tester recorded a $400.25 check,
+// charged it back with a $35 fee and voided another invoice; the dashboard's
+// "What we handled today" still read "Payment recorded: $400.25 from Greg
+// Pruitt" and nothing else — ChargebackPayment and POST /invoices/:id/void
+// emit no bus event, and notificationL10n() maps neither. Over HTTP: each of
+// those owner actions must land its own row in GET /notifications.
+Deno.test("REQ-1134 (LOOP-007 q3-66): charging back a recorded check lands a chargeback row in the owner's activity feed", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const greg = (await call("POST", "/customers", {
+      name: "Greg Pruitt",
+      phoneNumber: "(512) 555-0166",
+    }, H)).body;
+
+    const inv2 = (await call("POST", "/invoices", {
+      customerId: greg.id,
+      amount: 40025,
+      status: "sent",
+    }, H)).body;
+    const paid = await call("POST", "/payments", {
+      invoiceId: inv2.id,
+      amount: 40025,
+      method: "check",
+      receivedAt: new Date().toISOString(),
+    }, H);
+    assertEquals(paid.status < 300, true, `POST /payments ${paid.status}`);
+    assertEquals(
+      (await feed(call, H))[0],
+      "Payment recorded: $400.25 from Greg Pruitt",
+    );
+
+    // the check bounces — chargeback with the $35 fee
+    const cb = await call("POST", `/payments/${paid.body.id}/chargeback`, {
+      feeCents: 3500,
+      reason: "Check bounced",
+    }, H);
+    assertEquals(cb.status, 200, `chargeback ${JSON.stringify(cb.body)}`);
+    const afterCb = await feed(call, H);
+    const cbRow = afterCb.find((t) => /chargeback/i.test(t));
+    assertEquals(
+      typeof cbRow === "string" && cbRow.includes("$400.25") &&
+        cbRow.includes("Greg Pruitt"),
+      true,
+      `the feed names the chargeback of $400.25 from Greg Pruitt; got ${
+        JSON.stringify(afterCb)
+      }`,
+    );
+    assertEquals(
+      /chargeback/i.test(afterCb[0]),
+      true,
+      `the chargeback is the newest row; got ${JSON.stringify(afterCb)}`,
+    );
+  });
+});
+
+Deno.test("REQ-1134 (LOOP-007 q3-66): voiding an issued invoice lands a row in the owner's activity feed", async () => {
+  await withServer(async (call) => {
+    const H = await login(call);
+    const rosa = (await call("POST", "/customers", {
+      name: "Rosa Delgado",
+      phoneNumber: "(512) 555-0167",
+    }, H)).body;
+
+    // INV-003 for Rosa is issued, then voided
+    const inv3 = (await call("POST", "/invoices", {
+      customerId: rosa.id,
+      amount: 12000,
+      status: "sent",
+    }, H)).body;
+    const voided = await call("POST", `/invoices/${inv3.id}/void`, {
+      reason: "Duplicate",
+    }, H);
+    assertEquals(voided.status, 200, `void ${JSON.stringify(voided.body)}`);
+    assertEquals(voided.body.status, "void");
+    const afterVoid = await feed(call, H);
+    assertEquals(
+      /void/i.test(afterVoid[0]) && afterVoid[0].includes("Rosa Delgado"),
+      true,
+      `the newest row says Rosa Delgado's invoice was voided; got ${
+        JSON.stringify(afterVoid)
+      }`,
+    );
+  });
+});

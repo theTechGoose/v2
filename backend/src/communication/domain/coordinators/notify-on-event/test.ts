@@ -318,3 +318,44 @@ Deno.test("REQ-717 p11 (cycle 5): a change-order row stored with the old pre-for
     "Ana approved your change order (+$250.00)",
   );
 });
+
+// REQ-1134 (LOOP-007 cycle 3, q3-66): "What we handled today" left out the
+// chargeback and the void — notificationL10n() had no branch for either, so
+// even an emitted event would map to null and write no feed row. The
+// contract: `invoice:payment_reversed` { amountCents, customerName,
+// feeCents } and `invoice:voided` { invoiceNumber, customerName }.
+Deno.test("REQ-1134 (LOOP-007 q3-66): a chargeback maps to a feed row naming the amount, the client and the fee (EN + ES)", () => {
+  const e = ev("payment_reversed", {
+    amountCents: 40025,
+    customerName: "Greg Pruitt",
+    feeCents: 3500,
+  });
+  const l = notificationL10n(e);
+  assertEquals(l !== null, true, "payment_reversed must map to a feed row");
+  const en = feedTitle(e, "en");
+  const es = feedTitle(e, "es");
+  assertEquals(/chargeback/i.test(en), true, `EN names the chargeback: ${en}`);
+  assertEquals(en.includes("$400.25"), true, `EN names the amount: ${en}`);
+  assertEquals(en.includes("Greg Pruitt"), true, `EN names the client: ${en}`);
+  assertEquals(en.includes("$35"), true, `EN names the fee: ${en}`);
+  assertEquals(/contracargo/i.test(es), true, `ES says contracargo: ${es}`);
+  assertEquals(es.includes("$400.25"), true, `ES names the amount: ${es}`);
+  assertEquals(es.includes("Greg Pruitt"), true, `ES names the client: ${es}`);
+});
+
+Deno.test("REQ-1134 (LOOP-007 q3-66): a voided invoice maps to a feed row naming the invoice and the client (EN + ES)", () => {
+  const e = ev("voided", {
+    invoiceNumber: "INV-003",
+    customerName: "Rosa Delgado",
+  });
+  const l = notificationL10n(e);
+  assertEquals(l !== null, true, "invoice:voided must map to a feed row");
+  const en = feedTitle(e, "en");
+  const es = feedTitle(e, "es");
+  assertEquals(/void/i.test(en), true, `EN says voided: ${en}`);
+  assertEquals(en.includes("INV-003"), true, `EN names the invoice: ${en}`);
+  assertEquals(en.includes("Rosa Delgado"), true, `EN names the client: ${en}`);
+  assertEquals(/anulad/i.test(es), true, `ES says anulada: ${es}`);
+  assertEquals(es.includes("INV-003"), true, `ES names the invoice: ${es}`);
+  assertEquals(es.includes("Rosa Delgado"), true, `ES names the client: ${es}`);
+});
