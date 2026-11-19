@@ -519,7 +519,8 @@ const STAGE_MOOD: Record<
     to: "#5FA34F",
     shadow: "rgba(81,152,67,0.30)",
     statusFg: "#1F3F18",
-    labelKey: "status.paid",
+    // REQ-986: feminine "Pagada", agreeing with factura and the card subline.
+    labelKey: "invoices.state.paid",
   },
   // REQ-627
   void: {
@@ -1738,13 +1739,9 @@ function InvoicesHero(
             : overdueCount > 0
             ? (
               <>
-                <strong>{overdueCount}</strong> {tFor(
-                  lang,
-                  overdueCount === 1
-                    ? "invoicesPage.sub.pastDueVerb.one"
-                    : "invoicesPage.sub.pastDueVerb.other",
-                  { n: overdueCount },
-                )} {tFor(lang, "invoicesPage.sub.pastDue")}
+                <strong>{overdueCount}</strong>{" "}
+                {/* REQ-986: the whole tail is one/other so es agrees with n */}
+                {tnFor(lang, "invoicesPage.sub.pastDue", overdueCount)}
               </>
             )
             : <>{tFor(lang, "invoicesPage.sub.nothingPastDue")}</>}
