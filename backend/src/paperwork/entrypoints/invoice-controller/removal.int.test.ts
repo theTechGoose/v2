@@ -230,6 +230,75 @@ Deno.test("REQ-627 void & duplicate: the sent bill is voided and a fresh draft c
   });
 });
 
+// REQ-964 (LOOP-007 q1, q1-40) — REQ-627 AMENDMENT, refs REQ-926: Void &
+// duplicate on a past-due bill that carries a chargeback fee.
+Deno.test("REQ-964 void & duplicate: the draft is not due before today and carries no chargeback fee line; undoing the chargeback leaves the draft's amount alone", async () => {
+  await withServer(async () => {
+    const sid = await login("+15125557964");
+    const today = new Date().toISOString().slice(0, 10);
+    const sent = await mk(sid, {
+      status: "sent",
+      issuedDate: "2026-10-17",
+      dueDate: "2026-11-01",
+      netDays: 15,
+      jobName: "Fence",
+      lineItems: [{
+        description: "Fence",
+        quantity: 1,
+        unit: "job",
+        price: 100000,
+      }],
+      subtotalCents: 100000,
+      amount: 100000,
+    });
+    assertEquals(sent.dueDate, "2026-11-01", JSON.stringify(sent));
+    const pay = (await call("POST", "/payments", {
+      invoiceId: sent.id,
+      amount: 100000,
+      method: "check",
+      receivedAt: new Date().toISOString(),
+    }, sid)).body;
+    assert(pay.id, JSON.stringify(pay));
+    const cb = await call("POST", `/payments/${pay.id}/chargeback`, {
+      feeCents: 3500,
+      reason: "Check bounced",
+    }, sid);
+    assertEquals(cb.status, 200, JSON.stringify(cb.body));
+    const r = await call("POST", `/invoices/${sent.id}/void-duplicate`, {
+      reason: "re-bill",
+    }, sid);
+    assertEquals(r.status, 200, JSON.stringify(r.body));
+    const draftId = r.body.draft.id as string;
+    const draft = (await call("GET", `/invoices/${draftId}`, undefined, sid))
+      .body;
+    assert(
+      draft.dueDate >= today,
+      `the fresh draft is due ${draft.dueDate}, before today ${today}`,
+    );
+    const feeLines = (draft.lineItems as Array<{ chargebackFor?: string }>)
+      .filter((l) => l.chargebackFor !== undefined);
+    assertEquals(
+      feeLines.length,
+      0,
+      `the copy holds a chargeback fee line: ${JSON.stringify(feeLines)}`,
+    );
+    assertEquals(draft.amount, 100000, "the $35 fee is not in the copy");
+
+    // REQ-926(d): undo takes the fee away — the live copy must not keep it
+    const undo = await call(
+      "POST",
+      `/payments/${pay.id}/chargeback/undo`,
+      {},
+      sid,
+    );
+    assertEquals(undo.status, 200, JSON.stringify(undo.body));
+    const after = (await call("GET", `/invoices/${draftId}`, undefined, sid))
+      .body;
+    assertEquals(after.amount, draft.amount, "undo leaves the draft alone");
+    assertEquals(after.amount, 100000, "no orphaned $35 on the live copy");
+  });
+});
+
 Deno.test("REQ-627 bulk: delete removes the drafts and skips the rest with reasons; void voids the sent ones; other owners' ids are skipped as not_found; >500 is 400", async () => {
   await withServer(async () => {
     const other = await login("+15125557099", "Someone Else");
@@ -409,7 +478,12 @@ Deno.test("REQ-627 AMENDMENT a bare POST (no body) to void / void-duplicate is 4
     const va = await call("POST", `/invoices/${a.id}/void`, undefined, sid);
     assertEquals([va.status, va.body.status], [200, "void"]);
     const b = await mk(sid, { status: "sent" });
-    const vb = await call("POST", `/invoices/${b.id}/void-duplicate`, undefined, sid);
+    const vb = await call(
+      "POST",
+      `/invoices/${b.id}/void-duplicate`,
+      undefined,
+      sid,
+    );
     assertEquals(vb.status, 200);
   });
 });

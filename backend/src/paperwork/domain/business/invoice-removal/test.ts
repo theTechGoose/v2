@@ -93,6 +93,67 @@ Deno.test("REQ-627 duplicateDraftOf: copies the bill's content as a fresh draft 
   }
 });
 
+// REQ-964 (LOOP-007 q1, q1-40) — REQ-627 AMENDMENT, refs REQ-926: the fresh
+// draft never carries the voided bill's stale past due date nor its
+// chargeback fee line (whose chargebackFor link undo can never reach).
+// The copy takes today's date so it stays pure; see requirements.md REQ-964.
+const duplicateOn = duplicateDraftOf as unknown as (
+  inv: Record<string, unknown> & { id: string },
+  todayIso: string,
+) => Record<string, unknown>;
+
+Deno.test("REQ-964 duplicateDraftOf: the copy's due date is counted from today (netDays), never the voided bill's past due date", () => {
+  const copy = duplicateOn({
+    id: "inv2",
+    status: "sent",
+    issuedDate: "2026-10-17",
+    dueDate: "2026-11-01",
+    netDays: 15,
+    jobName: "Fence",
+    lineItems: [{
+      description: "Fence",
+      quantity: 1,
+      unit: "job",
+      price: 100000,
+    }],
+    amount: 100000,
+    subtotalCents: 100000,
+  }, "2026-11-19");
+  assertEquals(copy.netDays, 15);
+  assertEquals(copy.dueDate, "2026-12-04", "today + netDays, not 2026-11-01");
+});
+
+Deno.test("REQ-964 duplicateDraftOf: a chargeback fee line (chargebackFor) is not carried into the copy, and its cents leave amount/subtotal", () => {
+  const copy = duplicateOn({
+    id: "inv2",
+    status: "sent",
+    dueDate: "2026-11-01",
+    netDays: 15,
+    jobName: "Fence",
+    lineItems: [
+      { description: "Fence", quantity: 1, unit: "job", price: 100000 },
+      {
+        description: "Chargeback fee",
+        quantity: 1,
+        unit: "fee",
+        price: 3500,
+        chargebackFor: "p1",
+      },
+    ],
+    amount: 103500,
+    subtotalCents: 103500,
+  }, "2026-11-19");
+  const lines = copy.lineItems as Array<Record<string, unknown>>;
+  assertEquals(
+    lines.filter((l) => l.chargebackFor !== undefined).length,
+    0,
+    `no line linked to a payment on the voided bill: ${JSON.stringify(lines)}`,
+  );
+  assertEquals(lines.length, 1);
+  assertEquals(copy.amount, 100000, "the $35 fee is not folded into the copy");
+  assertEquals(copy.subtotalCents, 100000);
+});
+
 Deno.test("REQ-627/629 MAX_BULK_IDS is 500", () => {
   assertEquals(MAX_BULK_IDS, 500);
 });

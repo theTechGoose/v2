@@ -181,6 +181,95 @@ Deno.test("REQ-627: Void & duplicate cancels the sent invoice and opens a correc
     expect.eq(old.status, "void", "the original is voided");
   }));
 
+// REQ-964 (LOOP-007 q1, q1-40) — REQ-627 AMENDMENT, refs REQ-926: Void &
+// duplicate on a past-due bill with a chargeback fee opens a draft that is
+// not due before today and does not silently carry the $35 fee.
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const enCardDate = (iso: string, now: Date) => {
+  const d = new Date(iso + "T00:00:00");
+  const m = d.toLocaleString("en-US", { month: "short" });
+  return d.getFullYear() === now.getFullYear()
+    ? `${m} ${d.getDate()}`
+    : `${m} ${d.getDate()}, ${d.getFullYear()}`;
+};
+
+Deno.test("REQ-964: Void & duplicate on a past-due invoice with a chargeback fee opens a draft due no earlier than today, without the fee line", (t) =>
+  story(t, async ({ page, expect, http, baseUrl }) => {
+    const { auth } = await signIn(http, page, baseUrl);
+    const customer = await seedBusiness(http, auth);
+    const now = new Date();
+    const today = isoDay(now);
+    const staleDue = isoDay(new Date(now.getTime() - 18 * 86_400_000));
+    const issued = isoDay(new Date(now.getTime() - 33 * 86_400_000));
+    const inv = await mkInvoice(http, auth, {
+      status: "sent",
+      customerId: customer.id,
+      jobName: "Fence repair",
+      issuedDate: issued,
+      dueDate: staleDue,
+      netDays: 15,
+      lineItems: [{
+        description: "Fence repair",
+        quantity: 1,
+        unit: "job",
+        price: 100000,
+      }],
+      subtotalCents: 100000,
+      amount: 100000,
+    });
+    const pay = await call(http, auth, "POST", "/api/payments", {
+      invoiceId: inv.id,
+      amount: 100000,
+      method: "check",
+      receivedAt: now.toISOString(),
+    });
+    await call(http, auth, "POST", `/api/payments/${pay.id}/chargeback`, {
+      feeCents: 3500,
+      reason: "Check bounced",
+    });
+
+    await page.goto(`/invoices?open=${inv.id}`);
+    await page.locator("[data-cy='invoice-void']").click({ timeout: 15_000 });
+    await page.locator("[data-cy='invoice-void-duplicate']").click();
+    await page.waitForURL(
+      (u: URL) => {
+        const o = u.searchParams.get("open");
+        return !!o && o !== inv.id;
+      },
+      { timeout: 15_000 },
+    );
+    const newId = new URL(page.url()).searchParams.get("open")!;
+    const copy = await call(http, auth, "GET", `/api/invoices/${newId}`);
+    expect.eq(copy.status, "draft", "the copy is a draft");
+
+    // the opened draft's card: its Due label is not earlier than today
+    const card = page.locator(".qcard", {
+      has: page.locator("[data-cy='invoice-cta-drafting']"),
+    }).first();
+    const dueLabel = (await card.locator(".qcard__val-num").first().innerText({
+      timeout: 15_000,
+    })).trim();
+    expect(
+      dueLabel !== enCardDate(staleDue, now),
+      `the draft reads "Due ${dueLabel}" — the voided bill's past due date`,
+    );
+    expect(
+      typeof copy.dueDate === "string" && copy.dueDate >= today,
+      `the draft is due ${copy.dueDate}, before today ${today}`,
+    );
+    expect.eq(
+      dueLabel,
+      enCardDate(copy.dueDate, now),
+      "the card shows the draft's own due date",
+    );
+
+    // the chargeback fee does not ride along silently
+    const feeLines = (copy.lineItems as Array<{ chargebackFor?: string }>)
+      .filter((l) => l.chargebackFor !== undefined);
+    expect.eq(feeLines.length, 0, "no chargeback fee line on the copy");
+    expect.eq(copy.amount, 100000, "the copy is not $1,035");
+  }));
+
 Deno.test("REQ-629 + REQ-627: select all in view → one PDF with every invoice and their logo; bulk Delete removes the drafts and reports the skipped ones", (t) =>
   story(t, async ({ page, expect, http, baseUrl }) => {
     const { auth } = await signIn(http, page, baseUrl);
