@@ -10,6 +10,7 @@ import type {
   HireStatus,
   PipelineStep,
 } from "../clients/hr.ts";
+import { type Lang, tFor } from "./i18n.ts";
 
 export type SortKey = "name" | "dept" | "start" | "progress" | "status";
 export type SortDir = "asc" | "desc";
@@ -179,13 +180,15 @@ export function donutSlices(
   }));
 }
 
-/** the text the hire gets, as shown in the send modal and on the detail page */
+/** the text the hire gets, as shown in the send modal and on the detail page — REQ-1158: the
+ *  same hr.sms.invite key the backend sends (hr-notices sendLink), in the language asked for */
 export function inviteText(
   first: string,
   company: string,
   url: string,
+  lang: Lang = "en",
 ): string {
-  return `Hey ${first}! 🐋 Welcome to ${company}. Tap to sign your new-hire paperwork before Day 1: ${url}`;
+  return tFor(lang, "hr.sms.invite", { first, company, url });
 }
 
 /** REQ-1156 — the done screen's body: promise accounts only when the plan will build some */

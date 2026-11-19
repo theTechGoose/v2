@@ -114,7 +114,7 @@ export default function HrSignPacket({ token, initialLang }: Props) {
     <div class="hrs">
       <div class="hrs__card" data-cy="hrs-card" data-screen={screen}>
         <div class="hrs__top">
-          <span class="hrs__brand">{company || "🐋"}</span>
+          <span class="hrs__brand">{company || "DocuMonster"}</span>
           {screen === "doc" && (
             <span class="hrs__step" data-cy="hrs-step">
               {t("hr.sign.step", { n: stepN, total })}
