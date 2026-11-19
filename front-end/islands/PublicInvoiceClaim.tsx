@@ -520,14 +520,29 @@ export default function PublicInvoiceClaim(
         {buttons.length > 0
           ? tFor(lang, "payLinks.page.alreadyPaid")
           : tFor(lang, "publicInvoiceClaim.howToPay")}
+        {
+          /* REQ-1103 (q3-30): real text between the sentence and the amount —
+          a CSS margin alone left textContent / screen readers / copy-paste
+          reading "Tell us how$1,935.15". The "Balance:" label is visually
+          hidden (sighted users see the teal amount set apart), and the
+          spaces are text nodes, so every text reader gets
+          "Tell us how Balance: $1,935.15". */
+        }
         {typeof balance === "number"
           ? (
-            <span
-              data-cy="claim-balance"
-              style={`margin-left:8px;color:${TEAL};letter-spacing:0;text-transform:none;font-size:12px`}
-            >
-              {fmtMoneyExact(balance)}
-            </span>
+            <>
+              {" "}
+              <span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0">
+                {tFor(lang, "publicInvoiceClaim.balanceLabel")}
+                {" "}
+              </span>
+              <span
+                data-cy="claim-balance"
+                style={`margin-left:4px;color:${TEAL};letter-spacing:0;text-transform:none;font-size:12px`}
+              >
+                {fmtMoneyExact(balance)}
+              </span>
+            </>
           )
           : null}
       </div>

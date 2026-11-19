@@ -2787,6 +2787,7 @@
   "publicInvoice.status.scheduledSends": "Programada · se envía {date}",
   "publicInvoice.viewSignedAgreement": "Ver acuerdo firmado",
   "publicInvoiceClaim.howToPay": "¿Cómo quieres pagar?",
+  "publicInvoiceClaim.balanceLabel": "Saldo:",
   "publicInvoiceClaim.iSentIt": "Ya lo envié",
   "publicInvoiceClaim.instructions.ach": "Pide a tu contratista los datos de ruta y cuenta ACH, luego haz la transferencia desde tu banco.",
   "publicInvoiceClaim.instructions.card": "Tu contratista compartirá una forma segura de pagar con tarjeta.",
