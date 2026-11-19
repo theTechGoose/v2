@@ -40,8 +40,14 @@ import type { SendChangeOrderAlert } from "@paperwork/domain/coordinators/send-c
 import { ApplyChatChangeOrder } from "@agents/domain/coordinators/apply-chat-change-order/mod.ts";
 import { ReviseQuote } from "@agents/domain/coordinators/revise-quote/mod.ts";
 import { isValidJobName } from "#quote-flow/job-name.ts";
+import { TranslateQuote } from "@agents/domain/coordinators/translate-quote/mod.ts";
+import { TranslateBullets } from "@agents/domain/coordinators/translate-bullets/mod.ts";
+import type { LLMRequest } from "@agents/domain/business/llm/base/mod.ts";
 
-async function seedSpanishContractor(userId: string) {
+async function seedSpanishContractor(
+  userId: string,
+  language: "en" | "es" = "es",
+) {
   const kv = await getKv();
   const now = new Date().toISOString();
   await kv.set(["user", userId], {
@@ -49,7 +55,7 @@ async function seedSpanishContractor(userId: string) {
     phoneNumber: "+15125550235",
     name: "Ana Torres",
     email: "ana@test.dev",
-    language: "es",
+    language,
     createdAt: now,
     updatedAt: now,
   });
@@ -64,10 +70,10 @@ async function seedSpanishContractor(userId: string) {
   });
 }
 
-async function fresh() {
+async function fresh(language: "en" | "es" = "es") {
   Deno.env.set("KV_PATH", ":memory:");
   await resetKv();
-  await seedSpanishContractor("u-1");
+  await seedSpanishContractor("u-1", language);
   const conversations = new AgentConversationStore();
   const messages = new AgentMessageStore();
   const llm = new StubLLMClient();
@@ -83,6 +89,15 @@ async function fresh() {
       new CommConversationStore(),
       new CommMessageStore(),
     );
+  const emailFlow = new SendPaperworkEmail(
+    quotes,
+    invoices,
+    customers,
+    users,
+    identity,
+    email,
+    commsLog(),
+  );
   const flow = new HandleChatMessage(
     conversations,
     messages,
@@ -131,7 +146,17 @@ async function fresh() {
     new ShortLinkStore(),
     commsLog(),
   );
-  return { conversations, llm, quotes, customers, flow, smsFlow, sent };
+  return {
+    conversations,
+    llm,
+    quotes,
+    customers,
+    users,
+    flow,
+    smsFlow,
+    emailFlow,
+    sent,
+  };
 }
 
 const MESSAGE =
@@ -150,7 +175,11 @@ async function draftAndText(jobName: string | undefined) {
     text: "Listo, preparé la cotización.",
     action: {
       type: "create_quote",
-      payload: { summary: SUMMARY, ...(jobName ? { jobName } : {}), lineItems: LINES },
+      payload: {
+        summary: SUMMARY,
+        ...(jobName ? { jobName } : {}),
+        lineItems: LINES,
+      },
     },
   };
   ctx.llm.setHandler(() => answer);
@@ -212,4 +241,165 @@ Deno.test("REQ-1051 (LOOP-007 q2-35): with no model jobName, the derived name fo
     "cerca",
     `the SMS dropped the fence: ${body}`,
   );
+});
+
+/**
+ * REQ-1092 (LOOP-007 cycle 3, q3-1 + q3-2) — AMENDMENT of REQ-1051.
+ *
+ * QA 3 typed the quote in English ("paint exterior of house $3,850 and stain
+ * cedar fence $1,275.50"); the model's create_quote carried the summary
+ * "Exterior painting and fence staining — Lupe Garza" and no jobName.
+ * QuoteStore's English fallback named it "Exterior Painting Fence" (q3-2),
+ * and TranslateQuote translated that name on its own into "Pintura exterior
+ * de la cerca" — "exterior painting OF THE FENCE" — which titled the Spanish
+ * customer's email, /q and signed copy (q3-1).
+ *
+ * The translator below replays what the model did with each text: the
+ * observed rendering of the broken name verbatim, otherwise a faithful
+ * word-for-word reading — so any name that keeps both areas translates to
+ * one that keeps both.
+ */
+const ES_EXACT: Record<string, string> = {
+  // QA 3, fleet-0: the model's Spanish for the stopword-stripped name.
+  "Exterior Painting Fence": "Pintura exterior de la cerca",
+  "Exterior painting and fence staining — Lupe Garza":
+    "Pintura exterior y tinte para cerca — Lupe Garza",
+  "Exterior painting and fence staining": "Pintura exterior y tinte para cerca",
+  "Paint exterior of house": "Pintar el exterior de la casa",
+  "Stain cedar fence": "Teñir la cerca de cedro",
+};
+const ES_WORDS: Record<string, string> = {
+  exterior: "exterior",
+  painting: "pintura",
+  paint: "pintura",
+  and: "y",
+  "&": "y",
+  fence: "cerca",
+  staining: "tinte",
+  stain: "tinte",
+  house: "casa",
+};
+
+function scriptedTranslator() {
+  const llm = new StubLLMClient();
+  llm.setHandler((req: LLMRequest) => {
+    const { texts } = JSON.parse(req.messages[0].content as string) as {
+      texts: string[];
+    };
+    const toEs = /Spanish/.test(req.systemPrompt ?? "");
+    return {
+      text: JSON.stringify({
+        texts: texts.map((t) =>
+          !toEs ? t : ES_EXACT[t] ??
+            t.split(/\s+/).map((w) => ES_WORDS[w.toLowerCase()] ?? w).join(
+              " ",
+            )
+        ),
+      }),
+    };
+  });
+  return llm;
+}
+
+const EN_MESSAGE =
+  "quote for Lupe Garza: paint exterior of house $3,850 and stain cedar fence $1,275.50";
+const EN_SUMMARY = "Exterior painting and fence staining — Lupe Garza";
+const EN_LINES = [
+  { description: "Paint exterior of house", amountCents: 385_000 },
+  { description: "Stain cedar fence", amountCents: 127_550 },
+];
+
+Deno.test("REQ-1092 (LOOP-007 q3-1, q3-2): an English create_quote 'Exterior painting and fence staining' with no model jobName — the stored name keeps 'and' and the fence, and the Spanish email subject and SMS name the house AND the fence, never 'de la cerca'", async () => {
+  const ctx = await fresh("en");
+  try {
+    ctx.llm.setHandler(() => ({
+      text: "Done, I drafted the quote.",
+      action: {
+        type: "create_quote",
+        payload: { summary: EN_SUMMARY, lineItems: EN_LINES },
+      },
+    }));
+    const conv = await ctx.conversations.create({ userId: "u-1" });
+    await ctx.flow.run({
+      userId: "u-1",
+      conversationId: conv.id,
+      content: EN_MESSAGE,
+    });
+    const [draft] = await ctx.quotes.listByUser("u-1");
+    assert(draft, "the turn saved a draft quote");
+    const customer = await ctx.customers.create("u-1", {
+      name: "Lupe Garza",
+      phoneNumber: "+15125551236",
+      email: "lupe@test.dev",
+    });
+    await ctx.quotes.update(draft.id, "u-1", { customerId: customer.id });
+
+    // q3-2: the English name the owner, /q heading and English subject read.
+    const jobName = draft.jobName ?? "";
+    assert(
+      isValidJobName(jobName),
+      `jobName "${jobName}" is outside the budget`,
+    );
+    assertStringIncludes(
+      jobName,
+      "Exterior Painting and Fence",
+      `the stored jobName "${jobName}" dropped the joiner or the fence`,
+    );
+
+    // Send-time translation (SendQuote runs TranslateQuote before dispatch).
+    await new TranslateQuote(
+      ctx.quotes,
+      new TranslateBullets(scriptedTranslator()),
+      ctx.users,
+    ).run({ userId: "u-1", quoteId: draft.id });
+
+    const en = await ctx.emailFlow.run("u-1", {
+      kind: "quote",
+      resourceId: draft.id,
+      language: "en",
+    });
+    assert(en.ok, `the English email went out: ${en.reason}`);
+    assertStringIncludes(
+      en.subject,
+      "Exterior Painting and Fence",
+      `the English subject: ${en.subject}`,
+    );
+
+    // q3-1: what the Spanish customer receives and signs.
+    const es = await ctx.emailFlow.run("u-1", {
+      kind: "quote",
+      resourceId: draft.id,
+      language: "es",
+    });
+    assert(es.ok, `the Spanish email went out: ${es.reason}`);
+    const subject = es.subject.toLowerCase();
+    assertStringIncludes(
+      subject,
+      "cerca",
+      `the Spanish subject: ${es.subject}`,
+    );
+    assert(
+      !subject.includes("de la cerca"),
+      `the Spanish subject names the wrong scope ("exterior painting of the fence"): ${es.subject}`,
+    );
+    assert(
+      / y (tinte (para |de )?)?cerca/.test(subject),
+      `the Spanish subject does not join the house and the fence: ${es.subject}`,
+    );
+
+    const sms = await ctx.smsFlow.run("u-1", {
+      kind: "quote",
+      resourceId: draft.id,
+      language: "es",
+    });
+    assert(sms.ok, `the SMS went out: ${sms.reason}`);
+    const body = (ctx.sent.at(-1)?.body ?? "").toLowerCase();
+    assert(
+      !body.includes("de la cerca") &&
+        / y (tinte (para |de )?)?cerca/.test(body),
+      `the Spanish SMS names the wrong scope: ${body}`,
+    );
+  } finally {
+    await resetKv();
+  }
 });

@@ -38,3 +38,40 @@ Deno.test("REQ-1051 (LOOP-007 q2-35) QuoteStore names 'Pintura exterior y repara
     await resetKv();
   }
 });
+
+/**
+ * REQ-1092 (LOOP-007 cycle 3, q3-1 + q3-2) — AMENDMENT of REQ-1051: the
+ * English fallback keeps the joiner and every area. QA 3's quote "Exterior
+ * painting and fence staining — Maria Lopez" with no model jobName was named
+ * "Exterior Painting Fence".
+ */
+Deno.test("REQ-1092 (LOOP-007 q3-1, q3-2) QuoteStore names 'Exterior painting and fence staining — Maria Lopez' (en) within budget, with 'and' and the fence", async () => {
+  Deno.env.set("KV_PATH", ":memory:");
+  await resetKv();
+  try {
+    const q = await new QuoteStore().create("u-1", {
+      summary: "Exterior painting and fence staining — Maria Lopez",
+      lineItems: [{
+        description: "Paint exterior of house",
+        quantity: 1,
+        unit: "ea",
+        price: 385_000,
+      }, {
+        description: "Stain cedar fence",
+        quantity: 1,
+        unit: "ea",
+        price: 127_550,
+      }],
+      status: "draft",
+    }, { jobNameLang: "en" });
+    const name = q.jobName ?? "";
+    assert(isValidJobName(name), `jobName "${name}" is outside the budget`);
+    assertStringIncludes(
+      name,
+      "Exterior Painting and Fence",
+      `jobName "${name}" dropped the joiner or the fence`,
+    );
+  } finally {
+    await resetKv();
+  }
+});

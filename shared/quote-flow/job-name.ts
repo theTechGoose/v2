@@ -93,14 +93,22 @@ const RECIPIENT_MARKERS = new Set(["for", "para"]);
  *  "for"/"para" is the recipient when a capitalized word (a name) opens it,
  *  or when the job is already named by at least two words before it. */
 function cutAtRecipient(words: string[]): string[] {
+  let areaStart = 0;
   for (let i = 1; i < words.length; i++) {
+    // REQ-1092 (LOOP-007 q3-1): "Pintura exterior y tinte para cerca" — a
+    // "para" inside a later area ties that area's action to its object; the
+    // two-words-before rule counts only the words of the area it sits in.
+    if (AREA_JOINERS.has(words[i].toLowerCase())) {
+      areaStart = i + 1;
+      continue;
+    }
     if (!RECIPIENT_MARKERS.has(words[i].toLowerCase())) continue;
     const before = words.slice(0, i);
     const next = words.slice(i + 1).find((w) =>
       !ES_STOPWORDS.has(w.toLowerCase()) && !STOPWORDS.has(w.toLowerCase())
     );
     const nextIsName = !!next && /^\p{Lu}/u.test(next);
-    if (nextIsName || before.length >= 2) return before;
+    if (nextIsName || i - areaStart >= 2) return before;
   }
   return words;
 }
@@ -183,6 +191,15 @@ export function summarizeJobName(
 
   if (lang === "es") return summarizeJobNameEs(words, maxWords);
 
+  // REQ-1092 (LOOP-007 q3-2, amends REQ-1051): an English job naming two
+  // areas ("Exterior painting and fence staining") keeps its joiner and every
+  // area — each added area shortened to what it names ("Exterior Painting and
+  // Fence") — inside the JOB_NAME_MAX_WORDS budget, as the Spanish path does.
+  // The stopword bag below dropped the "and" and cut at 3 significant words:
+  // "Exterior Painting Fence".
+  const areas = summarizeAreasEn(words);
+  if (areas) return areas;
+
   const significant: string[] = [];
   const sizes: string[] = [];
   const seen = new Set<string>();
@@ -221,6 +238,21 @@ export function summarizeJobName(
     sizes.pop();
   }
   return [...sizes, ...significant].join(" ");
+}
+
+/** REQ-1092: the English area-preserving derivation — articles dropped,
+ *  Title Case with lowercase minor words, joiners kept. Null when the words
+ *  name one area, carry a number/size, or no shortening fits the budget. */
+function summarizeAreasEn(words: string[]): string | null {
+  const kept = words.filter((w) => !ARTICLES.has(w.toLowerCase()));
+  if (kept.some((w) => /\p{N}/u.test(w))) return null;
+  const joinerAt = kept.findIndex((w, i) =>
+    i > 0 && i < kept.length - 1 && AREA_JOINERS.has(w.toLowerCase())
+  );
+  if (joinerAt === -1) return null;
+  const phrase = translatedJobNameCase(kept.join(" "), "en");
+  if (isValidJobName(phrase)) return phrase;
+  return compactAreas(phrase);
 }
 
 /** REQ-434: the countable spaces a job's size is given in ("3 bed",
@@ -475,16 +507,49 @@ const AREA_JOINERS = new Set(["y", "e", "and", "&", "+"]);
 
 /** REQ-1051: the words that tie an action to what it acts on —
  *  "reparación DE (la) cerca", "repair OF (the) fence". */
-const OBJECT_MARKERS = new Set(["de", "del", "of"]);
+const OBJECT_MARKERS = new Set(["de", "del", "of", "para", "con", "for"]);
+
+/** REQ-1092 (LOOP-007 q3-1): the action an English area may END on — "Fence
+ *  Staining", "Gutter Repair" — which leaves the thing it acts on. */
+const EN_ACTION_NOUNS = new Set([
+  "staining",
+  "painting",
+  "repainting",
+  "repair",
+  "repairs",
+  "replacement",
+  "install",
+  "installation",
+  "removal",
+  "cleaning",
+  "washing",
+  "sealing",
+  "refinishing",
+  "restoration",
+  "remodel",
+  "cleanup",
+  "work",
+]);
 const ARTICLES = new Set(["la", "el", "los", "las", "the", "a", "an"]);
 
 /** REQ-1051: an area shortened to what it names — the object after its
- *  "de"/"of" ("reparación de la cerca" → "cerca"); null when it has none. */
+ *  "de"/"of" ("reparación de la cerca" → "cerca"); REQ-1092: or after its
+ *  "para"/"con"/"for" ("tinte para cerca" → "cerca"), or an English area
+ *  without its trailing action ("Fence Staining" → "Fence"); null when it
+ *  has none of these. */
 function areaObject(area: string[]): string[] | null {
   const at = area.findIndex((w, i) =>
     i > 0 && OBJECT_MARKERS.has(w.toLowerCase())
   );
-  if (at === -1) return null;
+  if (at === -1) {
+    if (
+      area.length >= 2 &&
+      EN_ACTION_NOUNS.has(area[area.length - 1].toLowerCase())
+    ) {
+      return area.slice(0, -1);
+    }
+    return null;
+  }
   const rest = area.slice(at + 1);
   while (rest.length > 0 && ARTICLES.has(rest[0].toLowerCase())) rest.shift();
   return rest.length > 0 ? rest : null;
