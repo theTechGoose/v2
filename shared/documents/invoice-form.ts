@@ -933,6 +933,26 @@ export function formatInvoiceHeadline(
 
 /* ---------------- payment summary (REQ-202) ---------------- */
 
+/** REQ-551 (demo-loop cycle 4, B2): the one definition of "paid" every
+ *  money KPI uses — what was collected AGAINST the bill, min(paid, amount).
+ *  An overpayment is flagged (REQ-202) but never counted as revenue, so a
+ *  $999,999,999 payment on a $99,999,999 invoice counts $99,999,999 on
+ *  /invoices, on /payments and in the dashboard money bar (REQ-1137) alike. A paid invoice from before paidCents
+ *  was stored counts its amount. INTEGER CENTS. */
+export function paidKpiInvoiceCents(
+  inv: { amount?: number | null; paidCents?: number | null },
+): number {
+  const amount = typeof inv.amount === "number" && Number.isFinite(inv.amount)
+    ? Math.max(0, inv.amount)
+    : 0;
+  const paid = typeof inv.paidCents === "number" &&
+      Number.isFinite(inv.paidCents)
+    ? Math.max(0, inv.paidCents)
+    : amount;
+  return Math.min(paid, amount);
+}
+
+
 export interface PaymentSummary {
   kind: "unpaid" | "partial" | "paid" | "overpaid";
   amountCents: number;

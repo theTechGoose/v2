@@ -6,6 +6,7 @@
  */
 
 import { isQuoteOut } from "../quote-flow/pipeline-stats.ts";
+import { paidKpiInvoiceCents } from "../documents/invoice-form.ts";
 
 export const MONEY_BUCKET_KEYS = [
   "estimates",
@@ -235,8 +236,10 @@ export function buildMoneyBar(
       title: nameFor(i),
       job: i.jobName,
       number: i.number ?? shortId(i.id),
-      cents: Math.round(i.paidCents ?? i.amount ?? 0) ||
-        Math.round(i.amount ?? 0),
+      // REQ-551 / REQ-1137: what was collected AGAINST the bill, min(paid, amount) — an
+      // overpaid rest is never counted (INV-002: $1,100.00 received on $1,035.50 → $1,035.50).
+      // A paid invoice with no paidCents stored counts its amount.
+      cents: Math.round(paidKpiInvoiceCents(i)) || Math.round(i.amount ?? 0),
       url: `/invoices?open=${i.id}`,
       paidAt: i.paidAt ?? i.updatedAt,
       ...(i.paidMethods?.length ? { paidMethods: i.paidMethods } : {}),
