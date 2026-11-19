@@ -11838,8 +11838,11 @@ function CustomerStepPanel(props: {
     const k = known.customer;
     return (
       <div ref={rootRef}>
+        {/* REQ-1057: the customer is already known (the lock prompt just
+            named them) — the heading CONFIRMS them, never re-asks the open
+            "Who is this for?" (that stays on the pick list / Change views). */}
         <h3 class="wiz__step-q">
-          {tFor(lang, "asstChat.customerStep.whoFor")}
+          {tFor(lang, "asstChat.customerStep.confirmKnown", { name: k.name })}
         </h3>
         <div class="wiz__step-hint">
           {tFor(
