@@ -13,7 +13,7 @@
  * Ported from a2z/web/lotes.html (minus the demo driver and the inline line
  * editor, which belongs to the invoices page).
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   type BatchInvoice,
   type BatchView,
@@ -325,6 +325,12 @@ export default function FieldBatchesPage(
     : [];
   const allChecked = drafts.length > 0 &&
     drafts.every((i) => checked.has(i.id));
+  // REQ-996 (q1-81): some but not all drafts ticked → the header box shows "partly"
+  const someChecked = !allChecked && drafts.some((i) => checked.has(i.id));
+  const allBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (allBox.current) allBox.current.indeterminate = someChecked;
+  });
 
   return (
     <>
@@ -421,7 +427,9 @@ export default function FieldBatchesPage(
               <>
                 <label style="font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center">
                   <input
+                    ref={allBox}
                     type="checkbox"
+                    data-cy="lt-check-all"
                     checked={allChecked}
                     onChange={(e) => {
                       const on = (e.target as HTMLInputElement).checked;
@@ -431,7 +439,10 @@ export default function FieldBatchesPage(
                       setZeroBlocked(false);
                     }}
                   />
-                  {t("field.lt.selectAll")}
+                  {/* REQ-996 (q1-81): say what a click does — drafts open ticked (REQ-608) */}
+                  {allChecked
+                    ? t("field.lt.clearAll")
+                    : t("field.lt.selectAll")}
                 </label>
                 <button
                   type="button"

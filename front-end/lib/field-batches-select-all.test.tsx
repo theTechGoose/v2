@@ -23,11 +23,8 @@ import { langSignal } from "./i18n.ts";
 const ROOT = new URL("../../", import.meta.url);
 const dict = (lang: string) =>
   JSON.parse(Deno.readTextFileSync(new URL(`lang/${lang}.json`, ROOT)));
-const key = (d: Record<string, unknown>, k: string) =>
-  k.split(".").reduce<unknown>(
-    (o, p) => (o as Record<string, unknown> | undefined)?.[p],
-    d,
-  );
+/** lang/*.json are FLAT dictionaries: the key is the dotted string itself ("field.lt.selectAll") */
+const key = (d: Record<string, unknown>, k: string) => d[k];
 
 const TS = "2026-11-18T10:00:00.000Z";
 const batch: BatchView = {

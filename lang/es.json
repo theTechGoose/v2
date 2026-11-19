@@ -4256,6 +4256,7 @@
   "field.lt.save": "Guardar cambios",
   "field.lt.saved": "Guardado",
   "field.lt.selectAll": "Seleccionar todas",
+  "field.lt.clearAll": "Quitar todas",
   "field.lt.send": "Enviar seleccionadas",
   "field.lt.sent": "{n} factura(s) enviada(s) — cada cliente recibió la suya.",
   "field.lt.noRecipient": "{name} no tiene correo ni teléfono, así que no se envió nada.",
