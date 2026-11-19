@@ -44,7 +44,7 @@ import {
   workMates,
 } from "../lib/field-job.ts";
 import { WORKERS_PAGE_HREF } from "../lib/worker-view-link.ts";
-import { workerTodayKey } from "../lib/worker-today.ts";
+import { workerDayCounts, workerTodayKey } from "../lib/worker-today.ts";
 import { refreshTickDue } from "../lib/refresh-tick.ts";
 import {
   startWorkerRefresh,
@@ -621,6 +621,12 @@ export default function WorkerScreen(
     const act_ = live(v);
     const done = act_.filter((s) => s.status === "complete").length;
     const all = act_.length > 0 && done === act_.length;
+    // REQ-1011 — a visit whose services were all deferred/skipped has nothing to count: no "0/0"
+    const chip = act_.length === 0
+      ? null
+      : all
+      ? t("worker.visitDone")
+      : `${done}/${act_.length}`;
     const note = noteOf(v);
     const locked = preview || v.services.some((s) => s.locked);
     const onVisit = new Set(
@@ -680,9 +686,11 @@ export default function WorkerScreen(
               </div>
             )}
           </div>
-          <span class="visit__state" data-cy="w-visit-state">
-            {all ? t("worker.visitDone") : `${done}/${act_.length}`}
-          </span>
+          {chip !== null && (
+            <span class="visit__state" data-cy="w-visit-state">
+              {chip}
+            </span>
+          )}
         </div>
         <div>
           {act_.map((s) => (
@@ -728,7 +736,7 @@ export default function WorkerScreen(
                     {" "}
                     <span class="svc__extra">
                       {t("worker.fromYesterday", {
-                        date: s.deferredFrom.slice(5),
+                        date: fmtDay(s.deferredFrom, lang),
                       })}
                     </span>
                   </>
@@ -950,6 +958,8 @@ export default function WorkerScreen(
 
   function renderSection(rows: WorkerTaskView[], title: string, key: string) {
     const liveRows = rows.filter(isLive);
+    // REQ-1011 — cards for live + deferred rows (the deferred hint); a skipped-only list is empty
+    const rowCounts = workerDayCounts(rows);
     return (
       <div key={key}>
         <div class="crew">
@@ -960,7 +970,7 @@ export default function WorkerScreen(
             {liveRows.length}
           </span>
         </div>
-        {rows.length
+        {rowCounts.live + rowCounts.deferred > 0
           ? (
             <div class="tasks" data-stagger key={`${key}:${date}`}>
               {visitsOf(rows).map(renderVisit)}
@@ -978,6 +988,8 @@ export default function WorkerScreen(
   const liveTasks = tasks.filter(isLive);
   const done = liveTasks.filter((x) => x.status === "complete").length;
   const pct = liveTasks.length ? (done / liveTasks.length) * 100 : 0;
+  // REQ-1011 — a deferred-only day says so, not "Nothing scheduled." over a drawn card
+  const dayCounts = workerDayCounts(tasks);
 
   let body = null;
   if (me) {
@@ -1000,7 +1012,8 @@ export default function WorkerScreen(
         </>
       );
     } else {
-      body = mine.length
+      const mineCounts = workerDayCounts(mine);
+      body = mineCounts.live + mineCounts.deferred > 0
         ? (
           <div class="tasks" data-stagger key={date}>
             {visitsOf(mine).map(renderVisit)}
@@ -1338,7 +1351,9 @@ export default function WorkerScreen(
                 </b>
                 <small>
                   {liveTasks.length === 0
-                    ? t("worker.freeDay")
+                    ? dayCounts.deferred > 0
+                      ? t("worker.allDeferred")
+                      : t("worker.freeDay")
                     : done === liveTasks.length
                     ? t("worker.allDone")
                     : t("worker.left", { n: liveTasks.length - done })}

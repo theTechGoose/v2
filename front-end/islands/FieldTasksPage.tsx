@@ -700,7 +700,7 @@ export default function FieldTasksPage(
                 {" "}
                 <span class="chip chip--amber">
                   {t("field.tk.deferredFrom", {
-                    date: x.deferredFrom.slice(5),
+                    date: fmtDay(x.deferredFrom, lang),
                   })}
                 </span>
               </>

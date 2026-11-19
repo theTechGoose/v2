@@ -5326,6 +5326,7 @@
   "worker.tomorrow": "Mañana",
   "worker.left": "{n} por hacer",
   "worker.freeDay": "Nada programado.",
+  "worker.allDeferred": "Aplazado a mañana.",
   "worker.visitDone": "Listo",
   "nav.outbox": "Bandeja de salida",
   "outbox.docTitle": "Bandeja de salida",
