@@ -1,7 +1,8 @@
 /**
  * REQ-924 — the sidebar's Customers context (rendered by the DashSidebar island on /customers and
  * /customers/<id>): Back to the root, "Customers · N", All customers (the board), New customer, then
- * one row per customer — initials, name, and the status line ("$X overdue" / "Owes $X" / the repeat
+ * one row per customer — initials, name (REQ-1149: with her number when another customer shares
+ * the name), and the status line ("$X overdue" / "Owes $X" / the repeat
  * visit's schedule / the board's zero-balance word, REQ-990). The open customer's row is the active one. No search box here: the
  * top bar's search is the context-aware one.
  */
@@ -33,7 +34,8 @@ async function allCards(): Promise<CustomerCard[]> {
 }
 
 // v2 (REQ-990): rows carry `billed`; an older cached row would word a paid-up customer as never billed
-const CACHE_KEY = "pm:customers-nav:v2";
+// v3 (REQ-1149): same-name rows carry a `tag`; a v2 row would show two identical "Lupe Garza" rows
+const CACHE_KEY = "pm:customers-nav:v3";
 function readCachedRows(): CustomerNavRow[] | null {
   try {
     const raw = globalThis.sessionStorage?.getItem(CACHE_KEY);
@@ -51,6 +53,7 @@ function writeCachedRows(rows: CustomerNavRow[]) {
 export const CUSTOMERS_NAV_CSS = `.nav-item--cust{padding:7px 12px}
 .nav-item--cust .nav-item__label{display:flex;flex-direction:column;line-height:1.2;min-width:0}
 .nav-item--cust .cnav__name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+.nav-item--cust .cnav__tag{font-size:11px;font-weight:600;opacity:.7}
 .nav-item--cust .cnav__sub{font-size:11px;font-weight:500;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nav-item--cust .cnav__sub--late{color:#ffb3b3;opacity:1;font-weight:700}
 .nav-item--active .cnav__sub--late{color:#fff}
@@ -195,14 +198,23 @@ export default function CustomersNav(
             data-id={r.id}
             data-tone={r.tone}
             aria-current={r.id === activeId ? "page" : undefined}
-            {...named(`${r.name} · ${line}`)}
+            {...named(`${r.name}${r.tag ? ` · ${r.tag}` : ""} · ${line}`)}
           >
             <span class="nav-item__icon">
               <span class="cnav__av" aria-hidden="true">{r.initials}</span>
             </span>
             {!collapsed && (
               <span class="nav-item__label">
-                <span class="cnav__name">{r.name}</span>
+                <span class="cnav__name">
+                  {r.name}
+                  {/* REQ-1149: another customer has this name — her number (else phone/email) tells them apart */}
+                  {r.tag && (
+                    <span class="cnav__tag" data-cy="nav-customer-tag">
+                      {" · "}
+                      {r.tag}
+                    </span>
+                  )}
+                </span>
                 <span
                   class={`cnav__sub ${
                     r.tone === "late" ? "cnav__sub--late" : ""

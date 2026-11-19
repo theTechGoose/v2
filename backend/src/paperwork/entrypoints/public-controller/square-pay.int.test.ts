@@ -87,6 +87,7 @@ async function seed(sid: string, amount = 6500) {
     body: JSON.stringify({
       name: "Ana Torres",
       email: "ana@blackhole.postmarkapp.com",
+      allowDuplicate: true, // REQ-1149: seeded again per invoice on one account
     }),
   }).then((r) => r.json());
   return await fetch(`${BASE}/invoices`, {

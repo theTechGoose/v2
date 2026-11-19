@@ -190,7 +190,25 @@ export const clientsClient = {
   /** REQ-625 — the full customer form; REQ-283 the one-off task form's typed
    *  address; REQ-715 the customer's language (left out when not set) */
   create: (
-    patch: CustomerPayload & { address?: string; language?: "en" | "es" },
+    patch: CustomerPayload & {
+      address?: string;
+      language?: "en" | "es";
+      /** REQ-1149: "Create anyway" — skip the server's 409 customer.possibleDuplicate */
+      allowDuplicate?: boolean;
+    },
     opts: ApiOptions = {},
   ) => api.post<CustomerCard>("/customers", patch, opts),
+  /** REQ-1149 — every customer she has (GET /customers, the plain array), for the New customer
+   *  form's duplicate check (REQ-331's `findExistingCustomer`) */
+  roster: (opts: ApiOptions = {}) =>
+    api.get<RosterCustomer[]>("/customers", opts),
 };
+
+/** REQ-1149 — what the duplicate check and its notice read of a customer */
+export interface RosterCustomer {
+  id: string;
+  name: string;
+  number?: string;
+  phoneNumber?: string;
+  email?: string;
+}

@@ -117,6 +117,7 @@ describe("UX-05/UX-26(c)/UX-29/UX-41: Spanish job-name derivation over HTTP", ()
     const cust = await s.post("/customers", {
       name: "María Nguyen",
       phoneNumber: CUSTOMER_PHONE,
+      allowDuplicate: true, // REQ-1149: a re-run seeds her again on the same account
     });
     expect(cust.status).toBeLessThan(400);
     const q = await s.post("/quotes", {

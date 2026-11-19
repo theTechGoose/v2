@@ -115,6 +115,8 @@ export async function seedCustomer(
     name: "Green Goblin",
     email: "green.jest@blackhole.postmarkapp.com",
     phoneNumber: "+15125550902",
+    // REQ-1149: a seed, not a duplicate check — the same contractor seeds this customer many times
+    allowDuplicate: true,
     ...overrides,
   });
   if (r.status >= 400 || !r.body?.id) {

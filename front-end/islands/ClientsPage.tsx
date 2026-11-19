@@ -15,6 +15,7 @@ import {
 } from "../clients/clients.ts";
 import { useEffect, useState } from "preact/hooks";
 import CustomerFormDialog from "../components/CustomerForm.tsx"; // REQ-625
+import { CUSTOMERS_CHANGED } from "../components/CustomersNav.tsx"; // REQ-1149
 import ClientSheet from "../components/ClientSheet.tsx"; // REQ-626
 import {
   ClientsHero,
@@ -223,6 +224,8 @@ export default function ClientsPage(
     if (sheetId && saved.id === sheetId) {
       setSheet({ customer: saved, failed: false });
     }
+    // REQ-1149: the sidebar's customer rows re-read (a new / renamed customer shows there too)
+    globalThis.dispatchEvent(new Event(CUSTOMERS_CHANGED));
     await refreshClients();
   }
 
@@ -231,6 +234,7 @@ export default function ClientsPage(
   async function onCustomerDeleted(c: CustomerCard) {
     if (sheetId && c.id === sheetId) openSheet(null);
     setFlash(tFor(lang, "clientsPage.deleted", { name: c.name }));
+    globalThis.dispatchEvent(new Event(CUSTOMERS_CHANGED)); // REQ-1149
     await refreshClients();
   }
 

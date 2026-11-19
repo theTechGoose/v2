@@ -160,13 +160,17 @@ export interface CustomerPayload {
   notes?: string;
   /** REQ-715: the customer's language; left out when not set */
   language?: "en" | "es";
+  /** REQ-1149: "Create anyway" — POST /customers skips its 409 customer.possibleDuplicate */
+  allowDuplicate?: boolean;
 }
 
 /** POST /customers: every filled field, trimmed; empty ones left out.
- *  REQ-715: a picked language ("en" | "es") rides along; "Not set" is left out. */
+ *  REQ-715: a picked language ("en" | "es") rides along; "Not set" is left out.
+ *  REQ-1149: `allowDuplicate` is sent only when true ("Create anyway"). */
 export function customerCreatePayload(
   v: CustomerFormValues,
   language?: string,
+  opts: { allowDuplicate?: boolean } = {},
 ): CustomerPayload {
   const out: Record<string, string> = {};
   for (const f of CUSTOMER_FORM_FIELDS) {
@@ -175,7 +179,9 @@ export function customerCreatePayload(
   }
   out.name = v.name.trim();
   if (language === "en" || language === "es") out.language = language;
-  return out as unknown as CustomerPayload;
+  const payload = out as unknown as CustomerPayload;
+  if (opts.allowDuplicate) payload.allowDuplicate = true;
+  return payload;
 }
 
 /** PUT /customers/:id: every field — an emptied one clears it; the address
