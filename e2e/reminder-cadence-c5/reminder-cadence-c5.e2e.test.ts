@@ -207,6 +207,8 @@ Deno.test("REQ-704: reminders can go out before the due date, the detail splits 
       { timeout: 15_000 },
     );
     await card.locator("[data-cy='invoice-nudge']").click();
+    // REQ-1112 (q3-37): every /invoices nudge opens its preview dialog first — Send there
+    await page.locator("[data-cy='send-dialog'] [data-cy='send-keep']").click({ timeout: 15_000 });
     const res = await sent;
     expect.eq(
       JSON.parse(res.request().postData() ?? "{}").day,

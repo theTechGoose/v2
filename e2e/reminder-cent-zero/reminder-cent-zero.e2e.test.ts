@@ -130,6 +130,8 @@ Deno.test("REQ-1109 (LOOP-007 q3-35): a $1,000.50 invoice's reminder preview and
       { timeout: 15_000 },
     );
     await card.locator("[data-cy='invoice-nudge']").click();
+    // REQ-1112 (q3-37): every /invoices nudge opens its preview dialog first — Send there
+    await page.locator("[data-cy='send-dialog'] [data-cy='send-keep']").click({ timeout: 15_000 });
     const res = await sent;
     expect.eq(res.status(), 200, "the nudge was accepted");
     await res.body().catch(() => undefined);

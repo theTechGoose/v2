@@ -227,6 +227,8 @@ Deno.test("REQ-1111 (LOOP-007 q3, q3-36): /invoices' Send nudge emails a Spanish
       { timeout: 15_000 },
     );
     await cta.click();
+    // REQ-1112 (q3-37): every /invoices nudge opens its preview dialog first — Send there
+    await page.locator("[data-cy='send-dialog'] [data-cy='send-keep']").click({ timeout: 15_000 });
     const res = await sent;
     expect.eq(res.status(), 200, "the reminder endpoint accepted it");
 
