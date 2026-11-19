@@ -58,6 +58,23 @@ export function panelSendAction(q: PanelQuote): "send" | "finish" | "none" {
   return pending ? "none" : "send";
 }
 
+/**
+ * REQ-937 (LOOP-007 q1-4): the language "Publish revision and notify
+ * customer" asks for — an explicit per-send pick, else the language the
+ * quote last went out in (SendQuote records lastDelivery.lang), else
+ * undefined so the backend resolves the customer's language / account
+ * default (REQ-715). Never the owner's UI language: the backend treats
+ * `language` as a per-send pick that beats the customer's language.
+ */
+export function publishLanguage(
+  q: { lastDelivery?: { lang?: string } | null },
+  pick?: "en" | "es",
+): "en" | "es" | undefined {
+  if (pick) return pick;
+  const last = q.lastDelivery?.lang;
+  return last === "en" || last === "es" ? last : undefined;
+}
+
 export function panelCanSend(q: PanelQuote): boolean {
   return panelSendAction(q) === "send";
 }
