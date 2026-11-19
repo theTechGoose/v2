@@ -91,8 +91,10 @@ describe("REQ-704 reminder cadence: before due, on the due date, honest copy, a 
     expect(manualReminderDay("2026-11-10", today)).toBe(3);
     expect(manualReminderDay("2026-11-09", today)).toBe(3);
     expect(manualReminderDay("2026-11-05", today)).toBe(7);
-    expect(manualReminderDay("2026-10-30", today)).toBe(14);
-    expect(manualReminderDay("2026-10-01", today)).toBe(30);
+    // REQ-938: rounds DOWN to the customer step already reached, never day 30
+    expect(manualReminderDay("2026-10-30", today)).toBe(7);
+    expect(manualReminderDay("2026-10-29", today)).toBe(14);
+    expect(manualReminderDay("2026-10-01", today)).toBe(14);
     // no due date → the old gentle check-in
     expect(manualReminderDay(undefined, today)).toBe(3);
   });

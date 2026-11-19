@@ -173,7 +173,10 @@ export function daysFromDue(
 
 /** REQ-704: the step a manual "Send a nudge" uses, by where the invoice
  *  stands against its due date — before it → -3, on it → 0, then the
- *  post-due rung (3 / 7 / 14 / 30). No due date → the gentle day-3 copy. */
+ *  post-due customer step already reached (REQ-938: rounds DOWN — 1-6 days
+ *  late → 3, 7-13 → 7, 14+ → 14). Never day 30: that step is the owner-only
+ *  alert and messages nobody, but the owner asked to remind the customer.
+ *  No due date → the gentle day-3 copy. */
 export function manualReminderDay(
   dueDate: string | undefined | null,
   todayIso: string,
@@ -182,5 +185,5 @@ export function manualReminderDay(
   if (d == null) return 3;
   if (d < 0) return -3;
   if (d === 0) return 0;
-  return d <= 3 ? 3 : d <= 7 ? 7 : d <= 14 ? 14 : 30;
+  return d >= 14 ? 14 : d >= 7 ? 7 : 3;
 }

@@ -33,15 +33,29 @@ Deno.test("daysOverdue: positive for past dueDate, zero for missing", () => {
 Deno.test("pickNextDay: picks the largest unfired step that's elapsed", () => {
   // 31 days past due, no history → Day 30 escalation.
   assertEquals(pickNextDay(inv({}), NOW), 30);
-  // Already fired 30 → undefined (we never re-fire).
+  // REQ-938: the bell-only Day 30 never stops the customer steps — after it
+  // the sweep still sends Day 14 …
   assertEquals(
     pickNextDay(
       inv({
         reminderHistory: [{
           day: 30,
           sentAt: NOW.toISOString(),
-          channels: ["email"],
+          channels: [],
         }],
+      }),
+      NOW,
+    ),
+    14,
+  );
+  // … and with 30 and 14 both fired → undefined (we never re-fire).
+  assertEquals(
+    pickNextDay(
+      inv({
+        reminderHistory: [
+          { day: 30, sentAt: NOW.toISOString(), channels: [] },
+          { day: 14, sentAt: NOW.toISOString(), channels: ["email"] },
+        ],
       }),
       NOW,
     ),

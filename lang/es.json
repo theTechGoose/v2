@@ -1719,6 +1719,7 @@
   "invoicesPage.back.changeDateFailed": "No se pudo cambiar la fecha de envío.",
   "invoicesPage.nudge.sent": "Recordatorio enviado",
   "invoicesPage.nudge.alreadySent": "Ya se envió un recordatorio hoy — el siguiente está programado.",
+  "invoicesPage.nudge.ownerAlertOnly": "Este paso solo te avisa a ti — no se envió nada al cliente.",
   "invoicesPage.nudge.failed": "No se pudo enviar el recordatorio.",
   "invoicesPage.nudge.muted": "Los recordatorios están silenciados para esta factura.",
   "invoicesPage.nudge.noRecipient": "No hay correo ni teléfono registrado — agrega uno para enviar un recordatorio.",
