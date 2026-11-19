@@ -23,6 +23,7 @@ import {
 } from "../lib/format.ts";
 import { type Lang, tFor } from "../lib/i18n.ts";
 import { localizeTermValue, paymentTermValue } from "../lib/term-i18n.ts";
+import { anchoredStartTerm } from "../../shared/quote-flow/start-term.ts"; // REQ-1104
 import { formatLongDate } from "../../shared/quote-flow/format-helpers.ts";
 import { websiteLabel } from "../../shared/quote-flow/format-helpers.ts";
 import {
@@ -316,10 +317,21 @@ export function expandTermValue(
   lang: Lang = "en",
   /** REQ-697: the business's days to pay — stated on "upon completion" */
   paymentNetDays?: number,
+  /** REQ-1104 (q3-27): the day the quote went out (sentAt ?? createdAt) — a
+   *  relative start ("Next week") names the day it means from it. */
+  startAnchor?: string,
 ): string {
   const stateName = expandStateName(contractorState);
   if (term.stepId === "payment_terms") {
     return paymentTermValue(term.value, lang, paymentNetDays);
+  }
+  if (term.stepId === "start_date") {
+    return anchoredStartTerm(
+      term.value,
+      startAnchor,
+      localizeTermValue(term.value, lang),
+      lang,
+    );
   }
   if (term.stepId === "wraps") {
     const v = localizeTermValue(term.value, lang);
@@ -611,6 +623,9 @@ export function TermGrid(props: {
   /** REQ-697 (demo-loop cycle 5, m22): the agreement's days to pay, stated
    *  in its "Payment upon completion" row. Omit to print the term bare. */
   paymentNetDays?: number;
+  /** REQ-1104 (q3-27): the day the quote went out (sentAt ?? createdAt) —
+   *  a relative start term states the concrete day counted from it. */
+  startAnchor?: string;
   labels: {
     start: string;
     estCompletion: string;
@@ -669,6 +684,7 @@ export function TermGrid(props: {
               props.contractorState,
               props.lang,
               props.paymentNetDays,
+              props.startAnchor,
             )}
           />
         ))}

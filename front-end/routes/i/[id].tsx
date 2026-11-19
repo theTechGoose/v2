@@ -211,6 +211,9 @@ interface InvoicePublic {
   startDate?: string;
   estimatedCompletionDate?: string;
   effectiveDate?: string;
+  /** REQ-1104 (q3-27): the day the linked quote went out — a relative start
+   *  term ("Next week") names the day it means, counted from it. */
+  quotedAt?: string;
   /** "/q/<quoteId>" — present only once the linked quote is accepted. */
   signedQuoteUrl?: string;
   signedAgreement?: { id: string; signedAt?: string };
@@ -1131,6 +1134,7 @@ function InvoiceDoc(
                       terms={invoice.terms}
                       contractorState={invoice.contractor?.state}
                       lang={lang}
+                      startAnchor={invoice.quotedAt}
                       labels={{
                         start: tFor(lang, "quoteDoc.start"),
                         estCompletion: tFor(lang, "quoteDoc.estCompletion"),

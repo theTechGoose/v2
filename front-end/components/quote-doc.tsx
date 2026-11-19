@@ -176,6 +176,9 @@ export interface QuotePublic {
   lineItems?: LineItem[];
   terms?: Term[];
   createdAt?: string;
+  /** REQ-1104 (q3-27): the day the quote went out (sentAt ?? createdAt) —
+   *  the anchor a relative start term ("Next week") is counted from. */
+  quotedAt?: string;
 }
 
 /** The public agreement's copy table — one table so the whole document
@@ -979,6 +982,8 @@ export function QuoteDoc(
                   lang={lang}
                   startFallback={t.startTbd}
                   paymentNetDays={contractor?.invoiceNetDays}
+                  // REQ-1104 (q3-27): "Next week" names its day, from the send.
+                  startAnchor={quote.quotedAt ?? quote.createdAt}
                   labels={{
                     start: t.start,
                     estCompletion: t.estCompletion,

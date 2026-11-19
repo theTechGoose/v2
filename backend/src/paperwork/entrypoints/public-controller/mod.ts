@@ -1419,6 +1419,8 @@ export class PaperworkPublicController {
             startDate: quote.startDate,
             estimatedCompletionDate: quote.estimatedCompletionDate,
             effectiveDate: quote.effectiveDate ?? quote.createdAt,
+            // REQ-1104 (q3-27): the anchor a relative start is counted from.
+            quotedAt: quote.sentAt ?? quote.createdAt,
             // The wizard-captured term grid (start / time-to-complete /
             // payment split / warranty) — feeds the invoice's TermGrid and
             // the payment-schedule milestones. This is NOT the numbered
@@ -2276,6 +2278,9 @@ function redactQuote(q: Quote) {
     // placeholder customer, not a numbered document addressed to nobody.
     isSample: q.isSample === true || undefined,
     createdAt: q.createdAt,
+    // REQ-1104 (q3-27): the day the quote went out — /q counts a relative
+    // start ("Next week") from it, as the invoice schedule does.
+    quotedAt: q.sentAt ?? q.createdAt,
     // The agreement half of the document: the wizard-captured terms + the
     // schedule dates, rendered as the numbered Terms grid on /q.
     terms: q.terms ?? [],
