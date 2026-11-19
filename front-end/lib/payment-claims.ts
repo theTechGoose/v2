@@ -10,6 +10,10 @@
  * Pure — no I/O, no Preact — so jest can exercise it directly.
  */
 import { docNumberOf } from "../../shared/documents/numbering.ts";
+import {
+  type InvoiceClientFields,
+  invoiceClientName,
+} from "./invoice-client.ts";
 
 /** The page's closed method set (mirrors clients/payments.ts PaymentMethod). */
 export type ClaimMethod =
@@ -36,7 +40,7 @@ const METHODS: ReadonlySet<string> = new Set<ClaimMethod>([
 ]);
 
 /** The slice of an Invoice this derivation reads. */
-export interface ClaimableInvoice {
+export interface ClaimableInvoice extends InvoiceClientFields {
   id: string;
   number?: string;
   customerId?: string;
@@ -87,8 +91,8 @@ export function pendingClaims(
     .filter((inv) => inv?.status === "claimed")
     .map((inv): PaymentClaim => {
       const intent = inv.paymentIntent ?? undefined;
-      const client = (inv.customerId && customerNames.get(inv.customerId)) ||
-        "—";
+      // REQ-988: live customer, BILL TO, then the issued snapshot
+      const client = invoiceClientName(inv, customerNames);
       const claimedAt = intent?.claimedAt ?? inv.updatedAt ?? now.toISOString();
       const t = new Date(claimedAt).getTime();
       const daysAgo = Number.isFinite(t)

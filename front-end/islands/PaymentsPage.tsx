@@ -51,6 +51,7 @@ import PaymentReceivedForm from "../components/PaymentReceivedForm.tsx";
 import PaymentsKpis from "../components/PaymentsKpis.tsx";
 import { docNumberOf } from "../../shared/documents/numbering.ts";
 import { type PaymentClaim, pendingClaims } from "../lib/payment-claims.ts";
+import { invoiceClientName } from "../lib/invoice-client.ts"; // REQ-988
 import { cashFlowWeeks } from "../lib/cash-flow-weeks.ts";
 import { creditedPayments } from "../lib/headline-counts.ts";
 import { refreshDash } from "../lib/dash-cache.ts";
@@ -243,8 +244,14 @@ function enrich(
   now: Date,
 ): EnrichedPayment {
   const inv = invoices.get(p.invoiceId);
-  const customerId = inv?.customerId;
-  const client = (customerId && customers.get(customerId)) || "—";
+  // REQ-988 (q1-71): the payer is the shared "whom does this invoice bill"
+  // name — live customer, BILL TO, then the snapshot the invoice took when it
+  // was issued — so a soft-deleted customer (REQ-802) still names her
+  // payments. Text client opens her sheet only while she is still on file.
+  const customerId = inv?.customerId && customers.has(inv.customerId)
+    ? inv.customerId
+    : undefined;
+  const client = inv ? invoiceClientName(inv, customers) : "—";
   const daysAgo = Math.max(
     0,
     Math.floor(
@@ -437,7 +444,8 @@ export default function PaymentsPage({ lang: _lang }: { lang?: Lang } = {}) {
             label: recordOptionLabel(
               lang,
               i as Invoice & RecordOptionInvoice,
-              customerNames.get(i.customerId ?? ""),
+              // REQ-988: a deleted customer's bill keeps her name
+              invoiceClientName(i, customerNames),
             ),
           }))}
         onRecorded={load}
