@@ -2541,7 +2541,7 @@
   "paymentsPage.hero.everyDollarWaiting.other": "Every dollar logged — {n} payments are waiting for you to confirm.",
   "paymentsPage.hero.exportCta": "Export this month",
   "paymentsPage.hero.eyebrow": "Payments · {month}",
-  "paymentsPage.hero.freshSub": "Once a customer pays an invoice, it lands here. Each method gets its own clearing window — ACH in two days, checks in up to 5 business days, cards and cash instantly.",
+  "paymentsPage.hero.freshSub": "Once a customer pays an invoice, it lands here. Each method gets its own clearing window — ACH in 1–3 business days, checks in up to 5 business days, cards and cash instantly.",
   "paymentsPage.hero.freshTitleEm": "let's change that",
   "paymentsPage.hero.freshTitlePre": "Nothing's landed yet —",
   "paymentsPage.hero.recordCta": "Record a payment",
