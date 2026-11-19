@@ -82,7 +82,7 @@ describe("UX-15: the doc preview De/Para blocks render formatted phones", () => 
     // RED today: the De block prints the contractor phone verbatim
     // ("+15125556550", AsstChat.tsx:5197) and the Para block the stored
     // customer phone (AsstChat.tsx:5308). A formatted display
-    // ("+1 (512) 555-6550") contains no 10+ digit run, so this rejects
+    // ("(512) 555-6550", REQ-965) contains no 10+ digit run, so this rejects
     // exactly the raw forms.
     cy.get(".quote-review__hero-meta").each(($meta) => {
       const text = $meta.text();

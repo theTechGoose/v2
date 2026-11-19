@@ -190,7 +190,7 @@ Deno.test("REQ-701 M21: Linda's question — the feed row opens the quote's ques
     );
     await reply.fill(ANSWER);
     await page.locator("[data-cy='quote-inquiry-send']").click();
-    await expect.see("Enviada por SMS a +1 (512) 555-6301", {
+    await expect.see("Enviada por SMS a (512) 555-6301", {
       timeout: 30_000,
     });
     await expect.see("Contestada por texto");

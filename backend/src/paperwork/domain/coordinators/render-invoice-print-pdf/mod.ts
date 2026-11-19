@@ -16,6 +16,7 @@
  * The logo is embedded once for the whole batch. Owner-scoped: an id that is
  * not the owner's throws (the controller answers 404).
  */
+import { fmtPhone } from "#identity/phone.ts"; // REQ-965
 import { Injectable } from "#danet/core";
 import {
   PDFDocument,
@@ -111,12 +112,6 @@ function wrap(
     out.push(line);
   }
   return out.filter((l, i, a) => l || (i > 0 && i < a.length - 1));
-}
-
-/** "+18435550100" → "(843) 555-0100"; anything else as given. */
-function fmtPhone(p: string | undefined): string | undefined {
-  const m = p?.replace(/[^\d]/g, "").match(/^1?(\d{3})(\d{3})(\d{4})$/);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : p;
 }
 
 /** A mailing block from the one-line address: "725 Frederick Rd, Myrtle Beach, SC" → two lines. */

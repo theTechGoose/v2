@@ -58,7 +58,7 @@ import { warrantyClauseKind } from "#documents/warranty-clause.ts";
 import { localizeTermValue } from "@paperwork/domain/coordinators/render-quote-pdf/mod.ts";
 import { customerSmsTarget } from "@paperwork/domain/business/customer-sms/mod.ts";
 
-/** REQ-719: a US phone reads "+1 (512) 555-0100" in the email; anything else is shown as stored. */
+/** REQ-719 + REQ-965: a US phone reads "(512) 555-0100" in the email (the one display, as on Settings); anything else is shown as stored. */
 function displayPhone(raw: string): string {
   return isUsPhone(raw) ? formatPhoneDisplay(raw) : raw;
 }

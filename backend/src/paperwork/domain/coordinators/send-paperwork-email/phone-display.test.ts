@@ -1,8 +1,9 @@
 /**
  * REQ-719 — demo-loop cycle 5, issues p18-1c + p18-2b ("Email preview shows
  * contractor phone raw '+15125550100'"): the quote and invoice emails show the
- * contractor's US phone formatted ("+1 (512) 555-0100"), never as the stored
- * E.164, while the tel: link keeps the dialable E.164.
+ * contractor's US phone formatted ("(512) 555-0100" — REQ-965 REVISION: the
+ * one display Settings and the public quote use, was "+1 (512) 555-0100"),
+ * never as the stored E.164, while the tel: link keeps the dialable E.164.
  */
 import { assert, assertMatch, assertStringIncludes } from "#std/assert";
 import type { Quote } from "@paperwork/dto/quote.ts";
@@ -50,7 +51,7 @@ const invoice = {
   updatedAt: "2026-09-21T12:00:00Z",
 } as unknown as Invoice;
 
-const PRETTY = "+1 (512) 555-0100";
+const PRETTY = "(512) 555-0100"; // REQ-965: the one display (was "+1 (512) 555-0100")
 
 /** Visible text only: tags (and their attributes, i.e. hrefs) stripped. */
 const visibleText = (html: string) => html.replace(/<[^>]*>/g, " ");

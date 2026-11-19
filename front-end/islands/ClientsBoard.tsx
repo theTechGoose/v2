@@ -623,7 +623,7 @@ function ClientCard(
             value={c.phoneNumber ?? ""}
             /* One phone formatter everywhere: the dial href is always
                normalized to tel:+1…, the label always reads
-               "+1 (512) 555-3150" (P-64). */
+               "(512) 555-3150" (P-64, REQ-965). */
             display={c.phoneNumber ? formatPhoneDisplay(c.phoneNumber) : ""}
             href={c.phoneNumber ? telHref(c.phoneNumber) : undefined}
             inputType="tel"

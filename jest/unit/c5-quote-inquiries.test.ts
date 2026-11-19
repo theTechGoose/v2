@@ -150,7 +150,7 @@ describe("REQ-701 M21 a reply's outcome, in the contractor's words", () => {
     expect(replyOutcome({ ok: true, channel: "text", to: "+15125556301" }))
       .toEqual({
         key: "quotesPage.open.receipt.textedTo",
-        vars: { to: "+1 (512) 555-6301" },
+        vars: { to: "(512) 555-6301" }, // REQ-965: the one display
         ok: true,
       });
     expect(

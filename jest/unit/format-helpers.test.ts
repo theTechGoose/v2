@@ -10,7 +10,7 @@
  *     - lang "es": "hace 3 min", "hace 2 días" (localized; never "3m ago")
  *     - lang "en": an English relative string (e.g. "2d ago")
  *   sentenceCase(s): string                      // "your client…" → "Your client…"
- *   formatPhoneDisplay(raw): string              // "5125556999" → "+1 (512) 555-6999"
+ *   formatPhoneDisplay(raw): string              // "5125556999" → "(512) 555-6999" (REQ-965)
  *   telHref(raw): string                         // "5125556999" → "tel:+15125556999"
  *   formatNumber(n, lang): string                // ONE convention both langs → "48,215"
  *   hasAddress(client): boolean                  // false for empty/missing address
@@ -78,12 +78,13 @@ describe("P-59 sentenceCase — event strings start with a capital", () => {
 describe("P-64 phone formatting — one formatter everywhere", () => {
   it("P-64 formatPhoneDisplay normalizes a raw 10-digit number", () => {
     const { formatPhoneDisplay } = fh();
-    expect(formatPhoneDisplay("5125556999")).toBe("+1 (512) 555-6999");
+    expect(formatPhoneDisplay("5125556999")).toBe("(512) 555-6999"); // REQ-965: same as fmtPhone
   });
 
   it("P-64 formatPhoneDisplay is idempotent on an already +1 number", () => {
     const { formatPhoneDisplay } = fh();
-    expect(formatPhoneDisplay("+15125556999")).toBe("+1 (512) 555-6999");
+    expect(formatPhoneDisplay("+15125556999")).toBe("(512) 555-6999");
+    expect(formatPhoneDisplay("(512) 555-6999")).toBe("(512) 555-6999");
   });
 
   it("P-64 telHref emits a +1-prefixed tel: URI", () => {

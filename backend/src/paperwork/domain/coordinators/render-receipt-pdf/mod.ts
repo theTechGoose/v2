@@ -1,3 +1,4 @@
+import { fmtPhone } from "#identity/phone.ts"; // REQ-965
 import { Injectable } from "#danet/core";
 import { PDFDocument, rgb, StandardFonts } from "#pdf-lib";
 import { winAnsiSafeDeep } from "@paperwork/domain/business/pdf-text/mod.ts";
@@ -261,9 +262,11 @@ export class RenderReceiptPdf {
       font: reg,
       color: rgb(0.42, 0.48, 0.49),
     });
-    const contactLine = [contractor?.phoneNumber, contractor?.email].filter(
-      Boolean,
-    ).join(" · ");
+    // REQ-965: the footer phone reads "(512) 555-0703", like the page.
+    const contactLine = [fmtPhone(contractor?.phoneNumber), contractor?.email]
+      .filter(
+        Boolean,
+      ).join(" · ");
     if (contactLine) {
       page.drawText(contactLine, {
         x: M,
