@@ -617,6 +617,78 @@ export interface JobDoneInvoiceAsk {
   /** REQ-939: "a $200 deposit she already paid" — INTEGER CENTS already
    *  taken, credited against `amountCents` (the job's total). */
   depositPaidCents?: number;
+
+  /** REQ-935 (LOOP-007 q1-16): the typed due terms, in days after the
+   *  invoice date — "net 15", "due in 15 days", "a 15 días" → 15; "due on
+   *  receipt" → 0. */
+  dueDays?: number;
+}
+
+/** REQ-935 (LOOP-007 q1-16): an explicit ask to make an invoice — "Make a
+ *  new invoice for Priya Shah …", "Create an invoice for Tom Baker",
+ *  "Invoice Mike Ross $350 …", "Hazme una factura para Ana Gómez" — is a
+ *  billing ask with no "done" word: the contractor asking for an invoice
+ *  has done the work. "Send the invoice" is not here — that is sending one
+ *  that exists (REQ-583 / the send path). */
+const INVOICE_ASK_RES: readonly RegExp[] = [
+  new RegExp(
+    String
+      .raw`${L}(?:make|create|write|draft|prepare|generate|start|open|do|need|want)\s+(?:me\s+|her\s+|him\s+|them\s+|up\s+)?(?:(?:a|an)\s+)?(?:new\s+)?invoice${R}`,
+    "iu",
+  ),
+  // "Invoice Mike Ross $350 …" — the verb opening a sentence, a name after
+  new RegExp(
+    String
+      .raw`(?:^|[.!;:]\s+)(?:[Pp]lease\s+)?[Ii]nvoice\s+(?:(?:Mr|Mrs|Ms|Dr|Sr|Sra|Srta)\.?\s+)?\p{Lu}\p{Ll}`,
+    "u",
+  ),
+  new RegExp(
+    String
+      .raw`${L}(?:haz(?:me|le|les)?|hacer(?:le)?|crea(?:me|le|r|rle)?|genera(?:me|le|r|rle)?|prepara(?:me|le|r|rle)?|elabora(?:me|le|r)?|redacta(?:me|le)?|necesito|quiero)\s+(?:una\s+)?(?:nueva\s+)?factura${R}`,
+    "iu",
+  ),
+  // "Factura a Ana Gómez …", "Factúrale a Juan Pérez $800"
+  new RegExp(
+    String
+      .raw`(?:^|[.!;:]\s+)[Ff]act[uú]ra(?:le|les)?\s+(?:a\s+)?(?:(?:Mr|Mrs|Ms|Dr|Sr|Sra|Srta)\.?\s+)?\p{Lu}\p{Ll}`,
+    "u",
+  ),
+];
+
+/** REQ-935: due terms typed with the ask → days after the invoice date. */
+const DUE_DAYS_RES: readonly RegExp[] = [
+  new RegExp(String.raw`${L}net\s*-?\s*(\d{1,3})${R}`, "iu"),
+  new RegExp(
+    String
+      .raw`${L}(?:due|payable|pay(?:ment)?\s+due)\s+(?:with)?in\s+(\d{1,3})\s+days?${R}`,
+    "iu",
+  ),
+  new RegExp(
+    String.raw`${L}(\d{1,3})\s*-?\s*days?\s+(?:to\s+pay|net|terms)${R}`,
+    "iu",
+  ),
+  new RegExp(String.raw`${L}neto\s+(\d{1,3})${R}`, "iu"),
+  new RegExp(
+    String
+      .raw`${L}(?:a|en|dentro\s+de|vence\s+en|pagar\s+en|pago\s+a|plazo\s+de)\s+(\d{1,3})\s+d[ií]as${R}`,
+    "iu",
+  ),
+];
+const DUE_NOW_RE = new RegExp(
+  String
+    .raw`${L}(?:due\s+(?:on|upon)\s+receipt|due\s+(?:now|immediately)|pago\s+inmediato|al\s+recibir)${R}`,
+  "iu",
+);
+
+/** REQ-935: "net 15" → 15. Undefined when no due terms are typed. */
+export function dueDaysIn(text: string): number | undefined {
+  const s = text ?? "";
+  for (const re of DUE_DAYS_RES) {
+    const m = s.match(re);
+    const n = m ? Number(m[1]) : NaN;
+    if (Number.isInteger(n) && n >= 0 && n <= 365) return n;
+  }
+  return DUE_NOW_RE.test(s) ? 0 : undefined;
 }
 
 /** The work is finished: "job done", "just finished", "the job is complete",
@@ -734,7 +806,11 @@ export function parseJobDoneInvoiceAsk(
 ): JobDoneInvoiceAsk | undefined {
   const s = (text ?? "").trim();
   if (!s) return undefined;
-  if (!DONE_RES.some((re) => re.test(s))) return undefined;
+  // REQ-935 (LOOP-007 q1-16): or an explicit "make an invoice" ask.
+  if (
+    !DONE_RES.some((re) => re.test(s)) &&
+    !INVOICE_ASK_RES.some((re) => re.test(s))
+  ) return undefined;
   if (NOT_DONE_RES.some((re) => re.test(s))) return undefined;
   if (!BILL_RES.some((re) => re.test(s))) return undefined;
   if (QUOTE_ASK_RE.test(s)) return undefined;
@@ -783,5 +859,7 @@ export function parseJobDoneInvoiceAsk(
   if (name) out.customerName = name;
   const email = s.match(EMAIL_RE)?.[0];
   if (email) out.customerEmail = email.toLowerCase();
+  const dueDays = dueDaysIn(s);
+  if (dueDays !== undefined) out.dueDays = dueDays;
   return out;
 }

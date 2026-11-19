@@ -298,6 +298,8 @@ export function billingReply(
     /** REQ-768: an amount typed with the job-done ask ("…invoice for $450")
      *  — what an unsigned job's invoice flow is prefilled with. */
     amountCents?: number;
+    /** REQ-935 (LOOP-007 q1-16): due terms typed with the ask ("net 15"). */
+    dueDays?: number;
     /** REQ-777 (demo-loop cycle dv1, M9): the customer the quote (or the
      *  thread) is bound to, read by id — the wizard's customer step binds
      *  one without a snapshot. */
@@ -326,12 +328,10 @@ export function billingReply(
     // is coming first: bill it directly, through the invoice flow, prefilled
     // with the quote's job, amount and customer.
     if (opts.jobDone) {
-      const offer = jobDoneInvoiceOffer(
-        quote,
-        name,
-        opts.amountCents,
-        opts.customer,
-      );
+      const offer: InvoiceFlowOffer = {
+        ...jobDoneInvoiceOffer(quote, name, opts.amountCents, opts.customer),
+        ...(opts.dueDays !== undefined ? { dueDays: opts.dueDays } : {}),
+      };
       // REQ-772: named by the offer's customer; nobody named → the nameless
       // line, never "an invoice for The customer".
       const key = `jobDoneUnsigned${offer.customerName ? "" : "NoName"}${

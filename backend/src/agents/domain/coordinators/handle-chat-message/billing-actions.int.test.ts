@@ -1480,3 +1480,63 @@ for (
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+// REQ-935 (LOOP-007 cycle 1, q1-16) — "Make a new invoice for Priya Shah …"
+// with no done-word: the invoice flow, never a drafted quote
+// ---------------------------------------------------------------------------
+
+Deno.test("REQ-935 q1-16: 'Make a new invoice for Priya Shah … $1,450, net 15.' in a new chat opens the invoice flow (net 15 kept), no model, no quote, no quota used", async () => {
+  await withKv(async () => {
+    const fx = fresh();
+    await seedOnboarded("en");
+    const conv = await fx.conversations.create({ userId: U });
+    // what the QA run's model did with the sentence: a quote, Q-001
+    const chat = scriptLlm(fx, () => ({
+      text: "",
+      action: {
+        type: "create_quote",
+        payload: {
+          summary: "Deck staining — Priya Shah",
+          lineItems: [{
+            description: "Stain 300 sq ft deck",
+            amountCents: 145_000,
+          }],
+        },
+      },
+    }));
+    const said =
+      "Make a new invoice for Priya Shah, priya.shah@example.com, 77 Oak Hollow Dr, Austin TX 78745: stained her 300 sq ft deck, $1,450, net 15.";
+
+    const res = await fx.flow.run({
+      userId: U,
+      conversationId: conv.id,
+      content: said,
+    });
+
+    const text = textOf(res.newMessages);
+    assertEquals(chat.length, 0, `the chat model answered: ${text}`);
+    assertEquals(
+      await fx.quotes.listByUser(U),
+      [],
+      "a quote was drafted (a Free-plan quote used)",
+    );
+    assertEquals(cardsOf(res.newMessages), []);
+    const reply = res.newMessages.find((m) =>
+      m.role === "assistant" && m.kind === "text"
+    );
+    const flow = (reply?.payload as Record<string, unknown> | undefined)
+      ?.invoiceFlow;
+    assertEquals(flow, {
+      details: said,
+      amountCents: 145_000,
+      customerName: "Priya Shah",
+      customerEmail: "priya.shah@example.com",
+      dueDays: 15,
+    });
+    assertStringIncludes(text, "Priya Shah");
+    assertStringIncludes(text, "$1,450");
+    assert(!/\bquote\b/i.test(text), text);
+    assertEquals(res.conversation.quoteId, undefined);
+  });
+});

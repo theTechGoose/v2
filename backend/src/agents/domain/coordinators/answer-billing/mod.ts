@@ -105,6 +105,8 @@ export class AnswerBilling {
     job?: { quoteId: string; customerId?: string };
     /** REQ-768: the amount typed with a job-done ask. */
     amountCents?: number;
+    /** REQ-935: the due terms typed with it ("net 15" → 15). */
+    dueDays?: number;
   }): Promise<AnswerBillingResult | undefined> {
     const conv = input.conversation;
     const quoteId = conv.quoteId ?? input.job?.quoteId;
@@ -132,6 +134,7 @@ export class AnswerBilling {
       jobDone: input.jobDone === true,
       ...(bound ? { customer: { name: bound.name, email: bound.email } } : {}),
       ...(input.amountCents ? { amountCents: input.amountCents } : {}),
+      ...(input.dueDays !== undefined ? { dueDays: input.dueDays } : {}),
     });
 
     const newMessages: AgentMessage[] = [

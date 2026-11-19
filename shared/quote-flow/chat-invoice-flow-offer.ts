@@ -22,7 +22,14 @@ export interface InvoiceFlowOffer {
   /** REQ-939: INTEGER CENTS already paid (a deposit taken) — credited
    *  against `amountCents`; the invoice bills what is left. */
   depositPaidCents?: number;
+
+  /** REQ-935 (LOOP-007 q1-16): the typed due terms, days after the invoice
+   *  date ("net 15" → 15) — the flow's due date starts from it. */
+  dueDays?: number;
 }
+
+/** REQ-935: the longest due terms an offer carries (a year). */
+const MAX_DUE_DAYS = 365;
 
 /** The offer on a message payload, if it carries a usable one. */
 export function invoiceFlowOfferOf(
@@ -37,10 +44,8 @@ export function invoiceFlowOfferOf(
     customerName,
     customerEmail,
     depositPaidCents,
-  } = raw as Record<
-    string,
-    unknown
-  >;
+    dueDays,
+  } = raw as Record<string, unknown>;
   if (typeof details !== "string" || !details.trim()) return undefined;
   const out: InvoiceFlowOffer = { details: details.trim() };
   if (
@@ -61,6 +66,13 @@ export function invoiceFlowOfferOf(
     (out.amountCents === undefined || depositPaidCents < out.amountCents)
   ) {
     out.depositPaidCents = Math.round(depositPaidCents);
+  }
+
+  if (
+    typeof dueDays === "number" && Number.isInteger(dueDays) &&
+    dueDays >= 0 && dueDays <= MAX_DUE_DAYS
+  ) {
+    out.dueDays = dueDays;
   }
   return out;
 }
