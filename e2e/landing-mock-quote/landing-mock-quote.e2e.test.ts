@@ -65,15 +65,26 @@ Deno.test("REQ-412 m41: every sample-quote mock on / adds up to the total it sho
     );
 
     // the PhoneChat island's quote card
-    const card = page.locator(".phone .quote-card").first();
-    await card.scrollIntoViewIfNeeded();
-    await card.waitFor({ state: "attached", timeout: 15_000 });
-    const rows = (await card.locator(".row strong").allTextContents()).map(
-      cents,
-    );
-    const total = cents(
-      (await card.locator(".total span").allTextContents())[1] ?? "",
-    );
+    // Scrolling the phone into view (re)starts its autoplay after hydration,
+    // which clears the chat and reveals the card again a few seconds later —
+    // so read the card in one DOM snapshot, retrying until the replay has
+    // drawn it whole (three rows and a total), never mid-replay.
+    await page.locator(".phone").first().scrollIntoViewIfNeeded();
+    let snap: { rows: string[]; total: string } | null = null;
+    for (let i = 0; i < 60 && !snap; i++) {
+      await page.waitForTimeout(500);
+      snap = await page.evaluate(() => {
+        const c = document.querySelector(".phone .quote-card");
+        if (!c) return null;
+        const rows = [...c.querySelectorAll(".row strong")].map((e) =>
+          e.textContent ?? ""
+        );
+        const total = c.querySelectorAll(".total span")[1]?.textContent ?? "";
+        return rows.length === 3 && total ? { rows, total } : null;
+      });
+    }
+    const rows = (snap?.rows ?? []).map(cents);
+    const total = cents(snap?.total ?? "");
     expect.eq(sum(rows as number[]), total, "the PhoneChat card rows = total");
   }));
 
