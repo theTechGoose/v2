@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# LOOP-008 — the whole e2e lane on Linux, in chunks of story folders (run from the repo root; `shots` on the PATH).
+# Why chunks: with plain tests in the set, `shots run` hands every worker but the first ONE `--filter` argument naming
+# every story. At 858 stories that argument is longer than Linux allows for a single argument (128 KB), so no worker
+# starts: "Failed to spawn deno: Argument list too long (os error 7)" — r8cac2b16, 2026-11-20. macOS has no such limit.
+# Why small chunks under a time limit: each chunk gets a fresh server, and one folder that hangs must not take the
+# lane (and the VM's memory) with it — r28e2933e VM 5 and rd1b4dcde VM 8. A chunk that does not finish is cut off and
+# its folders are run one at a time; a folder that hangs alone is reported as a failure line the gate reads.
+#   E2E_CHUNK        story files per chunk (40)        E2E_CHUNK_SECS   time limit of a chunk (360)
+#   E2E_FOLDER_SECS  time limit of one folder (180)    E2E_SHARD=k/n    only every n-th story folder, from the k-th
+#   E2E_KNOWN_HUNG   "|"-separated failure names of folders known to hang ("e2e/<name>: did not finish …"): such a
+#                    folder is not run; its failure line is printed again, word for word
+#   E2E_KEEP_STRAYS  set: do not kill leftover browsers and servers after a run (a machine that is not a throwaway VM)
+set -u
+N=${E2E_CHUNK:-40}; T=${E2E_CHUNK_SECS:-360}; T1=${E2E_FOLDER_SECS:-180}
+EV=${SHOTS_DIR:-/work/evidence/e2e}; rc=0; i=0; files=0; chunk=(); P=0; F=0; S=0; tmp=$(mktemp)
+SH=${E2E_SHARD:-}; sk=${SH%/*}; sn=${SH#*/}; k=0
+strays() { [ -n "${E2E_KEEP_STRAYS:-}" ] && return 0; pkill -9 -x chrome 2>/dev/null; pkill -9 -f 'serve\.ts|bootstrap/mod\.ts|npm:vite|/vite/' 2>/dev/null; return 0; }
+# one `shots run` under a time limit; adds its totals; returns 124 when it was cut off. No pipe: a leftover child
+# holding one open would hang this script.
+one() { # <evidence dir> <seconds> <folders…>
+  local dir=$1 secs=$2 c t; shift 2
+  SHOTS_DIR="$dir" timeout -k 20 "$secs" shots run "$@" -- --no-check > "$tmp" 2>&1; c=$?
+  strays; cat "$tmp"
+  { [ "$c" -eq 124 ] || [ "$c" -eq 137 ]; } && return 124
+  [ "$c" -eq 0 ] || rc=1
+  t=$(sed 's/\x1b\[[0-9;]*m//g' "$tmp" | grep -oE '[0-9]+ pass · [0-9]+ fail · [0-9]+ skipped' | tail -1)
+  if [ -n "$t" ]; then set -- $t; P=$((P + $1)); F=$((F + $4)); S=$((S + $7)); else echo "== no totals line from that run"; rc=1; fi
+  return 0
+}
+run() {
+  [ ${#chunk[@]} -eq 0 ] && return
+  local d; i=$((i + 1)); echo "== e2e chunk $i: ${#chunk[@]} folders, $files story files"
+  if ! one "$EV/chunk-$i" "$T" "${chunk[@]}"; then
+    echo "== e2e chunk $i did not finish in $T s — running its ${#chunk[@]} folders one at a time"
+    for d in "${chunk[@]}"; do
+      one "$EV/chunk-$i-$(basename "$d")" "$T1" "$d" || { echo "shots: ✗ $d: did not finish in $T1 s when run alone · $T1.0s · hung"; F=$((F + 1)); rc=1; }
+    done
+  fi
+  chunk=(); files=0
+}
+for d in e2e/*/; do
+  d=${d%/}; n=$(git ls-files --cached --others --exclude-standard -- "$d" | grep -cE '(^|/)([^/]*[_.])?test\.(ts|tsx|mts|js|mjs|jsx)$')
+  [ "$n" -eq 0 ] && continue
+  k=$((k + 1)); [ -n "$SH" ] && [ $(( (k - 1) % sn + 1 )) -ne "$sk" ] && continue
+  known=$(printf '%s' "${E2E_KNOWN_HUNG:-}" | tr '|' '\n' | grep -F -m1 -- "$d: " || true)
+  if [ -n "$known" ]; then echo "shots: ✗ $known · 0.0s · not run: known to hang on a VM"; F=$((F + 1)); rc=1; continue; fi
+  chunk+=("$d"); files=$((files + n)); [ "$files" -ge "$N" ] && run
+done
+run; rm -f "$tmp"
+echo "== e2e total: $P pass · $F fail · $S skipped in $i chunks${SH:+ (shard $SH of $k story folders)}, exit $rc"
+exit $rc

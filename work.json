@@ -1,0 +1,215 @@
+{
+ "cycle": 3,
+ "base": "qa-loop",
+ "baseSha": "0a71387ea07c307686e48074f33fcd0e79153b09",
+ "git": {
+  "name": "Raphael Castro",
+  "email": "rafac@monsterrg.com"
+ },
+ "attempts": 3,
+ "tz": "America/New_York",
+ "mode": "gate",
+ "start": "refs/qa/c3/tip-862c8d2e",
+ "startSha": "862c8d2ef51582a6cc6c096e34601ff2645d7d64",
+ "gate": [
+  {
+   "name": "unit",
+   "cmd": "deno task test:unit",
+   "minutes": 15,
+   "vm": 0
+  },
+  {
+   "name": "int",
+   "cmd": "DENO_JOBS=16 deno task test:int",
+   "minutes": 12,
+   "vm": 0,
+   "isolate": {
+    "kind": "deno",
+    "cwd": "backend",
+    "cmd": "deno test -A --unstable-kv",
+    "minutes": 10
+   }
+  },
+  {
+   "name": "e2e-1",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=1/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 1,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-2",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=2/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 2,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-3",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=3/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 3,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-4",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=4/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 4,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-5",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=5/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 5,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-6",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=6/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 6,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-7",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=7/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 7,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  },
+  {
+   "name": "e2e-8",
+   "cmd": "E2E_KNOWN_HUNG='e2e/lead-origin: did not finish in 180 s when run alone|e2e/demo-mode: did not finish in 180 s when run alone' E2E_SHARD=8/8 e2e-chunks",
+   "minutes": 28,
+   "vm": 8,
+   "isolate": {
+    "kind": "shots",
+    "cmd": "SHOTS_JOBS=2 shots run {} -- --no-check",
+    "minutes": 12
+   }
+  }
+ ],
+ "gateBaseline": {
+  "unit": [],
+  "int": [],
+  "e2e-1": [
+   "REQ-278 M16: the New customer modal refuses '555-12' and 'davis@@gmail', saves nothing, then saves a good contact",
+   "REQ-474 M17: 'Link to Q-001' makes the New invoice quote-linked — a second $180 for the same job is refused by the agreement cap (REQ-233), not saved beside INV-001",
+   "REQ-315: a sent, unsigned quote gets 'Edit → Version 2' on /quotes; saving a new line price files it as an unpublished revision with 'Publish revision' next to it; a signed quote has no Edit",
+   "REQ-474 M17: picking a client with a scheduled INV-001 in New invoice says so — 'Ana Pérez already has INV-001 ($180.00) scheduled for Q-001' — and 'Send INV-001 now' sends it instead of a second invoice",
+   "REQ-203: the public quote shows 'Q-001 · Version 1', lists INV-001 under Related documents, and signing it shows 'Accepted and signed' with the drawn signature",
+   "REQ-709 (m4): an es account on /quotes?lang=en and /invoices?lang=en gets an English tab title",
+   "REQ-457 (demo M27, cycle 3): a signed Q-001 with a pending CO-001 (+$120.00) shows 'waiting for your approval — new job total $1,120.00' and lists CO-001 under Related documents, linking /co/:id"
+  ],
+  "e2e-2": [
+   "REQ-716 p2: with assistant-page.css, every es sidebar label ('Vista del trabajador' included) sits on one line in the sidebar",
+   "REQ-716 p2: with assistant-page.css, every en sidebar label ('Vista del trabajador' included) sits on one line in the sidebar",
+   "REQ-716 p2: with dashboard.css, every es sidebar label ('Vista del trabajador' included) sits on one line in the sidebar",
+   "REQ-716 p2: with dashboard.css, every en sidebar label ('Vista del trabajador' included) sits on one line in the sidebar",
+   "REQ-716 p2: with assistant.css, every es sidebar label ('Vista del trabajador' included) sits on one line in the sidebar",
+   "REQ-716 p2: with assistant.css, every en sidebar label ('Vista del trabajador' included) sits on one line in the sidebar",
+   "REQ-520 (demo m19): a 3-digit PIN says why Add can't add — inline, under the PIN box — and the Spanish default is explained",
+   "REQ-361 (demo M36): the field pages sit in a 'Field' folder, Tasks says how to add a one-off, and a worker's 'No zone yet' opens Assignments",
+   "REQ-497 (demo m23): the Spanish dashboard names an English job and an English quote in Spanish",
+   "REQ-702 (demo m21, cycle 5): a scheduled invoice's detail panel can Send now, View as customer and Copy link — sent in place, it then offers Send reminder"
+  ],
+  "e2e-3": [
+   "REQ-367: a customer with no saved language opens a contract link in English; its EN | ES switch flips the footer, the tab title and <html lang>",
+   "REQ-699 M20: '$180 al mes' — the payment step asks once or every month, the agreement bills monthly, and signing makes a Field subscription, not a one-off invoice",
+   "REQ-599 m30: the New customer modal takes an address (autocomplete, typed text first) and the card shows it",
+   "REQ-229: no CompleteRegistration on /welcome for a staff login, nor for a staff member impersonating a new account",
+   "REQ-352 M38/setup-m15/p15-5: the New customer modal shows its own message under each field — 'bob@@gmail' under Email (no native bubble), '555-12' under Phone, 'name required' for an empty Add — and confirms '<name> added'",
+   "REQ-493 m7 (demo pair 9): the owner's open /q page drops 'Next: pay the $X due' once the deposit is confirmed paid — no reload",
+   "REQ-575 M3: 'cliente Juan Pérez, teléfono 555' — the name is filled and the form says the phone is not a full number",
+   "REQ-206: the standalone invoice form — customer prefills bill-to, two lines + 8.25% tax + net 15 issue as 'INV-001 · Version 1 · Sent'; REQ-201: an edit waits as unpublished changes, publishing makes Version 2, a paid invoice is locked"
+  ],
+  "e2e-4": [
+   "REQ-317 / REQ-697: a 50/50 job after the deposit — the hero says $1,600 is scheduled and unsent, with its reminder and due dates, never 'All clear'",
+   "REQ-369: the customer signs while the chat sits open with no review on screen — the header, the quote card and the list chip follow, with no reload",
+   "REQ-695 (cycle 5, M23): issuing an invoice in Spanish to a client with an email and no phone never shows 'recipient' — only the email is fired",
+   "REQ-369: the open thread's list chip reads what the chat header reads — on load, the moment the wizard finishes, and after the customer signs",
+   "REQ-453 (demo cycle 3, p8-pair5-d / p8-pair2-b): a locked quote and the terms wizard's 'Gathering a little more info' get a neutral list chip, not the pink alert one",
+   "REQ-695 (cycle 5, m55): 'Finish + send' with no contact on file offers an inline 'Add email or phone' — typing an email saves it on the customer and sends, in place",
+   "REQ-147: /landing3 is the v3 mock top to bottom — Spanish first, English on the toggle, on a desktop and on a phone",
+   "REQ-245: the chat header follows the quote — drafted, locked, gathering, ready to send, not delivered",
+   "REQ-243 (a): an open quote whose card names Maria Lopez counts one client, not 0",
+   "REQ-369: while the chat's read of the quote row is still on its way, the quote card already reads what the header and the list chip read",
+   "REQ-223: the EN/ES toggle is styled and clear of the search box on /assistant and /dashboard, desktop and 390px phone"
+  ],
+  "e2e-5": [
+   "REQ-924: Recurring on her page — the service with its price and next visits, a done visit not billed, Bill now sends her invoice, Pause and Resume",
+   "REQ-462 M26: a signed quote's panel makes a change order next to 'Signed — later changes go on a change order', and its pending row can be edited (Version 2) and withdrawn",
+   "REQ-631: the editor switches to Español — her dashboard is Spanish; the owner's next sign-in is still English; the customer's invoice page and the business's customer language are unchanged",
+   "REQ-480 M18: 'Issue invoice' for a client with no email and a fictional 555 phone → the invoice's own 'not delivered' notice (no Quote + Agreement wording, the text's reason kept) and the invoice is not listed as sent",
+   "REQ-276: a Spanish contractor reads Spanish formats and wording — the date line is 'Miércoles · 11 de noviembre', no calque, no 'pipeline'",
+   "REQ-509 (m24) REQ-573 (p4-p3c): the customer's quote ends with the document footer — policy links, no DocuMonster phone or address — and says Powered by DocuMonster once",
+   "REQ-176: the root is Dashboard, Customers, Quotes (REQ-773), Billing, Field (REQ-361, was Recurring), Admin; Billing opens to Invoices, Payments, Work orders and Invoices loads inside it; Admin opens to Workers and Admins; Field to the four; Back returns to the root; /field/tasks loads inside Field"
+  ],
+  "e2e-6": [
+   "REQ-529 demo cycle 3 p8-pair2-c + p8-pair8-b: es phone, Cubre keeps space before its lowercase no-zone value",
+   "REQ-529 demo cycle 3 p8-pair2-c + p8-pair8-b: en phone, Covers keeps space before its lowercase no-zone value",
+   "REQ-727 c4-M16: 'Finish + send' opens the send sheet — nothing goes out until Send; it names the invoice and client, starts on the invoice's language, previews what they'll get, and sends only the picked channel in the picked language",
+   "REQ-251: signing a 'Pago inmediato' quote shows 'Pagar ahora $4,800.00', which opens the invoice the signature billed",
+   "REQ-275: the empty invoices page says 'Once an agreement is signed' and the empty clients hero reads 'customer. They'll'",
+   "REQ-727 c4-M16: 'Send now' on a scheduled invoice opens the sheet in the language the server resolves; Cancel sends nothing and it stays scheduled",
+   "REQ-708 c1-setup-m15: New invoice → + New client with 'bob@@gmail' says 'Enter a valid email address' under Email (novalidate, no native bubble); an empty name and a bad bill-to email are named under their fields; nothing is created",
+   "REQ-794 + REQ-795: /invoices has two export links; Reports is a root sidebar row; on /reports Paid invoices + a custom range downloads only the invoice paid in range; From after To shows an error and disables the download",
+   "REQ-441 M23: a line added with 'Add your own…' on the confirmed card reaches the quote's Spanish copy",
+   "REQ-593 m12: New invoice for a customer stored as +15125550199 shows BILL TO phone '(512) 555-0199'"
+  ],
+  "e2e-7": [
+   "REQ-335 M31: tapping a line inside a job-option card selects THAT card, and Continue uses its scope",
+   "REQ-777 M9 (dv1): Ana Diaz set through Q-001's wizard; 'Job done, need to invoice her' (en) in its thread → $1,450 → Continue → 'Who is this for?' with Ana Diaz",
+   "REQ-777 M9 (dv1): Ana Diaz set through Q-001's wizard; 'Trabajo terminado, necesito facturarle' (es) in its thread → $1,450 → Continue → '¿Para quién es esto?' with Ana Diaz",
+   "REQ-715 m31: a customer saved as Spanish-speaking keeps it — the card shows and changes it, her quote's send dialog starts on Español, and her bare /q link opens in Spanish",
+   "REQ-217 + REQ-793: the visible tab is the demo's viewer — Demo lands on /dashboard with /worker open, the frame follows a tab switch to /customers, and then to the worker view",
+   "e2e/lead-origin: did not finish in 180 s when run alone"
+  ],
+  "e2e-8": [
+   "REQ-782: Settings takes the card payment link; /i/:id shows 'Pay by card', which opens the business's own portal in a new tab; without it the owner is told how to set it up",
+   "REQ-338 m31: at 1280×720 the 'Looks right' strip never covers the option list — the echo is clamped and the list takes the room that is left",
+   "REQ-383 M26: at 1280×720 a ten-item job's first card shows whole — the option list is not a squeezed scroll box",
+   "REQ-571 (demo cycle 4, p4-p2c): /assistant after lock + send — ONE 'Open as customer' row for the quote, not one on the card and one under the divider",
+   "REQ-472 (demo cycle 3, p8-pair5-c): /assistant after a send — the customer-link row names the document, not the raw /q/<uuid>",
+   "REQ-310 (m13 + m32): /assistant after a send — the customer-link row is in the chat and Copy shows a toast outside the menu",
+   "e2e/demo-mode: did not finish in 180 s when run alone",
+   "REQ-460 (demo-loop cycle 3, M16 + M15): a locked quote still in its terms wizard has no customer link, its /q offers no pad or 'Sign in person', and the accept is refused; once sent, the card carries the link and the signature bills 50/50",
+   "REQ-263: the job address on the quote pre-fills the customer step, the confirmed address lands on the quote, and the agreement shows it (EN + ES)",
+   "REQ-143: worker → subscription on an existing customer → staffed zone → today's task → the worker checks it off → one draft invoice pulled, in the existing invoices",
+   "REQ-460 (demo-loop cycle 3, B1): after the customer signed, picking 'Deposit + balance' changes nothing on the agreement — the chat says to use a change order or a new version, and the question does not come back",
+   "REQ-364: a lead added a minute ago is not offered as a check-in in Today's loop"
+  ]
+ },
+ "vms": 9,
+ "minutes": 45
+}

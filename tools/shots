@@ -1,0 +1,28 @@
+#!/bin/sh
+# shots — REQ-279: the e2e lane's runner. Durable Deno + Playwright stories
+# under a repo's top-level e2e/ (rune layout), run in parallel with `#shots`
+# mapped in; one stamped screenshot per action and an index.html for the cold
+# reviewer, written OUTSIDE the worktree (~/.claude/worktree-ready/<session>/
+# evidence). The program is Deno and lives beside this shim as
+# shots-lib/cli.ts (the lib a story imports is shots-lib/mod.ts).
+#
+#   shots run [paths…] [-- <deno test flags>]   the lane (starts `serve` unless BASE_URL is set)
+#   shots probe                                 0 when a browser boots here, 3 when not
+#   shots --help
+#
+# --no-config: the repo's deno.json (cwd) must not re-type this program; the
+# stories themselves DO run under the repo's config, with the generated map.
+# REQ-320: a box links this shim onto ~/.local/bin, so `$0` may be a symlink —
+# follow it (absolute or relative, any depth) to the file that sits beside
+# shots-lib/; no `readlink -f` (not everywhere), a plain loop.
+s=$0
+while [ -L "$s" ]; do
+  t=$(readlink "$s")
+  case "$t" in /*) s=$t ;; *) s=$(dirname "$s")/$t ;; esac
+done
+d=$(cd "$(dirname "$s")" && pwd -P)
+if ! command -v deno >/dev/null 2>&1; then
+  echo "shots: no deno on PATH" >&2
+  exit 3
+fi
+exec deno run -A --no-config --quiet "$d/shots-lib/cli.ts" "$@"
