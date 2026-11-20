@@ -240,6 +240,11 @@ Deno.test("REQ-1049 q2-34: a quote with job details AND 3 priced lines — the r
 
     // The customer document the card previews shows the same 3 lines.
     await page.goto(`/q/${quoteId}?lang=es`);
+    // /q paints a skeleton and fetches the quote client-side: wait for it.
+    await page.getByText(Q2_AMOUNTS[0]).first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    }).catch(() => {});
     const doc = (await page.locator("body").innerText()).replace(/\s+/g, " ");
     for (const a of Q2_AMOUNTS) {
       expect(doc.includes(a), `/q shows ${a} (doc: "${doc.slice(0, 600)}")`);
