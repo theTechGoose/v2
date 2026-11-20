@@ -75,6 +75,8 @@ Deno.test("REQ-492 (M29): a fresh browser opens /q in English, signs, clicks Pay
     await call("/api/profile/identity", {
       businessName: "Ruiz Remodelación",
       commsLanguage: "es",
+      // REQ-1054: "Pay now" (not "View invoice") needs an online pay way
+      acceptedPaymentMethods: { zelle: { enabled: true, handle: "pagos@ruiz.example" } },
     }, "PUT");
     const customer = await call("/api/customers", {
       name: "Sam Carter",

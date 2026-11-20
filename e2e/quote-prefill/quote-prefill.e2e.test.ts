@@ -142,12 +142,20 @@ Deno.test("REQ-265: the wizard does not re-ask what the job sentence already sai
     const startPrefill = page.locator('[data-testid="wiz-prefill"]:visible');
     await startPrefill.waitFor({ state: "visible", timeout: 10_000 });
     const start = expectedStart();
+    // REQ-495: the chip reads the date term in words ("Dec 1, 2026"); the
+    // picker's MM/DD/YYYY is accepted too.
+    const [mm, dd, yyyy] = start.split("/");
+    const startWords = `Dec ${Number(dd)}, ${yyyy}`;
+    const chip = await startPrefill.innerText();
     expect(
-      (await startPrefill.innerText()).includes(start),
-      `the start-date pre-selection shows ${start}`,
+      mm === "12" && (chip.includes(start) || chip.includes(startWords)),
+      `the start-date pre-selection shows ${start} / ${startWords} (got "${chip}")`,
     );
     await startPrefill.locator("button").click();
-    await expect.see(start, { timeout: 20_000 });
+    await page.getByText(new RegExp(`${start}|${startWords}`)).first().waitFor({
+      state: "visible",
+      timeout: 20_000,
+    });
 
     // Duration: not in the sentence, so no pre-selection — any answer.
     await page.getByText(/how long will the job take/i).first().waitFor({
@@ -197,7 +205,9 @@ Deno.test("REQ-265: the wizard does not re-ask what the job sentence already sai
         ) => [t.stepId, t]),
       );
     expect(
-      String(byStep.start_date?.value ?? "").includes(start),
+      // a date term is stored as MM/DD/YYYY or ISO (termDateIso reads both)
+      [start, `${start.slice(6)}-${start.slice(0, 2)}-${start.slice(3, 5)}`]
+        .some((v) => String(byStep.start_date?.value ?? "").includes(v)),
       `start_date stored (${JSON.stringify(byStep.start_date)})`,
     );
     expect(
