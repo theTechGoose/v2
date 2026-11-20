@@ -35,8 +35,8 @@ import { filesClient } from "../clients/files.ts";
 import {
   type ChatStreamEvent,
   NO_REPLY_YET,
-  type PendingReply,
   pendingReply,
+  type PendingReply,
 } from "../lib/chat-stream.ts";
 import { PendingReplyBubble } from "../components/PendingReplyBubble.tsx";
 import {
@@ -66,8 +66,8 @@ import { type Lang, langSignal, tFor } from "../lib/i18n.ts";
 import {
   cardShowsCustomerLink,
   copyCustomerLink,
-  customerLinkOwnerIds,
   customerLinkPath,
+  customerLinkOwnerIds,
   customerLinkUrl,
   dividerShowsCustomerLink,
   linkCopyOffersMarkSent,
@@ -118,8 +118,8 @@ import {
 } from "../../shared/quote-flow/chat-draft-offer.ts"; // REQ-388
 import {
   arrivedInvoiceFlowOffer,
-  invoiceFlowContinueTarget,
   type InvoiceFlowOffer,
+  invoiceFlowContinueTarget,
   liveInvoiceFlowOffer,
 } from "../../shared/quote-flow/chat-invoice-flow-offer.ts"; // REQ-656
 import { quoteHasPrice } from "../../shared/quote-flow/quote-price-guard.ts";
@@ -158,8 +158,8 @@ import { openOnboardingAsk } from "../../shared/quote-flow/onboarding-composer.t
 import type { ExtractedDuration } from "../../shared/quote-flow/quote-facts.ts";
 import { reviewJobDetails } from "../../shared/quote-flow/review-job-details.ts";
 import {
-  type VersionStyle,
   versionStyleLabel,
+  type VersionStyle,
 } from "../../shared/quote-flow/version-titles.ts"; // REQ-446
 import {
   becameSigned,
@@ -235,8 +235,8 @@ import {
   headerStatusKey,
   lastRecoveryDividerId,
   retryChannel,
-  sendDividerFailed,
   type SendDividerPayload,
+  sendDividerFailed,
   sendOutcomePayload,
 } from "../lib/send-delivery.ts";
 import {
@@ -306,17 +306,20 @@ import {
   publishThreadStatus,
   publishThreadTurn,
   THREAD_SERVER_INVOICE_EVENT, // REQ-700
+  threadTurnTitle,
   THREAD_SERVER_STATUS_EVENT,
   type ThreadInvoiceDetail,
   type ThreadStatusDetail,
-  threadTurnTitle,
 } from "../lib/thread-status-sync.ts";
 import {
   interpretSendResult,
   sendResultLangKey,
 } from "../../shared/quote-flow/send-result.ts";
 import MoneyInput from "./MoneyInput.tsx";
-import { priceChipAnchorCents, selectedTierIndex } from "../lib/money-input.ts";
+import {
+  priceChipAnchorCents,
+  selectedTierIndex,
+} from "../lib/money-input.ts";
 import { startPoll } from "../lib/poll.ts";
 import { followChanges } from "../lib/change-feed.ts";
 import { boundQuoteMoved } from "../lib/live-doc-refresh.ts";
@@ -592,9 +595,7 @@ function localFallbackOptions(
   // full one — equal bullet sets collapse, never two cards alike.
   return {
     // REQ-759: the cards are told apart by their style label, not the title.
-    options: labelVersionStyles(
-      dedupeOptionsByBullets(options, { exact: true }),
-    ),
+    options: labelVersionStyles(dedupeOptionsByBullets(options, { exact: true })),
     degraded: lines.length === 0,
   };
 }
@@ -1032,12 +1033,8 @@ export default function AsstChat({
    *  empty-state prompt. When set, renders the MoneyInput card in place
    *  of the three preset prompts. `priceCents` tracks the live value so
    *  Continue can hand the value to the phase-2 kickoff. */
-  const [priceCaptureOpen, setPriceCaptureOpen] = useState(
-    seed?.priceCaptureOpen ?? false,
-  );
-  const [priceCents, setPriceCents] = useState<number | null>(
-    seed?.priceCents ?? null,
-  );
+  const [priceCaptureOpen, setPriceCaptureOpen] = useState(seed?.priceCaptureOpen ?? false);
+  const [priceCents, setPriceCents] = useState<number | null>(seed?.priceCents ?? null);
   /** UX-04: the "para <Name>" candidate regex-extracted from the typed
    *  quick-quote sentence — prefills the customer step's name input. */
   const [prefillCustomerName, setPrefillCustomerName] = useState<
@@ -1068,16 +1065,12 @@ export default function AsstChat({
    *  the chat input no longer routes to the LLM chat — instead its
    *  next submission is treated as raw job-details, sent through the
    *  polish endpoint, then used to seed the new quote + phase 2 wizard. */
-  const [awaitingJobDetails, setAwaitingJobDetails] = useState(
-    seed?.awaitingJobDetails ?? false,
-  );
+  const [awaitingJobDetails, setAwaitingJobDetails] = useState(seed?.awaitingJobDetails ?? false);
   /** Which starter chip opened the current flow (P-20). Drives the
    *  intent-appropriate first reply on the job-details screen — the
    *  "job done, need to invoice" chip must never be answered with quote
    *  copy. Null before any chip is tapped. */
-  const [flowChip, setFlowChip] = useState<ChipKey | null>(
-    (seed?.flowChip as ChipKey | null) ?? null,
-  );
+  const [flowChip, setFlowChip] = useState<ChipKey | null>((seed?.flowChip as ChipKey | null) ?? null);
   const [pendingPriceCents, setPendingPriceCents] = useState<number | null>(
     null,
   );
@@ -1087,9 +1080,7 @@ export default function AsstChat({
    *  submits, we flip to the price-capture screen with this populated,
    *  and the price-Continue handler combines both pieces to build the
    *  quote. (The other two flows ignore this — they go through the LLM.) */
-  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<
-    string | null
-  >(seed?.jobDetailsRaw ?? null);
+  const [pendingJobDetailsRaw, setPendingJobDetailsRaw] = useState<string | null>(seed?.jobDetailsRaw ?? null);
   /** REQ-400 (M21): the message the contractor typed for this job, as typed
    *  (the confirm step overwrites pendingJobDetailsRaw with the picked
    *  bullets). "Edit job details" regenerates from it plus the current lines. */
@@ -1101,27 +1092,16 @@ export default function AsstChat({
   /** Captures the raw text the user submitted at the job-details step
    *  so we can render an optimistic user bubble + "Polishing…" indicator
    *  while the polish + create-quote + transition chain runs. */
-  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(
-    seed?.submittedJobDetails ?? null,
-  );
+  const [submittedJobDetails, setSubmittedJobDetails] = useState<string | null>(seed?.submittedJobDetails ?? null);
   /** "Job Details" picker screen (the LLM-generated scope-of-work options).
    *  Shown at the END of phase 2, right before the quote review. */
-  const [jobOptionsOpen, setJobOptionsOpen] = useState(
-    seed?.jobOptionsOpen ?? false,
-  );
+  const [jobOptionsOpen, setJobOptionsOpen] = useState(seed?.jobOptionsOpen ?? false);
   // Roadmap p.10: "I know the job, help me price it." — when set, the
   // price-capture screen shows three LLM-suggested tiers (+ custom entry).
-  const [suggestPricing, setSuggestPricing] = useState(
-    seed?.suggestPricing ?? false,
-  );
+  const [suggestPricing, setSuggestPricing] = useState(seed?.suggestPricing ?? false);
   const [priceSuggestions, setPriceSuggestions] = useState<
     Array<
-      {
-        tier: "competitive" | "market" | "premium";
-        label: string;
-        priceCents: number;
-        rationale: string;
-      }
+      { tier: "competitive" | "market" | "premium"; label: string; priceCents: number; rationale: string }
     > | null
   >(seed?.priceSuggestions ?? null);
   /** REQ-332 (m30): what the tiers include, as the server derived it from
@@ -1166,15 +1146,9 @@ export default function AsstChat({
   );
   /** REQ-027 (NW-11): the model could not draft the options — the cards
    *  are heuristic scope bullets and the picker says so. */
-  const [optionsDegraded, setOptionsDegraded] = useState(
-    seed?.optionsDegraded ?? false,
-  );
-  const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(
-    seed?.jobOptions ?? null,
-  );
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(
-    seed?.selectedOptionId ?? null,
-  );
+  const [optionsDegraded, setOptionsDegraded] = useState(seed?.optionsDegraded ?? false);
+  const [jobOptions, setJobOptions] = useState<JobOptionDraft[] | null>(seed?.jobOptions ?? null);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(seed?.selectedOptionId ?? null);
   /** Which bullet is open for inline edit, keyed by option+bullet id. */
   const [editingBullet, setEditingBullet] = useState<
     { optionId: string; bulletId: string } | null
@@ -1348,15 +1322,11 @@ export default function AsstChat({
    *  that patches the existing quote. "confirm" = the roadmap p.18 order for
    *  "I know the job, help me price it.": details → CONFIRM → pricing →
    *  wizard — the picker runs pre-quote and its pick feeds quote creation. */
-  const [pickerMode, setPickerMode] = useState<"polish" | "confirm">(
-    seed?.pickerMode ?? "polish",
-  );
+  const [pickerMode, setPickerMode] = useState<"polish" | "confirm">(seed?.pickerMode ?? "polish");
   /** The option confirmed in "confirm" mode — consumed by startQuoteFromRaw
    *  so the quote is created with the confirmed title/summary/bullets (and
    *  the end-of-flow picker is skipped). */
-  const confirmedOptionRef = useRef<JobOptionDraft | null>(
-    seed?.confirmedOption ?? null,
-  );
+  const confirmedOptionRef = useRef<JobOptionDraft | null>(seed?.confirmedOption ?? null);
   /** REQ-772 (demo-loop cycle 5v5, M9): the quote the thread was bound to
    *  when the invoice flow started — never the flow's own, so Continue
    *  gives the invoice its own thread instead of editing that quote. */
@@ -1422,14 +1392,7 @@ export default function AsstChat({
       quoteId?: string;
       jobName?: string;
       description?: string;
-      lineItems?: Array<
-        {
-          description: string;
-          quantity?: number;
-          unit?: string;
-          price?: number;
-        }
-      >;
+      lineItems?: Array<{ description: string; quantity?: number; unit?: string; price?: number }>;
       terms?: Array<{ stepId: string; label: string; value: string }>;
       agreementTotalCents?: number;
       billedCents?: number;
@@ -1517,9 +1480,7 @@ export default function AsstChat({
    * inline agreement preview card (total/customer/dates) so the user can
    * actually look the document over before clicking "Send to client".
    */
-  const [previewCtaId, setPreviewCtaId] = useState<string | null>(
-    seed?.previewCtaId ?? null,
-  );
+  const [previewCtaId, setPreviewCtaId] = useState<string | null>(seed?.previewCtaId ?? null);
   // REQ-676 (cycle 5, c1-M9): the send CTA whose review the contractor
   // closed with the X. The terms stay answered; the CTA renders as a
   // "Ready to send" banner whose Review button reopens the review.
@@ -3031,9 +2992,7 @@ export default function AsstChat({
         ? submittedJobDetails ?? pendingJobDetailsRaw
         : jobPolishRawRef.current ?? submittedJobDetails ??
           quote?.description) ?? "").trim();
-      const picked = jobOptions?.find((o) =>
-        o.id === selectedOptionId
-      );
+      const picked = jobOptions?.find((o) => o.id === selectedOptionId);
       const shown = (picked?.bullets ?? [])
         .filter((b) => !b.deleted && b.text.trim())
         .map((b) => b.text.trim())
@@ -3065,7 +3024,9 @@ export default function AsstChat({
       [...newMessages].reverse().find((m) =>
         m.role === "assistant" && m.kind === "text"
       );
-    setStepLog((log) => addStepExchange(log, step, said, reply?.content ?? ""));
+    setStepLog((log) =>
+      addStepExchange(log, step, said, reply?.content ?? "")
+    );
     if (!answer) return;
     const p = (answer.payload ?? {}) as {
       priceSuggestions?: {
@@ -3660,9 +3621,7 @@ export default function AsstChat({
             `pm:jobpolish:${conv.id}`,
             raw.trim(),
           );
-        } catch {
-          /* sessionStorage unavailable — picker just won't auto-open */
-        }
+        } catch { /* sessionStorage unavailable — picker just won't auto-open */ }
       }
 
       // REQ-449 (demo-loop cycle 3, m48): hand off into the wizard IN PLACE —
@@ -4776,10 +4735,7 @@ export default function AsstChat({
    * goes down the revision path, so Re-open seeds the composer with the
    * "Change the quote: " prompt (REQ-238).
    */
-  async function reopenActionCard(
-    message: Message,
-    payload: ActionCardPayload,
-  ) {
+  async function reopenActionCard(message: Message, payload: ActionCardPayload) {
     if (sending || !convoId || !payload.quoteId) return;
     // REQ-563 (cycle 4, m3): the live quote decides, not the card's snapshot
     // — a "locked" card whose quote went out revises; a signed one does nothing.
@@ -4802,9 +4758,7 @@ export default function AsstChat({
         setMessages(snap.messages);
       } else {
         const gone = new Set([message.id, ...res.removedMessageIds]);
-        setMessages((
-          m,
-        ) => [...m.filter((x) => !gone.has(x.id)), ...res.newMessages]);
+        setMessages((m) => [...m.filter((x) => !gone.has(x.id)), ...res.newMessages]);
       }
       // The chat header reads quote.lockedAt — drop the stamp locally too.
       setQuote((cur) =>
@@ -4814,9 +4768,7 @@ export default function AsstChat({
       setDraft((d) => dropBareEditSeed(d, editSeed));
       setEditSeed(null);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "couldn't re-open the quote",
-      );
+      setError(err instanceof Error ? err.message : "couldn't re-open the quote");
     } finally {
       setSending(false);
     }
@@ -5172,7 +5124,9 @@ export default function AsstChat({
         : 0;
       submitJobDetails(prefill.details, {
         ...(dueCents > 0 ? { priceCents: dueCents } : {}),
-        ...(prefill.customerName ? { customerName: prefill.customerName } : {}),
+        ...(prefill.customerName
+          ? { customerName: prefill.customerName }
+          : {}),
         suggestPricing: false,
       });
     }
@@ -5225,9 +5179,7 @@ export default function AsstChat({
         customerName = picked?.name ?? customerName;
       }
       const existing = await api
-        .get<Array<{ quoteId?: string; amount?: number; status?: string }>>(
-          "/invoices",
-        )
+        .get<Array<{ quoteId?: string; amount?: number; status?: string }>>("/invoices")
         .catch(() => []);
       const siblings = (Array.isArray(existing) ? existing : [])
         .filter((i) => i.quoteId === q.id);
@@ -5280,9 +5232,9 @@ export default function AsstChat({
       const raw = (pendingJobDetailsRaw ?? "").trim();
       // UX-29: the shared lang-aware derivation — never a bare 3-word slice
       // ("El patio de") headlining the customer's invoice.
-      const jobName =
-        (raw ? summarizeJobName(raw.split("\n")[0] ?? raw, lang) : "") ||
-        tFor(lang, "asstChat.newJob");
+      const jobName = (raw
+        ? summarizeJobName(raw.split("\n")[0] ?? raw, lang)
+        : "") || tFor(lang, "asstChat.newJob");
       const today = new Date().toISOString().slice(0, 10);
       // REQ-023: an invoice derived from an accepted quote carries the link
       // (quoteId) plus the quote's line items and job details, so /i/:id
@@ -6092,11 +6044,7 @@ export default function AsstChat({
                                               );
                                             }}
                                           >
-                                            <Icon
-                                              name="pencil"
-                                              size={14}
-                                              style="display:block"
-                                            />
+                                            <Icon name="pencil" size={14} style="display:block" />
                                           </button>
                                         </>
                                       )}
@@ -6114,197 +6062,189 @@ export default function AsstChat({
                                           : null;
                                       return (
                                         <Fragment key={b.id}>
-                                          <li
-                                            class={`chat__jobopt-bullet${
-                                              b.deleted ? " is-deleted" : ""
-                                            }`}
-                                          >
-                                            {isEditing
-                                              ? (
-                                                <input
-                                                  type="text"
-                                                  class="chat__jobopt-edit"
-                                                  defaultValue={b.text}
-                                                  autoFocus
-                                                  onClick={(e) =>
-                                                    e.stopPropagation()}
-                                                  onKeyDown={(e) => {
-                                                    const el = e
-                                                      .currentTarget as HTMLInputElement;
-                                                    if (e.key === "Enter") {
-                                                      e.preventDefault();
-                                                      el.blur();
-                                                    } else if (
-                                                      e.key === "Escape"
-                                                    ) {
-                                                      editEscapedRef.current =
-                                                        true;
-                                                      el.blur();
-                                                    }
-                                                  }}
-                                                  onBlur={(e) => {
-                                                    if (
-                                                      editEscapedRef.current
-                                                    ) {
-                                                      editEscapedRef.current =
-                                                        false;
-                                                      setEditingBullet(null);
-                                                      return;
-                                                    }
-                                                    commitBulletEdit(
-                                                      opt.id,
-                                                      b.id,
-                                                      (e.currentTarget as HTMLInputElement)
-                                                        .value,
-                                                    );
-                                                  }}
-                                                />
-                                              )
-                                              : (
-                                                <button
-                                                  type="button"
-                                                  class="chat__jobopt-text"
-                                                  disabled={b.deleted}
-                                                  aria-pressed={selected}
-                                                  onClick={(e) => {
-                                                    // REQ-335 (M31): a bullet
-                                                    // tap SELECTS its card —
-                                                    // editing lives on the
-                                                    // pencil beside it.
-                                                    e.stopPropagation();
-                                                    onOptionTap({
-                                                      kind: "bullet",
-                                                      optionId: opt.id,
-                                                      bulletId: b.id,
-                                                    });
-                                                  }}
-                                                >
-                                                  {b.text}
-                                                </button>
-                                              )}
-                                            {isEditing || b.deleted
-                                              ? null
-                                              : (
-                                                <button
-                                                  type="button"
-                                                  class="chat__jobopt-pencil"
-                                                  title={tFor(
-                                                    lang,
-                                                    "asstChat.jobOpts.editBullet",
-                                                  )}
-                                                  aria-label={tFor(
-                                                    lang,
-                                                    "asstChat.jobOpts.editBullet",
-                                                  )}
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onOptionTap(
-                                                      {
-                                                        kind: "bulletPencil",
-                                                        optionId: opt.id,
-                                                        bulletId: b.id,
-                                                        deleted: b.deleted,
-                                                      },
-                                                      b.text,
-                                                    );
-                                                  }}
-                                                >
-                                                  <Icon
-                                                    name="pencil"
-                                                    size={14}
-                                                    style="display:block"
-                                                  />
-                                                </button>
-                                              )}
-                                            <button
-                                              type="button"
-                                              class="chat__jobopt-x"
-                                              aria-label={b.deleted
-                                                ? tFor(
-                                                  lang,
-                                                  "asstChat.jobOpts.restoreBullet",
-                                                )
-                                                : tFor(
-                                                  lang,
-                                                  "asstChat.jobOpts.deleteBullet",
-                                                )}
-                                              title={b.deleted
-                                                ? tFor(lang, "common.restore")
-                                                : tFor(lang, "common.delete")}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                onOptionTap({
-                                                  kind: "delete",
-                                                  optionId: opt.id,
-                                                  bulletId: b.id,
-                                                });
-                                              }}
-                                            >
-                                              {b.deleted ? "↺" : "×"}
-                                            </button>
-                                          </li>
-                                          {offer
+                                        <li
+                                          class={`chat__jobopt-bullet${
+                                            b.deleted ? " is-deleted" : ""
+                                          }`}
+                                        >
+                                          {isEditing
                                             ? (
-                                              // REQ-384 (m16): the offer sits
-                                              // right under its line — never
-                                              // a modal covering it.
-                                              <li
-                                                class="chat__pro-row"
-                                                data-cy="polish-offer"
+                                              <input
+                                                type="text"
+                                                class="chat__jobopt-edit"
+                                                defaultValue={b.text}
+                                                autoFocus
                                                 onClick={(e) =>
                                                   e.stopPropagation()}
+                                                onKeyDown={(e) => {
+                                                  const el = e
+                                                    .currentTarget as HTMLInputElement;
+                                                  if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    el.blur();
+                                                  } else if (
+                                                    e.key === "Escape"
+                                                  ) {
+                                                    editEscapedRef.current =
+                                                      true;
+                                                    el.blur();
+                                                  }
+                                                }}
+                                                onBlur={(e) => {
+                                                  if (editEscapedRef.current) {
+                                                    editEscapedRef.current =
+                                                      false;
+                                                    setEditingBullet(null);
+                                                    return;
+                                                  }
+                                                  commitBulletEdit(
+                                                    opt.id,
+                                                    b.id,
+                                                    (e.currentTarget as HTMLInputElement)
+                                                      .value,
+                                                  );
+                                                }}
+                                              />
+                                            )
+                                            : (
+                                              <button
+                                                type="button"
+                                                class="chat__jobopt-text"
+                                                disabled={b.deleted}
+                                                aria-pressed={selected}
+                                                onClick={(e) => {
+                                                  // REQ-335 (M31): a bullet
+                                                  // tap SELECTS its card —
+                                                  // editing lives on the
+                                                  // pencil beside it.
+                                                  e.stopPropagation();
+                                                  onOptionTap({
+                                                    kind: "bullet",
+                                                    optionId: opt.id,
+                                                    bulletId: b.id,
+                                                  });
+                                                }}
                                               >
-                                                <span class="chat__pro-row-msg">
+                                                {b.text}
+                                              </button>
+                                            )}
+                                          {isEditing || b.deleted ? null : (
+                                            <button
+                                              type="button"
+                                              class="chat__jobopt-pencil"
+                                              title={tFor(
+                                                lang,
+                                                "asstChat.jobOpts.editBullet",
+                                              )}
+                                              aria-label={tFor(
+                                                lang,
+                                                "asstChat.jobOpts.editBullet",
+                                              )}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onOptionTap(
+                                                  {
+                                                    kind: "bulletPencil",
+                                                    optionId: opt.id,
+                                                    bulletId: b.id,
+                                                    deleted: b.deleted,
+                                                  },
+                                                  b.text,
+                                                );
+                                              }}
+                                            >
+                                              <Icon name="pencil" size={14} style="display:block" />
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            class="chat__jobopt-x"
+                                            aria-label={b.deleted
+                                              ? tFor(
+                                                lang,
+                                                "asstChat.jobOpts.restoreBullet",
+                                              )
+                                              : tFor(
+                                                lang,
+                                                "asstChat.jobOpts.deleteBullet",
+                                              )}
+                                            title={b.deleted
+                                              ? tFor(lang, "common.restore")
+                                              : tFor(lang, "common.delete")}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              onOptionTap({
+                                                kind: "delete",
+                                                optionId: opt.id,
+                                                bulletId: b.id,
+                                              });
+                                            }}
+                                          >
+                                            {b.deleted ? "↺" : "×"}
+                                          </button>
+                                        </li>
+                                        {offer
+                                          ? (
+                                            // REQ-384 (m16): the offer sits
+                                            // right under its line — never
+                                            // a modal covering it.
+                                            <li
+                                              class="chat__pro-row"
+                                              data-cy="polish-offer"
+                                              onClick={(e) =>
+                                                e.stopPropagation()}
+                                            >
+                                              <span class="chat__pro-row-msg">
+                                                {tFor(
+                                                  lang,
+                                                  "asstChat.proPopup.msg",
+                                                )}
+                                              </span>
+                                              <span class="chat__pro-row-diff">
+                                                <s
+                                                  class="chat__pro-row-before"
+                                                  data-cy="polish-offer-before"
+                                                >
+                                                  {offer.before}
+                                                </s>
+                                                <span
+                                                  class="chat__pro-row-arrow"
+                                                  aria-hidden="true"
+                                                >
+                                                  →
+                                                </span>
+                                                <span
+                                                  class="chat__pro-row-after"
+                                                  data-cy="polish-offer-after"
+                                                >
+                                                  {offer.after.join("\n")}
+                                                </span>
+                                              </span>
+                                              <span class="chat__pro-row-actions">
+                                                <button
+                                                  type="button"
+                                                  class="chat__pro-row-no"
+                                                  onClick={dismissPolish}
+                                                >
                                                   {tFor(
                                                     lang,
-                                                    "asstChat.proPopup.msg",
+                                                    "asstChat.proPopup.no",
                                                   )}
-                                                </span>
-                                                <span class="chat__pro-row-diff">
-                                                  <s
-                                                    class="chat__pro-row-before"
-                                                    data-cy="polish-offer-before"
-                                                  >
-                                                    {offer.before}
-                                                  </s>
-                                                  <span
-                                                    class="chat__pro-row-arrow"
-                                                    aria-hidden="true"
-                                                  >
-                                                    →
-                                                  </span>
-                                                  <span
-                                                    class="chat__pro-row-after"
-                                                    data-cy="polish-offer-after"
-                                                  >
-                                                    {offer.after.join("\n")}
-                                                  </span>
-                                                </span>
-                                                <span class="chat__pro-row-actions">
-                                                  <button
-                                                    type="button"
-                                                    class="chat__pro-row-no"
-                                                    onClick={dismissPolish}
-                                                  >
-                                                    {tFor(
-                                                      lang,
-                                                      "asstChat.proPopup.no",
-                                                    )}
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    class="chat__pro-row-yes"
-                                                    onClick={acceptPolish}
-                                                  >
-                                                    {tFor(
-                                                      lang,
-                                                      "asstChat.proPopup.yes",
-                                                    )}
-                                                  </button>
-                                                </span>
-                                              </li>
-                                            )
-                                            : null}
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  class="chat__pro-row-yes"
+                                                  onClick={acceptPolish}
+                                                >
+                                                  {tFor(
+                                                    lang,
+                                                    "asstChat.proPopup.yes",
+                                                  )}
+                                                </button>
+                                              </span>
+                                            </li>
+                                          )
+                                          : null}
                                         </Fragment>
                                       );
                                     })}
@@ -6449,23 +6389,19 @@ export default function AsstChat({
                                           rawEchoOpen ? " is-open" : ""
                                         }`}
                                       >
-                                        {
-                                          /* REQ-659 (cycle 5, c1-M22): the
+                                        {/* REQ-659 (cycle 5, c1-M22): the
                                             echo never re-shows a private
-                                            cost — amounts are masked. */
-                                        }
+                                            cost — amounts are masked. */}
                                         {redactMoney(pendingJobDetailsRaw)}
                                       </span>
                                     )
                                     : null}
-                                  {
-                                    /* REQ-338 (demo m31): the echo is clamped
+                                  {/* REQ-338 (demo m31): the echo is clamped
                                       to three lines; this opens/closes it
                                       without confirming (the strip is the
                                       confirm button, so the click must not
                                       bubble). A span, not a button — a
-                                      button inside a button is invalid. */
-                                  }
+                                      button inside a button is invalid. */}
                                   {pendingJobDetailsRaw &&
                                       isLongRawEcho(pendingJobDetailsRaw)
                                     ? (
@@ -6480,9 +6416,7 @@ export default function AsstChat({
                                           setRawEchoOpen((v) => !v);
                                         }}
                                         onKeyDown={(e) => {
-                                          if (
-                                            e.key === "Enter" || e.key === " "
-                                          ) {
+                                          if (e.key === "Enter" || e.key === " ") {
                                             e.preventDefault();
                                             e.stopPropagation();
                                             setRawEchoOpen((v) => !v);
@@ -6538,10 +6472,8 @@ export default function AsstChat({
                                   {sending
                                     ? (
                                       <>
-                                        <span
-                                          class="spinner"
-                                          aria-hidden="true"
-                                        />{" "}
+                                        <span class="spinner" aria-hidden="true" />
+                                        {" "}
                                         {tFor(lang, "asstChat.settingUp")}
                                       </>
                                     )
@@ -6595,10 +6527,8 @@ export default function AsstChat({
                           )}
                       </div>
                     </div>
-                    {
-                      /* UX-32: one-tap chips for the accepted job(s) — the
-                        facturar flow uses what the app already knows. */
-                    }
+                    {/* UX-32: one-tap chips for the accepted job(s) — the
+                        facturar flow uses what the app already knows. */}
                     {flowChip === "invoiceDone" && !submittedJobDetails &&
                       acceptedJobChips.length > 0 && (
                       <div
@@ -6617,11 +6547,9 @@ export default function AsstChat({
                         ))}
                       </div>
                     )}
-                    {
-                      /* Roadmap p.5: "Write it myself" — a structured editor
+                    {/* Roadmap p.5: "Write it myself" — a structured editor
                         (one item per line) with the "Professionalize that"
-                        accept/edit proposal loop. */
-                    }
+                        accept/edit proposal loop. */}
                     {!submittedJobDetails && !writeMyselfOpen
                       ? (
                         <button
@@ -6629,16 +6557,10 @@ export default function AsstChat({
                           class="chat__details-writeself"
                           onClick={openWriteMyself}
                         >
-                          {
-                            /* NW-17 (REQ-010): the pill is a sentence under the
+                          {/* NW-17 (REQ-010): the pill is a sentence under the
                               prompt bubble — it ends with a period. The picker
-                              tile keeps the period-less customTitle. */
-                          }
-                          <Icon
-                            name="pencil"
-                            size={14}
-                            style="vertical-align:-2px"
-                          />{" "}
+                              tile keeps the period-less customTitle. */}
+                          <Icon name="pencil" size={14} style="vertical-align:-2px" />{" "}
                           {tFor(lang, "asstChat.jobOpts.customCta")}
                         </button>
                       )
@@ -6678,10 +6600,7 @@ export default function AsstChat({
                             ? (
                               <div class="chat__writeself-proposal">
                                 <div class="chat__writeself-proposal-label">
-                                  {tFor(
-                                    lang,
-                                    "asstChat.writeSelf.proposalLabel",
-                                  )}
+                                  {tFor(lang, "asstChat.writeSelf.proposalLabel")}
                                 </div>
                                 {wmEditingProposal
                                   ? (
@@ -6825,12 +6744,10 @@ export default function AsstChat({
                       </p>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:8px">
-                      {
-                        /* REQ-627: the invoice is a DRAFT — nothing has
+                      {/* REQ-627: the invoice is a DRAFT — nothing has
                           gone out. One solid primary (Send now), outlined
                           secondaries (Save as draft, Schedule). Once
-                          scheduled, the card says so instead. */
-                      }
+                          scheduled, the card says so instead. */}
                       {swapInvoiceSaved?.id === invoiceResult.id &&
                           swapInvoiceSaved.scheduledFor
                         ? (
@@ -6846,145 +6763,138 @@ export default function AsstChat({
                         )
                         : (
                           <>
-                            <button
-                              type="button"
-                              class="chat__price-continue"
-                              data-cy="invoice-ready-send"
-                              disabled={sending}
-                              onClick={async () => {
-                                if (
-                                  !invoiceResult.customerEmail &&
-                                  !invoiceResult.customerPhone
-                                ) {
-                                  setError(
-                                    tFor(
-                                      lang,
-                                      "asstChat.invoiceFlow.noContact",
-                                    ),
-                                  );
-                                  return;
-                                }
-                                setError(undefined);
-                                setSending(true);
-                                try {
-                                  // Send now: issue it (draft → sent, issued
-                                  // today), then dispatch exactly as before.
-                                  await api.put(
-                                    `/invoices/${invoiceResult.id}`,
-                                    invoiceStatusFields("send", {
-                                      today: new Date().toISOString().slice(
-                                        0,
-                                        10,
-                                      ),
-                                    }),
-                                  );
-                                  if (invoiceResult.customerEmail) {
-                                    await api.post(
-                                      `/invoices/${invoiceResult.id}/email`,
-                                      {},
-                                    );
-                                  }
-                                  if (invoiceResult.customerPhone) {
-                                    await api.post(
-                                      `/invoices/${invoiceResult.id}/text`,
-                                      {},
-                                    );
-                                  }
-                                  globalThis.location.href = "/invoices";
-                                } catch (err) {
-                                  setError(
-                                    err instanceof Error
-                                      ? err.message
-                                      : "couldn't send the invoice",
-                                  );
-                                } finally {
-                                  setSending(false);
-                                }
-                              }}
-                            >
-                              {sending
-                                ? tFor(lang, "asstChat.preview.sending")
-                                : tFor(lang, "asstChat.invoiceFlow.sendNow")}
-                            </button>
-                            <div style="display:flex;gap:8px;flex-wrap:wrap">
-                              <a
-                                class="chat__price-back"
-                                data-cy="invoice-ready-draft"
-                                style="position:static;flex:1;min-width:130px;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px;text-decoration:none;text-align:center"
-                                href={`/invoices?open=${invoiceResult.id}`}
-                              >
-                                {tFor(lang, "asstChat.invoiceReview.saveDraft")}
-                              </a>
-                              <button
-                                type="button"
-                                class="chat__price-back"
-                                data-cy="invoice-ready-schedule"
-                                aria-expanded={schedOpen ? "true" : "false"}
-                                disabled={sending}
-                                style="position:static;flex:1;min-width:130px;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px"
-                                onClick={() => {
-                                  setSchedErr(undefined);
-                                  setSchedOpen((o) => !o);
-                                }}
-                              >
-                                {tFor(lang, "asstChat.invoiceReview.schedule")}
-                              </button>
-                            </div>
-                            {schedOpen
-                              ? (
-                                <InvoiceSchedulePicker
-                                  lang={lang}
-                                  value={schedDate}
-                                  error={schedErr}
-                                  busy={sending}
-                                  onInput={setSchedDate}
-                                  onConfirm={async () => {
-                                    const today = new Date().toISOString()
-                                      .slice(
-                                        0,
-                                        10,
-                                      );
-                                    const problem = scheduleDateProblem(
-                                      schedDate,
-                                      today,
-                                    );
-                                    if (problem) {
-                                      setSchedErr(
-                                        tFor(
-                                          lang,
-                                          `asstChat.invoiceReview.schedule.${problem}`,
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    setSchedErr(undefined);
-                                    setSending(true);
-                                    try {
-                                      await api.put(
-                                        `/invoices/${invoiceResult.id}`,
-                                        invoiceStatusFields("schedule", {
-                                          today,
-                                          scheduledFor: schedDate,
-                                        }),
-                                      );
-                                      setSchedOpen(false);
-                                      setSwapInvoiceSaved({
-                                        id: invoiceResult.id,
-                                        scheduledFor: schedDate,
-                                      });
-                                    } catch (err) {
-                                      setSchedErr(
-                                        err instanceof Error
-                                          ? err.message
-                                          : "couldn't schedule the invoice",
-                                      );
-                                    } finally {
-                                      setSending(false);
-                                    }
-                                  }}
-                                />
-                              )
-                              : null}
+                      <button
+                        type="button"
+                        class="chat__price-continue"
+                        data-cy="invoice-ready-send"
+                        disabled={sending}
+                        onClick={async () => {
+                          if (
+                            !invoiceResult.customerEmail &&
+                            !invoiceResult.customerPhone
+                          ) {
+                            setError(
+                              tFor(lang, "asstChat.invoiceFlow.noContact"),
+                            );
+                            return;
+                          }
+                          setError(undefined);
+                          setSending(true);
+                          try {
+                            // Send now: issue it (draft → sent, issued
+                            // today), then dispatch exactly as before.
+                            await api.put(
+                              `/invoices/${invoiceResult.id}`,
+                              invoiceStatusFields("send", {
+                                today: new Date().toISOString().slice(0, 10),
+                              }),
+                            );
+                            if (invoiceResult.customerEmail) {
+                              await api.post(
+                                `/invoices/${invoiceResult.id}/email`,
+                                {},
+                              );
+                            }
+                            if (invoiceResult.customerPhone) {
+                              await api.post(
+                                `/invoices/${invoiceResult.id}/text`,
+                                {},
+                              );
+                            }
+                            globalThis.location.href = "/invoices";
+                          } catch (err) {
+                            setError(
+                              err instanceof Error
+                                ? err.message
+                                : "couldn't send the invoice",
+                            );
+                          } finally {
+                            setSending(false);
+                          }
+                        }}
+                      >
+                        {sending
+                          ? tFor(lang, "asstChat.preview.sending")
+                          : tFor(lang, "asstChat.invoiceFlow.sendNow")}
+                      </button>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <a
+                          class="chat__price-back"
+                          data-cy="invoice-ready-draft"
+                          style="position:static;flex:1;min-width:130px;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px;text-decoration:none;text-align:center"
+                          href={`/invoices?open=${invoiceResult.id}`}
+                        >
+                          {tFor(lang, "asstChat.invoiceReview.saveDraft")}
+                        </a>
+                        <button
+                          type="button"
+                          class="chat__price-back"
+                          data-cy="invoice-ready-schedule"
+                          aria-expanded={schedOpen ? "true" : "false"}
+                          disabled={sending}
+                          style="position:static;flex:1;min-width:130px;justify-content:center;border:1px solid var(--border,#d8dcd5);border-radius:10px;padding:10px"
+                          onClick={() => {
+                            setSchedErr(undefined);
+                            setSchedOpen((o) => !o);
+                          }}
+                        >
+                          {tFor(lang, "asstChat.invoiceReview.schedule")}
+                        </button>
+                      </div>
+                      {schedOpen
+                        ? (
+                          <InvoiceSchedulePicker
+                            lang={lang}
+                            value={schedDate}
+                            error={schedErr}
+                            busy={sending}
+                            onInput={setSchedDate}
+                            onConfirm={async () => {
+                              const today = new Date().toISOString().slice(
+                                0,
+                                10,
+                              );
+                              const problem = scheduleDateProblem(
+                                schedDate,
+                                today,
+                              );
+                              if (problem) {
+                                setSchedErr(
+                                  tFor(
+                                    lang,
+                                    `asstChat.invoiceReview.schedule.${problem}`,
+                                  ),
+                                );
+                                return;
+                              }
+                              setSchedErr(undefined);
+                              setSending(true);
+                              try {
+                                await api.put(
+                                  `/invoices/${invoiceResult.id}`,
+                                  invoiceStatusFields("schedule", {
+                                    today,
+                                    scheduledFor: schedDate,
+                                  }),
+                                );
+                                setSchedOpen(false);
+                                setSwapInvoiceSaved({
+                                  id: invoiceResult.id,
+                                  scheduledFor: schedDate,
+                                });
+                              } catch (err) {
+                                setSchedErr(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "couldn't schedule the invoice",
+                                );
+                              } finally {
+                                setSending(false);
+                              }
+                            }}
+                          />
+                        )
+                        : null}
                           </>
                         )}
                       <div style="display:flex;gap:8px">
@@ -7032,18 +6942,14 @@ export default function AsstChat({
                   // editable due date (+30-day default, like the /invoices
                   // modal). Nothing is persisted until the confirm click.
                   <div class="chat__price-capture">
-                    {
-                      /* Single-back rule: the header back undoes this view
-                      (invoice review → customer step). */
-                    }
+                    {/* Single-back rule: the header back undoes this view
+                      (invoice review → customer step). */}
                     <h3 class="chat__price-title">
                       {tFor(lang, "asstChat.invoiceFlow.reviewTitle")}
                     </h3>
-                    {
-                      /* REQ-023 (NW-14/15): derived from an accepted quote —
+                    {/* REQ-023 (NW-14/15): derived from an accepted quote —
                         the review already knows the job, the customer, the
-                        terms, and the money so far. */
-                    }
+                        terms, and the money so far. */}
                     {invoiceReview.quoteId && (
                       <div
                         data-cy="invoice-quote-summary"
@@ -7054,8 +6960,7 @@ export default function AsstChat({
                         </div>
                         {invoiceReview.customerName && (
                           <div>
-                            {tFor(lang, "asstChat.preview.for")}:{" "}
-                            {invoiceReview.customerName}
+                            {tFor(lang, "asstChat.preview.for")}: {invoiceReview.customerName}
                           </div>
                         )}
                         {(invoiceReview.lineItems ?? []).length > 0 && (
@@ -7070,9 +6975,7 @@ export default function AsstChat({
                             ))}
                           </ul>
                         )}
-                        {(invoiceReview.terms ?? []).filter((t) =>
-                              t.stepId !== "customer"
-                            ).length > 0 && (
+                        {(invoiceReview.terms ?? []).filter((t) => t.stepId !== "customer").length > 0 && (
                           <div style="margin-top:6px">
                             <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted,#6b7560)">
                               {tFor(lang, "asstChat.invoiceFlow.terms")}
@@ -7088,23 +6991,18 @@ export default function AsstChat({
                         )}
                         <div style="margin-top:6px;border-top:1px solid var(--border,#d8dcd5);padding-top:6px">
                           <div>
-                            {tFor(lang, "asstChat.invoiceFlow.agreementTotal")}:
-                            {" "}
+                            {tFor(lang, "asstChat.invoiceFlow.agreementTotal")}:{" "}
                             <strong>
-                              ${((invoiceReview.agreementTotalCents ?? 0) / 100)
-                                .toLocaleString("en-US")}
+                              ${((invoiceReview.agreementTotalCents ?? 0) / 100).toLocaleString("en-US")}
                             </strong>
                           </div>
                           <div data-cy="invoice-billed-so-far">
-                            {tFor(lang, "asstChat.invoiceFlow.billedSoFar")}:
-                            {" "}
-                            ${((invoiceReview.billedCents ?? 0) / 100)
-                              .toLocaleString("en-US")}
+                            {tFor(lang, "asstChat.invoiceFlow.billedSoFar")}:{" "}
+                            ${((invoiceReview.billedCents ?? 0) / 100).toLocaleString("en-US")}
                           </div>
                           <div data-cy="invoice-paid-so-far">
                             {tFor(lang, "asstChat.invoiceFlow.paidSoFar")}:{" "}
-                            ${((invoiceReview.paidCents ?? 0) / 100)
-                              .toLocaleString("en-US")}
+                            ${((invoiceReview.paidCents ?? 0) / 100).toLocaleString("en-US")}
                           </div>
                         </div>
                       </div>
@@ -7122,12 +7020,8 @@ export default function AsstChat({
                               data-cy="invoice-flow-amount"
                               value={String((pendingPriceCents ?? 0) / 100)}
                               onInput={(e) => {
-                                const n = Number(
-                                  (e.target as HTMLInputElement).value,
-                                );
-                                setPendingPriceCents(
-                                  Number.isFinite(n) ? Math.round(n * 100) : 0,
-                                );
+                                const n = Number((e.target as HTMLInputElement).value);
+                                setPendingPriceCents(Number.isFinite(n) ? Math.round(n * 100) : 0);
                               }}
                               style="display:block;margin-top:6px;padding:10px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit;font-size:16px;font-weight:800;width:100%;box-sizing:border-box"
                             />
@@ -7151,9 +7045,10 @@ export default function AsstChat({
                           type="date"
                           data-cy="invoice-flow-due"
                           value={invoiceDueDate}
-                          onInput={(e) => setInvoiceDueDate(
-                            (e.target as HTMLInputElement).value,
-                          )}
+                          onInput={(e) =>
+                            setInvoiceDueDate(
+                              (e.target as HTMLInputElement).value,
+                            )}
                           style="display:block;margin-top:6px;padding:10px 12px;border:1px solid var(--border,#d8dcd5);border-radius:10px;font:inherit"
                         />
                       </label>
@@ -7180,10 +7075,8 @@ export default function AsstChat({
                 ? (
                   <div class="chat__price-capture">
                     <div class="chat__price-capture-head">
-                      {
-                        /* Single-back rule: the header back undoes this view
-                        (price capture → details entry, wizardStepBack). */
-                      }
+                      {/* Single-back rule: the header back undoes this view
+                        (price capture → details entry, wizardStepBack). */}
                       <h4 class="chat__price-title">
                         {suggestPricing
                           ? tFor(lang, "asstChat.price.pickTitle")
@@ -7195,11 +7088,9 @@ export default function AsstChat({
                           : tFor(lang, "asstChat.price.buildSub")}
                       </p>
                     </div>
-                    {
-                      /* Job-details recap: keeps the (possibly re-edited)
+                    {/* Job-details recap: keeps the (possibly re-edited)
                         details visible while pricing, so Back-and-edit runs
-                        visibly land on the regenerated flow (roadmap p.2). */
-                    }
+                        visibly land on the regenerated flow (roadmap p.2). */}
                     {pendingJobDetailsRaw
                       ? (
                         <div class="chat__price-details-recap">
@@ -7209,12 +7100,10 @@ export default function AsstChat({
                           <span class="chat__price-details-recap-text">
                             {pendingJobDetailsRaw}
                           </span>
-                          {
-                            /* REQ-387 (demo M25): on the know-my-price path
+                          {/* REQ-387 (demo M25): on the know-my-price path
                               these are the raw words — the Job Details
                               picker rewrites them at the end of the
-                              wizard, before the review. Say so. */
-                          }
+                              wizard, before the review. Say so. */}
                           {!suggestPricing && !confirmedOptionRef.current
                             ? (
                               <span
@@ -7258,47 +7147,43 @@ export default function AsstChat({
                             const picked = i ===
                               selectedTierIndex(priceSuggestions, priceCents);
                             return (
-                              <button
-                                key={t.tier}
-                                type="button"
-                                data-cy="pricing-option"
-                                class={picked
-                                  ? "chat__price-tier is-selected"
-                                  : "chat__price-tier"}
-                                aria-pressed={picked}
-                                disabled={sending || stepSending}
-                                onClick={() => selectPriceTier(t.priceCents)}
-                                style={`display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border-radius:12px;cursor:pointer;font:inherit;${
-                                  picked
-                                    ? "border:2px solid var(--brand-green,#519843);background:var(--brand-green-50,#eef6ec)"
-                                    : "border:1px solid var(--border,#d8dcd5);background:#fff"
-                                }`}
-                              >
-                                <span style="min-width:0">
-                                  <span style="display:block;font-weight:800;font-size:14px;color:var(--fg)">
-                                    {t.label}
-                                  </span>
-                                  {t.rationale
-                                    ? (
-                                      <span style="display:block;font-size:12px;color:var(--fg-muted,#6b7560)">
-                                        {t.rationale}
-                                      </span>
-                                    )
-                                    : null}
+                            <button
+                              key={t.tier}
+                              type="button"
+                              data-cy="pricing-option"
+                              class={picked
+                                ? "chat__price-tier is-selected"
+                                : "chat__price-tier"}
+                              aria-pressed={picked}
+                              disabled={sending || stepSending}
+                              onClick={() => selectPriceTier(t.priceCents)}
+                              style={`display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:12px 14px;border-radius:12px;cursor:pointer;font:inherit;${
+                                picked
+                                  ? "border:2px solid var(--brand-green,#519843);background:var(--brand-green-50,#eef6ec)"
+                                  : "border:1px solid var(--border,#d8dcd5);background:#fff"
+                              }`}
+                            >
+                              <span style="min-width:0">
+                                <span style="display:block;font-weight:800;font-size:14px;color:var(--fg)">
+                                  {t.label}
                                 </span>
-                                <span style="font-weight:800;font-size:16px;color:var(--brand-green,#519843);flex-shrink:0">
-                                  ${(t.priceCents / 100).toLocaleString(
-                                    "en-US",
-                                  )}
-                                </span>
-                              </button>
+                                {t.rationale
+                                  ? (
+                                    <span style="display:block;font-size:12px;color:var(--fg-muted,#6b7560)">
+                                      {t.rationale}
+                                    </span>
+                                  )
+                                  : null}
+                              </span>
+                              <span style="font-weight:800;font-size:16px;color:var(--brand-green,#519843);flex-shrink:0">
+                                ${(t.priceCents / 100).toLocaleString("en-US")}
+                              </span>
+                            </button>
                             );
                           })}
-                        {
-                          /* 4th option (roadmap p.16): custom price — clicking
+                        {/* 4th option (roadmap p.16): custom price — clicking
                             focuses the MoneyInput below so the contractor can
-                            type their own number and press Enter. */
-                        }
+                            type their own number and press Enter. */}
                         <button
                           type="button"
                           data-cy="pricing-option-custom"
@@ -7315,11 +7200,9 @@ export default function AsstChat({
                         </button>
                       </div>
                     )}
-                    {
-                      /* REQ-680 (demo-loop cycle 5, M25): "price -500 dollars"
+                    {/* REQ-680 (demo-loop cycle 5, M25): "price -500 dollars"
                         no longer seeds the pad at $500 — it opens empty and
-                        says why, until a price is typed. */
-                    }
+                        says why, until a price is typed. */}
                     {(() => {
                       const neg = !suggestPricing && pendingJobDetailsRaw
                         ? negativePriceCents(pendingJobDetailsRaw)
@@ -7333,7 +7216,9 @@ export default function AsstChat({
                             style="font-size:13px;color:#B23B3B;padding:0 2px 10px"
                           >
                             {tFor(lang, "asstChat.price.negativeNote", {
-                              amount: `$${(neg / 100).toLocaleString("en-US")}`,
+                              amount: `$${
+                                (neg / 100).toLocaleString("en-US")
+                              }`,
                             })}
                           </div>
                         )
@@ -7345,9 +7230,7 @@ export default function AsstChat({
                         // already typed; key remounts it per details text so
                         // a re-entered flow never shows a stale value.
                         // REQ-392: and with the price a correction named.
-                        key={`${
-                          pendingJobDetailsRaw ?? "blank"
-                        }#${priceSeedRev}`}
+                        key={`${pendingJobDetailsRaw ?? "blank"}#${priceSeedRev}`}
                         initialCents={priceCents ?? 0}
                         // REQ-329 (demo p15-13): the quick chips scale to the
                         // AI's market price instead of a fixed $50…$5k.
@@ -7517,12 +7400,13 @@ export default function AsstChat({
               // never one on the card AND one under the send divider.
               const linkOwners = customerLinkOwnerIds(
                 ordered,
-                (p: ActionCardPayload) => cardShowsCustomerLink(
-                  p.status,
-                  ruleQuote && p.quoteId === ruleQuote.id
-                    ? ruleQuote
-                    : undefined,
-                ),
+                (p: ActionCardPayload) =>
+                  cardShowsCustomerLink(
+                    p.status,
+                    ruleQuote && p.quoteId === ruleQuote.id
+                      ? ruleQuote
+                      : undefined,
+                  ),
               );
               return ordered.map((m) => {
                 const wizardStepId = (
@@ -8121,12 +8005,10 @@ export default function AsstChat({
                               </div>
                             )
                             : null}
-                          {
-                            /* UX-06: never silently show the base language —
+                          {/* UX-06: never silently show the base language —
                               surface the live translation state when the
                               toggled language's details aren't ready (in
-                              flight, failed, or never produced at all). */
-                          }
+                              flight, failed, or never produced at all). */}
                           {translationPendingLangs.has(previewLang)
                             ? (
                               <div
@@ -8172,12 +8054,10 @@ export default function AsstChat({
                                 <div class="quote-review__hero-name">
                                   {from.business || from.name}
                                 </div>
-                                {
-                                  /* UX-26(b)/UX-27: the placeholder account
+                                {/* UX-26(b)/UX-27: the placeholder account
                                     name is not a finished identity — warn
                                     and invite the fix instead of presenting
-                                    "Nuevo usuario" as the sender. */
-                                }
+                                    "Nuevo usuario" as the sender. */}
                                 {!from.business?.trim() &&
                                   isPlaceholderName(from.name) && (
                                   <a
@@ -8191,12 +8071,10 @@ export default function AsstChat({
                                     )}
                                   </a>
                                 )}
-                                {
-                                  /* NW-06 (REQ-007): the client expects the
+                                {/* NW-06 (REQ-007): the client expects the
                                     email on the From block — when Settings
                                     has none, say so instead of silently
-                                    rendering nothing. */
-                                }
+                                    rendering nothing. */}
                                 {!from.email?.trim() && (
                                   <a
                                     href="/settings"
@@ -8218,10 +8096,8 @@ export default function AsstChat({
                                     ? (
                                       <>
                                         <span class="quote-review__dot">·</span>
-                                        {
-                                          /* UX-15: one phone formatter
-                                            everywhere — never raw E.164. */
-                                        }
+                                        {/* UX-15: one phone formatter
+                                            everywhere — never raw E.164. */}
                                         <span>
                                           {formatPhoneDisplay(from.phone)}
                                         </span>
@@ -8302,13 +8178,11 @@ export default function AsstChat({
                                   {customer.name}
                                 </div>
                                 <div class="quote-review__hero-meta">
-                                  {
-                                    /* REQ-634 (cycle 5, m34): real inputs —
+                                  {/* REQ-634 (cycle 5, m34): real inputs —
                                       native placeholder, a min-width, Enter
                                       commits, Escape reverts; the label
                                       carries the pencil (inputs draw no
-                                      ::after). */
-                                  }
+                                      ::after). */}
                                   <label class="quote-review__editable quote-review__hero-field">
                                     <input
                                       type="email"
@@ -8530,8 +8404,7 @@ export default function AsstChat({
                               // The state to return to is this review card:
                               // snapshot it so the header back closes the picker.
                               pushHistory();
-                              pendingReviewCtaRef.current = previewCtaId ??
-                                m.id;
+                              pendingReviewCtaRef.current = previewCtaId ?? m.id;
                               // REQ-400 (M5, M21): the current card is the
                               // quote's OWN lines — never the preview
                               // language's rows, which applyJobOption would
@@ -8579,11 +8452,7 @@ export default function AsstChat({
                                     )}
                                     onClick={editJobDetails}
                                   >
-                                    <Icon
-                                      name="pencil"
-                                      size={14}
-                                      style="display:block"
-                                    />
+                                    <Icon name="pencil" size={14} style="display:block" />
                                   </button>
                                 </div>
                                 {jobDetailRows.some((r) =>
@@ -8640,12 +8509,10 @@ export default function AsstChat({
                             );
                           })()}
 
-                          {
-                            /* Term grid shows in BOTH modes — the invoice keeps
+                          {/* Term grid shows in BOTH modes — the invoice keeps
                             the start/duration/payment/warranty grid; only the
                             14 legal clauses + signature are dropped (and the
-                            compact preview never rendered those anyway). */
-                          }
+                            compact preview never rendered those anyway). */}
                           {termRows.length > 0
                             ? (
                               <section class="quote-review__section">
@@ -8763,8 +8630,8 @@ export default function AsstChat({
                                                   />
                                                 )
                                                 : customTermDraft &&
-                                                    customTermDraft.stepId ===
-                                                      t.stepId
+                                                  customTermDraft.stepId ===
+                                                    t.stepId
                                                 ? (
                                                   <div style="display:flex;flex-direction:column;gap:8px">
                                                     <input
@@ -8967,9 +8834,7 @@ export default function AsstChat({
                                                     REQ-617: the pencil rides
                                                     with the last word. */
                                                 }
-                                                <TermEditValue
-                                                  value={t.value}
-                                                />
+                                                <TermEditValue value={t.value} />
                                               </button>
                                             </dd>
                                           )}
@@ -9176,10 +9041,8 @@ export default function AsstChat({
                               )
                               : (
                                 <div class="quote-review__send-split">
-                                  {
-                                    /* REQ-035 (NW-55): Send asks HOW first —
-                                      the dialog's Send is the actual send (REQ-308). */
-                                  }
+                                  {/* REQ-035 (NW-55): Send asks HOW first —
+                                      the dialog's Send is the actual send (REQ-308). */}
                                   {sendDialogOpen
                                     ? (
                                       <Backdrop
@@ -9215,30 +9078,15 @@ export default function AsstChat({
                                             role="radiogroup"
                                           >
                                             {([
-                                              [
-                                                "both",
-                                                "asstChat.preview.menuBoth",
-                                                ICN.send,
-                                              ],
-                                              [
-                                                "sms",
-                                                "asstChat.preview.menuSms",
-                                                ICN.phone,
-                                              ],
-                                              [
-                                                "email",
-                                                "asstChat.preview.menuEmail",
-                                                ICN.mail,
-                                              ],
-                                            ] as const).map((
-                                              [ch, key, icon],
-                                            ) => (
+                                              ["both", "asstChat.preview.menuBoth", ICN.send],
+                                              ["sms", "asstChat.preview.menuSms", ICN.phone],
+                                              ["email", "asstChat.preview.menuEmail", ICN.mail],
+                                            ] as const).map(([ch, key, icon]) => (
                                               <button
                                                 key={ch}
                                                 type="button"
                                                 role="radio"
-                                                aria-checked={dialogChannel ===
-                                                    ch
+                                                aria-checked={dialogChannel === ch
                                                   ? "true"
                                                   : "false"}
                                                 data-cy={`send-option-${ch}`}
@@ -9250,11 +9098,7 @@ export default function AsstChat({
                                                 onClick={() =>
                                                   setDialogChannel(ch)}
                                               >
-                                                <I
-                                                  d={icon}
-                                                  size={13}
-                                                  sw={2.4}
-                                                />
+                                                <I d={icon} size={13} sw={2.4} />
                                                 <span>{tFor(lang, key)}</span>
                                                 {/* REQ-402 (demo m5): say what this channel still lacks. */}
                                                 {channelNeedsKey(ch, customer)
@@ -9265,16 +9109,12 @@ export default function AsstChat({
                                                     >
                                                       {tFor(
                                                         lang,
-                                                        channelNeedsKey(
-                                                          ch,
-                                                          customer,
-                                                        )!,
+                                                        channelNeedsKey(ch, customer)!,
                                                       )}
                                                     </span>
                                                   )
                                                   : null}
-                                                {ch ===
-                                                    recommendedChannel(customer)
+                                                {ch === recommendedChannel(customer)
                                                   ? (
                                                     <span class="quote-review__send-menu-tag">
                                                       {tFor(
@@ -9287,36 +9127,28 @@ export default function AsstChat({
                                               </button>
                                             ))}
                                           </div>
-                                          {
-                                            /* REQ-461 (demo m8): the language the quote goes out
+                                          {/* REQ-461 (demo m8): the language the quote goes out
                                               in — the same previewLang the Send uses — and
-                                              what the client gets, before Send. */
-                                          }
+                                              what the client gets, before Send. */}
                                           {reviewDocType !== "invoice"
                                             ? (
                                               <SendLangPreview
-                                                quoteId={(m.payload as {
-                                                  quoteId?: string;
-                                                } | undefined)
-                                                  ?.quoteId ??
-                                                  quote?.id ?? quoteId}
+                                                quoteId={(m.payload as { quoteId?: string } | undefined)
+                                                  ?.quoteId ?? quote?.id ?? quoteId}
                                                 channel={dialogChannel}
                                                 sendLang={previewLang}
                                                 langs={sendLangs}
                                                 uiLang={lang}
                                                 onPickLang={(l) => {
-                                                  previewLangPickedRef.current =
-                                                    true;
+                                                  previewLangPickedRef.current = true;
                                                   setPreviewLang(l);
                                                 }}
                                               />
                                             )
                                             : null}
-                                          {
-                                            /* REQ-037 (NW-43b): "both, always" —
+                                          {/* REQ-037 (NW-43b): "both, always" —
                                               collect what the chosen channel
-                                              still lacks, right here. */
-                                          }
+                                              still lacks, right here. */}
                                           {(dialogChannel !== "sms") &&
                                               !customer?.email
                                             ? (
@@ -9327,10 +9159,7 @@ export default function AsstChat({
                                                 <span>
                                                   {tFor(
                                                     lang,
-                                                    addFieldLabelKey(
-                                                      "email",
-                                                      dialogChannel,
-                                                    ),
+                                                    addFieldLabelKey("email", dialogChannel),
                                                   )}
                                                 </span>
                                                 <input
@@ -9343,8 +9172,7 @@ export default function AsstChat({
                                                   value={dialogEmail}
                                                   onInput={(e) =>
                                                     setDialogEmail(
-                                                      (e.currentTarget as HTMLInputElement)
-                                                        .value,
+                                                      (e.currentTarget as HTMLInputElement).value,
                                                     )}
                                                 />
                                               </label>
@@ -9360,10 +9188,7 @@ export default function AsstChat({
                                                 <span>
                                                   {tFor(
                                                     lang,
-                                                    addFieldLabelKey(
-                                                      "phone",
-                                                      dialogChannel,
-                                                    ),
+                                                    addFieldLabelKey("phone", dialogChannel),
                                                   )}
                                                 </span>
                                                 <input
@@ -9373,24 +9198,17 @@ export default function AsstChat({
                                                     lang,
                                                     "asstChat.customerStep.phonePlaceholder",
                                                   )}
-                                                  value={formatPhoneInput(
-                                                    dialogPhone,
-                                                  )}
+                                                  value={formatPhoneInput(dialogPhone)}
                                                   onInput={(e) =>
                                                     setDialogPhone(
-                                                      (e.currentTarget as HTMLInputElement)
-                                                        .value,
+                                                      (e.currentTarget as HTMLInputElement).value,
                                                     )}
                                                 />
                                               </label>
                                             )
                                             : null}
                                           {dialogErr
-                                            ? (
-                                              <div class="cust-pick__err">
-                                                {dialogErr}
-                                              </div>
-                                            )
+                                            ? <div class="cust-pick__err">{dialogErr}</div>
                                             : null}
                                           <div class="send-dialog__actions">
                                             <button
@@ -9400,10 +9218,7 @@ export default function AsstChat({
                                               onClick={() =>
                                                 setSendDialogOpen(false)}
                                             >
-                                              {tFor(
-                                                lang,
-                                                "asstChat.send.cancel",
-                                              )}
+                                              {tFor(lang, "asstChat.send.cancel")}
                                             </button>
                                             <button
                                               type="button"
@@ -9461,169 +9276,140 @@ export default function AsstChat({
                                         "asstChat.preview.sendOpen",
                                       )}
                                   </button>
-                                  <button
-                                    type="button"
-                                    class="quote-review__send-caret"
-                                    aria-label={tFor(
-                                      lang,
-                                      "asstChat.preview.chooseSend",
-                                    )}
-                                    aria-expanded={channelMenuOpen
-                                      ? "true"
-                                      : "false"}
-                                    onClick={() =>
-                                      setChannelMenuOpen((o) => !o)}
-                                    disabled={sending}
+                              <button
+                                type="button"
+                                class="quote-review__send-caret"
+                                aria-label={tFor(
+                                  lang,
+                                  "asstChat.preview.chooseSend",
+                                )}
+                                aria-expanded={channelMenuOpen
+                                  ? "true"
+                                  : "false"}
+                                onClick={() => setChannelMenuOpen((o) => !o)}
+                                disabled={sending}
+                              >
+                                <I d={ICN.chev} size={12} sw={2.4} />
+                              </button>
+                              {channelMenuOpen
+                                ? (
+                                  <div
+                                    class="quote-review__send-menu"
+                                    role="menu"
                                   >
-                                    <I d={ICN.chev} size={12} sw={2.4} />
-                                  </button>
-                                  {channelMenuOpen
-                                    ? (
-                                      <div
-                                        class="quote-review__send-menu"
-                                        role="menu"
-                                      >
-                                        {
-                                          /* REQ-402 (demo m5): the menu tags
+                                    {/* REQ-402 (demo m5): the menu tags
                                         Recommended and the missing contact
-                                        exactly as the dialog does. */
-                                        }
-                                        {([
-                                          [
-                                            "both",
-                                            "asstChat.preview.menuBoth",
-                                            ICN.send,
-                                          ],
-                                          [
-                                            "sms",
-                                            "asstChat.preview.menuSms",
-                                            ICN.phone,
-                                          ],
-                                          [
-                                            "email",
-                                            "asstChat.preview.menuEmail",
-                                            ICN.mail,
-                                          ],
-                                        ] as const).map(([ch, key, icon]) => (
-                                          <button
-                                            key={ch}
-                                            type="button"
-                                            role="menuitem"
-                                            data-cy={`send-menu-${ch}`}
-                                            class={`quote-review__send-menu-item${
-                                              sendChannel === ch
-                                                ? " is-current"
-                                                : ""
-                                            }`}
-                                            // REQ-459 (demo m44): a pick opens
-                                            // the send dialog on that channel.
-                                            onClick={() => {
-                                              setSendChannel(ch);
-                                              setPickedChannel(ch);
-                                              openSendDialog(ch);
-                                            }}
-                                          >
-                                            <I d={icon} size={13} sw={2.4} />
-                                            <span class="quote-review__send-menu-label">
-                                              {tFor(lang, key)}
-                                            </span>
-                                            {channelNeedsKey(ch, customer)
-                                              ? (
-                                                <span class="send-dialog__needs">
-                                                  {tFor(
-                                                    lang,
-                                                    channelNeedsKey(
-                                                      ch,
-                                                      customer,
-                                                    )!,
-                                                  )}
-                                                </span>
-                                              )
-                                              : null}
-                                            {recommendedChannel(customer) === ch
-                                              ? (
-                                                <span class="quote-review__send-menu-tag">
-                                                  {tFor(
-                                                    lang,
-                                                    "asstChat.preview.recommended",
-                                                  )}
-                                                </span>
-                                              )
-                                              : null}
-                                          </button>
-                                        ))}
-                                        {
-                                          /* REQ-570 (demo m41): see it as the
-                                        customer will — /q/<id>, new tab. */
-                                        }
-                                        {reviewDocType !== "invoice" &&
-                                            (docId || quote?.id)
+                                        exactly as the dialog does. */}
+                                    {([
+                                      ["both", "asstChat.preview.menuBoth", ICN.send],
+                                      ["sms", "asstChat.preview.menuSms", ICN.phone],
+                                      ["email", "asstChat.preview.menuEmail", ICN.mail],
+                                    ] as const).map(([ch, key, icon]) => (
+                                      <button
+                                        key={ch}
+                                        type="button"
+                                        role="menuitem"
+                                        data-cy={`send-menu-${ch}`}
+                                        class={`quote-review__send-menu-item${
+                                          sendChannel === ch
+                                            ? " is-current"
+                                            : ""
+                                        }`}
+                                        // REQ-459 (demo m44): a pick opens
+                                        // the send dialog on that channel.
+                                        onClick={() => {
+                                          setSendChannel(ch);
+                                          setPickedChannel(ch);
+                                          openSendDialog(ch);
+                                        }}
+                                      >
+                                        <I d={icon} size={13} sw={2.4} />
+                                        <span class="quote-review__send-menu-label">
+                                          {tFor(lang, key)}
+                                        </span>
+                                        {channelNeedsKey(ch, customer)
                                           ? (
-                                            <a
-                                              role="menuitem"
-                                              class="quote-review__send-menu-item"
-                                              data-cy="send-menu-preview"
-                                              href={customerLinkPath(
-                                                docId || quote?.id || "",
+                                            <span class="send-dialog__needs">
+                                              {tFor(
+                                                lang,
+                                                channelNeedsKey(ch, customer)!,
                                               )}
-                                              target="_blank"
-                                              rel="noopener"
-                                              onClick={() =>
-                                                setChannelMenuOpen(false)}
-                                            >
-                                              <I
-                                                d={ICN.eye}
-                                                size={13}
-                                                sw={2.4}
-                                              />
-                                              <span class="quote-review__send-menu-label">
-                                                {tFor(
-                                                  lang,
-                                                  "asstChat.preview.menuPreview",
-                                                )}
-                                              </span>
-                                            </a>
+                                            </span>
                                           )
                                           : null}
-                                        {
-                                          /* Copy link — an immediate action, not a
-                                        channel pick: copies the public
-                                        agreement URL so the contractor can
-                                        paste it anywhere (WhatsApp, DMs). */
-                                        }
-                                        <button
-                                          type="button"
+                                        {recommendedChannel(customer) === ch
+                                          ? (
+                                            <span class="quote-review__send-menu-tag">
+                                              {tFor(
+                                                lang,
+                                                "asstChat.preview.recommended",
+                                              )}
+                                            </span>
+                                          )
+                                          : null}
+                                      </button>
+                                    ))}
+                                    {/* REQ-570 (demo m41): see it as the
+                                        customer will — /q/<id>, new tab. */}
+                                    {reviewDocType !== "invoice" && (docId || quote?.id)
+                                      ? (
+                                        <a
                                           role="menuitem"
                                           class="quote-review__send-menu-item"
-                                          onClick={() => {
-                                            const cid = docId || quote?.id;
-                                            if (!cid) return;
-                                            // REQ-310 (m32): the outcome shows
-                                            // as a toast outside this menu —
-                                            // copied, or couldn't-copy with the
-                                            // url; the menu closes either way.
-                                            setChannelMenuOpen(false);
-                                            void copyLinkFor(cid);
-                                          }}
+                                          data-cy="send-menu-preview"
+                                          href={customerLinkPath(docId || quote?.id || "")}
+                                          target="_blank"
+                                          rel="noopener"
+                                          onClick={() =>
+                                            setChannelMenuOpen(false)}
                                         >
-                                          <I d={ICN.clip} size={13} sw={2.4} />
+                                          <I d={ICN.eye} size={13} sw={2.4} />
                                           <span class="quote-review__send-menu-label">
                                             {tFor(
                                               lang,
-                                              "asstChat.preview.menuCopyLink",
+                                              "asstChat.preview.menuPreview",
                                             )}
                                           </span>
-                                        </button>
-                                      </div>
-                                    )
-                                    : null}
+                                        </a>
+                                      )
+                                      : null}
+                                    {
+                                      /* Copy link — an immediate action, not a
+                                        channel pick: copies the public
+                                        agreement URL so the contractor can
+                                        paste it anywhere (WhatsApp, DMs). */
+                                    }
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      class="quote-review__send-menu-item"
+                                      onClick={() => {
+                                        const cid = docId || quote?.id;
+                                        if (!cid) return;
+                                        // REQ-310 (m32): the outcome shows
+                                        // as a toast outside this menu —
+                                        // copied, or couldn't-copy with the
+                                        // url; the menu closes either way.
+                                        setChannelMenuOpen(false);
+                                        void copyLinkFor(cid);
+                                      }}
+                                    >
+                                      <I d={ICN.clip} size={13} sw={2.4} />
+                                      <span class="quote-review__send-menu-label">
+                                        {tFor(
+                                          lang,
+                                          "asstChat.preview.menuCopyLink",
+                                        )}
+                                      </span>
+                                    </button>
+                                  </div>
+                                )
+                                : null}
                                 </div>
                               )}
-                            {
-                              /* REQ-627: an invoice can wait — keep it as a
+                            {/* REQ-627: an invoice can wait — keep it as a
                                 draft, or pick the day it goes out. Outlined
-                                secondaries under the one solid Send. */
-                            }
+                                secondaries under the one solid Send. */}
                             {reviewDocType === "invoice" && !swapInvoiceSent &&
                                 !swapInvoiceSaved
                               ? (
@@ -9648,9 +9434,7 @@ export default function AsstChat({
                                     <button
                                       type="button"
                                       data-cy="invoice-preview-schedule"
-                                      aria-expanded={schedOpen
-                                        ? "true"
-                                        : "false"}
+                                      aria-expanded={schedOpen ? "true" : "false"}
                                       disabled={sending}
                                       style="flex:1;min-width:130px;padding:10px;border:1px solid var(--brand-teal,#144852);border-radius:10px;background:#fff;color:var(--brand-teal,#144852);font:inherit;font-weight:700;font-size:14px;cursor:pointer"
                                       onClick={() => {
@@ -9767,7 +9551,8 @@ export default function AsstChat({
                                           dispatchedChannel === "sms"
                                             ? "asstChat.cta.textedTo"
                                             : "asstChat.cta.emailedTo",
-                                        )}{" "}
+                                        )}
+                                        {" "}
                                         <code>
                                           {dispatchedChannel === "sms"
                                             ? fmtPhone(sentRecipient)
@@ -9805,10 +9590,11 @@ export default function AsstChat({
                               )
                               : null}
                           </div>
-                          {reviewed ? null : payload.toPhase === "terms" &&
-                              !(payload as { customerName?: string })
-                                .customerName &&
-                              !customer
+                          {reviewed
+                            ? null
+                            : payload.toPhase === "terms" &&
+                                !(payload as { customerName?: string })
+                                  .customerName && !customer
                             ? (
                               /* REQ-331 (demo m7/m44): Business / Person is
                                  only asked when nobody is known yet — a
@@ -9878,11 +9664,9 @@ export default function AsstChat({
                             </button>
                           )
                           : null}
-                        {
-                          /* REQ-339 (demo p2): a sent card is stamped with
+                        {/* REQ-339 (demo p2): a sent card is stamped with
                             the dispatch time (the phase-3 divider), not
-                            the moment the wizard finished. */
-                        }
+                            the moment the wizard finished. */}
                         <div class="msg__time">
                           {fmtTime(
                             reviewed
@@ -9962,17 +9746,15 @@ export default function AsstChat({
                                       quoteFacts.unusableEmail ??
                                       undefined}
                                     prefillFacts={stepFacts}
-                                    initialServiceAddress={
-                                      quote
-                                        ?.serviceAddress ||
+                                    initialServiceAddress={quote
+                                      ?.serviceAddress ||
                                       extractServiceAddress(
                                         quoteFactsSource(
                                           quote?.description,
                                           messages,
                                         ),
                                       ) ||
-                                      undefined /* REQ-779 */
-                                    }
+                                      undefined /* REQ-779 */}
                                     sending={sending}
                                     lang={lang}
                                     onSubmit={(optionId, body) =>
@@ -10193,10 +9975,7 @@ export default function AsstChat({
                                   ? prefill.recurring
                                   : undefined;
                               const every = recurringAsk
-                                ? tFor(
-                                  lang,
-                                  recurringEveryKey(recurringAsk.cadence),
-                                )
+                                ? tFor(lang, recurringEveryKey(recurringAsk.cadence))
                                 : "";
                               // REQ-936 (LOOP-007 q1-3): a deposit the
                               // message stated ("30% deposit up front") —
@@ -10233,281 +10012,259 @@ export default function AsstChat({
                               })();
                               return (
                                 <>
-                                  {showPrefill && prefill && recurringAsk
-                                    ? (
-                                      <div
-                                        class="wiz-prefill"
-                                        data-testid="wiz-prefill"
+                                {showPrefill && prefill && recurringAsk
+                                  ? (
+                                    <div
+                                      class="wiz-prefill"
+                                      data-testid="wiz-prefill"
+                                    >
+                                      <span
+                                        class="wiz-prefill__label"
+                                        data-testid="wiz-recurring-ask"
                                       >
-                                        <span
-                                          class="wiz-prefill__label"
-                                          data-testid="wiz-recurring-ask"
-                                        >
-                                          {tFor(
+                                        {tFor(lang, "asstChat.recurring.ask", {
+                                          price: recurringPriceText(
+                                            recurringAsk,
                                             lang,
-                                            "asstChat.recurring.ask",
-                                            {
-                                              price: recurringPriceText(
-                                                recurringAsk,
-                                                lang,
-                                              ),
-                                              every,
-                                            },
-                                          )}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          class="cust-create__btn cust-create__btn--primary"
-                                          data-testid="wiz-recurring-bill"
-                                          disabled={sending}
-                                          onClick={() =>
-                                            // no cadence stated → the form asks
-                                            prefill.customValue
-                                              ? postWizardAnswer(m, {
-                                                stepId: payload.stepId!,
-                                                optionId: prefill.optionId,
-                                                customValue:
-                                                  prefill.customValue,
-                                              })
-                                              : setRecurringPick({
-                                                messageId: m.id,
-                                                optionId: prefill.optionId,
-                                              })}
-                                        >
-                                          {tFor(
-                                            lang,
-                                            "asstChat.recurring.bill",
-                                            {
-                                              every,
-                                            },
-                                          )}
-                                        </button>
-                                      </div>
-                                    )
-                                    : null}
-                                  {showPrefill && prefill && prefillOpt &&
-                                      !recurringAsk
-                                    ? (
-                                      <div
-                                        class="wiz-prefill"
-                                        data-testid="wiz-prefill"
+                                          ),
+                                          every,
+                                        })}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        class="cust-create__btn cust-create__btn--primary"
+                                        data-testid="wiz-recurring-bill"
+                                        disabled={sending}
+                                        onClick={() =>
+                                          // no cadence stated → the form asks
+                                          prefill.customValue
+                                            ? postWizardAnswer(m, {
+                                              stepId: payload.stepId!,
+                                              optionId: prefill.optionId,
+                                              customValue: prefill.customValue,
+                                            })
+                                            : setRecurringPick({
+                                              messageId: m.id,
+                                              optionId: prefill.optionId,
+                                            })}
                                       >
-                                        <span class="wiz-prefill__label">
-                                          {tFor(
-                                            lang,
-                                            "asstChat.wiz.fromMessage",
-                                          )}
-                                          {": "}
-                                          <strong>
-                                            {prefill.customValue
-                                              ? (payload.stepId ===
+                                        {tFor(lang, "asstChat.recurring.bill", {
+                                          every,
+                                        })}
+                                      </button>
+                                    </div>
+                                  )
+                                  : null}
+                                {showPrefill && prefill && prefillOpt &&
+                                    !recurringAsk
+                                  ? (
+                                    <div
+                                      class="wiz-prefill"
+                                      data-testid="wiz-prefill"
+                                    >
+                                      <span class="wiz-prefill__label">
+                                        {tFor(lang, "asstChat.wiz.fromMessage")}
+                                        {": "}
+                                        <strong>
+                                          {prefill.customValue
+                                            ? (payload.stepId ===
                                                   "payment_terms" &&
                                                 localizeDepositTerm(
                                                   prefill.customValue,
                                                   lang,
                                                   tFor,
                                                 )) ||
-                                                formatTermDate(
-                                                  prefill.customValue,
-                                                  lang,
-                                                )
-                                              : prefillOpt.label}
-                                          </strong>
-                                          {
-                                            /* REQ-575 (demo-loop cycle 4, M3):
+                                              formatTermDate(
+                                                prefill.customValue,
+                                                lang,
+                                              )
+                                            : prefillOpt.label}
+                                        </strong>
+                                        {
+                                          /* REQ-575 (demo-loop cycle 4, M3):
                                             the typed date wins over the
                                             typed weekday ("monday nov 24") —
                                             and says which day it is. */
-                                          }
-                                          {payload.stepId === "start_date" &&
-                                              quoteFacts.startDate
-                                                ?.weekdayMismatch
-                                            ? (
-                                              <span data-testid="wiz-prefill-weekday">
-                                                {" — "}
-                                                {tFor(
-                                                  lang,
-                                                  "asstChat.wiz.weekdayMismatch",
-                                                  {
-                                                    weekday: weekdayLabel(
-                                                      quoteFacts.startDate.iso,
-                                                      lang,
-                                                    ),
-                                                  },
-                                                )}
-                                              </span>
-                                            )
-                                            : null}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          class="cust-create__btn cust-create__btn--primary"
-                                          disabled={sending}
-                                          onClick={() =>
-                                            postWizardAnswer(m, {
-                                              stepId: payload.stepId!,
-                                              optionId: prefill.optionId,
-                                              ...(prefill.customValue
-                                                ? {
-                                                  customValue:
-                                                    prefill.customValue,
-                                                }
-                                                : {}),
-                                            })}
-                                        >
-                                          {tFor(
-                                            lang,
-                                            "asstChat.wiz.usePrefill",
-                                          )}
-                                        </button>
-                                      </div>
-                                    )
-                                    : null}
-                                  <div class="wiz__opts">
-                                    {opts.map((opt) => (
-                                      <button
-                                        key={opt.id}
-                                        type="button"
-                                        class={`wiz-opt ${
-                                          opt.isCustom ? "wiz-opt--custom" : ""
-                                        } ${
-                                          rewindAnswer &&
-                                            rewindAnswer.stepId ===
-                                              payload.stepId &&
-                                            rewindAnswer.optionId === opt.id
-                                            ? "wiz-opt--prev"
-                                            : suggestedId === opt.id &&
-                                                payload.suggestedOptionId ===
-                                                  opt.id
-                                            ? "wiz-opt--suggested"
-                                            : ""
-                                        } ${
-                                          showPrefill &&
-                                            prefillOpt?.id === opt.id
-                                            ? "wiz-opt--prefill"
-                                            : ""
-                                        }`}
-                                        title={rewindAnswer &&
-                                            rewindAnswer.stepId ===
-                                              payload.stepId &&
-                                            rewindAnswer.optionId === opt.id
-                                          ? tFor(
-                                            lang,
-                                            "asstChat.wiz.prevChoice",
-                                          )
-                                          : suggestedId === opt.id
-                                          ? tFor(
-                                            lang,
-                                            "asstChat.wiz.fromYourMessage",
-                                          )
-                                          : undefined}
-                                        onClick={() => {
-                                          if (
-                                            isDepositPickerOption(
-                                              payload.stepId,
-                                              opt,
-                                            )
-                                          ) {
-                                            setDepositPick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          if (opt.followUp) {
-                                            setFollowUpPick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          if (
-                                            opt.isCustom &&
-                                            payload.stepId === "start_date"
-                                          ) {
-                                            setCustomDatePick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          if (
-                                            opt.isCustom &&
-                                            payload.stepId === "wraps"
-                                          ) {
-                                            setCustomDurationPick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          if (
-                                            opt.id === RECURRING_OPTION_ID &&
-                                            payload.stepId === "payment_terms"
-                                          ) {
-                                            setRecurringPick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          if (
-                                            opt.isCustom &&
-                                            payload.stepId === "payment_terms"
-                                          ) {
-                                            setCustomPaymentPick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          if (
-                                            opt.isCustom &&
-                                            payload.stepId === "warranty"
-                                          ) {
-                                            setCustomWarrantyPick({
-                                              messageId: m.id,
-                                              optionId: opt.id,
-                                            });
-                                            return;
-                                          }
-                                          submitWizardAnswer(m, opt);
-                                        }}
-                                        disabled={sending}
-                                      >
-                                        {opt.label}
-                                        {(() => {
-                                          const sub = prefillDepositSub !==
-                                                undefined &&
-                                              prefillOpt?.id === opt.id
-                                            ? prefillDepositSub
-                                            : opt.sub;
-                                          return sub
-                                            ? (
-                                              <span class="wiz-opt__sub">
-                                                {sub}
-                                              </span>
-                                            )
-                                            : null;
-                                        })()}
-                                        {
-                                          /* REQ-672 (cycle 5, p9): a
-                                          suggestion says so in words — it
-                                          is not a selection. */
                                         }
-                                        {suggestedId === opt.id
+                                        {payload.stepId === "start_date" &&
+                                            quoteFacts.startDate
+                                              ?.weekdayMismatch
                                           ? (
-                                            <span class="wiz-opt__tag">
+                                            <span data-testid="wiz-prefill-weekday">
+                                              {" — "}
                                               {tFor(
                                                 lang,
-                                                "asstChat.wiz.suggestedTag",
+                                                "asstChat.wiz.weekdayMismatch",
+                                                {
+                                                  weekday: weekdayLabel(
+                                                    quoteFacts.startDate.iso,
+                                                    lang,
+                                                  ),
+                                                },
                                               )}
                                             </span>
                                           )
                                           : null}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        class="cust-create__btn cust-create__btn--primary"
+                                        disabled={sending}
+                                        onClick={() =>
+                                          postWizardAnswer(m, {
+                                            stepId: payload.stepId!,
+                                            optionId: prefill.optionId,
+                                            ...(prefill.customValue
+                                              ? {
+                                                customValue:
+                                                  prefill.customValue,
+                                              }
+                                              : {}),
+                                          })}
+                                      >
+                                        {tFor(lang, "asstChat.wiz.usePrefill")}
                                       </button>
-                                    ))}
-                                  </div>
+                                    </div>
+                                  )
+                                  : null}
+                                <div class="wiz__opts">
+                                  {opts.map((opt) => (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      class={`wiz-opt ${
+                                        opt.isCustom ? "wiz-opt--custom" : ""
+                                      } ${
+                                        rewindAnswer &&
+                                          rewindAnswer.stepId ===
+                                            payload.stepId &&
+                                          rewindAnswer.optionId === opt.id
+                                          ? "wiz-opt--prev"
+                                          : suggestedId === opt.id &&
+                                              payload.suggestedOptionId === opt.id
+                                          ? "wiz-opt--suggested"
+                                          : ""
+                                      } ${
+                                        showPrefill &&
+                                          prefillOpt?.id === opt.id
+                                          ? "wiz-opt--prefill"
+                                          : ""
+                                      }`}
+                                      title={rewindAnswer &&
+                                          rewindAnswer.stepId ===
+                                            payload.stepId &&
+                                          rewindAnswer.optionId === opt.id
+                                        ? tFor(lang, "asstChat.wiz.prevChoice")
+                                        : suggestedId === opt.id
+                                        ? tFor(lang, "asstChat.wiz.fromYourMessage")
+                                        : undefined}
+                                      onClick={() => {
+                                        if (
+                                          isDepositPickerOption(
+                                            payload.stepId,
+                                            opt,
+                                          )
+                                        ) {
+                                          setDepositPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (opt.followUp) {
+                                          setFollowUpPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "start_date"
+                                        ) {
+                                          setCustomDatePick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "wraps"
+                                        ) {
+                                          setCustomDurationPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.id === RECURRING_OPTION_ID &&
+                                          payload.stepId === "payment_terms"
+                                        ) {
+                                          setRecurringPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "payment_terms"
+                                        ) {
+                                          setCustomPaymentPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        if (
+                                          opt.isCustom &&
+                                          payload.stepId === "warranty"
+                                        ) {
+                                          setCustomWarrantyPick({
+                                            messageId: m.id,
+                                            optionId: opt.id,
+                                          });
+                                          return;
+                                        }
+                                        submitWizardAnswer(m, opt);
+                                      }}
+                                      disabled={sending}
+                                    >
+                                      {opt.label}
+                                      {(() => {
+                                        const sub = prefillDepositSub !==
+                                              undefined &&
+                                            prefillOpt?.id === opt.id
+                                          ? prefillDepositSub
+                                          : opt.sub;
+                                        return sub
+                                          ? (
+                                            <span class="wiz-opt__sub">
+                                              {sub}
+                                            </span>
+                                          )
+                                          : null;
+                                      })()}
+                                      {
+                                        /* REQ-672 (cycle 5, p9): a
+                                          suggestion says so in words — it
+                                          is not a selection. */
+                                      }
+                                      {suggestedId === opt.id
+                                        ? (
+                                          <span class="wiz-opt__tag">
+                                            {tFor(
+                                              lang,
+                                              "asstChat.wiz.suggestedTag",
+                                            )}
+                                          </span>
+                                        )
+                                        : null}
+                                    </button>
+                                  ))}
+                                </div>
                                 </>
                               );
                             })()}
@@ -10519,9 +10276,7 @@ export default function AsstChat({
                             }
                           </div>
                         </div>
-                        <div class="msg__time">
-                          {fmtTime(m.createdAt, lang)}
-                        </div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -10591,10 +10346,8 @@ export default function AsstChat({
                                           ),
                                         )}
                                     >
-                                      <I d={ICN.send} size={11} /> {tFor(
-                                        lang,
-                                        "asstChat.invoiceCard.sendNow",
-                                      )}
+                                      <I d={ICN.send} size={11} />{" "}
+                                      {tFor(lang, "asstChat.invoiceCard.sendNow")}
                                     </button>
                                   )
                                   : null}
@@ -10778,27 +10531,26 @@ export default function AsstChat({
                             )
                             : null}
                           {
-                            // REQ-563 (cycle 4, m3): Re-open follows the
-                            // live quote — none once the customer signed.
-                            cardReopenAction(
-                                payload.status,
-                                liveCardQuote(payload, ruleQuote),
-                              ) !== "none"
-                              ? (
-                                <div class="action-card__cta">
-                                  <button
-                                    type="button"
-                                    class="action-card__btn"
-                                    onClick={() => reopenActionCard(m, payload)}
-                                    disabled={sending || !payload.quoteId}
-                                  >
-                                    <I d={ICN.refresh} size={11} />{" "}
-                                    {tFor(lang, "asstChat.actionCard.reopen")}
-                                  </button>
-                                </div>
-                              )
-                              : null
-                          }
+                              // REQ-563 (cycle 4, m3): Re-open follows the
+                              // live quote — none once the customer signed.
+                              cardReopenAction(
+                                  payload.status,
+                                  liveCardQuote(payload, ruleQuote),
+                                ) !== "none"
+                            ? (
+                              <div class="action-card__cta">
+                                <button
+                                  type="button"
+                                  class="action-card__btn"
+                                  onClick={() => reopenActionCard(m, payload)}
+                                  disabled={sending || !payload.quoteId}
+                                >
+                                  <I d={ICN.refresh} size={11} />{" "}
+                                  {tFor(lang, "asstChat.actionCard.reopen")}
+                                </button>
+                              </div>
+                            )
+                            : null}
                           {payload.quoteId &&
                               // REQ-571 (c4 p4-p2c): unless a later send
                               // divider already carries this quote's row.
@@ -10830,9 +10582,7 @@ export default function AsstChat({
                             )
                             : null}
                         </div>
-                        <div class="msg__time">
-                          {fmtTime(m.createdAt, lang)}
-                        </div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -10902,9 +10652,7 @@ export default function AsstChat({
                             →
                           </span>
                         </a>
-                        <div class="msg__time">
-                          {fmtTime(m.createdAt, lang)}
-                        </div>
+                        <div class="msg__time">{fmtTime(m.createdAt, lang)}</div>
                       </div>
                     </div>
                   );
@@ -10975,7 +10723,8 @@ export default function AsstChat({
                               // primary; the quote link steps back.
                               liveChangeOrderOffer(visible)?.id === m.id
                                 ? "border:1px solid #144852;background:#fff;color:#144852"
-                                : "background:#144852;color:#fff"}`}
+                                : "background:#144852;color:#fff"
+                            }`}
                           >
                             {tFor(
                               lang,
@@ -11016,9 +10765,7 @@ export default function AsstChat({
                             {
                               // REQ-1098: every change order the reply made
                               // is linked, not only the last.
-                              chatEarlierChangeOrderLinks(m.payload).map((
-                                e,
-                              ) => (
+                              chatEarlierChangeOrderLinks(m.payload).map((e) => (
                                 <a
                                   key={e.changeOrderId}
                                   data-cy="msg-co-open-earlier"
@@ -11791,8 +11538,7 @@ function CustomerStepPanel(props: {
         ownerPhone,
         nameTouched,
         contactTouched,
-        phoneTouched,
-        emailTouched, // REQ-524
+        phoneTouched, emailTouched, // REQ-524
       },
     );
     const submitDisabled = sending || !feedback.canSubmit;
@@ -11897,10 +11643,7 @@ function CustomerStepPanel(props: {
               type="tel"
               class="cust-pick__search"
               placeholder={tFor(lang, "asstChat.customerStep.phonePlaceholder")}
-              aria-label={tFor(
-                lang,
-                "asstChat.customerStep.phonePlaceholder",
-              )} /* REQ-289 */
+              aria-label={tFor(lang, "asstChat.customerStep.phonePlaceholder")} /* REQ-289 */
               value={formatPhoneInput(createPhone)} /* NW-34 (REQ-012) */
               onInput={(e) => {
                 setCreatePhone((e.target as HTMLInputElement).value);
@@ -11917,10 +11660,7 @@ function CustomerStepPanel(props: {
               type="email"
               class="cust-pick__search"
               placeholder={tFor(lang, "asstChat.customerStep.emailPlaceholder")}
-              aria-label={tFor(
-                lang,
-                "asstChat.customerStep.emailPlaceholder",
-              )} /* REQ-289 */
+              aria-label={tFor(lang, "asstChat.customerStep.emailPlaceholder")} /* REQ-289 */
               value={createEmail}
               onInput={(e) => {
                 setCreateEmail((e.target as HTMLInputElement).value);
@@ -12006,11 +11746,9 @@ function CustomerStepPanel(props: {
             onInput={(e) =>
               setCreateAddress((e.target as HTMLInputElement).value)}
           />
-          {
-            /* REQ-625: the ONE customer form, in the assistant's look — the
+          {/* REQ-625: the ONE customer form, in the assistant's look — the
             customer's own address parts and notes (name, company, phone and
-            email are the inputs above, with their live checks) */
-          }
+            email are the inputs above, with their live checks) */}
           <CustomerFields
             variant="asst"
             only={["street", "city", "state", "zip", "notes"]}
@@ -12097,12 +11835,10 @@ function CustomerStepPanel(props: {
             >
               {tFor(lang, "common.next")}
             </button>
-            {
-              /* Single-back rule: no back button inside the widget. When
+            {/* Single-back rule: no back button inside the widget. When
                 there is anyone to pick, offer the pick list as a FORWARD
                 affordance instead — existing customers must be pickable,
-                never buried behind an "Atrás". */
-            }
+                never buried behind an "Atrás". */}
             {formOffersPickExisting(
               customers?.length ?? null,
               !!boundCustomer,
@@ -12128,11 +11864,9 @@ function CustomerStepPanel(props: {
     const k = known.customer;
     return (
       <div ref={rootRef}>
-        {
-          /* REQ-1057: the customer is already known (the lock prompt just
+        {/* REQ-1057: the customer is already known (the lock prompt just
             named them) — the heading CONFIRMS them, never re-asks the open
-            "Who is this for?" (that stays on the pick list / Change views). */
-        }
+            "Who is this for?" (that stays on the pick list / Change views). */}
         <h3 class="wiz__step-q">
           {tFor(lang, "asstChat.customerStep.confirmKnown", { name: k.name })}
         </h3>
@@ -12184,11 +11918,9 @@ function CustomerStepPanel(props: {
   // ---- View: default — dropdown (kind already picked on the lock-quote CTA) ----
   return (
     <div ref={rootRef}>
-      {
-        /* Lead with the step question ("Who is this for?") so the customer
+      {/* Lead with the step question ("Who is this for?") so the customer
           step reads the same whether the user lands on the pick list or the
-          create form (roadmap p.7). */
-      }
+          create form (roadmap p.7). */}
       <h3 class="wiz__step-q">
         {tFor(lang, "asstChat.customerStep.whoFor")}
       </h3>
@@ -12284,11 +12016,9 @@ function CustomerStepPanel(props: {
                       ? (
                         <div class="cust-pick__empty">
                           {tFor(lang, "common.noMatches")}
-                          {
-                            /* REQ-029 (NW-22 / NW-35): the search box is a
+                          {/* REQ-029 (NW-22 / NW-35): the search box is a
                               filter — a no-match must not be a dead end.
-                              Offer to create exactly what was typed. */
-                          }
+                              Offer to create exactly what was typed. */}
                           {search.trim().length > 0
                             ? (
                               <button
@@ -12303,13 +12033,9 @@ function CustomerStepPanel(props: {
                                   openCreate();
                                 }}
                               >
-                                {tFor(
-                                  lang,
-                                  "asstChat.customerStep.createNamed",
-                                  {
-                                    name: search.trim(),
-                                  },
-                                )}
+                                {tFor(lang, "asstChat.customerStep.createNamed", {
+                                  name: search.trim(),
+                                })}
                               </button>
                             )
                             : null}
@@ -13107,10 +12833,8 @@ function CustomDurationPickerForm(props: {
           : null}
       </div>
       <div class="dur__row">
-        {
-          /* REQ-458 (demo M38): visible labels + an "e.g. 3" placeholder so
-            the empty number box reads as the thing to fill in. */
-        }
+        {/* REQ-458 (demo M38): visible labels + an "e.g. 3" placeholder so
+            the empty number box reads as the thing to fill in. */}
         <label class="dur__label" for="dur-num">
           {tFor(lang, "asstChat.duration.numberLabel")}
         </label>
