@@ -271,24 +271,24 @@ Deno.test("REQ-444 M21: an answer that adds the permit to the job details change
       "the tiers are still there to pick",
     );
 
-    // Pick a tier: the quote is drafted from the details on screen. Picking
-    // creates the quote and loads the thread's page afresh, so the click goes
-    // through the raw mouse (no post-click frame) and the story waits for the
-    // load (as REQ-392's story does).
-    const created = page.waitForRequest((r) =>
-      /\/quotes$/.test(new URL(r.url()).pathname) && r.method() === "POST"
+    // Pick a tier: the quote is drafted from the details on screen. Since
+    // REQ-449 a tap selects the tier and Continue creates the quote in place
+    // (no page load).
+    const created = page.waitForRequest(
+      (r) =>
+        /\/quotes$/.test(new URL(r.url()).pathname) && r.method() === "POST",
+      { timeout: 30_000 },
     );
     const tier = page.locator("[data-cy=pricing-option]").first();
     await tier.scrollIntoViewIfNeeded();
-    const at = await tier.boundingBox();
-    expect(at !== null, "the tier is on screen");
-    const loaded = page.waitForEvent("load", { timeout: 30_000 });
-    await page.mouse.click(at!.x + at!.width / 2, at!.y + at!.height / 2);
+    expect(await tier.boundingBox() !== null, "the tier is on screen");
+    await tier.click();
+    await page.locator(".chat__price-capture button.chat__price-continue")
+      .click();
     const quote = JSON.parse((await created).postData() ?? "{}") as {
       description?: string;
       descriptionByLang?: Record<string, string>;
     };
-    await loaded;
     expect.eq(
       quote.description,
       rewritten,
