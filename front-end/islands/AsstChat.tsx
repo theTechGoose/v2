@@ -895,9 +895,14 @@ export default function AsstChat({
   // flow. Computed once (SSR included) and used as every flow state's seed.
   const [seed] = useState<AssistantDraft | null>(() => {
     if (!initialDraft) return null;
+    // REQ-244 × REQ-230: a stored open review whose send CTA the thread
+    // already shows as sent/signed does not reopen — the message box is back.
+    const settled = settledSendCtaIds(initialMessages, initialQuote);
     const d = restorableDraft(initialDraft, {
       quoteBound: Boolean(initialQuote?.id),
-      messageIds: initialMessages.map((m) => m.id),
+      messageIds: initialMessages.filter((m) => !settled.has(m.id)).map((m) =>
+        m.id
+      ),
     });
     bulletSeq = Math.max(bulletSeq, maxBulletSeq(d));
     return d;
