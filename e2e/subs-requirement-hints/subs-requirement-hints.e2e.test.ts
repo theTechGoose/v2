@@ -12,7 +12,8 @@ const JSON_HEADERS = { "content-type": "application/json" };
 const digits = () => String(Math.floor(Math.random() * 9_000_000) + 1_000_000);
 
 const DAYS_HINT = "Pick at least one day.";
-const ITEMS_HINT = "Add at least one task type with a price.";
+// REQ-1143 renamed the hint: "service", not "task type"
+const ITEMS_HINT = "Add at least one service with a price.";
 
 async function signIn(
   http: StoryTools["http"],

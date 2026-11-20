@@ -67,7 +67,12 @@ Deno.test("REQ-989 q1-72: with no phone line, a customer's Messages tab lists th
     expect(!line?.line, `the account has no phone line (${JSON.stringify(line)})`);
 
     const mk = (name: string, extra: Record<string, unknown>) =>
-      post(http, auth, "/api/customers", { name: `${name} ${tag}`, email: "linda@blackhole.postmarkapp.com", ...extra });
+      post(http, auth, "/api/customers", {
+        name: `${name} ${tag}`,
+        // REQ-1149: one email per customer — a second customer on Linda's address is a possible duplicate (409)
+        email: `${name.split(" ")[0].toLowerCase()}@blackhole.postmarkapp.com`,
+        ...extra,
+      });
     const linda = await mk("Linda Pérez", { phoneNumber: "(512) 555-0188" });
     const carla = await mk("Carla Nophone", {});
     const bob = await mk("Bob Other", { phoneNumber: "(512) 555-0177" });

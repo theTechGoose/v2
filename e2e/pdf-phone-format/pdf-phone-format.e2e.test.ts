@@ -120,8 +120,9 @@ Deno.test("REQ-965 (q1-42): the invoice PDF downloaded from /i/:id prints the co
     const pretty = `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
     expect.eq(shown, pretty, "the public invoice page shows the contractor phone formatted");
 
-    const href = await page.locator(`a[href$='/pdf']`).first().getAttribute("href");
-    expect.eq(href, `/api/invoices/${inv.id}/pdf`, "the page's Download PDF link");
+    // REQ-1133 (q3-65): the link carries the page's language (…/pdf?lang=en)
+    const href = await page.locator(`a[href*='/api/invoices/${inv.id}/pdf']`).first().getAttribute("href");
+    expect.eq(href?.split("?")[0], `/api/invoices/${inv.id}/pdf`, "the page's Download PDF link");
     const r = await http(href ?? "");
     expect.eq(r.status, 200, "the PDF downloads");
     const text = await pdfText(new Uint8Array(await r.arrayBuffer()));

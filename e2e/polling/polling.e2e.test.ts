@@ -67,7 +67,7 @@ function watchPolls(page: StoryTools["page"]) {
     const u = req.url();
     const kind = u.includes("/api/agents/conversations?limit=50")
       ? "conversations"
-      : u.includes("/api/notifications?limit=10")
+      : u.includes("/api/notifications?limit=") // REQ-1134: the feed reads ?limit=25 (was 10)
       ? "notifications"
       : null;
     if (!kind) return;
