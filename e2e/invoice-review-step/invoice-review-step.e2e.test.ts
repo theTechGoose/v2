@@ -69,6 +69,8 @@ async function seedAcceptedJob(
     body: JSON.stringify({
       name: "Randall Belknap",
       email: `rb-${Date.now()}@blackhole.postmarkapp.com`,
+      // REQ-1149: each call files the same customer again — "Create anyway" past the 409 possibleDuplicate
+      allowDuplicate: true,
     }),
   })).json();
   const quote = await (await http("/api/quotes", {

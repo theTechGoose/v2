@@ -74,6 +74,8 @@ async function mkInvoice(
     body: JSON.stringify({
       name: "Ana Torres",
       email: "ana@blackhole.postmarkapp.com",
+      // REQ-1149: each call files the same customer again — "Create anyway" past the 409 possibleDuplicate
+      allowDuplicate: true,
     }),
   })).json();
   return await (await http("/api/invoices", {
